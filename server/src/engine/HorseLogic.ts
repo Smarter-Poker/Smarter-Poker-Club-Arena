@@ -2083,6 +2083,14 @@ export interface HorseDecideOpts {
    *  on. Re-enable by default only after a recalibrated stratum resolves
    *  significant positive in the mirror and the human-field twin. */
   v62RiverBettorPolarity?: boolean;
+  /** V62 calibration arm: bluff share per size class [small, medium, large],
+   *  each in (0, 0.6], replacing HorseEval.V62_BLUFF_SHARE for this decision.
+   *  League use only; ignored unless V62 is on. */
+  v62BluffShares?: readonly [number, number, number];
+  /** V62 calibration arm: polar-sample the river bettor only when hero holds
+   *  the bluff-catch class (at most one pair, or two pair sharing the board
+   *  pair); stronger hands keep the contact read. League use only. */
+  v62BluffCatchOnly?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -3808,6 +3816,15 @@ function v54OpponentProfile(
  * a quarter to a half they won 21-22% against ~29%, and at a half to a full
  * pot 14% against ~40%. Zero below a fifth, twelve points from half a pot.
  */
+/** Validate a V62 bluff-share triple; anything malformed yields null (defaults). */
+export function v62BluffShares(
+  value: unknown
+): readonly [number, number, number] | null {
+  if (!Array.isArray(value) || value.length !== 3) return null;
+  const out = value.map((v) => (typeof v === 'number' && v > 0 && v <= 0.6 ? v : NaN));
+  return out.every((v) => Number.isFinite(v)) ? [out[0], out[1], out[2]] : null;
+}
+
 export function v61RiverOnePairShade(toCall: number, pot: number): number {
   if (!(toCall > 0) || !(pot > 0)) return 0;
   return Math.min(0.12, Math.max(0, (toCall / pot - 0.2) * 0.4));
@@ -6696,10 +6713,25 @@ export class HorseLogic {
       gs.bombPot !== true &&
       exploit.callDownMod <= 1 &&
       oppReads &&
-      oppReads.some((read) => read?.lastStage === 'river')
+      oppReads.some((read) => read?.lastStage === 'river') &&
+      // Calibration arm: price only the bluff-catch class (at most one pair,
+      // or two pair sharing the board's pair) against the polar stratum;
+      // stronger hands keep the contact read and its value-raise behaviour.
+      (opts.v62BluffCatchOnly !== true ||
+        (() => {
+          const cat62 = bestTwoCardCategory(player.cards, gs.communityCards, vi);
+          if (cat62 <= 2) return true;
+          if (cat62 !== 3) return false;
+          const counts62 = new Map<string, number>();
+          for (const c of gs.communityCards) counts62.set(c.rank, (counts62.get(c.rank) ?? 0) + 1);
+          return [...counts62.values()].some((n) => n >= 2);
+        })())
     ) {
+      const shares62 = v62BluffShares(opts.v62BluffShares);
       oppReads = oppReads.map((read) =>
-        read && read.lastStage === 'river' ? { ...read, riverPolar: true } : read
+        read && read.lastStage === 'river'
+          ? { ...read, riverPolar: true, ...(shares62 ? { riverPolarBluffShare: shares62 } : {}) }
+          : read
       );
       polar62 = true;
       if (tele15) noteFire('v62_river_bettor_polarity');

@@ -64,12 +64,13 @@ END$$;ROLLBACK;""")
  OR (SELECT count(*) FROM public.tournament_refund_tranches WHERE tournament_id='"""+event+"""')<>1 THEN RAISE EXCEPTION 'independent original charge readback failed';END IF;
 END$$;""")
   e.report['cases']=['exact-install','browser-refused','review-hash-refused','accepted-original-restorable-no-new-hand-no-refund','concurrent-original-lane-refused','paid-100-fee10-real-charge','failure-after-real-refund-fully-rolled-back','same-operation-replay-no-duplicate','canonical-v3-exact-terminal-receipt']
+  chip_overlay=module(ROOT/'scripts/ci/chip_abort_overlay_native.py','abort_chip_overlay');chip_overlay.run_chip_overlay(e,db,ROOT)
   diamond.seed(e,db);diamond.run_diamond_cases(e,db,ROOT)
   names=set(re.findall(r'CREATE(?: OR REPLACE)? FUNCTION (?:public|smarter_private)\.(\w+)',MIGRATION.read_text()))
   names.update(['fn_f06_begin_hand','fn_ca_tournament_entry_gate','fn_ca_capture_tournament_charge_entitlement','fn_poker_diamond_tournament_charge','fn_ca_escrow_on_rake_record','fn_ca_tournament_cancellation_receipt'])
   _,postimages,_=e.sql(db,"SELECT jsonb_object_agg(p.oid::regprocedure::text,md5(pg_get_functiondef(p.oid))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private') AND p.proname IN("+','.join("'"+n+"'" for n in sorted(names))+");",label='qualified-exact-postimages')
   e.report['postimages']=json.loads(postimages.strip())
-  inputs=[Path(__file__),ROOT/'scripts/ci/tournament_abort_native.py',ROOT/'scripts/ci/tournament_abort_fixture.py',MIGRATION,ROOT/'.github/workflows/ci.yml']
+  inputs=[Path(__file__),ROOT/'scripts/ci/tournament_abort_native.py',ROOT/'scripts/ci/chip_abort_overlay_native.py',ROOT/'scripts/ci/tournament_abort_fixture.py',MIGRATION,ROOT/'.github/workflows/ci.yml']
   e.report['source_sha256'].update({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs})
   e.report['passed']=True;e.report['status']='passed'
  finally:

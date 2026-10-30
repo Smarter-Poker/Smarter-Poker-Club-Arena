@@ -11,7 +11,7 @@ def sql_file(e,db,name,sql):
     p=e.output/(name+'.sql');p.write_text(sql);return e.sql(db,file=p,label=name,seconds=120)
 
 def install_f06_extension(e,db,root):
-    relations=json.loads((DATA/'current-relations.json').read_text())+json.loads((DATA/'hand-dependencies.json').read_text())+json.loads((DATA/'immutable-guard-relations.json').read_text())
+    relations=json.loads((DATA/'current-relations.json').read_text())+json.loads((DATA/'hand-dependencies.json').read_text())+json.loads((DATA/'immutable-guard-relations.json').read_text())+json.loads((DATA/'chip-credit-receipt-relations.json').read_text())
     # Exact captured table columns and local PK/unique/check semantics. Existing
     # real financial relations retain their triggers and constraints unchanged.
     sql='SET check_function_bodies=off;CREATE SCHEMA IF NOT EXISTS smarter_private;'
@@ -27,12 +27,19 @@ def install_f06_extension(e,db,root):
             sql+='ALTER TABLE '+r['relation']+' ADD COLUMN IF NOT EXISTS "'+c['name']+'" '+c['type']+default+';'
     sql+='ALTER TABLE public.tables ADD COLUMN IF NOT EXISTS f06_lifecycle bigint NOT NULL DEFAULT 1;'
     sql+='ALTER TABLE public.tables ADD COLUMN IF NOT EXISTS is_deleted boolean DEFAULT false;'
-    funcs=json.loads((DATA/'pending-dependencies.json').read_text())+json.loads((DATA/'current-functions.json').read_text())+json.loads((DATA/'current-receipt-reader.json').read_text())+json.loads((DATA/'current-accounting-dependencies.json').read_text())+json.loads((DATA/'current-rake-owner.json').read_text())+json.loads((DATA/'immutable-guard-dependencies.json').read_text())+json.loads((DATA/'legacy-guard-proof.json').read_text())
+    sql+='ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS payout_depth_percent numeric;'
+    funcs=json.loads((DATA/'pending-dependencies.json').read_text())+json.loads((DATA/'current-functions.json').read_text())+json.loads((DATA/'current-receipt-reader.json').read_text())+json.loads((DATA/'current-accounting-dependencies.json').read_text())+json.loads((DATA/'current-rake-owner.json').read_text())+json.loads((DATA/'immutable-guard-dependencies.json').read_text())+json.loads((DATA/'legacy-guard-proof.json').read_text())+json.loads((DATA/'current-chip-award-overlay.json').read_text())+json.loads((DATA/'chip-overlay-dependencies.json').read_text())+json.loads((DATA/'chip-overlay-payout-dependency.json').read_text())+json.loads((DATA/'chip-prior-award-credit-dependency.json').read_text())+json.loads((DATA/'chip-prior-award-wallet-dependencies.json').read_text())+json.loads((DATA/'chip-prior-award-ledger-writer.json').read_text())
     for f in funcs:
         assert hashlib.md5(f['definition'].encode()).hexdigest()==f.get('definition_md5',hashlib.md5(f['definition'].encode()).hexdigest())
         sig=f['signature'] if f['signature'].startswith('smarter_private.') else 'public.'+f['signature']
         sql+=f['definition']+';REVOKE ALL ON FUNCTION '+sig+' FROM PUBLIC,anon,authenticated,service_role;'
         if not sig.startswith('smarter_private.'):sql+='GRANT EXECUTE ON FUNCTION '+sig+' TO service_role;'
+    capture=json.loads((DATA/'chip-prior-credit-capture.json').read_text())
+    for f in capture['functions']:
+        assert hashlib.md5(f['definition'].encode()).hexdigest()==f['definition_md5']
+        sql+=f['definition']+';'
+    for t in capture['triggers']:
+        sql+='DROP TRIGGER IF EXISTS '+t['name']+' ON public.'+t['relation']+';'+t['definition']+';'
     guards=json.loads((DATA/'current-immutable-guards.json').read_text())
     for f in guards['functions']:
         assert hashlib.md5(f['definition'].encode()).hexdigest()==f['definition_md5']

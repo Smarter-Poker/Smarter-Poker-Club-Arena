@@ -169,6 +169,9 @@ SET search_path=public,pg_temp AS $fn$
  'close',(SELECT to_jsonb(c) FROM public.ca_operator_table_closes c WHERE c.table_id=p_table_id AND c.status='pending'));
 $fn$;
 
+REVOKE ALL ON FUNCTION public.fn_ca_operator_floor_state(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_operator_floor_state(uuid) TO service_role;
+
 CREATE FUNCTION smarter_private.tournament_abort_money_snapshot(p_tournament_id uuid)
 RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path=pg_catalog,public,smarter_private AS $fn$

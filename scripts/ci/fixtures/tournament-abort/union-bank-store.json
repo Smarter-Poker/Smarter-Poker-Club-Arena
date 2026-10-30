@@ -1,0 +1,8 @@
+[
+  {
+    "store": "union_bank",
+    "treatment": "counted",
+    "counted_by": "union_wallets",
+    "notes": "union_wallets chip_balance"
+  }
+]

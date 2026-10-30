@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type TestInfo } from '@playwright/test';
 import { isEngineHealthUnavailableDiagnostic } from './support/engineCutoverConsole';
+import { BUY_IN_LADDER } from '../../src/utils/buyIn';
 import {
   BATCH_VERDICTS,
   batchVerdictFor,
@@ -347,16 +348,61 @@ test.describe('Production Cashier Certification', () => {
     );
     await expectCashierAxeClean(page, testInfo, '[role="dialog"]', 'cashier-batch-preview');
     await attachCashierScreenshot(page, testInfo, 'cashier-batch-individual-preview');
+    const ticketWrites: string[] = [];
+    const observeTicketWrites = (request: import('@playwright/test').Request) => {
+      if (
+        request.method() !== 'GET' &&
+        /\/rest\/v1\/rpc\/(?:fn_issue_tournament_ticket|fn_cashier_batch_transfer)$/.test(
+          new URL(request.url()).pathname
+        )
+      ) {
+        ticketWrites.push(new URL(request.url()).pathname);
+      }
+    };
+    page.on('request', observeTicketWrites);
     await transferDialog.getByRole('button', { name: 'Send Ticket', exact: true }).click();
     const ticketDialog = page.getByRole('dialog', { name: 'Send Ticket', exact: true });
-    // Dan 2026-10-15: a ticket is bought into one future or running tournament,
-    // priced by the server and paid from the sender's player wallet.
-    await expect(ticketDialog.getByRole('combobox', { name: 'Tournament' })).toBeVisible();
+    // New tickets carry a reusable entry value. Existing event-bound requests
+    // keep their original identity only for exact retry; this fresh preview
+    // must offer the current buy-in ladder, including the supported 40 ticket.
+    const ticketValue = ticketDialog.getByRole('combobox', { name: 'Ticket Value' });
+    await expect(ticketValue).toBeVisible();
+    await expect(ticketValue).toBeEnabled();
+    const expectedTicketValues = [...new Set<number>([...BUY_IN_LADDER, 40])]
+      .sort((left, right) => left - right)
+      .map(String);
+    expect(
+      await ticketValue
+        .locator('option')
+        .evaluateAll((options) =>
+          options.map((option) => (option as HTMLOptionElement).value).filter(Boolean)
+        )
+    ).toEqual(expectedTicketValues);
+    await expect(ticketValue.getByRole('option', { name: '40 Ticket', exact: true })).toHaveValue(
+      '40'
+    );
+    await ticketValue.selectOption('40');
+    await expect(ticketValue).toHaveValue('40');
+    await expect(ticketDialog).toContainText('Total: 80');
     await expect(
       ticketDialog.getByRole('region', { name: 'From Your Player Wallet' })
     ).toBeVisible();
     await expect(ticketDialog).toContainText('2 Players ·');
+    await expectBatchVerdictFromFunding(
+      ticketDialog,
+      'From Your Player Wallet',
+      80,
+      2,
+      testInfo,
+      'cashier-ticket-value-preview'
+    );
+    await attachCashierScreenshot(page, testInfo, 'cashier-ticket-value-preview');
     await ticketDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(ticketDialog).toBeHidden();
+    page.off('request', observeTicketWrites);
+    expect(ticketWrites, 'Selecting and cancelling a ticket value must never issue chips').toEqual(
+      []
+    );
     await uncheckEveryRecipient(surface);
     await page.setViewportSize({ width: 1440, height: 1000 });
     const directoryWidth = await surface
@@ -993,7 +1039,7 @@ test.describe('Production Cashier Certification', () => {
       contentType: 'application/json',
     });
   });
-  test('prints the existing agent credit agreement beneath member wallets without moving chips', async ({
+  test('prints the existing tracking-only credit line beneath member wallets without moving chips', async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);
@@ -1001,69 +1047,77 @@ test.describe('Production Cashier Certification', () => {
     // keeps its dedicated viewer identity and reads the existing agreement;
     // it never assigns a line, draws credit, or impersonates this member.
     const memberId = process.env.E2E_CREDIT_MEMBER_ID || 'e5abee6e-abe2-4400-9005-b5c81577155d';
+    const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+    const creditProjection = 'club_id,user_id,role,is_prepaid,credit_limit';
     const creditRead = page.waitForResponse(
       (response) => {
         const url = new URL(response.url());
         return (
+          response.request().method() === 'GET' &&
           url.pathname.endsWith('/rest/v1/agents') &&
+          url.searchParams.get('club_id') === `eq.${clubId}` &&
           url.searchParams.get('user_id') === `eq.${memberId}` &&
-          (url.searchParams.get('select') || '').includes('credit_limit')
+          url.searchParams.get('status') === 'eq.active' &&
+          url.searchParams.get('select') === creditProjection
         );
       },
       { timeout: 60_000 }
     );
-    await page.goto(`clubs/kings-club/members/${memberId}`, {
+    await page.goto(`clubs/${clubId}/members/${memberId}`, {
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
     });
     const response = await creditRead;
     expect(response.status()).toBe(200);
     const body = await response.json();
+    if (Array.isArray(body)) expect(body).toHaveLength(1);
     const agreement = Array.isArray(body) ? body[0] : body;
+    expect(agreement).not.toBeNull();
+    expect(agreement.club_id).toBe(clubId);
     expect(agreement.user_id).toBe(memberId);
     expect(typeof agreement.is_prepaid).toBe('boolean');
+    expect(agreement.credit_limit).not.toBeNull();
     expect(Number.isFinite(Number(agreement.credit_limit))).toBe(true);
-    expect(Number.isFinite(Number(agreement.credit_used))).toBe(true);
+    expect(Number(agreement.credit_limit)).toBeGreaterThanOrEqual(0);
+    // The current read intentionally excludes borrowed/available capacity.
+    expect(agreement).not.toHaveProperty('credit_used');
     const wallets = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Wallets', exact: true }) });
     await expect(wallets).toBeVisible();
-    const line = wallets
+    const tracking = page.getByRole('region', { name: 'Credit Tracking', exact: true });
+    const line = tracking
       .locator('.mm-stat')
       .filter({ has: page.getByText('Credit Line', { exact: true }) });
+    await expect(page.getByText('Loading Credit Line...', { exact: true })).toBeHidden();
     if (agreement.is_prepaid) {
-      await expect(wallets.getByText('Loading Credit Line...', { exact: true })).toBeHidden();
-      await expect(line).toHaveCount(0);
+      await expect(tracking).toHaveCount(0);
     } else {
+      await expect(tracking).toBeVisible();
+      await expect(tracking).toContainText(
+        'Tracking Only. Weekly Invoices Use The Agent Wallet Before Rakeback.'
+      );
+      await expect(line).toHaveCount(1);
       const exact = (amount: number) =>
         amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       await expect(line.locator('.mm-stat__value')).toHaveText(
         exact(Number(agreement.credit_limit))
       );
-      await expect(
-        wallets
-          .locator('.mm-stat')
-          .filter({ has: page.getByText('Credit Used', { exact: true }) })
-          .locator('.mm-stat__value')
-      ).toHaveText(exact(Number(agreement.credit_used)));
-      await expect(
-        wallets
-          .locator('.mm-stat')
-          .filter({ has: page.getByText('Credit Available', { exact: true }) })
-          .locator('.mm-stat__value')
-      ).toHaveText(
-        exact(Math.max(0, Number(agreement.credit_limit) - Number(agreement.credit_used)))
-      );
     }
-    await expect(wallets.getByText('Credit Line Unavailable.', { exact: false })).toHaveCount(0);
+    await expect(wallets.getByText('Credit Line', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Credit Used', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Credit Available', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Credit Line Unavailable.', { exact: false })).toHaveCount(0);
     await attachCashierScreenshot(page, testInfo, 'member-wallet-existing-credit-agreement');
     await testInfo.attach('member-credit-readback.json', {
       body: JSON.stringify({
         memberId,
+        clubId,
         status: response.status(),
+        projection: creditProjection,
         isPrepaid: agreement.is_prepaid,
         limit: agreement.credit_limit,
-        used: agreement.credit_used,
+        spendableCredit: false,
         writes: 0,
       }),
       contentType: 'application/json',

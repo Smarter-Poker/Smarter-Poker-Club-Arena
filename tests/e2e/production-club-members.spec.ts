@@ -566,7 +566,18 @@ test.describe('Production Kings Club Players', () => {
     const probe = observeMembersPath(page);
     await openMembers(page, probe);
     const sort = page.getByRole('combobox', { name: 'Sort Players' });
+    // Earlier cases may have persisted Name. Require an actual transition,
+    // rather than expecting a new directory read for selecting the same value.
+    if ((await sort.inputValue()) === 'name') {
+      await completeNextPageRead(
+        probe,
+        () => sort.selectOption('oldest'),
+        'workspace sort baseline'
+      );
+      await expect(sort).toHaveValue('oldest');
+    }
     await completeNextPageRead(probe, () => sort.selectOption('name'), 'workspace name sort');
+    await expect(sort).toHaveValue('name');
     await page
       .locator('.members-columns summary')
       .filter({ hasText: /^Columns$/ })

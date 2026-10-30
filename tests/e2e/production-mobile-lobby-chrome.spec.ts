@@ -531,11 +531,15 @@ test.describe('the mobile lobby chrome on production', () => {
       .getByRole('group', { name: 'Filter Notifications' })
       .getByRole('button', { name: /^Unread/ });
     await expect(unread).toBeVisible({ timeout: 30_000 });
+    const preferenceOwner = await readLobbyPreferenceOwner(page);
+    const preferenceKey = 'NotificationsPage:filter:global';
     const filterSaved = page.waitForResponse(
       (response) =>
         response.url().includes('/rest/v1/user_page_preferences') &&
         response.request().method() === 'POST' &&
         response.ok() &&
+        response.request().postDataJSON()?.user_id === preferenceOwner &&
+        response.request().postDataJSON()?.preference_key === preferenceKey &&
         response.request().postDataJSON()?.value === 'unread'
     );
     await unread.click();
@@ -544,6 +548,8 @@ test.describe('the mobile lobby chrome on production', () => {
       (response) =>
         response.url().includes('/rest/v1/user_page_preferences') &&
         response.request().method() === 'GET' &&
+        new URL(response.url()).searchParams.get('user_id') === `eq.${preferenceOwner}` &&
+        new URL(response.url()).searchParams.get('preference_key') === `eq.${preferenceKey}` &&
         response.ok()
     );
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -556,7 +562,11 @@ test.describe('the mobile lobby chrome on production', () => {
       .getByRole('button', { name: /^All/ });
     const interrupted = page.waitForEvent('requestfailed', {
       predicate: (request) =>
-        request.url().includes('/rest/v1/user_page_preferences') && request.method() === 'POST',
+        request.url().includes('/rest/v1/user_page_preferences') &&
+        request.method() === 'POST' &&
+        request.postDataJSON()?.user_id === preferenceOwner &&
+        request.postDataJSON()?.preference_key === preferenceKey &&
+        request.postDataJSON()?.value === 'all',
     });
     try {
       await page.context().setOffline(true);
@@ -572,6 +582,8 @@ test.describe('the mobile lobby chrome on production', () => {
         response.url().includes('/rest/v1/user_page_preferences') &&
         response.request().method() === 'POST' &&
         response.ok() &&
+        response.request().postDataJSON()?.user_id === preferenceOwner &&
+        response.request().postDataJSON()?.preference_key === preferenceKey &&
         response.request().postDataJSON()?.value === 'all'
     );
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -580,6 +592,8 @@ test.describe('the mobile lobby chrome on production', () => {
       (response) =>
         response.url().includes('/rest/v1/user_page_preferences') &&
         response.request().method() === 'GET' &&
+        new URL(response.url()).searchParams.get('user_id') === `eq.${preferenceOwner}` &&
+        new URL(response.url()).searchParams.get('preference_key') === `eq.${preferenceKey}` &&
         response.ok()
     );
     await page.reload({ waitUntil: 'domcontentloaded' });

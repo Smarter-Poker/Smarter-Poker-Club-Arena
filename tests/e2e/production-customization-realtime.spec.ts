@@ -339,6 +339,10 @@ async function openStudio(
     timeout: PRODUCTION_RESPONSE_TIMEOUT,
   });
   await expectPreviewAvatarsLoaded(studio);
+  // The catalog tab is itself durable. Reopening after editing card backs
+  // correctly restores Cards; count Look tiles only after choosing Looks.
+  await activateCategory(studio, 'Looks');
+  await expect(studio.locator('.tsc__catalog')).toHaveAttribute('data-theme-tab', 'themes');
   const selectedLooks = grid.locator('.theme-asset[aria-pressed="true"]');
   if (expectedLook === 'coordinated') {
     await expect(selectedLooks).toHaveCount(1, { timeout: PRODUCTION_RESPONSE_TIMEOUT });

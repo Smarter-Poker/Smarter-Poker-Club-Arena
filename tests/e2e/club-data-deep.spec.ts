@@ -147,6 +147,8 @@ async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAcc
 
   await expect(workspace).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-page="club-data"]')).toBeVisible();
+  // Modes persist for this actor; select the mode whose behavior we verify.
+  await page.getByRole('button', { name: 'Simple', exact: true }).click();
   await expect(page.locator('[data-club-data-mode="simple"]')).toBeVisible();
   await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
   await expect(page.getByRole('heading', { name: 'Read The Room', exact: true })).toBeVisible();
@@ -642,6 +644,16 @@ test('keeps Cashier, Players and Club Data realtime connected in both modes and 
       page.on('websocket', onSocket);
       try {
         await page.goto(new URL('clubs/shark-club/' + surface.path, base).toString());
+        await expect(page.locator(surface.root)).toBeVisible({ timeout: 60_000 });
+        // The previous surface visit may have saved Advanced. Normalize through
+        // its real control before observing the unchanged two-mode feed proof.
+        if (
+          (await page.locator(surface.root).getAttribute(surface.root.slice(1, -1))) !== 'simple'
+        ) {
+          await page
+            .getByRole(surface.button ? 'button' : 'radio', { name: 'Simple', exact: true })
+            .click();
+        }
         await expect(page.locator(surface.root)).toHaveAttribute(
           surface.root.slice(1, -1),
           'simple',

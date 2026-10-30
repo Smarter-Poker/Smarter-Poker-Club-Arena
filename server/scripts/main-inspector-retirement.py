@@ -158,16 +158,73 @@ def entry_state(run):
         return 1
 
 
+def bounded_native_facts(value):
+    """Project only maintained native enums/strict booleans; absent means unknown."""
+    if not isinstance(value, dict) or value.get('ok') is not False or value.get('retryAllowed') is not False:
+        return None
+    stages = {'invocation', 'attach', 'connect', 'pid', 'close', 'native_close', 'complete'}
+    reasons = {'invocation_refused', 'deadline_exhausted', 'qualification_refused',
+               'connection_closed', 'connection_error', 'protocol_refused', 'evaluation_refused',
+               'pid_mismatch', 'send_outcome_unknown', 'close_ack_refused', 'outcome_unknown',
+               'main_inspector_retirement_unproved'}
+    result = {'ok': False, 'retryAllowed': False}
+    result['stage'] = value.get('stage') if isinstance(value.get('stage'), str) and value.get('stage') in stages else None
+    result['reason'] = value.get('reason') if isinstance(value.get('reason'), str) and value.get('reason') in reasons else None
+    for name in ('closeRequested', 'closeAcknowledged', 'connectionClosed', 'listenerAbsent'):
+        result[name] = value.get(name) if type(value.get(name)) is bool else None
+    return result
+
+
+def failure_reason(error):
+    if isinstance(error, TimeoutError): return 'deadline'
+    if isinstance(error, subprocess.TimeoutExpired): return 'command_deadline'
+    if isinstance(error, subprocess.SubprocessError): return 'command_failed'
+    if isinstance(error, OSError): return 'io_unproved'
+    # Values are internal fixed literals, never arbitrary exception text.
+    allowed = {'root_operation', 'operation_identity', 'lock_identity', 'request_root',
+               'request_file', 'immutable_request', 'prior_retirement_unresolved',
+               'checkpoint_already_entered', 'native_receipt_budget', 'deadline',
+               'native_operation_changed', 'retirement_already_entered', 'sealed_predecessor',
+               'container_name', 'container_identity', 'health_bound', 'live_preannouncement_identity',
+               'native_deadline', 'native_outcome_unknown', 'native_output_bound', 'native_proposal',
+               'claim_preimage_changed', 'short_write', 'grant_preimage_changed',
+               'retirement_outcome_unproved', 'native_outcome_shape', 'post_health_identity_changed'}
+    return str(error) if type(error) is ValueError and str(error) in allowed else 'invalid_outcome'
+
+
+def publish_failure(value, absolute_until):
+    """One unbuffered write, bounded inside the original host deadline.
+
+    retire's SIGALRM handler raises, so a blocked write is interrupted rather
+    than restarted. No inherited descriptor flags or stream buffers are changed.
+    """
+    try:
+        encoded = (json.dumps(value, separators=(',', ':')) + '\n').encode('ascii')
+        available = min(0.1, absolute_until - time.monotonic() - 0.1)
+        if len(encoded) > 4096 or available <= 0:
+            return False
+        signal.setitimer(signal.ITIMER_REAL, available)
+        return os.write(2, encoded) == len(encoded)
+    except (OSError, ValueError, TypeError):
+        return False
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+
+
 def retire():
-    until = time.monotonic() + 20
+    absolute_until = time.monotonic() + 20
+    until = absolute_until - 0.2
     deadline_ms = int(time.time() * 1000) + 20000
     child = None
+    host_stage, intent_state, ack_state = 'authority', 'not_started', 'not_started'
+    native_facts = None
+    child_exit = None
     previous_alarm = signal.getsignal(signal.SIGALRM)
     previous_timer = signal.getitimer(signal.ITIMER_REAL)
     def expire(_signum, _frame):
         raise TimeoutError('absolute retirement deadline')
     signal.signal(signal.SIGALRM, expire)
-    signal.setitimer(signal.ITIMER_REAL, 20)
+    signal.setitimer(signal.ITIMER_REAL, 19.8)
 
     def remaining():
         left = until - time.monotonic()
@@ -224,9 +281,16 @@ def retire():
         if checkpoint_intent.exists() or checkpoint_intent.is_symlink():
             raise ValueError('checkpoint_already_entered')
         deadline_ms = min(deadline_ms, int(request[5]) * 1000)
-        until = min(until, time.monotonic() + (deadline_ms / 1000 - time.time()))
+        absolute_until = min(absolute_until, time.monotonic() + (deadline_ms / 1000 - time.time()))
+        until = absolute_until - 0.2
         remaining()
         signal.setitimer(signal.ITIMER_REAL, remaining())
+        # Native outcome/exit must arrive before this unchanged host deadline.
+        # Reserve one second for Docker forwarding, validation and host receipt.
+        native_deadline_ms = deadline_ms - 1000
+        if native_deadline_ms <= int(time.time() * 1000):
+            raise ValueError('native_receipt_budget')
+        host_stage = 'unit'
         unit_args = ['systemctl', 'show', 'club-arena-engine-release-v1@' + run + '.service',
                      '-p', 'InvocationID', '-p', 'ActiveState', '-p', 'SubState']
         def current_unit():
@@ -240,6 +304,7 @@ def retire():
         intent_path = root / (run + '.main-inspector-retirement-intent')
         if intent_path.exists() or intent_path.is_symlink():
             raise ValueError('retirement_already_entered')
+        host_stage = 'seal'
         seal = str(CONTROL / 'engine-release-seal.py')
         if (command([seal, 'get', 'desired-sha']).decode().strip() != SOURCE
                 or command([seal, 'get', 'desired-image-id']).decode().strip() != IMAGE):
@@ -249,6 +314,7 @@ def retire():
             raise ValueError('container_name')
         inspect_args = ['docker', 'inspect', '--format',
                         '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}', container]
+        host_stage = 'container'
         identity = command(inspect_args).decode().strip()
         fields = identity.split()
         if (len(fields) != 5 or not re.fullmatch(r'[0-9a-f]{64}', fields[0])
@@ -271,14 +337,16 @@ def retire():
                     or maintenance.get('active') is not False or maintenance.get('phase') != 'idle'):
                 raise ValueError('live_preannouncement_identity')
             return health
+        host_stage = 'health'
         health = read_health()
+        host_stage = 'native_start'
         script = '\n'.join((CONTROL / name).read_text() for name in (
             'retire-owned-main-inspector.mjs', 'main-inspector-socket-qualification.mjs',
             'main-inspector-retirement-entry.mjs'))
         args = ['docker', 'exec', '-i', fields[0], 'sh', '-c',
                 'case "${NODE_OPTIONS-}" in *--inspect*|*--debug*) exit 1;; esac\n'
                 'exec env -u NODE_OPTIONS -u NODE_PATH node --no-inspect "$@"',
-                'main-inspector-retirement', '--input-type=module', '-e', script, str(deadline_ms)]
+                'main-inspector-retirement', '--input-type=module', '-e', script, str(native_deadline_ms)]
         child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL)
         selector = selectors.DefaultSelector()
@@ -299,12 +367,15 @@ def retire():
             buffered[:] = rest
             return first
 
+        host_stage = 'proposal'
         proposal_bytes = line()
         proposal = json.loads(proposal_bytes)
-        if (proposal.get('schema') != 'main-inspector-retirement/v1'
+        native_facts = bounded_native_facts(proposal)
+        if (not isinstance(proposal, dict) or proposal.get('schema') != 'main-inspector-retirement/v1'
                 or not re.fullmatch(r'ws://127\.0\.0\.1:9229/[0-9a-f-]{36}', proposal.get('endpoint', ''), re.I)
                 or not isinstance(proposal.get('binding'), dict)):
             raise ValueError('native_proposal')
+        host_stage = 'claim_preimage'
         # Revalidate full host tuple and exact operation before granting attach.
         if (command(inspect_args).decode().strip() != identity
                 or request_path.read_text().splitlines() != request
@@ -317,18 +388,31 @@ def retire():
                  'nativeUnit': unit, 'source': SOURCE,
                  'instance': health['instanceId'], 'containerIdentity': identity,
                  'proposal': proposal, 'proposalSha256': hashlib.sha256(proposal_bytes).hexdigest(),
-                 'deadlineMs': deadline_ms, 'retryAllowed': False}
+                 'deadlineMs': native_deadline_ms, 'retryAllowed': False}
+        host_stage = 'intent'
+        intent_state = 'write_started'
         durable(intent_path, claim)
+        intent_state = 'durable'
+        host_stage = 'grant_preimage'
         if (time.time() >= int(request[5]) or current_unit() != unit
                 or command(inspect_args).decode().strip() != identity
                 or request_path.read_text().splitlines() != request):
             raise ValueError('grant_preimage_changed')
         remaining()
+        host_stage = 'ack'
+        ack_state = 'write_started'
         child.stdin.write((claim['proposalSha256'] + '\n').encode())
         child.stdin.flush()
+        ack_state = 'flushed'
         # Keep stdin open until the child consumes the acknowledgement.
+        host_stage = 'outcome'
         outcome = json.loads(line())
-        if (child.wait(timeout=remaining()) != 0 or outcome.get('ok') is not True
+        if not isinstance(outcome, dict):
+            raise ValueError('native_outcome_shape')
+        native_facts = bounded_native_facts(outcome)
+        host_stage = 'native_exit'
+        child_exit = child.wait(timeout=remaining())
+        if (child_exit != 0 or outcome.get('ok') is not True
                 or outcome.get('closeAcknowledged') is not True
                 or outcome.get('connectionClosed') is not True
                 or outcome.get('listenerAbsent') is not True
@@ -336,17 +420,28 @@ def retire():
                 or command(inspect_args).decode().strip() != identity
                 or current_unit() != unit):
             raise ValueError('retirement_outcome_unproved')
+        host_stage = 'post_health'
         after_health = read_health()
         if (after_health['instanceId'] != health['instanceId']
                 or after_health['uptime'] < health['uptime']):
             raise ValueError('post_health_identity_changed')
+        host_stage = 'receipt'
         durable(root / (run + '.main-inspector-retirement-receipt'),
                 {'claim': claim, 'outcome': outcome, 'observedAt': time.time()})
         print(json.dumps({'ok': True, 'listenerAbsent': True, 'sameProcess': True,
                           'runId': run, 'retryAllowed': False}))
         return 0
-    except (OSError, ValueError, subprocess.SubprocessError):
-        print('main Inspector retirement refused or unknown; intent retained, no retry', file=sys.stderr)
+    except (OSError, ValueError, TypeError, RecursionError, subprocess.SubprocessError) as error:
+        # Closed facts only: never expose exception text, target identifiers or
+        # raw native output. A started write is not proof it reached durability.
+        diagnostic = {'schema': 'main-inspector-retirement-failure/v1',
+                      'ok': False, 'hostStage': host_stage,
+                      'reason': failure_reason(error),
+                      'intent': intent_state, 'ack': ack_state,
+                      'native': native_facts,
+                      'childExit': ('zero' if child_exit == 0 else 'nonzero') if type(child_exit) is int else 'unknown',
+                      'retryAllowed': False}
+        publish_failure(diagnostic, absolute_until)
         return 1
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
@@ -358,10 +453,14 @@ def retire():
                 # Only our docker client; native helper also has its own absolute
                 # process deadline. Never signal the engine/container/Inspector.
                 child.kill()
-            if child.stdin:
-                child.stdin.close()
-            if child.stdout:
-                child.stdout.close()
+            for stream in (child.stdin, child.stdout):
+                if stream:
+                    try:
+                        stream.close()
+                    except OSError:
+                        # Failed ACK/pipe cleanup cannot publish a raw traceback
+                        # or change the already UNKNOWN/nonretryable result.
+                        pass
 
 
 if __name__ == '__main__':

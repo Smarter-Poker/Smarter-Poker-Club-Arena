@@ -3,26 +3,54 @@ import * as retirementFs from 'node:fs';
 import * as retirementHttp from 'node:http';
 import { createHash as retirementHash } from 'node:crypto';
 const retirementDeadline = Number(process.argv[1]);
+// All receipt/exit time is inside the supplied native deadline, itself inside
+// the unchanged host20s. Keep100ms for normal exit and Docker forwarding.
+const retirementWorkDeadline = retirementDeadline - 200;
+let retirementPublishing = false;
+async function retirementPublish(outcome, exitCode) {
+  if (retirementPublishing) return;
+  retirementPublishing = true;
+  const available = retirementDeadline - Date.now() - 100;
+  let written = false;
+  if (Number.isSafeInteger(retirementDeadline) && available > 0) {
+    written = await new Promise((resolve) => {
+      let finished = false;
+      const finish = (ok) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        if (ok) process.stdout.removeListener('error', onError);
+        // Failed write callbacks can precede their EPIPE error event. Keep our
+        // one-shot listener until process exit; never attempt a second receipt.
+        resolve(ok);
+      };
+      const onError = () => finish(false);
+      const timer = setTimeout(() => finish(false), Math.min(100, available));
+      process.stdout.once('error', onError);
+      try {
+        process.stdout.write(JSON.stringify(outcome) + '\n', (error) => finish(!error));
+      } catch {
+        finish(false);
+      }
+    });
+  }
+  process.exit(written ? exitCode : 1);
+}
 setTimeout(
-  () => {
-    // The fixed hard exit can precede the transport timer. Preserve its bounded
-    // command/ACK facts without turning a missing remote close into success.
-    console.log(
-      JSON.stringify(
-        ownedMainInspectorDeadlineOutcome() ?? {
-          ok: false,
-          reason: 'deadline_exhausted',
-          retryAllowed: false,
-        }
-      )
-    );
-    process.exit(1);
-  },
-  Math.max(1, retirementDeadline - Date.now())
+  () =>
+    retirementPublish(
+      ownedMainInspectorDeadlineOutcome() ?? {
+        ok: false,
+        reason: 'deadline_exhausted',
+        retryAllowed: false,
+      },
+      1
+    ),
+  Math.max(1, retirementWorkDeadline - Date.now())
 );
 const retirementExpectedSource = 'eed06fe51dea622069c661a6213d5b031ff3a9e3';
 const retirementRemaining = () => {
-  const left = retirementDeadline - Date.now();
+  const left = retirementWorkDeadline - Date.now();
   if (!Number.isSafeInteger(retirementDeadline) || left <= 0 || left > 20000)
     throw new Error('retirement_deadline');
   return left;
@@ -93,7 +121,7 @@ async function retirementEntry() {
   const binding = captureMainInspectorBinding({
     pid: 1,
     port: 9229,
-    deadlineMs: retirementDeadline,
+    deadlineMs: retirementWorkDeadline,
   });
   const proposal = { schema: 'main-inspector-retirement/v1', endpoint, binding };
   const serialized = JSON.stringify(proposal);
@@ -126,7 +154,7 @@ async function retirementEntry() {
   const outcome = await retireOwnedMainInspector({
     endpoint,
     expectedPid: 1,
-    deadlineMs: retirementDeadline,
+    deadlineMs: retirementWorkDeadline,
     qualify: async (stage) => {
       retirementRuntime();
       // The proposal already binds the endpoint to this exact MAIN listener.
@@ -136,7 +164,7 @@ async function retirementEntry() {
       captureMainInspectorBinding({
         pid: 1,
         port: 9229,
-        deadlineMs: retirementDeadline,
+        deadlineMs: retirementWorkDeadline,
         allowOwnClient: stage === 'close',
         expectedBinding: binding,
       });
@@ -167,18 +195,14 @@ async function retirementEntry() {
   return { ...outcome, listenerAbsent: true };
 }
 retirementEntry().then(
-  (outcome) => {
-    console.log(JSON.stringify(outcome));
-    process.exit(outcome.ok && outcome.listenerAbsent ? 0 : 1);
-  },
-  () => {
-    console.log(
-      JSON.stringify({
+  (outcome) => retirementPublish(outcome, outcome.ok && outcome.listenerAbsent ? 0 : 1),
+  () =>
+    retirementPublish(
+      {
         ok: false,
         reason: 'main_inspector_retirement_unproved',
         retryAllowed: false,
-      })
-    );
-    process.exit(1);
-  }
+      },
+      1
+    )
 );

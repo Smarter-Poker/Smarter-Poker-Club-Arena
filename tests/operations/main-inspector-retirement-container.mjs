@@ -12,7 +12,7 @@ const fixtureImage =
 const fixtureSource = 'eed06fe51dea622069c661a6213d5b031ff3a9e3';
 const fixtureNativeVersion = 'v22.23.2';
 const fixtureStarted = Date.now();
-const fixtureDeadline = fixtureStarted + 180000;
+const fixtureDeadline = fixtureStarted + 210000;
 // Ten seconds of the overall bound remain exclusively for owned cleanup.
 const fixtureWorkDeadline = fixtureDeadline - 10000;
 const fixtureExec = promisify(execFile);
@@ -75,7 +75,7 @@ async function fixtureHealth(container, path = '/health', waitMs = 1500) {
     )
   );
 }
-async function fixtureNativeEntry(container, identity, scenario = 'success') {
+async function fixtureNativeEntry(container, identity, scenario = 'success', hostWrapper = false) {
   assert.ok(['success', 'deferred-close-timeout'].includes(scenario));
   const maintainedSource = [
     'retire-owned-main-inspector.mjs',
@@ -150,6 +150,44 @@ process.once('exit', () => process.getBuiltinModule('node:fs').writeSync(2, 'fix
 }) + '\\n'));
 `;
   const source = discoveryObservation + closeBoundaryLoad + maintainedSource;
+  if (hostWrapper) {
+    const hostRoot = join(fixtureDirectory, 'host-wrapper-' + scenario);
+    const control = join(hostRoot, 'control');
+    fs.mkdirSync(control, { recursive: true });
+    for (const name of [
+      'retire-owned-main-inspector.mjs',
+      'main-inspector-socket-qualification.mjs',
+      'main-inspector-retirement-entry.mjs',
+    ]) {
+      const maintained = fs.readFileSync(
+        new URL('../../server/scripts/' + name, import.meta.url),
+        'utf8'
+      );
+      fs.writeFileSync(
+        join(control, name),
+        (name === 'main-inspector-retirement-entry.mjs' ? closeBoundaryLoad : '') + maintained
+      );
+    }
+    const inspected = await fixtureInspect();
+    assert.deepEqual(fixtureTuple(inspected), identity);
+    const { stdout } = await fixtureExec(
+      'python3',
+      [
+        '-B',
+        new URL('./main-inspector-retirement-host-native.py', import.meta.url).pathname,
+        hostRoot,
+        container,
+        inspected.Image,
+        scenario,
+      ],
+      { timeout: 20000, killSignal: 'SIGKILL', maxBuffer: 65536 }
+    );
+    const proof = JSON.parse(stdout.trim());
+    assert.equal(proof.extraOuterGraceMs, 0);
+    assert.equal(proof.hostDeadlineMs, 20000);
+    assert.ok(proof.elapsedMs < 19700);
+    return proof;
+  }
   assert.ok(
     fixtureWorkDeadline - Date.now() >= 21000,
     'full native20s plus CLI exit observation must fit the original fixture work bound'
@@ -186,9 +224,8 @@ process.once('exit', () => process.getBuiltinModule('node:fs').writeSync(2, 'fix
         protocolFailure ??= new Error('native_entry_absolute_deadline');
         child.kill('SIGKILL');
       },
-      // Test transport grace observes the production helper's own 20s exit;
-      // it does not extend that helper deadline or permit another command.
-      Math.max(1, entryDeadline - Date.now() + (scenario === 'deferred-close-timeout' ? 1000 : 0))
+      // The real publication/exit reserve fits INSIDE the native20s.
+      Math.max(1, entryDeadline - Date.now())
     );
     child.stdin.on('error', () => {
       protocolFailure ??= new Error('native_entry_ack_transport_unknown');
@@ -329,6 +366,10 @@ require('node:http').createServer((request,response)=>{
  if(request.url==='/fixture-reopen') {
   require('node:inspector').open(9229,'127.0.0.1',false);
   response.end(JSON.stringify(health));
+ } else if(request.url==='/host-health') {
+  response.end(JSON.stringify({releaseSha:${JSON.stringify(fixtureSource)},running:true,
+   status:'ok',liveness:'ok',uptime:process.uptime(),instanceId:'1-1234abcd',
+   maintenance:{active:false,phase:'idle'}}));
  } else if(request.url==='/fixture-delay-close') {
   const busyUntil=Date.now()+25000;
   response.once('finish',()=>setImmediate(()=>{
@@ -411,6 +452,12 @@ require('node:http').createServer((request,response)=>{
     );
     assert.equal(absence, 'listener-absent');
     assert.deepEqual(await fixtureHealth(container, '/fixture-reopen'), healthBefore);
+    const hostEntry = await fixtureNativeEntry(container, fixtureTuple(before), 'success', true);
+    assert.equal(hostEntry.code, 0);
+    assert.equal(hostEntry.intentDurable, true);
+    assert.equal(hostEntry.receiptPresent, true);
+    assert.deepEqual(fixtureTuple(await fixtureInspect()), fixtureTuple(before));
+    assert.deepEqual(await fixtureHealth(container, '/fixture-reopen'), healthBefore);
     const timeoutEntry = await fixtureNativeEntry(
       container,
       fixtureTuple(before),
@@ -432,6 +479,18 @@ require('node:http').createServer((request,response)=>{
       2000
     );
     assert.equal(timeoutAbsence, 'listener-absent');
+    assert.deepEqual(await fixtureHealth(container, '/fixture-reopen'), healthBefore);
+    const hostTimeoutEntry = await fixtureNativeEntry(
+      container,
+      fixtureTuple(before),
+      'deferred-close-timeout',
+      true
+    );
+    assert.equal(hostTimeoutEntry.code, 1);
+    assert.equal(hostTimeoutEntry.intentDurable, true);
+    assert.equal(hostTimeoutEntry.receiptPresent, false);
+    assert.deepEqual(await fixtureHealth(container, '/health', 10000), healthBefore);
+    assert.deepEqual(fixtureTuple(await fixtureInspect()), fixtureTuple(before));
     fixtureVerdict = {
       ok: true,
       skipped: false,
@@ -442,6 +501,8 @@ require('node:http').createServer((request,response)=>{
       gameActions: 0,
       ...entry,
       timeoutEntry,
+      hostTimeoutEntry,
+      hostEntry,
       rawExitSameProcessAlive: true,
       elapsedMs: Date.now() - fixtureStarted,
     };

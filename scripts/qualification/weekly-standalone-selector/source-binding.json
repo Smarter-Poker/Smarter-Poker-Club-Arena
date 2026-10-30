@@ -155,8 +155,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 256928,
-      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1392,5 +1392,16 @@
       "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
     },
     "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation, historical receipt restamp or production adoption inferred."
+  },
+  "rosterCashBatchSourceAudit20261030": {
+    "scope": "Add directly enforced roster cash native source/equivalence/index proof to required accounting shard4. Current CI identity only; preserve all historical financial inputs, assertions and qualification verdicts. No live or financial recertification inferred.",
+    "previousCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
+    }
   }
 }

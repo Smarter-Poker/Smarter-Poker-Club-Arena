@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 256928,
-      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5217,5 +5217,16 @@
     },
     "exactPreviousBytesProvedByRevertingThreeUnitDenominators": true,
     "qualification": "SOURCE_ONLY_UNRUN. No native SQL result, production installation or historical financial receipt is restamped. Required local and protected hosted qualification remain enforced."
+  },
+  "rosterCashBatchSourceAudit20261030": {
+    "scope": "Add roster cash native equivalence/index proof only; preserve historical financial inputs, assertions and qualification verdicts. Current CI identity only, no financial/live certificate.",
+    "previousCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
+    }
   }
 }

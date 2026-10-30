@@ -17,3 +17,13 @@ describe('Arena access errors preserve what is actually known', () => {
       expect(arenaAccessFailure(error)).toBe('service');
   });
 });
+
+it('recognizes the real PostgREST-wrapped browser abort without relaxing server refusals', () => {
+  expect(arenaAccessFailure(new Error('AbortError: signal is aborted without reason'))).toBe(
+    'timeout'
+  );
+  expect(arenaAccessFailure({ message: 'AbortError: The operation was aborted.', code: '' })).toBe(
+    'timeout'
+  );
+  expect(arenaAccessFailure({ message: 'AbortError: refused', code: '42501' })).toBe('service');
+});

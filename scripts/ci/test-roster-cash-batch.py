@@ -83,6 +83,36 @@ def main():
   q((F/'candidate-reader.sql').read_text());assert cash_matrix()==expected
   assert q('SELECT count(*)FROM('+raw+')x JOIN public.ca_club_members_cash_window('+club+','+ids+',x.s,x.e)c ON c.user_id=x.uid WHERE x.expected IS DISTINCT FROM c.cash_net')=='0'
   ok('real_launch_cutoff_exact_finite_predicate_and_stale_generation_rows_excluded')
+  # The installed D2 helper is unchanged. Exercise the exact follow-up prefix
+  # and guards in this same required CI lane, without another workflow/poller.
+  cover=json.loads((F/'cash-fact-cover.json').read_text());cover_sql=(R/cover['migration']).read_text();cover_at=cover_sql.index('BEGIN;');cover_prefix=cover_sql[:cover_at];cover_body=cover_sql[cover_at:];cover_ix=cover['index']
+  # Explicit physical-table access/column adapter: the private fixture carries
+  # the actual projection, not all 73 unrelated production fact columns.
+  q('ALTER TABLE ca_hand_facts ALTER COLUMN played_at SET NOT NULL,ALTER COLUMN net SET NOT NULL;ALTER TABLE ca_hand_facts ENABLE ROW LEVEL SECURITY;GRANT ALL ON ca_hand_facts TO postgres;GRANT SELECT ON ca_hand_facts TO authenticated;GRANT ALL ON ca_hand_facts TO service_role;')
+  q("INSERT INTO ca_hand_facts SELECT md5('cover-decoy-'||g)::uuid,md5('cover-decoy-player-'||(g%100))::uuid,"+club+",md5('cover-decoy-table')::uuid,NULL,'2020-01-01Z','nlh',0,0 FROM generate_series(1,300000)g;")
+  q('VACUUM ANALYZE ca_hand_facts;')
+  projection="SELECT user_id,table_id,hand_id,played_at,club_id,net FROM ca_hand_facts WHERE user_id=ANY("+ids+") AND tournament_id IS NULL AND played_at>=date_trunc('week',(now()AT TIME ZONE'America/Chicago')::date::timestamp)AT TIME ZONE'UTC' AND played_at<date_trunc('week',(now()AT TIME ZONE'America/Chicago')::date::timestamp)AT TIME ZONE'America/Chicago'"
+  projection_hash="SELECT md5(string_agg(to_jsonb(t)::text,''ORDER BY hand_id,user_id))FROM("+projection+")t"
+  before_projection=q(projection_hash);before_cover_money=cash_matrix();old_fact_oid=q("SELECT 'ca_hand_facts_cash_member_time_idx'::regclass::oid")
+  cover_before=js('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+projection)
+  assert not any(n['Node Type']=='Index Only Scan'for n in nodes(cover_before[0]['Plan'])),cover_before
+  q(cover_prefix);q(cover_body);cover_oid=q('SELECT '+lit(cover_ix)+'::regclass::oid');cover_after=js('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+projection)
+  selected=[n for n in nodes(cover_after[0]['Plan'])if n.get('Index Name')==cover_ix]
+  assert selected and all(n['Node Type']=='Index Only Scan'and n['Heap Fetches']==0 for n in selected),cover_after
+  assert q(projection_hash)==before_projection and cash_matrix()==before_cover_money
+  assert q("SELECT 'ca_hand_facts_cash_member_time_idx'::regclass::oid")==old_fact_oid
+  assert q("SELECT md5(pg_get_functiondef('public.ca_club_members_win_loss(uuid,uuid[],text)'::regprocedure))")==cover['reader']
+  assert q("SELECT md5(prosrc)FROM pg_proc WHERE oid='public.ca_club_members_cash_window(uuid,uuid[],date,date)'::regprocedure")==cover['helperBody']
+  plans.extend([cover_before,cover_after]);ok('cash_fact_full_projection_natural_cover_zero_heap_exact_money_and_original_index_preserved')
+  q(cover_prefix);q(cover_body);assert q('SELECT '+lit(cover_ix)+'::regclass::oid')==cover_oid
+  q("BEGIN;SET LOCAL test.frozen='on';"+cover_body,'window_refused')
+  q("BEGIN;SET LOCAL test.source65='off';"+cover_body,'current_source_generation_required')
+  q('BEGIN;GRANT EXECUTE ON FUNCTION public.ca_club_members_cash_window(uuid,uuid[],date,date)TO authenticated;'+cover_body,'installed_reader_changed')
+  q('BEGIN;UPDATE pg_index SET indisvalid=false WHERE indexrelid='+lit(cover_ix)+'::regclass;'+cover_body,'existing_indexes_changed')
+  q('DROP INDEX '+cover_ix+';CREATE INDEX '+cover_ix+' ON ca_hand_facts(played_at,user_id)INCLUDE(table_id,hand_id,club_id,net)WHERE tournament_id IS NULL;')
+  q(cover_body,'exact_valid_prefix_required')
+  q('DROP INDEX '+cover_ix+';');q(cover_prefix);q(cover_body)
+  ok('cash_fact_cover_valid_prefix_keeps_oid_wrong_invalid_source_access_and_freeze_refuse')
   q(body,'helper_exists_or_replay')
   # Revert only the private candidate in the private fixture for admission cases.
   q(reader['definition']+';DROP FUNCTION public.ca_club_members_cash_window(uuid,uuid[],date,date);')

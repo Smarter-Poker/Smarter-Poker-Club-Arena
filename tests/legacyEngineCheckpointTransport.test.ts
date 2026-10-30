@@ -21,6 +21,7 @@ describe('actual isolated legacy checkpoint transport', () => {
     ['success', 'SIGUSR1, cached ESM singleton, one guarded call and same-process closure'],
     ['connection', 'one cleanup-only connection after a real failed initial handshake'],
     ['exception', 'static error reporting without target exception or private result fields'],
+    ['protocol_error', 'a CDP error answer names its operation, method and inspector error'],
     ['timeout', 'unknown nonretryable outcome for a never-settling guarded call'],
     ['early_timeout', 'an early native timer cannot report an unspent request slice as exhausted'],
     ['disconnect', 'unknown outcome and cleanup-only reconnect after in-flight disconnect'],

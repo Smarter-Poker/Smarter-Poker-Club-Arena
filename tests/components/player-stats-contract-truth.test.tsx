@@ -22,6 +22,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
 
+// These page readout contracts exercise read failures and recovery. Private
+// record channel delivery/reconnect is covered by StatsLiveRecords tests.
+vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
+  useMasterBusBroadcastChannel: vi.fn(),
+}));
+
 const EMPTY_OVERALL = {
   pfr: 0,
   vpip: 0,

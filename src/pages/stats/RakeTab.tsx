@@ -32,6 +32,8 @@ export interface RakeTabProps {
   onRetryAgentRoles: () => void;
   isOwnProfile: boolean;
   panelResetKey: string;
+  liveRevision?: number;
+  viewerId?: string;
 }
 
 /**
@@ -56,6 +58,8 @@ export default function RakeTab({
   onRetryAgentRoles,
   isOwnProfile,
   panelResetKey,
+  liveRevision = 0,
+  viewerId,
 }: RakeTabProps) {
   return (
     <>
@@ -162,7 +166,12 @@ export default function RakeTab({
           <Suspense
             fallback={<div className="stats-section-loading">Loading Downline Rake...</div>}
           >
-            <DownlineRakePanel roles={agentRoles} />
+            <DownlineRakePanel
+              key={viewerId}
+              roles={agentRoles}
+              liveRevision={liveRevision}
+              viewerId={viewerId}
+            />
           </Suspense>
         </PanelBoundary>
       )}

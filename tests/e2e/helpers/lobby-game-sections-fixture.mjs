@@ -15,7 +15,7 @@ export async function lobbyGameSectionsFixture() {
             <div className="lobby-controls__heading"><strong className="lobby-controls__title">Find Your Game</strong></div>
             <LobbyGameSections selected={selected} onToggle={s => setSelected(p => p === s ? null : s)} />
             {selected && <div id="lobby-game-section-controls" className="game-bar"><div className="game-bar__types" role="tablist" aria-label="Game Type">
-              {(selected === 'cash' ? ['ALL','NLH','PLO','LIMIT'] : ['MTT','SPINS','HEADS UP']).map(t => <button role="tab" className="game-bar__type" key={t}>{t}</button>)}
+              {(selected === 'cash' ? ['ALL','NLH','PLO','LIMIT'] : ['MTT','SPINS',"SIT N GO'S",'SATELLITES']).map(t => <button role="tab" className="game-bar__type" key={t}>{t}</button>)}
             </div></div>}
           </section></div></div>;
         }

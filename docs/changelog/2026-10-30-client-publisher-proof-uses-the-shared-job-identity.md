@@ -10,6 +10,11 @@ recognizes the exact nested client writer and retained-runtime names. Existing
 gateway role names retain their prior exact matching. Current nested read-only
 preparation is also recognized when a cancelled run never opened a transaction.
 
+Integration preserves PR #8752's three exact publisher-name cases and its
+retention and foreign-prefix refusal coverage. That main change independently
+fixed the original nested writer name; this follow-up shares the maintained
+identity reader and qualifies cancellation before a transaction begins.
+
 Foreign prefixes, multiple logical origin jobs, incomplete retention proofs,
 failed preparation, and transaction callers that started still refuse. Original
 publisher receipt ownership, artifact provenance, origin checks, browser tests,

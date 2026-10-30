@@ -1547,7 +1547,7 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
-          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
       )
     ).toBe(true);
   });
@@ -1616,7 +1616,7 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
-          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
       )
     ).toBe(true);
   });
@@ -2224,7 +2224,7 @@ describe('instruction-only verification preserves source contracts without repla
     expect(ci).toContain("if: steps.compile_scope.outputs.instructions_only != 'true'");
     expect(ci).toContain('npx tsc --noEmit');
     expect(ci).toContain(
-      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
     );
   });
 });

@@ -218,3 +218,23 @@
     transition: none;
   }
 }
+
+/* Keep the directory in the welcome's single dark well. Child surfaces must
+   not terminate the chassis or paint another rectangle behind the plates. */
+@media (max-width: 900px) {
+  .club-home--unified-mobile .club-lobby-frame .club-lobby-command-top__controls,
+  .club-home--unified-mobile .club-lobby-frame .lobby-controls,
+  .club-home--unified-mobile .club-lobby-frame .club-home__games {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .club-home--unified-mobile .club-lobby-frame .club-lobby-command-top__controls {
+    padding: 12px 8px 8px;
+    border-top: 0;
+  }
+
+  .club-home--unified-mobile .club-lobby-frame .lobby-controls__heading {
+    padding: 0 0 8px;
+  }
+}

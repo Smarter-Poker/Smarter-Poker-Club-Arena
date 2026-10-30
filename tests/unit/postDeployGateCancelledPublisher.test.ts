@@ -225,15 +225,58 @@ describe('exact protected transaction publisher display names', () => {
       'Verify the origin serves this bundle',
     ].map((name) => ({ name, status: 'completed', conclusion: 'success' })),
   });
-  it('accepts the real transaction origin proof', () => {
-    const r = runGate([published('production / publish-to-origin')]);
+  it.each([
+    'publish-to-origin',
+    'production / publish-to-origin',
+    'client-publication / production / publish-to-origin',
+  ])('accepts the protected origin proof named %s', (name) => {
+    const r = runGate([published(name)]);
     expect(r.error).toBeNull();
     expect(r.output).toContain('should_run=true');
   });
-  it('accepts the nested client transaction that published run 41071586827', () => {
-    const r = runGate([published('client-publication / production / publish-to-origin')]);
-    expect(r.error).toBeNull();
-    expect(r.output).toContain('should_run=true');
+  it.each(['cancelled', 'failure', 'success', 'unknown'])(
+    'keeps proven web publication independent of the %s run summary',
+    (conclusion) => {
+      const r = runGate([published('production / publish-to-origin')], conclusion);
+      expect(r.error).toBeNull();
+      expect(r.output).toContain('should_run=true');
+    }
+  );
+  it('requires the real nested origin proof step to succeed', () => {
+    const origin = published('client-publication / production / publish-to-origin');
+    origin.steps[2].conclusion = 'failure';
+    const result = runGate([origin]);
+    expect(result.error).not.toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+  it.each(['success', 'failure'])(
+    'reads nested runtime retention without hiding a %s verdict',
+    (conclusion) => {
+      const retained = job('client-publication / production / retain-runtime', conclusion);
+      retained.steps = [
+        'Verify both origins still serve the qualified immutable runtime',
+        'Record qualified retained runtime',
+      ].map((name) => ({ name, status: 'completed', conclusion }));
+      const result = runGate([
+        retained,
+        job('client-publication / production / publish-to-origin', 'skipped'),
+      ]);
+      expect(result.error === null).toBe(conclusion === 'success');
+      expect(result.output.includes('should_run=true')).toBe(conclusion === 'success');
+    }
+  );
+  it('refuses foreign prefixes and ambiguous logical origin proofs', () => {
+    for (const jobs of [
+      [published('foreign / publish-to-origin')],
+      [published('foreign / client-publication / production / publish-to-origin')],
+      [published('client-publication / production / publish-to-origin extra')],
+      [
+        published('production / publish-to-origin'),
+        published('client-publication / production / publish-to-origin'),
+      ],
+      [published('production / publish-to-origin'), published('publish-to-origin')],
+    ])
+      expect(runGate(jobs).error).not.toBeNull();
   });
   it('accepts a nested retained runtime only with both original verification steps', () => {
     const retained = job('client-publication / production / retain-runtime', 'success');
@@ -249,26 +292,6 @@ describe('exact protected transaction publisher display names', () => {
       runGate([{ ...retained, steps: retained.steps.slice(0, 1) }, origin]).error
     ).not.toBeNull();
     expect(runGate([retained, published(origin.name)]).error).not.toBeNull();
-  });
-  it.each(['cancelled', 'failure', 'success', 'unknown'])(
-    'keeps proven web publication independent of the %s run summary',
-    (conclusion) => {
-      const r = runGate([published('production / publish-to-origin')], conclusion);
-      expect(r.error).toBeNull();
-      expect(r.output).toContain('should_run=true');
-    }
-  );
-  it('refuses foreign prefixes and ambiguous logical origin proofs', () => {
-    for (const jobs of [
-      [published('foreign / publish-to-origin')],
-      [published('foreign / client-publication / production / publish-to-origin')],
-      [published('production / publish-to-origin'), published('publish-to-origin')],
-      [
-        published('production / publish-to-origin'),
-        published('client-publication / production / publish-to-origin'),
-      ],
-    ])
-      expect(runGate(jobs).error).not.toBeNull();
   });
 });
 

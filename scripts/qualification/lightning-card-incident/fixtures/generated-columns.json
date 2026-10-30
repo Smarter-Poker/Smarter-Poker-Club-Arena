@@ -1,0 +1,22 @@
+[
+  {
+    "relation": "tables",
+    "attname": "min_buy_in_bb",
+    "attgenerated": "s"
+  },
+  {
+    "relation": "tables",
+    "attname": "max_buy_in_bb",
+    "attgenerated": "s"
+  },
+  {
+    "relation": "tables",
+    "attname": "min_buyin",
+    "attgenerated": "s"
+  },
+  {
+    "relation": "tables",
+    "attname": "max_buyin",
+    "attgenerated": "s"
+  }
+]

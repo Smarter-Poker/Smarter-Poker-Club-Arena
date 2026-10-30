@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 257402,
-      "sha256": "8edbac7595046d6c736c130fc3f86a10009ae5a73212ca40e4fd675a29269974"
+      "bytes": 258144,
+      "sha256": "813b274d9f62ab2ba17e8ffa54d4f2a65cac742eaa54c04034893ad7c8dc3997"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1376,5 +1376,17 @@
       "sha256": "8edbac7595046d6c736c130fc3f86a10009ae5a73212ca40e4fd675a29269974"
     },
     "qualification": "No historical financial qualification or production installation is restamped. Required exact-head hosted checks and actual installation readback remain necessary."
+  },
+  "DssScopeAndReceiptNativeEnforcement20261030": {
+    "scope": "Current CI source identity only: append exact cash-scope and tournament receipt-access native checks within existing full activation shard2. Preserve every existing command, scope, budget, financial assertion and historical result.",
+    "previousCiPin": {
+      "bytes": 257402,
+      "sha256": "8edbac7595046d6c736c130fc3f86a10009ae5a73212ca40e4fd675a29269974"
+    },
+    "currentCiPin": {
+      "bytes": 258144,
+      "sha256": "813b274d9f62ab2ba17e8ffa54d4f2a65cac742eaa54c04034893ad7c8dc3997"
+    },
+    "qualification": "No historical financial qualification, production installation or book closure restamped."
   }
 }

@@ -28,5 +28,16 @@
     "new54822": "16477275b149bb802791e31f0153db074b820565727e4a003368cf3ad756b656",
     "exact_single_required_history_hash_inverse": true,
     "same_function_bodies_ACL_GEN_paid_guards": true
+  },
+  "uninstalled_c9e_receipt_access_delta": {
+    "before_protected_sha256": "ca7016039faab68bce7314c13f8108eb1bf90f71d3ccaa20428819e89a375985",
+    "after_source_sha256": "fcad5568e849ad9f502c37bc0ec78c93313f584e0faa0c0ec0b3bf74a0f9cc22",
+    "old_TQ_md5": "07f4f7e9355ba9d33cfee5b156d5609a",
+    "new_TQ_md5": "c9e08ef6460bc1b9d27af7339f3c42cc",
+    "only_TQ_definition_and_targeted_after_definition_changed": true,
+    "whole_inverse_receipt_CTE_exact": true,
+    "history_NULL_required_before_dispatch": true,
+    "installed_54822_51108_62635_and_frozen_literals_unchanged": true,
+    "public_install_HOLD_until_changed_whole180_PASS": true
   }
 }

@@ -2339,6 +2339,15 @@ jobs:
             2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/build.log"
           bash scripts/dev/test-full-weekly-accounting-activation.sh \
             2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/full-weekly-accounting.log"
+          python3 -B scripts/ci/test-cash-assert-empty-presence-postgres.py \
+            --pg-bin "$PG_BIN" --scratch "$ACCOUNTING_FIXTURE_PARENT" \
+            --out-dir "$ACCOUNTING_TEST_OUTPUT_DIR" \
+            --candidate supabase/migrations/20261030143333_skip_empty_cash_commission_scopes_without_scanning_other_clu.sql \
+            2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/cash-assert-empty-presence.log"
+          python3 -B scripts/ci/test-weekly-quality-receipt-access-postgres.py \
+            --pg-bin "$PG_BIN" --scratch "$ACCOUNTING_FIXTURE_PARENT" \
+            --output "$ACCOUNTING_TEST_OUTPUT_DIR/weekly-quality-receipt-access.json" \
+            2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/weekly-quality-receipt-access.log"
       - name: Cash commissions retain every contributor and exact source identity
         if: matrix.shard == 1
         env:

@@ -237,11 +237,12 @@ describe('start time', () => {
 });
 
 describe('payout structure choice (2026-08-22)', () => {
-  it('MTT choices carry supported depth separately from their provisional creation ladder', () => {
+  it('legacy MTT draft choices normalize to fifteen independently of the provisional ladder', () => {
     for (const [choice, percent] of [
-      ['payout1', 10],
+      ['payout1', 15],
+      ['payout2', 15],
       ['payout3', 15],
-      ['payout20', 20],
+      ['payout20', 15],
     ] as const) {
       const mapped = buildTournamentConfig(
         { ...base, maxPlayersRange: 100, payoutStructure: choice },

@@ -70,7 +70,7 @@ describe('club MTT setup presets reach the creation payload', () => {
       expect(config).toMatchObject({
         buyIn: 10,
         rake: 1,
-        payoutPercent: 12.5,
+        payoutPercent: 15,
         maxPlayers: null,
       });
       expect(config.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
@@ -110,9 +110,8 @@ afterEach(() => {
 });
 
 describe('MTT creation publishes a selected paid field', () => {
-  // Dan 2026-10-21: every MTT pays the top 12.5% by default; a standalone club
-  // may choose any depth (supersedes the 2026-09-20 10-15% ceiling).
-  it('defaults to 12.5 percent and offers every supported depth', () => {
+  // Owner October 29: every new and unfinalized MTT pays fifteen percent.
+  it('defaults to fifteen percent and offers only that depth', () => {
     render(
       <CreateTournamentModal
         clubId="synthetic-club"
@@ -122,37 +121,35 @@ describe('MTT creation publishes a selected paid field', () => {
       />
     );
     const options = within(screen.getByLabelText('Field Paid')).getAllByRole('option');
-    expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual([
-      '12.5',
-      '10',
-      '15',
-      '20',
-    ]);
-    expect((screen.getByLabelText('Field Paid') as HTMLSelectElement).value).toBe('12.5');
+    expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual(['15']);
+    expect((screen.getByLabelText('Field Paid') as HTMLSelectElement).value).toBe('15');
   });
 
-  it.each([12.5, 10, 15, 20])('submits %s percent with a bounded provisional ladder', async (depth) => {
-    const { container } = render(
-      <CreateTournamentModal
-        clubId="synthetic-club"
-        initialFormat="mtt_freezeout"
-        onClose={vi.fn()}
-        onSuccess={vi.fn()}
-      />
-    );
-    const name = screen.getByPlaceholderText('E.G. Saturday Night Turbo');
-    fireEvent.change(name, { target: { value: 'Synthetic Paid Field' } });
-    fireEvent.change(screen.getByLabelText('Field Paid'), { target: { value: String(depth) } });
-    fireEvent.submit(container.querySelector('form')!);
-    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
-    const [club, config] = mocks.create.mock.calls[0];
-    expect(club).toBe('synthetic-club');
-    expect(config.maxPlayers).toBeNull();
-    expect(config.payoutPercent).toBe(depth);
-    expect(config.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
-    expect(JSON.stringify(config.payoutStructure).length).toBeLessThan(100);
-    expect(mocks.error).not.toHaveBeenCalled();
-  });
+  it.each([12.5, 10, 15, 20])(
+    'keeps fifteen percent and a bounded provisional ladder when requested depth is %s',
+    async (depth) => {
+      const { container } = render(
+        <CreateTournamentModal
+          clubId="synthetic-club"
+          initialFormat="mtt_freezeout"
+          onClose={vi.fn()}
+          onSuccess={vi.fn()}
+        />
+      );
+      const name = screen.getByPlaceholderText('E.G. Saturday Night Turbo');
+      fireEvent.change(name, { target: { value: 'Synthetic Paid Field' } });
+      fireEvent.change(screen.getByLabelText('Field Paid'), { target: { value: String(depth) } });
+      fireEvent.submit(container.querySelector('form')!);
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      const [club, config] = mocks.create.mock.calls[0];
+      expect(club).toBe('synthetic-club');
+      expect(config.maxPlayers).toBeNull();
+      expect(config.payoutPercent).toBe(15);
+      expect(config.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
+      expect(JSON.stringify(config.payoutStructure).length).toBeLessThan(100);
+      expect(mocks.error).not.toHaveBeenCalled();
+    }
+  );
 
   it('does not replace the separate Spin prize contract with a paid-field control', () => {
     render(
@@ -403,7 +400,7 @@ describe('club profile selection preserves operator terms', () => {
     expect(schedule.config).toMatchObject({
       startingStack: 1000,
       buyIn: 10,
-      payoutPercent: 12.5,
+      payoutPercent: 15,
       recurrenceCadence: 'weekly',
     });
     expect(schedule.config.startTime).toBeUndefined();

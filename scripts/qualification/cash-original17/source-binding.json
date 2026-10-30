@@ -87,8 +87,8 @@
       "sha256": "e4e050861cd66b668833fff0948a8fcbf0fe0db861e325a6d5f30ec4feed6b15"
     },
     "scripts/ci/test-mtt-unlimited.py": {
-      "bytes": 44548,
-      "sha256": "008f685692694f7bec680bee4d317629fc23210badcce8156f6f04ef06180f98"
+      "bytes": 44960,
+      "sha256": "09a224758539d72c8348d09682ac72a4dce4108800d59a506270fb64fe76e82e"
     },
     "scripts/dev/probe-cash-original17-pg17.sh": {
       "bytes": 1215,
@@ -1400,6 +1400,10 @@
       "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
+  },
+  "mttFifteenPercentQualification20261029": {
+    "reason": "Owner changed all new and unfinalized MTTs to 15%, preserving finalized ladders. Existing required MTT preparation invokes one bounded private PG17 migration/ladder proof before unchanged preparation checks. Only this reviewed test harness pin changes; CI workflow bytes and financial qualification assertions stay unchanged.",
+    "validation": "Actual isolated PostgreSQL 17 source-bound native proof passed; exact-head hosted accounting remains mandatory."
   },
   "privateGatewayShardRouteComposition20261029": {
     "reason": "Preserve both parent audit histories while composing protected-main CSS five-shard and Diamond three-shard required joins, delivery runner routes and native qualification inputs. Only current workflow or derived binding identity changes. Financial SQL, assertions and historical qualification states are unchanged.",

@@ -155,6 +155,7 @@ BEGIN
 END;
 $function$
 ;
+REVOKE ALL ON FUNCTION public.ca_club_members_win_loss(uuid,uuid[],text) FROM PUBLIC,anon;
 DO $post$BEGIN
  IF(SELECT to_jsonb(p)-'prosrc' FROM pg_proc p WHERE p.oid='public.ca_club_members_win_loss(uuid,uuid[],text)'::regprocedure)
   IS DISTINCT FROM(SELECT metadata FROM roster_cash_install_before)

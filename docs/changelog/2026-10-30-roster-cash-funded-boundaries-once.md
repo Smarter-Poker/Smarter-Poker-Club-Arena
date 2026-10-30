@@ -13,12 +13,12 @@ and generation identity, Chicago DST and UTC rollup boundaries, exact money and
 rounding, and the 100 input-slot limit. The helper is private. It refuses stale
 source, replay, incompatible index, freeze and maintenance boundary.
 
-Required accounting shard4 executes isolated PostgreSQL17 equivalence over the
+Required accounting shard 4 executes isolated PostgreSQL 17 equivalence over the
 actual original cash/funding/cutoff/tournament-money/roster readers: 100-member
 four-period totals, 23/25-hour DST, receipt ties/rejoins/latest NULL, source
 fallback, authorization, launch cutoff and atomic refusals. Native auth/scope
 collaborators and maintenance/source65 adapters are explicitly identified.
-Actual tournament-money calls decrease from784 to392 for the four-period cohort.
+Actual tournament-money calls decrease from 784 to 392 for the four-period cohort.
 This qualification does not certify production runtime. Protected merge,
 installation/readback and the full live period-summary request remain required
-before the original57014 cohort can be called fixed.
+before the original 57014 cohort can be called fixed.

@@ -97,7 +97,7 @@ async function openLobby(page: Page, openSection = true) {
   // Either optional welcome can cover a later tab action. Use the original
   // public dismissals, including the shared handler for a delayed Diamond offer.
   await prepareCashLobbyActions(page);
-  await expect(page.getByRole('button', { name: 'CASH GAMES', exact: true })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Cash Games', exact: true })).toBeVisible({
     timeout: 45_000,
   });
   // Then settle that offer here, through its real Not Now and with its whole

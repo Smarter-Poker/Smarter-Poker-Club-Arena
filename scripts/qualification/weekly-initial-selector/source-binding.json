@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 257696,
-      "sha256": "ba69268654c24e3fc50d922e4c246220be69b3ffa179c2a13ee9b65232046b7b"
+      "bytes": 258364,
+      "sha256": "fda6cb73a9e420820faed7d71d7e3fc0be86c9aeb2bc17acd298881f5ab2ad45"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1356,5 +1356,92 @@
       "bytes": 257696,
       "sha256": "ba69268654c24e3fc50d922e4c246220be69b3ffa179c2a13ee9b65232046b7b"
     }
+  },
+  "requiredCiHostedCapacityRecovery20261030": {
+    "review": "Only three required-job runs-on selections gain a closed trusted-repository standard-hosted recovery variable; paid defaults/fork OS fallbacks, all commands, permissions, assertions, budgets, joins and financial states remain unchanged. Current input identity only; no native financial or live qualification restamp. Historical audits preserved.",
+    "changes": [
+      {
+        "section": "files",
+        "file": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 253286,
+          "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+        },
+        "current": {
+          "bytes": 253386,
+          "sha256": "b1a43d06541b38f03a9410fe7eb01421f5049a224abdc8861d3a343e63bed83c"
+        }
+      }
+    ]
+  },
+  "requiredCiProtectedMainIntegration20261030": {
+    "review": "Compose only the closed three-runner selection with protected main current typed Union qualification. Preserve both prior audit histories and all other metadata; update active source identity only, not financial or live qualification.",
+    "changes": [],
+    "workflowComposition": {
+      "path": ".github/workflows/ci.yml",
+      "candidatePrevious": {
+        "bytes": 253386,
+        "sha256": "b1a43d06541b38f03a9410fe7eb01421f5049a224abdc8861d3a343e63bed83c"
+      },
+      "protectedMainPrevious": {
+        "bytes": 253759,
+        "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+      },
+      "current": {
+        "bytes": 253859,
+        "sha256": "bef775286d7da17f0b32dc0567e5916e8688c253e1b3e07eb1b9954aca07e8b6"
+      }
+    }
+  },
+  "channelAdmissionMainComposition20261030": {
+    "scope": "Current source identity after ordinary integration of equivalent protected-main standard-native runner ownership. Preserve both parent audits, historical evidence, financial assertions and qualification states. No financial, installed or live recertification.",
+    "protectedMain": "97bcce289707e58d682d25654a5978a34327bf79",
+    "channelAdmissionParent": "4f49c6517737d755dd6e49f99da79da15af3cf44",
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "rosterFeeWindowIndexSourceAudit20261030": {
+    "scope": "Add the private PG17 100-member tournament-fee physical-index qualification and report to required accounting shard4. Existing financial assertions, matrices, deadlines and historical evidence remain unchanged.",
+    "previousCiPin": {
+      "bytes": 256618,
+      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+    },
+    "currentCiPin": {
+      "bytes": 257286,
+      "sha256": "0fad9d765b095be7f5c6e04ccd7d0cc40d0ce96293c21a341b62a77819e8a7d5"
+    },
+    "qualification": "Current source identity only. No historical certificate, financial verdict or production installation restamped."
+  },
+  "rosterFeeMainIntegrationSourceAudit20261030": {
+    "scope": "Current workflow identity after normal merge of protected main c306ce19153ffe1c4d9d571cacf4e35d6092f427. Retain both independent roster-fee shard4 native qualification and newer client eight-shard diagnostic controls; no historical receipt restamped.",
+    "previousBranchCiPin": {
+      "bytes": 257286,
+      "sha256": "0fad9d765b095be7f5c6e04ccd7d0cc40d0ce96293c21a341b62a77819e8a7d5"
+    },
+    "previousMainCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 257596,
+      "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
+    },
+    "qualification": "Source binding only; protected hosted checks required for integrated head. Roster migration and native seven-case fixture unchanged."
+  },
+  "startedAbortProtectedMainWorkflowComposition20261030": {
+    "scope": "Source identity only after normal composition of native-qualified started-abort enforcement and protected-main roster-fee, channel and hosted-capacity controls. Preserve every historical audit, command, assertion, qualification verdict and installed/live state.",
+    "previousQualifiedAbortCiPin": {
+      "bytes": 257696,
+      "sha256": "ba69268654c24e3fc50d922e4c246220be69b3ffa179c2a13ee9b65232046b7b"
+    },
+    "previousProtectedMainCiPin": {
+      "bytes": 257596,
+      "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
+    },
+    "currentCiPin": {
+      "bytes": 258364,
+      "sha256": "fda6cb73a9e420820faed7d71d7e3fc0be86c9aeb2bc17acd298881f5ab2ad45"
+    },
+    "retainedNativeEvidence": "All91 financial/tool/fixture inputs in abort-native-union-overlay-13 remain byte-identical after rebasing recorded absolute paths to this combined tree; only workflow enforcement composition differs. Protected exact-head checks remain required. No historical financial certificate is restamped."
   }
 }

@@ -1,0 +1,12 @@
+[
+  {
+    "md5": "2bfad412c70b965fd9d2c72b2ad83310",
+    "signature": "fn_freeze_bypass_active()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_freeze_bypass_active()\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE(current_setting('app.freeze_bypass', TRUE), '') = 'on';\n$function$\n"
+  },
+  {
+    "md5": "6addc8752858f6ecbf2dddd8f8742f23",
+    "signature": "smarter_private.weekly_payout_owned_money_write(text)",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.weekly_payout_owned_money_write(p_table text)\n RETURNS boolean\n LANGUAGE sql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n SELECT p_table=ANY(ARRAY['clubs','agents','club_members','chip_ledger','chip_transactions','wallet_transactions','union_wallets','wallets'])\n AND EXISTS(SELECT FROM smarter_private.weekly_payout_owned_transactions c\n  WHERE c.backend_pid=pg_backend_pid() AND c.transaction_id=txid_current()\n   AND smarter_private.weekly_payout_owns_round(c.scope_kind,c.scope_id,c.period_start,c.period_end,c.round_no))\n$function$\n"
+  }
+]

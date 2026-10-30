@@ -102,15 +102,22 @@ test('exact serving engine refuses absent and departed financial club channels',
     await cleanupTemporaryCustomizationAccount(environment, account);
     throw new Error('Reserved target session is missing.');
   }
+  const targetToken = targetSession.access_token;
   const observed: object[] = [];
   try {
     // Browser transport only: no application session or preexisting app socket.
     await page.goto('about:blank');
-    async function open(token: string) {
+    async function open(token: string, join = true) {
       return page.evaluate(
-        async ({ token, club }) => {
+        async ({ token, club, join }) => {
           const scope = window as unknown as {
-            proofSockets: { socket: WebSocket; sync: boolean; pong: number; closed: boolean }[];
+            proofSockets: {
+              socket: WebSocket;
+              sync: boolean;
+              pong: number;
+              closed: boolean;
+              closeCode: number | null;
+            }[];
           };
           scope.proofSockets ||= [];
           const state = {
@@ -118,6 +125,7 @@ test('exact serving engine refuses absent and departed financial club channels',
             sync: false,
             pong: 0,
             closed: false,
+            closeCode: null as number | null,
           };
           const index = scope.proofSockets.push(state) - 1;
           state.socket.onmessage = ({ data }) => {
@@ -127,8 +135,9 @@ test('exact serving engine refuses absent and departed financial club channels',
             if (frame.type === 'CHANNEL_PONG') state.pong++;
             if (frame.type === 'CLUB_PRESENCE_UPDATE' && frame.clubId === club) state.sync = true; // Any private club frame is a leak for a refused subject.
           };
-          state.socket.onclose = () => {
+          state.socket.onclose = (event) => {
             state.closed = true;
+            state.closeCode = event.code;
           };
           await new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -144,24 +153,91 @@ test('exact serving engine refuses absent and departed financial club channels',
               reject(new Error('Channel open failed'));
             };
           });
-          state.socket.send(JSON.stringify({ type: 'JOIN_CLUB', clubId: club }));
-          state.socket.send(
-            JSON.stringify({ type: 'UPDATE_PRESENCE', clubId: club, status: 'online' })
-          );
-          state.socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
+          if (join) {
+            state.socket.send(JSON.stringify({ type: 'JOIN_CLUB', clubId: club }));
+            state.socket.send(
+              JSON.stringify({ type: 'UPDATE_PRESENCE', clubId: club, status: 'online' })
+            );
+          }
+          if (state.socket.readyState === WebSocket.OPEN)
+            state.socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
           return index;
         },
-        { token, club: CLUB }
+        { token, club: CLUB, join }
       );
     }
     async function state(index: number) {
       return page.evaluate((index) => {
         const s = (window as any).proofSockets[index];
-        return { sync: s.sync, pong: s.pong, closed: s.closed };
+        return {
+          sync: s.sync,
+          pong: s.pong,
+          closed: s.closed,
+          closeCode: s.closeCode,
+          readyState: s.socket.readyState,
+        };
       }, index);
     }
     async function close(index: number) {
       await page.evaluate((index) => (window as any).proofSockets[index].socket.close(), index);
+    }
+    async function probeCohort(indices: number[]) {
+      const before = await page.evaluate(
+        (indices) =>
+          indices.map((index) => {
+            const state = (window as any).proofSockets[index];
+            if (state.socket.readyState !== WebSocket.OPEN)
+              throw new Error('Admitted channel retired unexpectedly');
+            const pong = state.pong;
+            state.socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
+            return pong;
+          }),
+        indices
+      );
+      await expect
+        .poll(
+          async () => {
+            const states = await Promise.all(indices.map(state));
+            return states.every(
+              (value, index) =>
+                value.readyState === 1 && !value.closed && value.pong > before[index]
+            );
+          },
+          { timeout: 15_000 }
+        )
+        .toBe(true);
+    }
+    async function admissionCohort() {
+      await engineIdentity();
+      const cohort: number[] = [];
+      let refused: number | undefined;
+      try {
+        for (let index = 0; index < 10; index++)
+          cohort.push(await open(staffLogin.data.session!.access_token, false));
+        await probeCohort(cohort);
+        refused = await open(staffLogin.data.session!.access_token, false);
+        await expect
+          .poll(async () => (await state(refused!)).closed, { timeout: 15_000 })
+          .toBe(true);
+        expect((await state(refused)).closeCode).toBe(4429);
+        await probeCohort(cohort);
+      } finally {
+        for (const index of [...cohort, ...(refused === undefined ? [] : [refused])]) {
+          await close(index);
+          await expect
+            .poll(async () => (await state(index)).closed, { timeout: 15_000 })
+            .toBe(true);
+        }
+      }
+      observed.push({
+        label: 'connection-admission',
+        admitted: 10,
+        liveAfterRefusal: 10,
+        pongVerified: 10,
+        refusedCode: 4429,
+        retired: true,
+      });
+      await engineIdentity();
     }
     async function positiveControl() {
       const i = await open(staffLogin.data.session!.access_token);
@@ -172,7 +248,7 @@ test('exact serving engine refuses absent and departed financial club channels',
     async function negative(label: string) {
       await engineIdentity();
       await positiveControl();
-      const i = await open(targetSession.access_token);
+      const i = await open(targetToken);
       await expect.poll(async () => (await state(i)).pong, { timeout: 15_000 }).toBeGreaterThan(0);
       // This is bounded negative observation, not a protocol denial receipt.
       const until = Date.now() + 5_000;
@@ -187,6 +263,7 @@ test('exact serving engine refuses absent and departed financial club channels',
       await positiveControl();
       await engineIdentity();
     }
+    await admissionCohort();
     expect(await members(account.id)).toHaveLength(0);
     await negative('absent');
     let cachedAt = Date.now();
@@ -200,7 +277,7 @@ test('exact serving engine refuses absent and departed financial club channels',
     expect(active[0].membership_lifecycle_status).toBe('active');
     // A fresh socket does not invalidate the shared negative membership cache.
     await page.waitForTimeout(Math.max(0, cachedAt + CLUB_CACHE_TTL_MS + 1_000 - Date.now()));
-    const activeSocket = await open(targetSession.access_token);
+    const activeSocket = await open(targetToken);
     await expect.poll(async () => (await state(activeSocket)).sync, { timeout: 15_000 }).toBe(true);
     cachedAt = Date.now();
     observed.push({ label: 'active', ...(await state(activeSocket)) });
@@ -243,6 +320,15 @@ test('exact serving engine refuses absent and departed financial club channels',
       await page.evaluate(() => {
         for (const s of (window as any).proofSockets || []) s.socket.close();
       });
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() =>
+              ((window as any).proofSockets || []).every((state: any) => state.closed)
+            ),
+          { timeout: 15_000 }
+        )
+        .toBe(true);
     } catch (error) {
       failures.push(error);
     }

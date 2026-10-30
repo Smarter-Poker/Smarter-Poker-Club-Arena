@@ -7188,7 +7188,7 @@
   "allocated": true,
   "version": "20261030064511",
   "name": "weekly_tournament_quality_uses_bounded_source_and_fee_cover_",
-  "migration_sha256": "e334b085b2b32bfea0323c794908c64b42ae157ce6363d9ac2d84f516b9904b6",
+  "migration_sha256": "d07924602347721d9ea1d5adec7bc3387e7d6d440eadb8f54e2c240ddfc3a5e7",
   "history_metadata": {
     "rollback": null,
     "created_by": null,
@@ -7198,7 +7198,7 @@
     {
       "version": "20261030054822",
       "name": "original_cash_helpers_preserve_genuine_refreshed_weekly_proo",
-      "sha256": "d71475888fdd2b69cb857cc5623a5f2a1760e4558a567769054716892b472b80",
+      "sha256": "2cc84fd0955cca35ed399ca993bd3d1196d0d5dd1e7d3d4372353efe186fff5a",
       "metadata": {
         "rollback": null,
         "created_by": null,

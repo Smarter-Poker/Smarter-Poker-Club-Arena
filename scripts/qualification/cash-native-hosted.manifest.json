@@ -229,8 +229,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 44787,
-      "sha256": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
+      "bytes": 47143,
+      "sha256": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -5417,5 +5417,18 @@
     },
     "execution_performed": false,
     "qualification": "Source identity only, not historical or production recertification. Required final-head checks remain enforced."
+  },
+  "chainedBrowserAdmissionSourceAudit20261030": {
+    "scope": "Current classifier source identity only: discover every maintained chained browser script/config, literal and RegExp matches and configured fixture families. Unknown input admits existing browser checks. All other financial/server/native flags remain unchanged.",
+    "previousClassifierPin": {
+      "bytes": 44787,
+      "sha256": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
+    },
+    "currentClassifierPin": {
+      "bytes": 47143,
+      "sha256": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c"
+    },
+    "execution_performed": false,
+    "qualification": "Source identity only; no historical native or financial result restamped. Final-head required checks remain necessary."
   }
 }

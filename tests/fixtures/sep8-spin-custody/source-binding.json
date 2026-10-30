@@ -36,7 +36,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa",
+    "scripts/ci/classify-ci-changes.mjs": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -97,6 +97,13 @@
     "supabase/migrations/20260918213339_review_bounded_legacy_fee_custody_settlement_lane_callers.sql": "61ffaf5bf15ed33970efed36677fac4341d66f3fdf403fde79efff8744c24e08",
     "tests/fixtures/sep8-spin-custody/qualify-clock-comparison.py": "6e72595bd5ec5f56dbd00a10621e72d5050a7d5d9da98bc48827479e0c1aaa97",
     "supabase/migrations/20260918225150_original_spin_closure_ignores_only_elapsed_clock_metadata.sql": "f4a3660b311d3270e9d0dbec17c33a0d35488dfccc43dc97836dbcd54491a18d"
+  },
+  "chainedBrowserAdmissionSourceAudit20261030": {
+    "scope": "Current classifier source binding only. Chained browser scripts and supported config/fixture inputs now admit their existing browser checks; every financial/server/native classification flag is unchanged.",
+    "previousClassifierSha256": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa",
+    "currentClassifierSha256": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c",
+    "execution_performed": false,
+    "qualification": "No historical financial/native fixture execution or production receipt restamped. Final-head required checks remain necessary."
   },
   "restamp_audit": [
     {

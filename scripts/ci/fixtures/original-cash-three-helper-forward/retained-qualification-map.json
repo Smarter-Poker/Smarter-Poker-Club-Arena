@@ -43,18 +43,26 @@
     "after-TQcf775-three-helper-transition-UNALLOCATED.sql": "79046f5074a76967347b55701bc324486480195d32fc77e1281f9e42c2fc22f5",
     "after-TQba40-three-helper-transition-UNALLOCATED.sql": "a8a952c308aac1d66dd4d472c9c04a76dba6c8f1c9b3cfca105efa491a80ae7c",
     "after-TQba40-expected27.json": "54fa799fa8eadd77a930cdf87da8f732be23910cb223a5a8af4c905462e6f4c6",
-    "expected27.json": "a9b86077cd122bf043342d754fe7bd6f906c3c0ee0a9ddd78ab83594f853def4"
+    "expected27.json": "552fe29218388bb53abb7279d8ee545c7cef584a64d27fc839e8e5cdef8f7b48"
   },
   "obsolete_adapter_do_not_use": "after-TQcf775 superseded by ba40 exact2 rr ANY memberships; retained historicalsource only",
   "native_wrapper_qualification": {
     "status": "PASS_SOURCE_ONLY_NOT_CAPACITY_OR_INSTALL",
-    "result_sha256": "e2765a6a76bcc42702c74447cf3ee88da1efcbe04dbc25ef05f42a0be7f3ecdc",
-    "script_sha256": "4eedd9ef8ce8da60e2ef05186dbb15996722ed68e2e8e60a53e172a846c107ff",
+    "result_sha256": "7d1e4240cf01aaf28d5e12961bf0de7cd4f2e8b62029213109b1b86e66ebb410",
+    "script_sha256": "2e37be11b82c6dc65ac526bb827cb86e07daf903d3d5bdabbfdc94fc6f47bcab",
     "cases": 9,
-    "limits": "GENgate/maintenance/stats history and financial preservation still actual installation pre/post; no fake GEN or financial rows"
+    "limits": "GENgate/maintenance/stats history and financial preservation still actual installation pre/post; no fake GEN or financial rows",
+    "fixture_expected27_sha256": "bf3782b9ccbec3893957a3248bcb517ef04c8928add18de0505da87cef68015b",
+    "actual_corrected_run": "native-original-TQ-nine-SOURCE-CRITICAL.json",
+    "actual_two_source_TQ_critical_predicates_executed": true,
+    "fixture_formatting_only": {
+      "executed_input_sha256": "bf3782b9ccbec3893957a3248bcb517ef04c8928add18de0505da87cef68015b",
+      "current_input_sha256": "552fe29218388bb53abb7279d8ee545c7cef584a64d27fc839e8e5cdef8f7b48",
+      "parsed_all27_before_after_exact_equal": true
+    }
   },
-  "current_allocated_source_sha256": "0ee1d1b5137daceba04863609cb52c4c37b02677a500e049fa2e79d3022a30f6",
-  "inverse_to_prior_protected_source": "restore exact TWO live critical TQ28a\u2192ba40 pins and top comment; historical28a literals unchanged; restores exact7f7 source",
+  "current_allocated_source_sha256": "6e83a4a48bf8e2d3e4f23f8cdd826426b76c3cc175fd409345f8a362cce908e6",
+  "inverse_to_prior_protected_source": "Exact TWO live TQ rows: restore md5 pins28a\u2192ba40 AND metadata.prosrc originala927\u2192ba406830, plus top identifying comment, recovers exact protected7f7; no other metadata or business body change",
   "historical_future_TQ_candidate": {
     "name": "ba40",
     "full_md5": "ba40f5f1f0aedf382134f246e8297e26",

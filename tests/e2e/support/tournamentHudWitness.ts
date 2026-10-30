@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Page } from '@playwright/test';
 import { remainingObservationMs } from './observationDeadline';
+import { readinessReadTimeout } from './readinessReadAdmission';
 import type { TournamentBoardFacts } from './tournamentBoardEnding';
 
 type Row = Record<string, unknown>;
@@ -655,17 +656,23 @@ export async function createHudClockReader() {
     async clocks(
       tableIds: string[],
       levelCapMs: number = MTT_HUD_LEVEL_CAP_MS,
-      qualify: (row: Row, now: number, levelCapMs: number) => HudClock | null = eligibleHudClock
+      qualify: (row: Row, now: number, levelCapMs: number) => HudClock | null = eligibleHudClock,
+      deadline = Infinity
     ): Promise<Map<string, HudClock>> {
       const requestedTableIds = [...new Set(tableIds)];
       const tables = await client
         .from('tables')
         .select('id,tournament_id')
-        .in('id', requestedTableIds);
+        .in('id', requestedTableIds)
+        .abortSignal(AbortSignal.timeout(readinessReadTimeout(deadline)));
       if (tables.error) throw tables.error;
       const ids = [...new Set((tables.data || []).map((row) => row.tournament_id).filter(Boolean))];
       const tournaments = ids.length
-        ? await client.from('tournaments').select(tournamentClockColumns).in('id', ids)
+        ? await client
+            .from('tournaments')
+            .select(tournamentClockColumns)
+            .in('id', ids)
+            .abortSignal(AbortSignal.timeout(readinessReadTimeout(deadline)))
         : { data: [] as Row[], error: null };
       if (tournaments.error) throw tournaments.error;
       const now = Date.now();
@@ -718,13 +725,17 @@ export async function createHudClockReader() {
      * tournament comes back with null fields (classified `unknown`), never
      * with invented ones.
      */
-    async boardFacts(tableIds: string[]): Promise<Map<string, TournamentBoardFacts>> {
+    async boardFacts(
+      tableIds: string[],
+      deadline = Infinity
+    ): Promise<Map<string, TournamentBoardFacts>> {
       const facts = new Map<string, TournamentBoardFacts>();
       if (!tableIds.length) return facts;
       const tables = await client
         .from('tables')
         .select('id,tournament_id,status')
-        .in('id', tableIds);
+        .in('id', tableIds)
+        .abortSignal(AbortSignal.timeout(readinessReadTimeout(deadline)));
       if (tables.error) throw tables.error;
       const tournamentIds = [
         ...new Set((tables.data || []).map((row) => row.tournament_id).filter(Boolean)),
@@ -734,13 +745,15 @@ export async function createHudClockReader() {
             .from('tournaments')
             .select('id,status,current_players,ended_at,blind_level_state')
             .in('id', tournamentIds)
+            .abortSignal(AbortSignal.timeout(readinessReadTimeout(deadline)))
         : { data: [] as Row[], error: null };
       if (tournaments.error) throw tournaments.error;
       const seats = await client
         .from('table_seats')
         .select('table_id,user_id,stack,left_at')
         .in('table_id', tableIds)
-        .is('left_at', null);
+        .is('left_at', null)
+        .abortSignal(AbortSignal.timeout(readinessReadTimeout(deadline)));
       if (seats.error) throw seats.error;
       // AN UNREADABLE ROW IS NOT AN UNKNOWN BOARD (2026-10-15).
       //
@@ -809,7 +822,8 @@ export async function createHudClockReader() {
     },
     async accountClosedBoard(
       start: TournamentBoardFacts,
-      end: TournamentBoardFacts
+      end: TournamentBoardFacts,
+      deadline = Infinity
     ): Promise<TournamentBoardFacts> {
       const ids = start.seatedUserIds ?? [];
       if (
@@ -828,7 +842,8 @@ export async function createHudClockReader() {
         .from('tournament_players')
         .select('user_id,table_id,status,position,eliminated_at,chip_count')
         .eq('tournament_id', start.tournamentId)
-        .in('user_id', ids);
+        .in('user_id', ids)
+        .abortSignal(AbortSignal.timeout(readinessReadTimeout(deadline)));
       if (players.error) throw players.error;
       const destinations = [
         ...new Set(
@@ -842,10 +857,15 @@ export async function createHudClockReader() {
             .in('table_id', destinations)
             .in('user_id', ids)
             .is('left_at', null)
+            .abortSignal(AbortSignal.timeout(readinessReadTimeout(deadline)))
         : { data: [] as Row[], error: null };
       if (seats.error) throw seats.error;
       const tables = destinations.length
-        ? await client.from('tables').select('id,tournament_id,status').in('id', destinations)
+        ? await client
+            .from('tables')
+            .select('id,tournament_id,status')
+            .in('id', destinations)
+            .abortSignal(AbortSignal.timeout(readinessReadTimeout(deadline)))
         : { data: [] as Row[], error: null };
       if (tables.error) throw tables.error;
       const relocatedUserIds: string[] = [];

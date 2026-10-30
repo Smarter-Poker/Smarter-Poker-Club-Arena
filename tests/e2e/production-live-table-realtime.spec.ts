@@ -52,7 +52,7 @@ import {
   SelectionObservationDeadline,
 } from './support/selectionDeadline';
 import { remainingObservationMs } from './support/observationDeadline';
-import { readinessReadCanStart } from './support/readinessReadAdmission';
+import { readinessReadCanStart, readinessReadTimeout } from './support/readinessReadAdmission';
 import { assertInitialTableOwnership, classifyUnsubscribes } from './support/initialTableOwnership';
 import {
   classifyCaseFailure,
@@ -627,18 +627,25 @@ async function selectProgressingTournamentTable(
      running board, and the deepest boards are the least likely to finish
      while the browser is watching. Read the rows; never guess. */
   let lastBoardQualification: Array<Record<string, unknown>> = [];
-  const refineByBoard = async (tables: EngineTableLiveness[]): Promise<EngineTableLiveness[]> => {
+  const refineByBoard = async (
+    tables: EngineTableLiveness[],
+    deadline: number
+  ): Promise<EngineTableLiveness[]> => {
     const fresh = tables.filter((table) => !excluded.has(table.tableId));
     if (options.hudReader && fresh.length > 0) {
       const clocks = await options.hudReader.clocks(
         fresh.map((table) => table.tableId),
         MTT_HUD_LEVEL_CAP_MS,
-        selectableHudClock
+        selectableHudClock,
+        deadline
       );
       return fresh.filter((table) => clocks.has(table.tableId));
     }
     if (!options.boardReader || fresh.length === 0) return fresh;
-    const facts = await options.boardReader.boardFacts(fresh.map((table) => table.tableId));
+    const facts = await options.boardReader.boardFacts(
+      fresh.map((table) => table.tableId),
+      deadline
+    );
     lastBoardQualification = fresh.map((table) => {
       const board = facts.get(table.tableId);
       return {
@@ -739,7 +746,7 @@ async function selectProgressingTournamentTable(
       const healthRead = await readCandidateHealth(deadline);
       return {
         healthRead,
-        baselines: await refineByBoard(readyTables(healthRead.candidates)),
+        baselines: await refineByBoard(readyTables(healthRead.candidates), deadline),
       };
     });
   let initial: Awaited<ReturnType<typeof readinessObservation>>;
@@ -898,20 +905,27 @@ async function selectProgressingTournamentTable(
   const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
   // The fixed budget includes every new durable read and any reselection.
   const progressDeadline = Math.min(options.deadline, Date.now() + pollBudgetMs());
+  // All chained reads share an inner deadline. Leave the poll time to receive
+  // their settled outcome; never launch a fresh 15s request at its boundary.
+  const progressReadDeadline = progressDeadline - 1_000;
   const selection = {
     baselines,
     facts: options.boardReader
-      ? await options.boardReader.boardFacts(baselines.map((table) => table.tableId))
+      ? await options.boardReader.boardFacts(
+          baselines.map((table) => table.tableId),
+          progressReadDeadline
+        )
       : new Map<string, TournamentBoardFacts>(),
     excluded,
     failed: new Set<string>(),
-    deadline: progressDeadline,
+    deadline: progressReadDeadline,
   };
   try {
     await expect
       .poll(
-        () =>
-          operationalPollFailure.attempt(async () => {
+        () => {
+          if (!readinessReadCanStart(progressReadDeadline)) return false;
+          return operationalPollFailure.attempt(async () => {
             const readmitted = await refreshPreNavigationSelection(
               selection,
               options.boardReader,
@@ -925,9 +939,13 @@ async function selectProgressingTournamentTable(
             );
             baselines = selection.baselines;
             if (readmitted) return false;
-            after = await readEngineHealth(request, {
-              candidateTableIds: baselines.map((t) => t.tableId),
-            });
+            after = await readEngineHealth(
+              request,
+              {
+                candidateTableIds: baselines.map((t) => t.tableId),
+              },
+              readinessReadTimeout(progressReadDeadline)
+            );
             for (const baseline of baselines) {
               const sampled = after.tableLiveness.find(
                 (table) => table.tableId === baseline.tableId
@@ -941,9 +959,9 @@ async function selectProgressingTournamentTable(
                 // Fresh proof at acceptance: a board whose finishing hand was that
                 // very hand is an ended board, not a running one.
                 if (options.boardReader) {
-                  const fresh = (await options.boardReader.boardFacts([baseline.tableId])).get(
-                    baseline.tableId
-                  );
+                  const fresh = (
+                    await options.boardReader.boardFacts([baseline.tableId], progressReadDeadline)
+                  ).get(baseline.tableId);
                   if (!selectableWhileRunning(fresh)) {
                     if (
                       !selection.failed.has(baseline.tableId) &&
@@ -954,13 +972,16 @@ async function selectProgressingTournamentTable(
                   }
                   acceptedFacts = fresh ?? null;
                 }
+                if (Date.now() >= progressReadDeadline)
+                  throw new SelectionObservationDeadline(null);
                 beforeTable = baseline;
                 afterTable = current!;
                 return true;
               }
             }
             return false;
-          }),
+          });
+        },
         {
           timeout: Math.max(1, progressDeadline - Date.now()),
           intervals: [2_000, 3_000, 5_000, 5_000],

@@ -133,13 +133,41 @@ describe('authenticated production account preflight', () => {
       timeout: 30_000,
     });
     expect(fixture.page.reload).toHaveBeenCalledWith({
-      waitUntil: 'domcontentloaded',
-      timeout: 60_000,
+      waitUntil: 'commit',
+      timeout: expect.any(Number),
     });
     expect(fixture.decision.getAttribute).toHaveBeenCalledTimes(2);
     expect(fixture.acceptedMarker.waitFor.mock.invocationCallOrder[0]).toBeLessThan(
       fixture.page.reload.mock.invocationCallOrder[0]
     );
+  });
+
+  it('uses the fresh gate after commit even when document readiness would never finish', async () => {
+    const fixture = termsPage(['not_accepted', 'accepted']);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    fixture.page.reload.mockImplementation(async (options: { waitUntil: string }) => {
+      if (options.waitUntil !== 'commit')
+        throw new Error('Unrelated asset blocks DOMContentLoaded');
+      clock.mockReturnValue(11_000);
+    });
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).resolves.toBe(true);
+    expect(fixture.page.reload).toHaveBeenCalledWith({ waitUntil: 'commit', timeout: 60_000 });
+    expect(fixture.decision.waitFor).toHaveBeenLastCalledWith({
+      state: 'attached',
+      timeout: 50_000,
+    });
+    expect(fixture.decision.getAttribute.mock.invocationCallOrder[1]).toBeGreaterThan(
+      fixture.page.reload.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('refuses an accepted old document when the fresh canonical gate is not accepted', async () => {
+    const fixture = termsPage(['not_accepted', 'not_accepted']);
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).rejects.toThrow(
+      'Terms Of Service acceptance appeared to succeed but did not persist.'
+    );
+    expect(fixture.acceptedMarker.waitFor).toHaveBeenCalledOnce();
+    expect(fixture.decision.getAttribute).toHaveBeenCalledTimes(2);
   });
 
   it('does not call a failed Terms write accepted or persist a client-only decision', async () => {

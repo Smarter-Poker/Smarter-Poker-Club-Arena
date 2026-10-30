@@ -57,8 +57,8 @@ test.describe('Player Stats production experience', () => {
   test('published downline pagination survives the initial debounce and resets only for changed search', async ({
     page,
   }, testInfo) => {
-    // Use the lane's existing isolated session. Only these three read responses
-    // are synthetic; authentication and every published JS/CSS asset stay real.
+    // Use the lane's existing isolated session. Ledger reads and their change
+    // detector are synthetic; authentication and published JS/CSS assets stay real.
     const expected = process.env.DOWNLINE_JOURNEY_SHA;
     if (!expected || expected === 'UNKNOWN') {
       const description = await recordNonVerdict(testInfo, {
@@ -149,6 +149,12 @@ test.describe('Player Stats production experience', () => {
             },
           ],
         });
+      } else if (rpc === 'ca_player_stats_pulse' || rpc === 'ca_player_stats_pulse_by_club') {
+        // The synthetic ledger cannot follow this account's live tournament
+        // fingerprint. A real pulse change correctly refreshes the expanded
+        // ledger, independently of the search debounce under test. Keep this
+        // fixture's change input stable; retain the exact request sequence below.
+        await route.fulfill({ json: { pulse: 'isolated-pagination-unchanged' } });
       } else if (rpc === 'fn_agent_downline_rake') {
         const body = request.postDataJSON();
         expect(body.p_club_id).toBe(syntheticClub);

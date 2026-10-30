@@ -3787,6 +3787,19 @@ function v54OpponentProfile(
   }
 }
 
+/**
+ * V61 (2026-10-29): how far a hold'em one-pair river bluff-catch is priced
+ * below its raw read, by the price faced (toCall over the pot it is called
+ * into). Measured over 14 days of NLH review stack-offs: under a fifth of the
+ * pot those calls were about break-even (17-18% won against ~20% needed), at
+ * a quarter to a half they won 21-22% against ~29%, and at a half to a full
+ * pot 14% against ~40%. Zero below a fifth, twelve points from half a pot.
+ */
+export function v61RiverOnePairShade(toCall: number, pot: number): number {
+  if (!(toCall > 0) || !(pot > 0)) return 0;
+  return Math.min(0.12, Math.max(0, (toCall / pot - 0.2) * 0.4));
+}
+
 export class HorseLogic {
   /** Original post-observation boundary, shared with the admitted worker path.
    * The caller owns scope cleanup when it captures before decide(). */
@@ -9665,10 +9678,11 @@ export class HorseLogic {
         exploit.callDownMod <= 1 &&
         cat > 0 &&
         (cat <= 2 || (cat === 3 && pairedBoard)) &&
+        toCall > 0 &&
         pot > 0
       ) {
-        shade61c = Math.min(0.12, 0.06 + 0.12 * Math.min(1, toCall / pot));
-        if (tele15) noteFire('v61_river_one_pair_shade');
+        shade61c = v61RiverOnePairShade(toCall, pot);
+        if (shade61c > 0 && tele15) noteFire('v61_river_one_pair_shade');
       }
       const required =
         potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23 + shade61c;
@@ -10282,8 +10296,10 @@ export class HorseLogic {
         // 20/29/40% the price demands; -1,146,000bb between them. The shade
         // scales with the price and is withheld when the bettor's read says
         // they over-bluff (respect below 1), so a credible bluffer is still
-        // called down. Omaha, multiple boards and bomb pots keep their own
-        // pricing; the committed branch above already owns a stack that is in.
+        // called down. Under a fifth of the pot the measured calls were about
+        // break-even, so the shade starts there and reaches its 12-point cap
+        // at half the pot. Omaha, multiple boards and bomb pots keep their own
+        // pricing; the committed branch above carries the same shade.
         let shade61 = 0;
         if (
           (opts.v61RiverOnePairShade ?? true) !== false &&
@@ -10295,10 +10311,11 @@ export class HorseLogic {
           respect >= 1 &&
           cat > 0 &&
           (cat <= 2 || (cat === 3 && pairedBoard)) &&
+          toCall > 0 &&
           pot > 0
         ) {
-          shade61 = Math.min(0.12, 0.06 + 0.12 * Math.min(1, toCall / pot));
-          if (tele15) noteFire('v61_river_one_pair_shade');
+          shade61 = v61RiverOnePairShade(toCall, pot);
+          if (shade61 > 0 && tele15) noteFire('v61_river_one_pair_shade');
         }
         const v = riverCallVerdict({
           equity: clamp01(eqRead38 - shade61),

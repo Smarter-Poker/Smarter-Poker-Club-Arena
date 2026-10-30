@@ -28,7 +28,9 @@ Single-board Hold'em (not Omaha, short deck, multiple boards or bomb pots),
 facing a river wager, hero holding at most one pair, or two pair that shares
 the board's pair, and no exploit read marking the bettor as an over-bluffer
 (`respect < 1` keeps the unshaded call-down): the equity handed to the MDF
-river verdict drops by `min(0.12, 0.06 + 0.12 x toCall/pot)`, and the committed
+river verdict drops by `min(0.12, max(0, (toCall/pot - 0.2) x 0.4))`: nothing
+under a fifth of the pot, where the measured calls were about break-even, and
+the full twelve points from half a pot, and the committed
 branch (hero bet the river and was raised, or the stack is mostly in) adds the
 same shade to its required equity: after betting the river, one-pair calls of
 the raise won 14-15% at an average price of 0.38 (-178,000bb over the same 14
@@ -38,7 +40,9 @@ bluffer is still called down; the explicit off arm keeps the V38 verdict.
 
 Telemetry receipt `v61_river_one_pair_shade`. Pinned by
 `HorseRiverOnePairShade.test.ts` (shade size, tournament and ace-high
-coverage, sets/two-pair/Omaha excluded, off arm). The exploit-neutrality corpus
-carries the off arm like V57 and V60. This is a measured calibration of the
+coverage, sets/two-pair/Omaha excluded, off arm). The exploit-neutrality corpus,
+the pre-candidate tournament corpus digests and the captured Phase 8 replays
+(review 399839 is itself an overpair paying off a river jam) carry the
+explicit off arm, as V57 and V58 did, so recorded receipts keep their meaning. This is a measured calibration of the
 call price, not a range-model repair (checklist item 13) and not a held-out
 profit certificate; the live re-measure is the same table after activation.

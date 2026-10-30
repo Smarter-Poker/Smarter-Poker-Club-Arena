@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as EvEngine from './HorseEvEngine.js';
-import { HorseLogic } from './HorseLogic.js';
+import { HorseLogic, v61RiverOnePairShade } from './HorseLogic.js';
 import { HorseMind } from './HorseMind.js';
 import { seedFastRandom } from './HorseEval.js';
 import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
@@ -105,6 +105,7 @@ describe('V61: a hold em one-pair river call is shaded against the price', () =>
   });
 
   it('second pair facing a pot-sized river bet is priced 12 points below the unshaded read', () => {
+    // toCall 20 into a pot of 40 after the bet: half the pot, the cap
     const on = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 20), {});
     expect(fires()['v61_river_one_pair_shade']).toBe(1);
     seedFastRandom(0x5eed61);
@@ -135,6 +136,17 @@ describe('V61: a hold em one-pair river call is shaded against the price', () =>
     expect(decide('nlh', '3h3d', 'Qh9d3s7c2c')).toBeUndefined();
     expect(decide('nlh', 'Qs9c', 'Qh9d3s7c2c')).toBeUndefined();
     expect(decide('plo4', '9s8d7h2s', 'Qh9d3s7c2c')).toBeUndefined();
+  });
+});
+
+describe('V61 shade shape', () => {
+  it('is zero under a fifth of the pot and twelve points from half a pot', () => {
+    expect(v61RiverOnePairShade(10, 100)).toBe(0);
+    expect(v61RiverOnePairShade(20, 100)).toBe(0);
+    expect(v61RiverOnePairShade(35, 100)).toBeCloseTo(0.06, 6);
+    expect(v61RiverOnePairShade(50, 100)).toBeCloseTo(0.12, 6);
+    expect(v61RiverOnePairShade(500, 600)).toBeCloseTo(0.12, 6);
+    expect(v61RiverOnePairShade(0, 100)).toBe(0);
   });
 });
 

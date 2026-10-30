@@ -7,6 +7,26 @@ import { isDeepStrictEqual } from 'node:util';
 const CLUB_DATA_PATH = 'clubs/shark-club/data/advanced';
 type ClubDataAccess = 'authorized' | 'restricted';
 
+/** Establish an actual choice before a delayed saved preference can hydrate. */
+async function selectSimpleMode(
+  page: Page,
+  selector: string,
+  controlRole: 'button' | 'radio' = 'button'
+): Promise<void> {
+  const root = page.locator(selector);
+  const attribute = selector.slice(1, -1);
+  await expect(root).toBeVisible({ timeout: 60_000 });
+  // Selecting an already-Simple default is intentionally a no-op in
+  // usePlayerPreference, so it cannot supersede a pending saved Advanced read.
+  // Establish Advanced, then make Simple a genuine user choice.
+  if ((await root.getAttribute(attribute)) !== 'advanced') {
+    await page.getByRole(controlRole, { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
+  }
+  await expect(root).toHaveAttribute(attribute, 'advanced');
+  await page.getByRole(controlRole, { name: 'Simple', exact: true }).click();
+  await expect(root).toHaveAttribute(attribute, 'simple');
+}
+
 interface ObservedPlayerPage {
   rows: Array<{ user_id: string; hands?: number }>;
   next_cursor: Record<string, unknown> | null;
@@ -147,8 +167,7 @@ async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAcc
 
   await expect(workspace).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-page="club-data"]')).toBeVisible();
-  // Modes persist for this actor; select the mode whose behavior we verify.
-  await page.getByRole('button', { name: 'Simple', exact: true }).click();
+  await selectSimpleMode(page, '[data-club-data-mode]');
   await expect(page.locator('[data-club-data-mode="simple"]')).toBeVisible();
   await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
   await expect(page.getByRole('heading', { name: 'Read The Room', exact: true })).toBeVisible();
@@ -644,16 +663,7 @@ test('keeps Cashier, Players and Club Data realtime connected in both modes and 
       page.on('websocket', onSocket);
       try {
         await page.goto(new URL('clubs/shark-club/' + surface.path, base).toString());
-        await expect(page.locator(surface.root)).toBeVisible({ timeout: 60_000 });
-        // The previous surface visit may have saved Advanced. Normalize through
-        // its real control before observing the unchanged two-mode feed proof.
-        if (
-          (await page.locator(surface.root).getAttribute(surface.root.slice(1, -1))) !== 'simple'
-        ) {
-          await page
-            .getByRole(surface.button ? 'button' : 'radio', { name: 'Simple', exact: true })
-            .click();
-        }
+        await selectSimpleMode(page, surface.root, surface.button ? 'button' : 'radio');
         await expect(page.locator(surface.root)).toHaveAttribute(
           surface.root.slice(1, -1),
           'simple',

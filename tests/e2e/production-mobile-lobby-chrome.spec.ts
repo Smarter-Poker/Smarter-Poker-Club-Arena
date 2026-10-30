@@ -12,6 +12,7 @@ import {
   type TemporaryCustomizationAccount,
 } from './support/temporaryCustomizationAccount';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
+import { observeSetupFailure } from './support/setupFailureObservation';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { ensureClubMembership } from './support/ensureClubMembership';
 import { test, expect, devices, type Page, type Frame } from '@playwright/test';
@@ -643,16 +644,42 @@ const preferenceLifecycleTest = test.extend<{ preferenceAccount: TemporaryCustom
     { timeout: 120_000 },
   ],
   page: [
-    async ({ browser, baseURL, preferenceAccount }, provide) => {
+    async ({ browser, baseURL, preferenceAccount }, provide, testInfo) => {
       if (!baseURL) throw new Error('Configured BASE_URL required');
       const owned = await openFreshPreferenceDevice(browser, baseURL, preferenceAccount);
+      // Own contexts do not inherit global setup's passive navigation observer.
+      // Retain evidence for this original attempt without another navigation.
+      const observation = observeSetupFailure(
+        owned.page,
+        baseURL,
+        process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+      );
       try {
-        await owned.page.goto('settings', { waitUntil: 'domcontentloaded' });
-        await ensureAcceptedTerms(owned.page);
-        await ensurePlayableProfile(owned.page);
-        await acknowledgePreferenceWelcome(owned.page);
+        try {
+          await owned.page.goto('settings', { waitUntil: 'domcontentloaded' });
+          observation.stage('terms');
+          await ensureAcceptedTerms(owned.page);
+          observation.stage('profile');
+          await ensurePlayableProfile(owned.page);
+          await acknowledgePreferenceWelcome(owned.page);
+        } catch (error) {
+          try {
+            await testInfo.attach('owned-preference-setup-failure.json', {
+              contentType: 'application/json',
+              body: Buffer.from(JSON.stringify(observation.snapshot())),
+            });
+          } catch (attachmentError) {
+            throw new AggregateError(
+              [error, attachmentError],
+              'Preference setup and evidence attachment failed.'
+            );
+          }
+          throw error;
+        }
+        observation.dispose();
         await provide(owned.page);
       } finally {
+        observation.dispose();
         await owned.context.close();
       }
     },

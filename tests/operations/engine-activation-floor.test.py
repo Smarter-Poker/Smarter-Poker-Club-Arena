@@ -160,11 +160,17 @@ echo CHECKPOINT_MUST_NOT_RUN
         previous = floor.policy(str(self.repo), old_sha, old_sha)
         current = self.owner_record()
         self.assertNotEqual(current['ownerWindowId'], previous['ownerWindowId'])
-        self.assertEqual(current['activationEpoch'], previous['activationEpoch']+19800)
+        # 2026-10-30 13:40 UTC continuation (the :55-break release of the heap
+        # fix, V60, V62 and V61) follows the 00:00 and 05:30 UTC entries.
+        self.assertEqual(current['activationEpoch'], previous['activationEpoch']+49200)
         self.assertEqual(current['expiresEpoch']-current['activationEpoch'], 21600)
         self.assertEqual(current['clientPublicationEpoch'], current['activationEpoch'])
         now = previous['expiresEpoch']+1
         with self.assertRaises(ValueError): floor.check_window(previous, now, now+8400, 'admit')
+        # The old entry is expired while the new one is not yet open: neither
+        # admits. The new one admits from its own activation instant.
+        with self.assertRaises(ValueError): floor.check_window(current, now, now+8400, 'admit')
+        now = current['activationEpoch']
         floor.check_window(current, now, now+8400, 'admit')
         floor.check_window(current, current['activationEpoch'], now+8400, 'publish')
         with self.assertRaises(ValueError): floor.policy(str(self.repo), self.sha, old_sha)
@@ -259,7 +265,19 @@ echo CHECKPOINT_MUST_NOT_RUN
         source=(ROOT/'server/scripts/engine-release-transaction.sh').read_text()
         start=source.index('owner_window_reason() {');end=source.index('\n# The seal and the serving engine',start)
         body=source[start:end]
-        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(r['activationEpoch']+30)+'; }\n'
+        # The selected window may restrict announcements to a Chicago minute
+        # (the :53 notice before the :55 tournament break); evaluate at the
+        # first such instant inside the window rather than at a random minute.
+        windows_doc=json.loads((ROOT/'server/release/owner-maintenance-windows.json').read_text())
+        selected=next(w for w in windows_doc['windows'] if w['id']==r['ownerWindowId'])
+        minutes=selected.get('announceAtChicagoMinutes')
+        from datetime import datetime,timezone
+        from zoneinfo import ZoneInfo
+        now=r['activationEpoch']+30
+        while minutes and datetime.fromtimestamp(now,timezone.utc).astimezone(ZoneInfo('America/Chicago')).minute not in minutes:
+            now+=60
+        self.assertLess(now,r['expiresEpoch'])
+        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(now)+'; }\n'
         env={**os.environ,'REPO_DIR':str(self.repo),'SHA':self.sha,'ACTIVATION_FLOOR_OWNER_WINDOW':r['ownerWindowId']}
         import shlex
         def reason(serving):

@@ -13,7 +13,7 @@
   },
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -646,8 +646,14 @@
     "reason": "Bind the reviewed reserved-identity retirement native-input selector and required shard-4 workflow step. No financial SQL, accounting fixture or existing assertion changes. docs/changelog/2026-09-27-certification-ledger-actors-are-retired.md",
     "files": {
       ".github/workflows/ci.yml": {
-        "bytes": 257143,
-        "sha256": "97ca85489aeb09297577ae2679a0576fb5c53b859b4a18b672012a3297ee1445"
+        "from": {
+          "bytes": 169172,
+          "sha256": "ff9804b704b4b014db45b062fd08a85346dea3a2fe2752e7b19985effbf00062"
+        },
+        "to": {
+          "bytes": 169356,
+          "sha256": "21371771a38937b5d2d2c88408daed34bb168ed27fd6123e70792c3546faca82"
+        }
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "from": {
@@ -4031,7 +4037,7 @@
       "bytes": 239646,
       "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
     },
-    "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
+    "review": "Only accounting job40→50minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
     "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
   },
   "riverPersistenceBudgetIntegration20261027": {

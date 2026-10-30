@@ -577,7 +577,11 @@ describe('the member record survives a failed background refresh', () => {
     await act(async () => options.onPayload?.({}));
   };
   it('keeps the record on screen with a stale banner and no toast', async () => {
-    render(<MemberManagementPage />);
+    // Finish initial scope effects before delivering the authority event. The
+    // heading can paint before the passive effect installs its refresh ref.
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
     // The heading can paint before the resolved-club authority effect settles.
     // Flush pending passive effects before delivering the one-shot event.

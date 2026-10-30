@@ -207,7 +207,9 @@ class ReaderTests(unittest.TestCase):
             return types.SimpleNamespace(returncode=0, stdout=json.dumps(row).encode())
         with patch.object(R, 'bounded_journal', side_effect=journal):
             signs = R.pending_journal(request, unit)
-        self.assertEqual(signs, [{'category': 'certificate_shut', 'observedAtMs': 1791821800000}])
+        # This historical fixture's unquoted key is not Python producer repr.
+        # Preserve its category while retaining unavailable causal details.
+        self.assertEqual(signs, [{'category': 'certificate_shut', 'observedAtMs': 1791821800000, 'details': None}])
         self.assertNotIn('private', json.dumps(signs))
         self.assertIn('_SYSTEMD_INVOCATION_ID=' + '1' * 32, calls[-1])
         self.assertIn('_SYSTEMD_UNIT=' + calls[0][2], calls[-1])
@@ -219,6 +221,151 @@ class ReaderTests(unittest.TestCase):
         row['MESSAGE'] = 'arbitrary private message'
         with patch.object(R, 'bounded_journal', side_effect=journal):
             self.assertEqual(R.pending_journal(request, unit), [])
+
+    def test_pending_certificate_retains_literal_counts_without_private_reason_names(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        template = ('[engine-release-transaction] the restart certificate is shut with %dms of the break left: '
+                    'unparkedTables=%r unparkedReasons=%r handsInFlightTotal=%r\\n')
+        self.assertIn(template, (ROOT / 'server/scripts/engine-release-transaction.sh').read_text())
+        message = template.replace('\\n', '\n') % (296969, 3,
+            {'cards_in_air': 2, 'private player fixture': 1}, 2)
+        row = {'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+               '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+               '__REALTIME_TIMESTAMP': '1793318108736000', 'MESSAGE': message.rstrip('\n')}
+        with patch.object(R, 'bounded_journal', return_value=types.SimpleNamespace(returncode=0, stdout=json.dumps(row).encode())):
+            signs = R.pending_journal(request, unit)
+        self.assertEqual(signs[0]['details'][:3], [296969, 3, 2])
+        self.assertEqual(signs[0]['details'][3][R.PENDING_REASON_ORDER.index('cards_in_air')], 2)
+        self.assertEqual(signs[0]['details'][3][-1], 1)
+        self.assertNotIn('private', json.dumps(signs))
+        R.validate_pending_signs(signs)
+
+    def test_pending_legacy_intent_absence_is_a_read_not_retry_authority(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        directory = self.root / 'engine-release-requests'; directory.mkdir()
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            summary, binding = R.pending_legacy_intent(request, fd, 'b' * 40)
+            self.assertEqual(summary, {'status': 'absent_at_read', 'code': None})
+            self.assertIsNone(binding)
+            path = directory / (request['runKey'] + '.legacy-checkpoint-intent')
+            value = {'instance': '1-12345678', 'container': 'c' * 64,
+                     'startedAt': '2026-10-29T23:10:28.589Z', 'hostPid': 1234,
+                     'source': R.EED, 'runId': request['runKey'], 'controlSha': 'b' * 40,
+                     'at': 1793318108, 'retryAllowed': False}
+            path.write_text(json.dumps(value)); path.chmod(0o600)
+            summary, binding = R.pending_legacy_intent(request, fd, 'b' * 40)
+            self.assertEqual(summary, {'status': 'bound_at_read', 'code': None})
+            self.assertIsNotNone(binding)
+            self.assertNotIn('1234', json.dumps(summary))
+            self.assertEqual(R.pending_legacy_intent(request, fd, 'd' * 40)[0],
+                             {'status': 'unknown', 'code': 'binding_refused'})
+            path.unlink(); path.symlink_to(self.window)
+            self.assertEqual(R.pending_legacy_intent(request, fd, 'b' * 40)[0],
+                             {'status': 'unknown', 'code': 'evidence_unavailable'})
+        finally:
+            os.close(fd)
+
+    def test_pending_literal_categories_counts_and_unknown_details_are_closed(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        cases = [
+            ('[engine-release-transaction] the restart certificate is also shut: unparkedTables=None unparkedReasons=None', 'certificate_also_shut', [None, None, None, None]),
+            ('[engine-release-transaction] the durable table break has 284999ms remaining, below the 285000ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate', 'candidate_budget_missed', [284999, 285000]),
+            ('[engine-release-transaction] the locked table break has 244999ms remaining, below the 245000ms candidate-and-recovery budget; waiting for a later certificate', 'locked_budget_missed', [244999, 245000]),
+            ('[engine-release-transaction] prove_rollback_readiness took 11000ms of the 15000ms entry allowance inside the 40s legacy checkpoint budget', 'rollback_readiness_completed', [11000, 15000, 40]),
+            ('[engine-release-transaction] FATAL: legacy checkpoint did not retain the full restart certificate and 245000ms legacy reserve (240000ms remaining, certificate rc 2)', 'rollback_certificate_lost', [245000, 240000, 2]),
+            ('[engine-release-inflight-hands] weekly payout owns the boundary; refusing cutover', 'weekly_owner_active', None),
+            ('[engine-release-inflight-hands] UNKNOWN: private exception fixture', 'inflight_evidence_unavailable', None),
+            ('[engine-release-transaction] FATAL: could not acquire the engine mutation lock for maintenance cutover', 'mutation_lock_unavailable', None),
+            ('[engine-release-transaction] FATAL: deadline expired before maintenance cutover', 'mutation_lock_deadline', None),
+            ('[engine-release-inflight-hands] 3 hand(s) in the air within 120s - refusing the cutover:', 'hands_in_air', [3, 120]),
+        ]
+        for message, category, details in cases:
+            with self.subTest(category=category):
+                row = {'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+                       '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+                       '__REALTIME_TIMESTAMP': '1793318108736000', 'MESSAGE': message}
+                with patch.object(R, 'bounded_journal', return_value=types.SimpleNamespace(returncode=0, stdout=json.dumps(row).encode())):
+                    signs = R.pending_journal(request, unit)
+                self.assertEqual(signs, [{'category': category, 'observedAtMs': 1793318108736, 'details': details}])
+                R.validate_pending_signs(signs)
+                self.assertNotIn('private', json.dumps(signs))
+        prefix = '[engine-release-transaction] the restart certificate is shut with 299000ms of the break left: '
+        for reasons in ["{'cards_in_air': True}", "{'cards_in_air': -1}",
+                        "{'cards_in_air': 1, 'cards_in_air': 2}",
+                        "__import__('os').system('private')", "{'cards_in_air': [1]}"]:
+            self.assertIsNone(R.pending_certificate_details(prefix + 'unparkedTables=1 unparkedReasons=' + reasons + ' handsInFlightTotal=0'))
+        for details in [[299000, 1, True, None], [299000, 1, 0, [1]],
+                        [299000, 1, 0, [-1] * (len(R.PENDING_REASON_ORDER) + 1)]]:
+            with self.assertRaises(ValueError):
+                R.validate_pending_signs([{'category': 'certificate_shut', 'observedAtMs': 1793318108736, 'details': details}])
+
+    def test_pending_optional_intent_changes_never_bypass_request_or_unit_rechecks(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        directory = self.root / 'engine-release-requests'; directory.mkdir()
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        for suffix in ('.request', '.intent'):
+            path = directory / (request['runKey'] + suffix)
+            path.write_text('\n'.join(rows) + '\n'); path.chmod(0o600)
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        absent = ({'status': 'absent_at_read', 'code': None}, None)
+        bound = ({'status': 'bound_at_read', 'code': None}, 'private binding')
+        with patch.object(R, 'pending_unit', return_value=unit) as unit_reads, \
+                patch.object(R, 'read_lines', wraps=R.read_lines) as file_reads, \
+                patch.object(R, 'pending_journal', side_effect=ValueError('private journal')), \
+                patch.object(R, 'pending_legacy_intent', side_effect=[absent, bound]):
+            answer = R.remote(request)
+        self.assertEqual(unit_reads.call_count, 2)
+        self.assertEqual(file_reads.call_count, 8)
+        self.assertEqual(answer['legacyIntent'], {'status': 'unknown', 'code': 'changed_during_read'})
+        self.assertIsNone(answer['journalSigns'])
+        self.assertEqual(R.validate_reply(answer, request), answer)
+        self.assertNotIn('private', json.dumps(answer))
+        for mutation in [{'legacyIntent': {'status': 'absent_at_read', 'code': 'never_entered'}},
+                         {'legacyIntent': {'status': 'bound_at_read', 'code': None, 'hostPid': 1}},
+                         {'schema': 'existing-release-pending-observation/v2'}]:
+            with self.assertRaises(ValueError): R.validate_reply({**answer, **mutation}, request)
+
+    def test_pending_native_selector_retains_early_counts_despite_late_budget_noise(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        early = ('[engine-release-transaction] the restart certificate is shut with 296969ms of the break left: '
+                 "unparkedTables=1 unparkedReasons={'cards_in_air': 1} handsInFlightTotal=1")
+        late = "[engine-release-transaction] the restart certificate is also shut: unparkedTables=1 unparkedReasons={'cards_in_air': 1}"
+        messages = [early] + [late] * 20
+        def journal(args):
+            # Exercise the actual fixed ERE with native grep, then the same
+            # latest-N selection as journalctl. No systemd/host read occurs.
+            pattern = next(arg.removeprefix('--grep=') for arg in args if arg.startswith('--grep='))
+            selected = subprocess.run(['grep', '-E', pattern], input='\n'.join(messages) + '\n',
+                                      capture_output=True, text=True, timeout=2, check=True).stdout.splitlines()
+            limit = int(next(arg.removeprefix('--lines=') for arg in args if arg.startswith('--lines=')))
+            self.assertEqual(limit, 12)
+            rows = [{'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+                     '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+                     '__REALTIME_TIMESTAMP': str(1793318108736000 + ordinal * 1000), 'MESSAGE': message}
+                    for ordinal, message in enumerate(selected[-limit:])]
+            return types.SimpleNamespace(returncode=0, stdout='\n'.join(json.dumps(row) for row in rows).encode())
+        with patch.object(R, 'bounded_journal', side_effect=journal):
+            signs = R.pending_journal(request, unit)
+        self.assertEqual([sign['category'] for sign in signs], ['certificate_shut'])
+        self.assertEqual(signs[0]['details'][:3], [296969, 1, 1])
+
+    def test_pending_twelve_causal_signs_fit_unchanged_transport_on_realistic_full_counts(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        signs = [{'category': 'certificate_shut', 'observedAtMs': 1793318108736,
+                  'details': [299999, 1000, 1000, [1000] * (len(R.PENDING_REASON_ORDER) + 1)]} for _ in range(12)]
+        answer = R.pending_observation(request, rows, rows, [REQUEST['releaseSha']], None, unit, signs)
+        self.assertLessEqual(len(json.dumps(answer).encode()), 4096)
+        self.assertEqual(R.validate_reply(answer, request), answer)
 
     def test_pending_native_files_refuse_links_fifo_changed_and_oversized_bytes(self):
         fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)

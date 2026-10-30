@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explicit read of one completed release's existing recovery reservation."""
 import base64
+import ast
 import datetime
 import hashlib
 import json
@@ -370,9 +371,113 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v2'
+PENDING_SCHEMA = 'existing-release-pending-observation/v3'
 PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
-                      'locked_budget_missed', 'legacy_entry_deferred'}
+                      'locked_budget_missed', 'legacy_entry_deferred',
+                      'certificate_also_shut', 'rollback_readiness_completed',
+                      'rollback_certificate_lost', 'weekly_owner_active',
+                      'inflight_evidence_unavailable', 'mutation_lock_unavailable',
+                      'mutation_lock_deadline', 'hands_in_air'}
+# Compact, closed v3 certificate tuple: [remainingMs, unparkedTables,
+# handsInFlightTotal, reasonCounts]. reasonCounts follows this order, with
+# one final count of UNRECOGNIZED KEYS; private/future names never leave host.
+# None retains original None/absent fields. A None details tuple means the
+# literal's details could not be qualified, never an empty or quiet gate.
+PENDING_REASON_ORDER = (
+    'f06_preparation_unresolved', 'f06_preparation_stuck', 'cards_in_air',
+    'accounting_unconfirmed', 'accounting_pending', 'bank_park_write_incomplete',
+    'stopped_bank_custody_unreadable', 'stopped_bank_custody_unwritten',
+    'stopped_bank_custody_unconfirmed', 'stopped_bank_custody_stuck', 'unknown',
+    'time_bank_accounting_pending', 'time_bank_accounting_unconfirmed',
+    'live_time_banks_retained', 'hand_preparation_pending',
+)
+
+
+def pending_integer(value):
+    return type(value) is int and 0 <= value <= 9007199254740991
+
+
+def pending_reason_counts(text):
+    tree = ast.parse(text, mode='eval').body
+    if isinstance(tree, ast.Constant) and tree.value is None:
+        return None
+    if not isinstance(tree, ast.Dict) or len(tree.keys) > 32:
+        raise ValueError('Pending literal reasons refused')
+    keys = [ast.literal_eval(key) for key in tree.keys]
+    values = [ast.literal_eval(value) for value in tree.values]
+    if (any(type(key) is not str for key in keys) or len(set(keys)) != len(keys)
+            or any(not pending_integer(value) for value in values)):
+        raise ValueError('Pending literal reasons refused')
+    counts = dict(zip(keys, values))
+    return [counts.get(key, 0) for key in PENDING_REASON_ORDER] + [
+        sum(key not in PENDING_REASON_ORDER for key in keys)]
+
+
+def pending_certificate_details(message, also=False):
+    prefix = r'\[engine-release-transaction\] the restart certificate is '
+    pattern = (prefix + r'also shut: unparkedTables=(None|[0-9]+) unparkedReasons=(.+)'
+               if also else prefix + r'shut with ([0-9]+)ms of the break left: '
+               r'unparkedTables=(None|[0-9]+) unparkedReasons=(.+) handsInFlightTotal=(None|[0-9]+)')
+    match = re.fullmatch(pattern, message)
+    if not match:
+        return None
+    try:
+        remaining, unparked, reasons, hands = ((None, *match.groups(), None)
+                                              if also else match.groups())
+        scalar = lambda value: None if value in (None, 'None') else int(value)
+        result = [scalar(remaining), scalar(unparked), scalar(hands), pending_reason_counts(reasons)]
+        validate_pending_details('certificate_also_shut' if also else 'certificate_shut', result)
+        return result
+    except (SyntaxError, ValueError, TypeError, RecursionError):
+        return None
+
+
+def validate_pending_details(category, details):
+    if details is None:
+        return
+    if not isinstance(details, list):
+        raise ValueError('Pending details refused')
+    if category in {'certificate_shut', 'certificate_also_shut'}:
+        if (len(details) != 4 or any(value is not None and not pending_integer(value) for value in details[:3])
+                or (category == 'certificate_shut' and details[0] is None)
+                or (category == 'certificate_also_shut' and (details[0] is not None or details[2] is not None))):
+            raise ValueError('Pending certificate details refused')
+        reasons = details[3]
+        if reasons is not None and (not isinstance(reasons, list)
+                or len(reasons) != len(PENDING_REASON_ORDER) + 1
+                or any(not pending_integer(value) for value in reasons)):
+            raise ValueError('Pending reason counts refused')
+        return
+    lengths = {'candidate_budget_missed': 2, 'locked_budget_missed': 2,
+               'rollback_readiness_completed': 3, 'rollback_certificate_lost': 3,
+               'hands_in_air': 2}
+    if category not in lengths or len(details) != lengths[category] or any(not pending_integer(value) for value in details):
+        raise ValueError('Pending numeric details refused')
+
+
+def pending_legacy_intent(request, directory, control):
+    # Only an exact-file ENOENT is absence AT THESE READS. Never permission to
+    # retry a one-shot or proof that it did not exist earlier. No native probe.
+    try:
+        value = inspector_intent(request, directory)
+    except FileNotFoundError:
+        return {'status': 'absent_at_read', 'code': None}, None
+    except (OSError, ValueError, UnicodeError):
+        return {'status': 'unknown', 'code': 'evidence_unavailable'}, None
+    if value['controlSha'] != control:
+        return {'status': 'unknown', 'code': 'binding_refused'}, None
+    return {'status': 'bound_at_read', 'code': None}, json.dumps(value, sort_keys=True)
+
+
+def validate_pending_intent(value):
+    if (not isinstance(value, dict) or set(value) != {'status', 'code'}
+            or not isinstance(value['status'], str)
+            or (value['code'] is not None and not isinstance(value['code'], str))
+            or (value['status'], value['code']) not in {
+                ('absent_at_read', None), ('bound_at_read', None),
+                ('unknown', 'not_read'), ('unknown', 'evidence_unavailable'),
+                ('unknown', 'binding_refused'), ('unknown', 'changed_during_read')}):
+        raise ValueError('Pending intent export refused')
 
 
 def read_lines(directory_fd, name, optional=False):
@@ -431,7 +536,9 @@ def pending_journal(request, unit):
     name = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
     reply = bounded_journal(['journalctl', '--no-pager', '--output=json', '--lines=12',
         '--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID,_SYSTEMD_UNIT,__REALTIME_TIMESTAMP',
-        '--grep=^\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit)',
+        # Below-budget "also shut" chatter must not evict the early causal
+        # refusal from the existing twelve-row selection. Absence stays unknown.
+        '--grep=^(\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
         '_SYSTEMD_INVOCATION_ID=' + invocation, '_SYSTEMD_UNIT=' + name])
     if reply.returncode:
         raise ValueError('Pending journal unavailable')
@@ -447,10 +554,15 @@ def pending_journal(request, unit):
                 or not isinstance(message, str) or len(message) > 2048):
             raise ValueError('Pending journal shape refused')
         category = None
+        details = None
         # Literal producer prefixes in engine-release-transaction.sh. Unknown
         # messages remain unknown; their text never leaves the host.
         if message.startswith('[engine-release-transaction] the restart certificate is shut with '):
             category = 'certificate_shut'
+            details = pending_certificate_details(message)
+        elif message.startswith('[engine-release-transaction] the restart certificate is also shut: '):
+            category = 'certificate_also_shut'
+            details = pending_certificate_details(message, also=True)
         elif (message.startswith('[engine-release-transaction] the durable table break has ')
               and message.endswith('candidate-and-recovery budget; refusing before mutation and waiting for a later certificate')):
             category = 'candidate_budget_missed'
@@ -459,8 +571,33 @@ def pending_journal(request, unit):
             category = 'locked_budget_missed'
         elif message == '[engine-release-transaction] the legacy checkpoint entry did not fit inside this break and nothing was attempted; waiting for a later certificate':
             category = 'legacy_entry_deferred'
+        elif message == '[engine-release-inflight-hands] weekly payout owns the boundary; refusing cutover':
+            category = 'weekly_owner_active'
+        elif message.startswith('[engine-release-inflight-hands] UNKNOWN: '):
+            category = 'inflight_evidence_unavailable'
+        elif message == '[engine-release-transaction] FATAL: could not acquire the engine mutation lock for maintenance cutover':
+            category = 'mutation_lock_unavailable'
+        elif message == '[engine-release-transaction] FATAL: deadline expired before maintenance cutover':
+            category = 'mutation_lock_deadline'
+        numeric = [
+            ('candidate_budget_missed', r'\[engine-release-transaction\] the durable table break has ([0-9]+)ms remaining, below the ([0-9]+)ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate'),
+            ('locked_budget_missed', r'\[engine-release-transaction\] the locked table break has ([0-9]+)ms remaining, below the ([0-9]+)ms candidate-and-recovery budget; waiting for a later certificate'),
+            ('rollback_readiness_completed', r'\[engine-release-transaction\] prove_rollback_readiness took ([0-9]+)ms of the ([0-9]+)ms entry allowance inside the ([0-9]+)s legacy checkpoint budget'),
+            ('rollback_certificate_lost', r'\[engine-release-transaction\] FATAL: legacy checkpoint did not retain the full restart certificate and ([0-9]+)ms legacy reserve \(([0-9]+)ms remaining, certificate rc ([0-9]+)\)'),
+            ('hands_in_air', r'\[engine-release-inflight-hands\] ([0-9]+) hand\(s\) in the air within ([0-9]+)s - refusing the cutover:'),
+        ]
+        for candidate, pattern in numeric:
+            match = re.fullmatch(pattern, message)
+            if match:
+                category = candidate
+                details = [int(value) for value in match.groups()]
+                try:
+                    validate_pending_details(category, details)
+                except ValueError:
+                    details = None
+                break
         if category:
-            sign = {'category': category, 'observedAtMs': int(stamp) // 1000}
+            sign = {'category': category, 'observedAtMs': int(stamp) // 1000, 'details': details}
             timestamp(sign['observedAtMs'])
             signs.append(sign)
     return signs
@@ -490,14 +627,17 @@ def pending_metadata(request, rows, intent, marker, deadline):
     return rows[4], stamp, break_deadline
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None):
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
     validate_pending_journal(signs, journal_failure)
+    legacy_intent = legacy_intent if legacy_intent is not None else {'status': 'unknown', 'code': 'not_read'}
+    validate_pending_intent(legacy_intent)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
         'unit': unit, 'journalSigns': signs,
+        'legacyIntent': legacy_intent,
         'journalStatus': 'unavailable' if journal_failure else 'observed',
         'journalFailure': journal_failure,
         'absenceMeans': 'unknown; bounded latest journal rows do not prove absence'}
@@ -518,10 +658,12 @@ def validate_pending_signs(signs):
     if not isinstance(signs, list) or len(signs) > 12:
         raise ValueError('Pending signs refused')
     for sign in signs:
-        if (not isinstance(sign, dict) or set(sign) != {'category', 'observedAtMs'}
+        if (not isinstance(sign, dict) or set(sign) != {'category', 'observedAtMs', 'details'}
+                or not isinstance(sign['category'], str)
                 or sign['category'] not in PENDING_CATEGORIES):
             raise ValueError('Pending sign refused')
         timestamp(sign['observedAtMs'])
+        validate_pending_details(sign['category'], sign['details'])
 
 
 def pending_stage(stage, read):
@@ -554,6 +696,7 @@ def pending_remote(request, root_fd):
         before = pending_stage('request_read', read)
         pending_stage('request_binding', lambda: pending_metadata(request, *before))
         unit = pending_stage('unit', lambda: pending_unit(request))
+        legacy_intent, legacy_binding = pending_legacy_intent(request, directory, before[0][4])
         journal_failure = None
         try:
             signs = pending_stage('journal', lambda: pending_journal(request, unit))
@@ -562,11 +705,13 @@ def pending_remote(request, root_fd):
                 raise
             signs = None
             journal_failure = {'phase': error.phase, 'code': error.code}
+        if (legacy_intent, legacy_binding) != pending_legacy_intent(request, directory, before[0][4]):
+            legacy_intent = {'status': 'unknown', 'code': 'changed_during_read'}
         if before != pending_stage('recheck_requests', read):
             raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
         if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
             raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
-        return pending_observation(request, *before, unit, signs, journal_failure)
+        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent)
     finally:
         os.close(directory)
 
@@ -940,7 +1085,7 @@ def validate_reply(value, request):
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -954,6 +1099,7 @@ def validate_reply(value, request):
                 raise ValueError('Pending exported deadline refused')
             timestamp(value[key] * 1000)
         validate_pending_unit(value['unit'])
+        validate_pending_intent(value['legacyIntent'])
         validate_pending_journal(value['journalSigns'], value['journalFailure'])
         if value['journalStatus'] != ('observed' if value['journalFailure'] is None else 'unavailable'):
             raise ValueError('Pending journal status refused')

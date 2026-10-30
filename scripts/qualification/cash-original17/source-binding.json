@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 251814,
-      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -1431,5 +1431,16 @@
       "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states, verdicts and historical source audits are preserved."
+  },
+  "installedTournamentSqlRecording20261030": {
+    "reason": "Add existing qualified certification club-scope concurrency and business regressions to accounting shard4 while recording two already-installed outage migrations. All existing financial commands, assertions, budgets, matrices, historical audits and qualification states remain unchanged. Current workflow source identity only; no financial recertification or production installation.",
+    "previous": {
+      "bytes": 251814,
+      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+    },
+    "current": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    }
   }
 }

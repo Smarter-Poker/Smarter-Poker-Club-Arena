@@ -40,6 +40,7 @@ TERMINAL_TABLE_GUARD_FIXTURE = _terminal_guard_source[
     _terminal_guard_source.index('-- Hand stack settlement', _terminal_guard_source.index('CREATE OR REPLACE FUNCTION public.fn_tournament_table_terminal_close_is_irreversible()'))
 ]
 parser = argparse.ArgumentParser()
+parser.add_argument('--certification-club-scope', action='store_true')
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/club-welcome-package-postgres')
 args = parser.parse_args()
 out = args.output.resolve(); out.mkdir(parents=True, exist_ok=False)
@@ -823,6 +824,19 @@ SELECT count(*),(SELECT count(*) FROM smarter_private.ca_welcome_certification_t
   FROM tables WHERE id='00000000-0000-4000-b000-000000000002';
 COMMIT;
 """,'1|1\n0|0')
+    if args.certification_club_scope:
+        definitions = json.loads((ROOT / 'scripts/ci/fixtures/certification-club-lock-scope/preimages.json').read_text())
+        run('scope-add-current-club-lifecycle', "ALTER TABLE clubs ADD COLUMN lifecycle_status text DEFAULT 'active';")
+        for signature, definition in definitions.items():
+            run('scope-preimage-' + signature.split('(')[0].split('.')[-1],
+                definition + '; REVOKE ALL ON FUNCTION ' + signature + ' FROM PUBLIC,anon,authenticated,service_role;')
+        run('install-certification-club-scope', (ROOT / 'supabase/migrations/20261029193107_certification_cleanup_locks_only_its_own_club_graph.sql').read_text())
+        for table in ['cash_games','tournament_schedules','tables','tournaments','table_seats',
+                      'tournament_players','tournament_escrow','club_members','spin_bonus_pools',
+                      'bbj_pools','managed_game_schedules','tournament_schedule_spawns',
+                      'club_welcome_entitlements','club_welcome_package_items','wheel_configs',
+                      'wheel_pools','diamond_game_configs','diamond_game_pools']:
+            run('scope-writer-' + table, f'CREATE TRIGGER scope_retired_club_guard BEFORE INSERT OR UPDATE OR DELETE ON {table} FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation();')
     owner1='00000000-0000-4000-8000-000000000001'; owner2='00000000-0000-4000-8000-000000000002'
     c1='00000000-0000-4000-9000-000000000001'; c2='00000000-0000-4000-9000-000000000002'; c3='00000000-0000-4000-9000-000000000003'
     owner3='00000000-0000-4000-8000-000000000003'; c4='00000000-0000-4000-9000-000000000004'

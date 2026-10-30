@@ -150,6 +150,31 @@ describe('the real script, end to end', () => {
     );
   });
 
+  it.each(mttDepthFiles)(
+    'refuses the fifteen-percent target before exact policy installation %s',
+    async (file) => {
+      const dir = mkdtempSync(join(tmpdir(), 'mtt-depth-doors-'));
+      try {
+        const names = join(dir, 'names.json');
+        const rows = join(dir, 'history.json');
+        writeFileSync(names, JSON.stringify(targetFunctionNames(await load())));
+        writeFileSync(
+          rows,
+          JSON.stringify(targetHistory().filter((row) => row.version !== file.slice(0, 14)))
+        );
+        const result = runScript({
+          ENGINE_DOORS_LIVE_FIXTURE: names,
+          ENGINE_DOORS_MIGRATIONS_FIXTURE: rows,
+        });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain(file.slice(0, 14));
+        expect(result.stdout).toContain('must have exactly the target migration name');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
+
   it('a rollback is reported, never blocked', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'engine-doors-'));
     const fixture = join(dir, 'live.json');
@@ -215,10 +240,27 @@ function continuationHistory() {
       .digest('hex'),
   }));
 }
+const mttDepthFiles = [
+  '20261029202310_all_new_mtt_tournaments_pay_the_top_fifteen_percent.sql',
+  '20261029202847_unfinalized_mtt_fields_adopt_fifteen_percent_payout_depth.sql',
+];
+function mttDepthHistory() {
+  return mttDepthFiles
+    .filter((file) => existsSync(join(root, 'supabase/migrations', file)))
+    .map((file) => ({
+      version: file.slice(0, 14),
+      name: file.slice(15, -4),
+      statement_count: 1,
+      sql_md5: createHash('md5')
+        .update(readFileSync(join(root, 'supabase/migrations', file)))
+        .digest('hex'),
+    }));
+}
 function targetHistory() {
   const file = '20261029093051_attest_frozen_original_hand_continuation_custody.sql';
   return [
     ...continuationHistory(),
+    ...mttDepthHistory(),
     ...(existsSync(resolve(root, 'server/scripts/retained-original-checkpoint-guard.mjs'))
       ? [
           {
@@ -250,7 +292,14 @@ function runContinuationFixture(functions: string[], histories: unknown, extra =
       rows,
       JSON.stringify(
         Array.isArray(histories)
-          ? [...histories, ...targetHistory().filter((row) => row.version === '20261029093051')]
+          ? [
+              ...histories,
+              ...targetHistory().filter(
+                (row) =>
+                  row.version === '20261029093051' ||
+                  mttDepthFiles.some((file) => file.startsWith(row.version))
+              ),
+            ]
           : histories
       )
     );

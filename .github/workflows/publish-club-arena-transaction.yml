@@ -272,6 +272,19 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Use the production Node major for payout admission
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install locked payout publication driver
+        run: npm ci --prefix server --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Verify installed MTT payout policy before origin publication
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: timeout 30s node scripts/ci/check-mtt-payout-publication.mjs
+
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4
         with:

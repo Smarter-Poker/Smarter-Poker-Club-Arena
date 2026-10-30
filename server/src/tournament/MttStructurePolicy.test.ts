@@ -106,7 +106,7 @@ describe('engine MTT structure policy', () => {
   );
 
   it.each([10, 12.5, '12.5', 15, 20, '15', null, '', false, 'bad', '1.5e1', 25])(
-    'the scheduled row retains supported paid depth or the database default (%j)',
+    'the scheduled MTT normalizes every saved paid depth to fifteen (%j)',
     async (payoutPercent) => {
       const service = new ScheduledTournamentService();
       const cfg = {
@@ -123,33 +123,53 @@ describe('engine MTT structure policy', () => {
         cfg,
         new Date()
       );
-      const expected =
-        payoutPercent === 15 || payoutPercent === '15' ? 15 : payoutPercent === 20 ? 20 : 10;
+      const expected = 15;
       expect(row.payout_percent).toBe(expected);
       expect(mttPayoutPercent(payoutPercent)).toBe(expected);
-      // Dan 2026-10-21: the paid depth itself defaults to 12.5; a requested
-      // depth in (0,100] is carried (the database forces 12.5 for unions).
-      const depth =
-        typeof payoutPercent === 'number' && payoutPercent > 0 && payoutPercent <= 100
-          ? payoutPercent
-          : typeof payoutPercent === 'string' && /^\d+(\.\d+)?$/.test(payoutPercent)
-            ? Number(payoutPercent)
-            : 12.5;
+      const depth = 15;
       expect(row.payout_depth_percent).toBe(depth);
       expect(mttPayoutDepthPercent(payoutPercent)).toBe(depth);
     }
   );
 
-  it('defaults every new MTT to paying the top 12.5 percent', () => {
-    expect(mttPayoutDepthPercent(undefined)).toBe(12.5);
-    expect(mttPayoutDepthPercent(0)).toBe(12.5);
-    expect(mttPayoutDepthPercent(101)).toBe(12.5);
-    expect(mttPayoutPercent(12.5)).toBe(10);
+  it('forces every new MTT to paying the top 15 percent', () => {
+    expect(mttPayoutDepthPercent(undefined)).toBe(15);
+    expect(mttPayoutDepthPercent(0)).toBe(15);
+    expect(mttPayoutDepthPercent(101)).toBe(15);
+    expect(mttPayoutPercent(12.5)).toBe(15);
+  });
+
+  it.each([10, 15, 20])('preserves scheduled SNG paid terms %s', async (payoutPercent) => {
+    const row = await (new ScheduledTournamentService() as any).buildInsertRow(
+      schedule,
+      { ...scheduledConfig, type: 'sng', maxPlayers: 9, payoutPercent },
+      new Date()
+    );
+    expect(row.tournament_type).toBe('SNG');
+    expect(row.payout_percent).toBe(payoutPercent);
+    expect(row.payout_depth_percent).toBeNull();
+  });
+
+  it.each([
+    ['1.5e1', 10],
+    ['15', 15],
+    [undefined, 10],
+    [false, 10],
+  ])('preserves strict legacy SNG input %j', async (payoutPercent, expected) => {
+    const row = await (new ScheduledTournamentService() as any).buildInsertRow(
+      schedule,
+      { ...scheduledConfig, type: 'sng', maxPlayers: 9, payoutPercent },
+      new Date()
+    );
+    expect(row.payout_percent).toBe(expected);
+    expect(row.payout_depth_percent).toBeNull();
   });
 
   it('manual repeats copy paid depth with their advertised configuration', () => {
     expect((ScheduledTournamentService as any).RESTART_COPY_COLUMNS).toContain('payout_percent');
-    expect((ScheduledTournamentService as any).RESTART_COPY_COLUMNS).toContain('payout_depth_percent');
+    expect((ScheduledTournamentService as any).RESTART_COPY_COLUMNS).toContain(
+      'payout_depth_percent'
+    );
   });
 
   it('preserves an explicitly priced fractional bounty within the entry contribution', async () => {
@@ -294,7 +314,8 @@ describe('engine MTT structure policy', () => {
         blind_speed: 'turbo',
         is_turbo: true,
         starting_chips: 10000,
-        payout_percent: 20,
+        payout_percent: 15,
+        payout_depth_percent: 15,
       });
     }
   );

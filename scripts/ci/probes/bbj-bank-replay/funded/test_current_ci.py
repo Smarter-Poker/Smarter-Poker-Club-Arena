@@ -742,7 +742,7 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
         self.event['pull_request']['head']['sha']=self.source
         body=self.job_response();job=body['jobs'][0]
         job.update(id=105091407834,run_id=35187063376,started_at='2026-09-17T05:47:10Z')
-        response=MagicMock(status=200);response.read.return_value=json.dumps(body).encode()
+        response=MagicMock(status=200);response.read.side_effect=[json.dumps(body).encode(),json.dumps(body['jobs'][0]).encode()]
         response.__enter__.return_value=response
         opener=MagicMock();opener.open.return_value=response
         headers='tree f89d8ac211fee52f44ba320de4c5ffeabc682d65\nparent '+base+'\nparent '+self.source+'\n\nMerge\n'
@@ -761,7 +761,7 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             self.assertEqual(packet['identity']['source_commit'],self.source)
             self.assertEqual(packet['job']['head_sha'],self.source)
             self.assertEqual(packet['timing']['job_started_at_unix'],1789624030)
-            self.assertEqual(opener.open.call_count,1)
+            self.assertEqual(opener.open.call_count,2)
             self.assertFalse(any(call.args[0][3:4]==['show'] for call in ci.subprocess.check_output.call_args_list))
             class ModeledCustody:
                 def receipt(self):return {'manifest_sha256':'c'*64}
@@ -784,22 +784,49 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
     def test_timing_producer_is_single_read_exclusive_and_receipt_is_bound(self):
         from unittest.mock import MagicMock
         raw=json.dumps(self.job_response()).encode()
-        response=MagicMock(status=200);response.read.return_value=raw
+        response=MagicMock(status=200);response.read.side_effect=[raw,json.dumps(self.job_response()['jobs'][0]).encode()]
         response.__enter__.return_value=response
         opener=MagicMock();opener.open.return_value=response
         with tempfile.TemporaryDirectory() as directory,self.timing_producer_context(directory),patch.object(ci.urllib.request,'build_opener',return_value=opener):
             path=Path(directory).resolve()/'bbj-job-timing-123-1.json'
             ci.produce_job_timing(directory,path)
             self.assertNotIn('modeled-token-only',path.read_text())
-            self.assertEqual(opener.open.call_count,1)
+            self.assertEqual(opener.open.call_count,2)
             with self.assertRaises(RuntimeError):ci.produce_job_timing(directory,path)
-            self.assertEqual(opener.open.call_count,1)
+            self.assertEqual(opener.open.call_count,2)
             run=ci.CurrentAccountingRun.__new__(ci.CurrentAccountingRun)
             run.identity=json.loads(path.read_text())['identity'];run.output=Path(directory)/'receipt';run.output.mkdir()
             timing=run.read_job_timing(str(path));self.assertEqual(timing['job_started_at_unix'],990)
             packet=json.loads(path.read_text());packet['timing']['job_started_at_unix']=1000;path.write_text(json.dumps(packet))
             with self.assertRaises(RuntimeError):run.read_job_timing(str(path))
             self.assertEqual(json.loads((run.output/'JOB-TIMING-SOURCE.json').read_text())['timing'],timing)
+
+        # A queued list snapshot locates the ID but cannot certify live status.
+        # Only the direct job response may admit funding; neither endpoint retries.
+        for mutation in ({}, {'id':43}, {'runner_name':'wrong'}, {'status':'queued'}):
+            with self.subTest(direct=mutation), tempfile.TemporaryDirectory() as directory, self.timing_producer_context(directory):
+                stale=self.job_response();stale['jobs'][0].update(runner_name='',status='queued')
+                direct=self.job_response()['jobs'][0];direct.update(mutation)
+                response=MagicMock(status=200)
+                response.read.side_effect=[json.dumps(stale).encode(),json.dumps(direct).encode()]
+                response.__enter__.return_value=response
+                opener=MagicMock();opener.open.return_value=response
+                path=Path(directory).resolve()/'bbj-job-timing-123-1.json'
+                with patch.object(ci.urllib.request,'build_opener',return_value=opener):
+                    if mutation:
+                        with self.assertRaises(ci.TimingRequestRefused):ci.produce_job_timing(directory,path)
+                        self.assertFalse(path.exists())
+                    else:
+                        ci.produce_job_timing(directory,path)
+                        packet=json.loads(path.read_text())
+                        self.assertEqual(packet['job']['runner_name'],self.env['RUNNER_NAME'])
+                        self.assertEqual(packet['job']['status'],'in_progress')
+                        self.assertEqual(packet['request_url'],ci.timing_url(packet['identity']))
+                        self.assertEqual(packet['job_request_url'],ci.timing_job_url(packet['identity'],42))
+                        self.assertEqual(packet['job_response_sha256'],hashlib.sha256(json.dumps(direct).encode()).hexdigest())
+                self.assertEqual(opener.open.call_count,2)
+                self.assertEqual(opener.open.call_args_list[0].args[0].full_url,ci.timing_url(self.identity()))
+                self.assertEqual(opener.open.call_args_list[1].args[0].full_url,ci.timing_job_url(self.identity(),42))
 
     def test_timing_transport_diagnostics_are_allowlisted_without_retry_or_receipt(self):
         import socket
@@ -872,7 +899,7 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
                          'LOCAL_OPERATION_REFUSED')
         response=MagicMock(status=200)
         body=self.job_response();body['jobs'][0]['runner_name']='wrong'
-        response.read.return_value=json.dumps(body).encode();response.__enter__.return_value=response
+        response.read.side_effect=[json.dumps(body).encode(),json.dumps(body['jobs'][0]).encode()];response.__enter__.return_value=response
         opener=MagicMock();opener.open.return_value=response
         with tempfile.TemporaryDirectory() as directory,self.timing_producer_context(directory),\
                 patch.object(ci.urllib.request,'build_opener',return_value=opener):
@@ -880,5 +907,5 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             with self.assertRaises(RuntimeError) as observed:ci.produce_job_timing(directory,path)
             self.assertEqual(ci.timing_refusal_reason(observed.exception),'JOB_IDENTITY_MISMATCH')
             self.assertEqual(observed.exception.identity_mismatch_fields, ['runner_name'])
-            self.assertEqual(opener.open.call_count,1)
+            self.assertEqual(opener.open.call_count,2)
             self.assertFalse(path.exists())

@@ -192,8 +192,8 @@ def timing_url(current):
             current['run_id'] + '/attempts/' + current['run_attempt'] + '/jobs?per_page=100')
 
 
-def timing_observation(current, response, now):
-    """Select the current attempt's one actual, running, non-matrix accounting job."""
+def locate_timing_job(current, response):
+    """Locate one job ID in this attempt; list status/runner can lag execution."""
     require(type(response) is dict and type(response.get('jobs')) is list and
             type(response.get('total_count')) is int and
             response['total_count'] == len(response['jobs']) <= 100,
@@ -201,6 +201,18 @@ def timing_observation(current, response, now):
     jobs = [job for job in response['jobs'] if type(job) is dict and job.get('name') == ACCOUNTING_JOB_NAME]
     require(len(jobs) == 1, 'Exactly one current accounting job required')
     job = jobs[0]
+    require(type(job.get('id')) is int and job['id'] > 0,
+            'Exactly one current accounting job required')
+    return job
+
+
+def timing_job_url(current, job_id):
+    return 'https://api.github.com/repos/' + current['repository'] + '/actions/jobs/' + str(job_id)
+
+
+def timing_observation(current, response, now):
+    """Validate the actual job, including every current runner/status guard."""
+    job = locate_timing_job(current, response)
     identity_checks = (
         ('id', type(job.get('id')) is int and job['id'] > 0),
         ('run_id', str(job.get('run_id')) == current['run_id']),
@@ -243,7 +255,7 @@ def timing_path(path, current, environment):
 
 
 def produce_job_timing(repository, output):
-    """Read metadata once in the preceding token-scoped CI step; never run PG."""
+    """Locate once, read that exact job once; no retry and never run PG."""
     repository = Path(repository).resolve()
     def git(*arguments):
         return subprocess.check_output(['git','-C',str(repository),*arguments],text=True,timeout=30).strip()
@@ -259,15 +271,25 @@ def produce_job_timing(repository, output):
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *arguments, **keywords):
             raise RuntimeError('Timing metadata redirect refused')
-    request = urllib.request.Request(timing_url(current),headers={
-        'Accept':'application/vnd.github+json','Authorization':'Bearer ' + token,
-        'X-GitHub-Api-Version':'2022-11-28'})
-    try:
-        with urllib.request.build_opener(NoRedirect()).open(request,timeout=30) as response:
+    opener = urllib.request.build_opener(NoRedirect())
+    def read_metadata(url):
+        request = urllib.request.Request(url,headers={
+            'Accept':'application/vnd.github+json','Authorization':'Bearer ' + token,
+            'X-GitHub-Api-Version':'2022-11-28'})
+        with opener.open(request,timeout=30) as response:
             require(response.status == 200, 'Timing metadata response refused')
             raw = response.read(2 * 1024 * 1024 + 1)
             require(len(raw) <= 2 * 1024 * 1024, 'Timing metadata response exceeds bound')
-        selected, timing = timing_observation(current,json.loads(raw),time.time())
+        return raw
+    try:
+        raw = read_metadata(timing_url(current))
+        located = locate_timing_job(current,json.loads(raw))
+        job_url = timing_job_url(current,located['id'])
+        job_raw = read_metadata(job_url)
+        job = json.loads(job_raw)
+        if type(job) is not dict or job.get('id') != located['id']:
+            raise TimingRequestRefused('JOB_IDENTITY_MISMATCH', ['id'])
+        selected, timing = timing_observation(current,{'total_count':1,'jobs':[job]},time.time())
     except BaseException as error:
         # Never put HTTP headers, token, response body or server error details in logs.
         reason = timing_refusal_reason(error)
@@ -278,7 +300,8 @@ def produce_job_timing(repository, output):
     finally:
         token = None
     write_exclusive(output,{'format':1,'identity':current,'request_url':timing_url(current),
-                            'response_sha256':hashlib.sha256(raw).hexdigest(),'job':selected,'timing':timing})
+                            'response_sha256':hashlib.sha256(raw).hexdigest(),'job_request_url':job_url,
+                            'job_response_sha256':hashlib.sha256(job_raw).hexdigest(),'job':selected,'timing':timing})
     return output
 
 
@@ -326,9 +349,12 @@ class CurrentAccountingRun:
         require(type(path) is str and bool(path), 'Missing preceding-step current job timing receipt')
         path = timing_path(path,self.identity,os.environ)
         packet = json.loads(path.read_text())
-        require(type(packet) is dict and set(packet) == {'format','identity','request_url','response_sha256','job','timing'} and
+        require(type(packet) is dict and set(packet) == {'format','identity','request_url','response_sha256','job_request_url','job_response_sha256','job','timing'} and
                 packet['format'] == 1 and packet['identity'] == self.identity and
                 packet['request_url'] == timing_url(self.identity) and
+                type(packet.get('job')) is dict and
+                packet['job_request_url'] == timing_job_url(self.identity,packet['job'].get('id')) and
+                re.fullmatch('[0-9a-f]{64}',str(packet['job_response_sha256'])) is not None and
                 re.fullmatch('[0-9a-f]{64}',str(packet['response_sha256'])) is not None,
                 'Current job timing receipt identity changed')
         selected,timing = timing_observation(self.identity,{'total_count':1,'jobs':[packet['job']]},time.time())

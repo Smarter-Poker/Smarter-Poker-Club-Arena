@@ -6,9 +6,8 @@ import { sendJSON } from '../http/respond.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Verify the configured service identity, never unsigned JWT claims. */
-export function hasTournamentAbortServiceAuthority(req: IncomingMessage): boolean {
+export function hasTournamentAbortServiceAuthority(header: string | undefined): boolean {
   const expected = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const header = req.headers.authorization;
   if (!expected || !header?.startsWith('Bearer ')) return false;
   const digest = (value: string) => createHash('sha256').update(value).digest();
   return timingSafeEqual(digest(header.slice(7)), digest(expected));
@@ -27,7 +26,7 @@ export async function handleTournamentAbortBoundary(
   }
 ) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!hasTournamentAbortServiceAuthority(req))
+  if (!hasTournamentAbortServiceAuthority(req.headers['authorization']))
     return sendJSON(res, 401, { success: false, error: 'Service Authority Required' });
   if (req.method !== 'POST')
     return sendJSON(res, 405, { success: false, error: 'Method Not Allowed' });

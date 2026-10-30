@@ -125,7 +125,7 @@ const memberDetail = {
     alias: 'River Shark',
     username: 'rivershark',
     display_name: 'River Shark',
-    avatar_url: null,
+    avatar_url: null as string | null,
     role: 'player',
     role_rank: 70,
     nickname: 'The Closer',
@@ -564,6 +564,80 @@ it('updates live stats without replacing identity, downline rows or an unsaved n
   expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
 });
 
+it.each(['record_changed', 'SUBSCRIBED'])(
+  'applies the verified avatar on %s without replacing identity or note drafts',
+  async (event) => {
+    const view = render(<MemberManagementPage />);
+    await screen.findByText('River Shark');
+    fireEvent.change(screen.getByDisplayValue('The Closer'), {
+      target: { value: 'Unsaved Local Name' },
+    });
+    fireEvent.change(screen.getByDisplayValue('Strong Late Position Pressure'), {
+      target: { value: 'Unsaved Local Remark' },
+    });
+    state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+      ...memberDetail,
+      identity: {
+        ...memberDetail.identity,
+        alias: 'Remote Alias',
+        nickname: 'Remote Nickname',
+        remark: 'Remote Remark',
+        avatar_url: '/avatars/table/free_shark@2x.webp',
+      },
+      range: { ...activeRange, is_overall: activeRange?.from === null },
+    }));
+    await act(async () => {
+      if (event === 'record_changed') state.recordChannel?.onPayload({});
+      else state.recordChannel?.onSubscriptionStatus?.('SUBSCRIBED');
+    });
+    expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('/avatars/table/free_shark@2x.webp')
+    );
+    expect(screen.getByText('River Shark')).toBeInTheDocument();
+    expect(screen.queryByText('Remote Alias')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Unsaved Local Remark')).toBeInTheDocument();
+  }
+);
+
+it('applies an authoritative avatar removal without retaining the old image', async () => {
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
+  });
+  const view = render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
+  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+    ...memberDetail,
+    range: { ...activeRange, is_overall: activeRange?.from === null },
+  }));
+  await act(async () => state.recordChannel?.onPayload({}));
+  expect(view.container.querySelector('.mm-avatar img')).toBeNull();
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+});
+
+it('does not apply another member avatar from an unmatched record response', async () => {
+  const view = render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+    ...memberDetail,
+    identity: {
+      ...memberDetail.identity,
+      user_id: '33333333-3333-4333-8333-333333333333',
+      avatar_url: '/avatars/table/free_shark@2x.webp',
+    },
+    range: { ...activeRange, is_overall: activeRange?.from === null },
+  }));
+  await act(async () => state.recordChannel?.onPayload({}));
+  expect(view.container.querySelector('.mm-avatar img')).toBeNull();
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+});
+
 it('ignores focus and checks only authority on a recovered record subscription', async () => {
   render(<MemberManagementPage />);
   await screen.findByText('River Shark');
@@ -947,16 +1021,25 @@ it('does not apply a delayed live stats response after a newer explicit range re
   await act(async () => state.recordChannel?.onPayload({}));
   state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
     ...memberDetail,
+    identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
     stats: { ...memberDetail.stats, hands: 777 },
     range: { ...activeRange, is_overall: false },
   }));
   fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
   expect(await screen.findByText('777')).toBeInTheDocument();
   await act(async () =>
-    pending.resolve({ ...memberDetail, stats: { ...memberDetail.stats, hands: 999 } })
+    pending.resolve({
+      ...memberDetail,
+      identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_shark@2x.webp' },
+      stats: { ...memberDetail.stats, hands: 999 },
+    })
   );
   expect(screen.getByText('777')).toBeInTheDocument();
   expect(screen.queryByText('999')).not.toBeInTheDocument();
+  expect(document.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
 });
 
 it('keeps a verified member visible when its separate viewer-role read fails closed', async () => {

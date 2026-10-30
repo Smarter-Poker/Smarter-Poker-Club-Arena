@@ -38,7 +38,7 @@ test('approved cases and full program hashes are bound without caller feature ov
  assert.equal(programRequest(row,inputs.dataset).cases,protocol.contexts[0].cases);
  assert.throws(()=>programRequest({...row,model_checksum:hex},inputs.dataset));assert.throws(()=>programRequest({...row,status:'frozen'},inputs.dataset));
  const workflow=readFileSync(new URL('../../.github/workflows/public215-linux-preflight.yml',import.meta.url),'utf8');
- assert.match(workflow,/node scripts\/ci\/pr-status\.mjs --sha/);assert.doesNotMatch(workflow,/schedule:|workflow_run:|auto-deploy-hetzner\.yml.*dispatch/);
+ assert.match(workflow,/node scripts\/ci\/public215-source-admission\.mjs/);assert.doesNotMatch(workflow,/schedule:|workflow_run:|auto-deploy-hetzner\.yml.*dispatch/);
 });
 
 test('Linux stdout and actual terminal metadata remain separate assembler-compatible artifacts',()=>{

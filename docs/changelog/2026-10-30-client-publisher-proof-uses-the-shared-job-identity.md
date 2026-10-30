@@ -19,3 +19,11 @@ retry, timer, release loop or alternate certification route is added.
 The executed gate regressions reproduce the nested publication, retention,
 ambiguous writer and cancelled-preparation failures before the correction.
 Publication and affected live verification remain separate completion evidence.
+
+The normal push also exposed load-sensitive guard fixtures. The entry-offset
+case now gives its clock and deadline the same fixed instant, so Node startup
+cannot turn the rejected 41-second case into an accepted 40-second case. The
+real estate-audit fixtures exceeded their 20-second test budgets at 24.3 seconds
+in the 321-file suite. Their children now have a finite 45-second bound and a
+60-second outer test budget, including reporting and cleanup time. Assertions
+and production release deadlines are unchanged.

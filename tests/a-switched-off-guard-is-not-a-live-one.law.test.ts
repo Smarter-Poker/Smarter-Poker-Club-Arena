@@ -48,6 +48,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 const ROOT = resolve(__dirname, '..');
 const AUDIT = resolve(ROOT, '.github/scripts/estate-integrity.sh');
 const sandboxes: string[] = [];
+// The real multi-repository shell audit measured 24.3s in the 321-file push
+// suite. Bound the child at 45s and reserve 15s for reporting and cleanup.
+const AUDIT_CHILD_TIMEOUT_MS = 45_000;
+const AUDIT_TEST_TIMEOUT_MS = 60_000;
 
 /** base64 of "guard\n" - identical in every repo, so section 2 stays quiet. */
 const GUARD_B64 = 'Z3VhcmQK';
@@ -143,6 +147,7 @@ esac
 
   const result = spawnSync('bash', [AUDIT], {
     cwd: ROOT,
+    timeout: AUDIT_CHILD_TIMEOUT_MS,
     encoding: 'utf8',
     env: {
       ESTATE_INJECT_REPO: 'Smarter-Poker-Diamond-Arena',
@@ -169,68 +174,88 @@ afterEach(() => {
 });
 
 describe('LAW - the estate audit reads whether Autopilot is switched on before judging its last run', () => {
-  it('never blames a red run in a repo where the workflow is switched off', () => {
-    const { combined } = runAudit();
+  it(
+    'never blames a red run in a repo where the workflow is switched off',
+    () => {
+      const { combined } = runAudit();
 
-    // smarter-poker-commander is `disabled_manually` with a red last run. The
-    // sentence that stood for sixteen days must not be said about it.
-    expect(combined).not.toMatch(
-      /\*\*smarter-poker-commander\*\*[^\n]*Agent Autopilot[^\n]*last run/
-    );
-    expect(combined).toMatch(
-      /smarter-poker-commander: autopilot is switched off there \(disabled_manually\)/
-    );
-    expect(combined).toContain('no liveness is claimed for it');
-  }, 20_000);
+      // smarter-poker-commander is `disabled_manually` with a red last run. The
+      // sentence that stood for sixteen days must not be said about it.
+      expect(combined).not.toMatch(
+        /\*\*smarter-poker-commander\*\*[^\n]*Agent Autopilot[^\n]*last run/
+      );
+      expect(combined).toMatch(
+        /smarter-poker-commander: autopilot is switched off there \(disabled_manually\)/
+      );
+      expect(combined).toContain('no liveness is claimed for it');
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
-  it('still blames a red run where the workflow is enabled', () => {
-    const { result, combined } = runAudit();
+  it(
+    'still blames a red run where the workflow is enabled',
+    () => {
+      const { result, combined } = runAudit();
 
-    expect(result.status).toBe(1);
-    expect(combined).toMatch(
-      /\*\*Smarter-Poker-World-Hub\*\* [^\n]*Agent Autopilot is enabled and its last run is/
-    );
-    // Club Arena's own autopilot is enabled and red in this fixture too; the
-    // audit judges its home repo by exactly the same rule.
-    expect(combined).toMatch(
-      /\*\*Smarter-Poker-Club-Arena\*\* [^\n]*Agent Autopilot is enabled and its last run is/
-    );
-  }, 20_000);
+      expect(result.status).toBe(1);
+      expect(combined).toMatch(
+        /\*\*Smarter-Poker-World-Hub\*\* [^\n]*Agent Autopilot is enabled and its last run is/
+      );
+      // Club Arena's own autopilot is enabled and red in this fixture too; the
+      // audit judges its home repo by exactly the same rule.
+      expect(combined).toMatch(
+        /\*\*Smarter-Poker-Club-Arena\*\* [^\n]*Agent Autopilot is enabled and its last run is/
+      );
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
-  it('says so when GitHub, not a person, switched the workflow off', () => {
-    const { combined } = runAudit();
+  it(
+    'says so when GitHub, not a person, switched the workflow off',
+    () => {
+      const { combined } = runAudit();
 
-    // `disabled_inactivity` is nobody's decision - 60 idle days and GitHub does
-    // it - so it is drift and must be raised, not noted.
-    expect(combined).toMatch(
-      /\*\*commander-shared\*\* [^\n]*workflow state is `disabled_inactivity`, which nobody chose/
-    );
-  }, 20_000);
+      // `disabled_inactivity` is nobody's decision - 60 idle days and GitHub does
+      // it - so it is drift and must be raised, not noted.
+      expect(combined).toMatch(
+        /\*\*commander-shared\*\* [^\n]*workflow state is `disabled_inactivity`, which nobody chose/
+      );
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
-  it('calls an unreadable state COULD NOT TELL, never on or off', () => {
-    const { combined } = runAudit();
+  it(
+    'calls an unreadable state COULD NOT TELL, never on or off',
+    () => {
+      const { combined } = runAudit();
 
-    expect(combined).toMatch(
-      /\*\*smarter-poker-workers\*\* [^\n]*COULD NOT TELL whether Agent Autopilot is switched on/
-    );
-    // A 403 body on stdout must never be read as a state, and the red last run
-    // must not be judged on the strength of it.
-    expect(combined).not.toMatch(/\*\*smarter-poker-workers\*\*[^\n]*Agent Autopilot is enabled/);
-  }, 20_000);
+      expect(combined).toMatch(
+        /\*\*smarter-poker-workers\*\* [^\n]*COULD NOT TELL whether Agent Autopilot is switched on/
+      );
+      // A 403 body on stdout must never be read as a state, and the red last run
+      // must not be judged on the strength of it.
+      expect(combined).not.toMatch(/\*\*smarter-poker-workers\*\*[^\n]*Agent Autopilot is enabled/);
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
-  it('claims no liveness for an autopilot that is simply not in the repo', () => {
-    const { combined } = runAudit();
+  it(
+    'claims no liveness for an autopilot that is simply not in the repo',
+    () => {
+      const { combined } = runAudit();
 
-    // PepNationLab has no autopilot workflow at all and no RETIRED_PATHS
-    // record. Section 2 owns the absence; section 3 must not also judge a run.
-    expect(combined).toMatch(
-      /PepNationLab: autopilot's workflow file is absent \(section 2 reports the absence\)/
-    );
-    expect(combined).not.toMatch(/\*\*PepNationLab\*\* [^\n]*Agent Autopilot is enabled/);
+      // PepNationLab has no autopilot workflow at all and no RETIRED_PATHS
+      // record. Section 2 owns the absence; section 3 must not also judge a run.
+      expect(combined).toMatch(
+        /PepNationLab: autopilot's workflow file is absent \(section 2 reports the absence\)/
+      );
+      expect(combined).not.toMatch(/\*\*PepNationLab\*\* [^\n]*Agent Autopilot is enabled/);
 
-    // And the recorded Diamond-Arena retirement still reports as recorded.
-    expect(combined).toContain(
-      'Smarter-Poker-Diamond-Arena: autopilot retired in that repo (recorded)'
-    );
-  }, 20_000);
+      // And the recorded Diamond-Arena retirement still reports as recorded.
+      expect(combined).toContain(
+        'Smarter-Poker-Diamond-Arena: autopilot retired in that repo (recorded)'
+      );
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 });

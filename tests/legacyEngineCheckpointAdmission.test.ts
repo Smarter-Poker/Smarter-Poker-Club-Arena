@@ -82,6 +82,10 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
     [41000, 1],
     [15000, 0],
   ])('bounds the absolute entry deadline offset %s before intent', (offset, status) => {
+    // This case judges an offset at one instant. A second Node startup under
+    // load consumed >1s and turned the deliberately invalid 41s input into
+    // an allowed remaining 40s. Keep the clock and deadline on the same instant.
+    const now = Date.now();
     const block = checkpointShell.slice(
       checkpointShell.indexOf('RUN_ID="$1"'),
       checkpointShell.indexOf('# /var/lock')
@@ -93,19 +97,19 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
         `set -euo pipefail
  die() { exit 1; }
  defer() { exit 75; }
- date() { "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; }
+ date() { printf '%s\\n' "$CHECKPOINT_TEST_NOW_MS"; }
  ${block}
  printf bounded
  `,
         'fixture',
         '40948063249-1',
-        String(Date.now() + offset),
-        String(Math.floor(Date.now() / 1000) + 299),
+        String(now + offset),
+        String(Math.floor(now / 1000) + 299),
       ],
       {
         encoding: 'utf8',
         timeout: 3000,
-        env: { ...process.env, CHECKPOINT_TEST_NODE: process.execPath },
+        env: { ...process.env, CHECKPOINT_TEST_NOW_MS: String(now) },
       }
     );
     expect(result.error).toBeUndefined();

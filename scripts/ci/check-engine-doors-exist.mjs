@@ -163,23 +163,37 @@ const CONTINUATION_MIGRATIONS = [
   '20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql',
   '20261029170914_original_claim_attests_exact_authorized_chairs.sql',
 ];
+const MTT_DEPTH_MIGRATIONS = [
+  '20261029202310_all_new_mtt_tournaments_pay_the_top_fifteen_percent.sql',
+  '20261029202847_unfinalized_mtt_fields_adopt_fifteen_percent_payout_depth.sql',
+];
+let mttDepthTarget = false;
 let continuationTarget = false;
 let retainedCheckpointTarget = false;
 const RETAINED_CHECKPOINT_GUARD = 'server/scripts/retained-original-checkpoint-guard.mjs';
 const FROZEN_ATTESTATION_MIGRATION =
   '20261029093051_attest_frozen_original_hand_continuation_custody.sql';
 const FROZEN_ATTESTATION_CONTRACTS = [
-  { schema_name: 'public', proname: 'fn_f06_attest_frozen_hand_continuation',
+  {
+    schema_name: 'public',
+    proname: 'fn_f06_attest_frozen_hand_continuation',
     body_md5: 'd47f131bbecd7fd7aaba9873af68285e',
-    acl: '{postgres=X/postgres,service_role=X/postgres}', service_execute: true },
-  { schema_name: 'smarter_private', proname: 'attest_frozen_hand_continuation',
+    acl: '{postgres=X/postgres,service_role=X/postgres}',
+    service_execute: true,
+  },
+  {
+    schema_name: 'smarter_private',
+    proname: 'attest_frozen_hand_continuation',
     body_md5: '7e5ebd0b8f622ba6daa596c2d2e45db0',
-    acl: '{postgres=X/postgres}', service_execute: false },
+    acl: '{postgres=X/postgres}',
+    service_execute: false,
+  },
 ];
 
 function continuationRequirements() {
   const files = [
     ...(continuationTarget ? CONTINUATION_MIGRATIONS : []),
+    ...(mttDepthTarget ? MTT_DEPTH_MIGRATIONS : []),
     ...(retainedCheckpointTarget ? [FROZEN_ATTESTATION_MIGRATION] : []),
   ];
   return files.map((file) => ({
@@ -202,7 +216,8 @@ async function liveFunctions(names, requirements) {
       found: new Set(JSON.parse(readFileSync(fixture, 'utf8'))),
       migrations: migrationFixture ? JSON.parse(readFileSync(migrationFixture, 'utf8')) : [],
       checkpointFunctions: checkpointFixture
-        ? JSON.parse(readFileSync(checkpointFixture, 'utf8')) : [],
+        ? JSON.parse(readFileSync(checkpointFixture, 'utf8'))
+        : [],
     };
   }
   const url = process.env.DATABASE_URL;
@@ -253,8 +268,9 @@ async function liveFunctions(names, requirements) {
            FROM pg_catalog.pg_proc p
            JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
           WHERE p.oid IN (to_regprocedure($1),to_regprocedure($2))`,
-        FROZEN_ATTESTATION_CONTRACTS.map((r) =>
-          `${r.schema_name}.${r.proname}(uuid,uuid,uuid,bigint,bigint,text)`)
+        FROZEN_ATTESTATION_CONTRACTS.map(
+          (r) => `${r.schema_name}.${r.proname}(uuid,uuid,uuid,bigint,bigint,text)`
+        )
       ));
     }
     return { found: new Set(rows.map((r) => r.proname)), migrations, checkpointFunctions };
@@ -270,6 +286,9 @@ async function main() {
   // control scripts or make old targets depend on a newly installed contract.
   const guardPath = join(ROOT, RETAINED_CHECKPOINT_GUARD);
   retainedCheckpointTarget = existsSync(guardPath);
+  // Only a target containing this policy has its installation dependency.
+  // Existing targets/rollbacks do not acquire a future migration requirement.
+  mttDepthTarget = existsSync(join(ROOT, 'supabase', 'migrations', MTT_DEPTH_MIGRATIONS[0]));
   const doors = engineDoors();
   if (retainedCheckpointTarget) {
     for (const name of doorsIn(readFileSync(guardPath, 'utf8'))) {
@@ -284,7 +303,7 @@ async function main() {
   const allow = existsSync(ALLOWLIST) ? JSON.parse(readFileSync(ALLOWLIST, 'utf8')) : {};
   const rollback = process.env.ROLLBACK_REQUESTED === 'true';
   const live = await liveFunctions(names, requirements);
-  if (live.unreadable && (continuationTarget || retainedCheckpointTarget)) {
+  if (live.unreadable && (continuationTarget || retainedCheckpointTarget || mttDepthTarget)) {
     console.log(
       `::error title=CONTINUATION PREREQUISITES UNCHECKED::${live.unreadable}. Exact target migration histories and any selected frozen-checkpoint custody contract must be proved before this target enters Hetzner.`
     );
@@ -316,24 +335,40 @@ async function main() {
   if (!prerequisitesProved) return 1;
   if (continuationTarget)
     console.log('OK - all exact continuation migration histories are installed.');
+  if (mttDepthTarget)
+    console.log('OK - both exact fifteen-percent MTT policy migrations are installed.');
   if (retainedCheckpointTarget) {
     for (const expected of FROZEN_ATTESTATION_CONTRACTS) {
-      const rows = live.checkpointFunctions?.filter((row) =>
-        row.schema_name === expected.schema_name && row.proname === expected.proname);
+      const rows = live.checkpointFunctions?.filter(
+        (row) => row.schema_name === expected.schema_name && row.proname === expected.proname
+      );
       const row = rows?.[0];
-      if (!Array.isArray(rows) || rows.length !== 1 ||
-          row.argument_types !== 'uuid, uuid, uuid, bigint, bigint, text' ||
-          row.body_md5 !== expected.body_md5 || row.owner !== 'postgres' ||
-          row.security_definer !== true || row.volatility !== 's' || row.return_type !== 'jsonb' ||
-          row.acl !== expected.acl ||
-          JSON.stringify(row.config) !== JSON.stringify(['search_path=pg_catalog, public, smarter_private']) ||
-          row.anon_execute !== false || row.authenticated_execute !== false ||
-          row.service_execute !== expected.service_execute || row.service_private_read !== false) {
-        console.log(`::error title=FROZEN ORIGINAL ATTESTATION UNPROVED::${expected.schema_name}.${expected.proname} must match the qualified body, read-only owner/configuration, service/browser grants and private-table denial before the retained-original checkpoint enters Hetzner.`);
+      if (
+        !Array.isArray(rows) ||
+        rows.length !== 1 ||
+        row.argument_types !== 'uuid, uuid, uuid, bigint, bigint, text' ||
+        row.body_md5 !== expected.body_md5 ||
+        row.owner !== 'postgres' ||
+        row.security_definer !== true ||
+        row.volatility !== 's' ||
+        row.return_type !== 'jsonb' ||
+        row.acl !== expected.acl ||
+        JSON.stringify(row.config) !==
+          JSON.stringify(['search_path=pg_catalog, public, smarter_private']) ||
+        row.anon_execute !== false ||
+        row.authenticated_execute !== false ||
+        row.service_execute !== expected.service_execute ||
+        row.service_private_read !== false
+      ) {
+        console.log(
+          `::error title=FROZEN ORIGINAL ATTESTATION UNPROVED::${expected.schema_name}.${expected.proname} must match the qualified body, read-only owner/configuration, service/browser grants and private-table denial before the retained-original checkpoint enters Hetzner.`
+        );
         return 1;
       }
     }
-    console.log('OK - frozen original attestation history and both exact read-only custody doors are installed.');
+    console.log(
+      'OK - frozen original attestation history and both exact read-only custody doors are installed.'
+    );
   }
   if (missing.length === 0) {
     console.log(

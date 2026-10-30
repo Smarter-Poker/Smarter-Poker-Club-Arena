@@ -680,6 +680,12 @@ def main():
             from mtt_activation_native import run_activation
             run_activation(execution, sys.modules[__name__])
         else:
+            # The existing required MTT accounting lane also qualifies the live
+            # paid-depth authority. Its private PG17 world cannot reach production.
+            import sys
+            execution.run("mtt-fifteen-percent", [sys.executable, "-B",
+                root / "scripts/ci/test-mtt-fifteen-percent.py", "--pg-bin", pg,
+                "--work-root", args.work_parent.resolve()], seconds=60)
             run_cases(execution)
     except BaseException as error:
         failure = f"{type(error).__name__}: {error}"

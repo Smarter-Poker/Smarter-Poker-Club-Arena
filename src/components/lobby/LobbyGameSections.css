@@ -1,0 +1,68 @@
+/* Owner October 29: choose a family before opening its controls. The plates
+   use the lobby's approved blank NLH plate at its native 307:174 proportions. */
+.club-home .club-lobby-command-top .lobby-controls__heading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 8px 8px;
+  text-align: center;
+}
+
+.lobby-game-sections {
+  display: grid;
+  width: 100%;
+  max-width: 644px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 4px 10px 10px;
+}
+
+.lobby-game-sections__button {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  aspect-ratio: 307 / 174;
+  min-height: 60px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: url('/assets/club-buttons/game-cards/nlh/spade-nlh-premium-v1/buttons/view-plate-10e21c24e5d6.png')
+    center / 100% 100% no-repeat;
+  box-shadow: none;
+  color: #e4e7ec;
+  cursor: pointer;
+}
+
+.lobby-game-sections__button[aria-expanded='true'] {
+  filter: brightness(1.25);
+  color: #45adff;
+}
+
+.lobby-game-sections__button span {
+  position: absolute;
+  inset: 23% 12%;
+  display: grid;
+  place-items: center;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-size: clamp(14px, calc(9cqw * var(--fit, 1)), 24px);
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lobby-game-sections__button:active {
+  filter: brightness(1.15);
+}
+
+.lobby-game-sections__button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: -4px;
+}
+
+.club-home__games[hidden] {
+  display: none;
+}

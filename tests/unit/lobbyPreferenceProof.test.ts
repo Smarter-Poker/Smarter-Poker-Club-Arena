@@ -77,6 +77,8 @@ function fixture({
         emitter.on('request', handle);
       }),
     getByRole: () => ({
+      waitFor: async () => {},
+      getAttribute: async () => 'true',
       getByRole: (_role: string, options: { selected?: boolean; name?: string }) => ({
         textContent: async () => (options.selected ? selected : options.name),
         getAttribute: async () => (selected === options.name ? 'true' : 'false'),

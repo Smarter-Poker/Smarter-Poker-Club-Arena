@@ -11,3 +11,5 @@ Before: report performs unconditional full-week linked validation; advance has n
 Local validation: exact reserved migration native installation and rollback10cases; validator18, original producer7, report assembler7, original/full/new84 symmetric bag equality, kind extension; strict verifier18negative/positive cases; TypeScript passes. Actual read-only busiest31762-row window12.377seconds and all84 witnesses7.912seconds were captured before binding. These measurements do not certify whole-book closure.
 
 Protected checks, merge, approved installation, actual saved readback, genuine producer progression, final book closure and automation verification remain pending. No wallet credits or repayment are part of this change.
+
+The migration explicitly preserves the existing postgres-only ACL for the report and touched-registration helper. The conservative source authorization check cannot infer existing grants from CREATE OR REPLACE; native transition verification checks that the explicit revokes leave admitted metadata unchanged.

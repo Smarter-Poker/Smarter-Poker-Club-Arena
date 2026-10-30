@@ -3,7 +3,7 @@
 Real captured helpers; synthetic input schema and claims, not live Auth proof.
 """
 from pathlib import Path
-import argparse, hashlib, json, os, shutil, subprocess, tempfile, traceback, uuid
+import argparse, hashlib, importlib.util, json, os, shutil, subprocess, tempfile, traceback, uuid
 
 def run():
  if not __debug__: raise RuntimeError('Run without Python optimization; assertions are required')
@@ -30,7 +30,7 @@ def run():
   if pg is None: raise RuntimeError('PostgreSQL17 tools required; set PGBIN. No installation attempted.')
   version=call([str(pg/'postgres'),'--version'])
   assert version.returncode==0 and version.stdout.startswith('postgres (PostgreSQL) 17.'), 'PostgreSQL17 required'
-  runtime=Path(tempfile.mkdtemp(prefix='fwp01-',dir='/tmp'));runtime.chmod(0o700)
+  runtime=Path(tempfile.mkdtemp(prefix='fwp01-',dir=os.environ.get('TMPDIR',str(evidence.parent))));runtime.chmod(0o700)
   cluster=runtime/'data';socket=runtime/'socket';socket.mkdir(mode=0o700)
   port=str(45000+os.getpid()%10000)
   migration=repo/manifest['migration']
@@ -100,6 +100,19 @@ def run():
   result['checks']=checks;result['passed']=sum(x['pass'] for x in checks);result['failed']=sum(not x['pass'] for x in checks);result['server_version']=psql('SHOW server_version;')
   (evidence/'NATIVE_RESULTS.json').write_text(json.dumps(result,indent=2));print(json.dumps({'passed':result['passed'],'failed':result['failed'],'failures':[x for x in checks if not x['pass']]}))
   if result['failed']:raise AssertionError('Native role matrix failed')
+  # The existing required accounting entrypoint also owns the current live
+  # reader regression. Preserve the legacy matrix and propagate child failure.
+  live_path=repo/'scripts/dev/probe-agent-downline-rake-live-pg17.py'
+  spec=importlib.util.spec_from_file_location('downline_rake_live_native',live_path)
+  live=importlib.util.module_from_spec(spec);spec.loader.exec_module(live)
+  prior_pg=os.environ.get('PGBIN')
+  try:
+   os.environ['PGBIN']=str(pg)
+   live.main(['--evidence-dir',str(evidence/'live-reader')])
+   logs.append({'tool':'in-process current live-reader qualification','source':str(live_path),'exit_code':0,'evidence':str(evidence/'live-reader')})
+  finally:
+   if prior_pg is None:os.environ.pop('PGBIN',None)
+   else:os.environ['PGBIN']=prior_pg
   exit_code=0
  except BaseException as error:
   (evidence/'FAILURE.txt').write_text(type(error).__name__+': '+str(error)+'\n'+traceback.format_exc())

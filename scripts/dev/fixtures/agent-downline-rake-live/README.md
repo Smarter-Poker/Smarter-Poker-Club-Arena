@@ -6,8 +6,14 @@ native runner, never a production installation script.
 
 Run `scripts/dev/probe-agent-downline-rake-live-pg17.py --evidence-dir PATH`
 with PostgreSQL 17 tools and a task-owned external `TMPDIR` on the owner Mac.
-CI invokes it in accounting shard 3. Migration, runner and fixture changes each
-select that required job through the existing classifier.
+CI invokes the existing `probe-agent-downline-rake-scope-pg17.py` entrypoint in
+accounting shard 3. After its complete legacy role matrix passes, that entrypoint
+runs the current live-reader regression in process and propagates any failure.
+Each runner retains its own command deadlines and cluster cleanup; no outer
+subprocess deadline can interrupt the nested cleanup. Its evidence
+is retained under the legacy evidence directory as `live-reader/`. Migration,
+runner and fixture changes each select that required job through the existing
+classifier.
 
 The runner executes the actual whole reader before and after the exact
 migration. It compares numerical results across head, tail, unrolled gaps,

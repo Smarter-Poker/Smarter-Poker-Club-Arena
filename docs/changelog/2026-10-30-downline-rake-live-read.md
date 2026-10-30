@@ -10,4 +10,4 @@ The current whole SQL reader passes eleven isolated PostgreSQL 17 checks: the ex
 
 Installed/publication receipts are recorded in the existing task checkpoint after the final checks. Real-time law: triggered by `PRIVATE_RECORD_CHANGED` discrete WS event, no snapshot diff.
 
-The first push correctly refused stale workflow source pins. Refresh only the five current CI byte/size pins for the reviewed additive native step, with a reason in each binding's audit block. Preserve historical receipts and all underlying financial sources, assertions and required checks. The complete source-binding verifier then passes; a matching pin remains source evidence only.
+The existing Accounting 3 entrypoint completes all 37 legacy role checks and then executes the 11 current-reader checks in process. Each fixture retains its own PostgreSQL command limits and cleanup. Native temporary directories honor the task's external `TMPDIR`. The workflow and financial source-binding files retain protected-main bytes; the complete source-binding verifier passes.

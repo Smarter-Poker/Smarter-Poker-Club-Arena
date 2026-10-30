@@ -11,9 +11,9 @@ M=ROOT/'supabase/migrations/20261030082716_downline_rake_filters_players_before_
 F=ROOT/'scripts/dev/fixtures/agent-downline-rake-live/current.sql'
 OLD='a.rake_amount > 0 AND a.player_id IS NOT NULL'
 NEW=OLD+'\n       AND EXISTS (SELECT 1 FROM everyone e\n                    WHERE e.player_id = a.player_id AND e.club_id = a.club_id)'
-def main():
+def main(argv=None):
  if not __debug__: raise RuntimeError('Assertions required')
- p=argparse.ArgumentParser();p.add_argument('--evidence-dir',required=True,type=Path);a=p.parse_args();a.evidence_dir.mkdir(parents=True,exist_ok=False)
+ p=argparse.ArgumentParser();p.add_argument('--evidence-dir',required=True,type=Path);a=p.parse_args(argv);a.evidence_dir.mkdir(parents=True,exist_ok=False)
  pg=Path(os.environ.get('PGBIN','/opt/homebrew/opt/postgresql@17/bin'))
  env={k:v for k,v in os.environ.items() if not k.startswith('PG')};env.update(TZ='UTC',LC_ALL='C')
  runtime=Path(tempfile.mkdtemp(prefix='dr-',dir=os.environ.get('TMPDIR',str(a.evidence_dir.parent))))

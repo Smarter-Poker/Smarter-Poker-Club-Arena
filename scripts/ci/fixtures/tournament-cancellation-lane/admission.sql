@@ -5,19 +5,21 @@ CREATE OR REPLACE FUNCTION smarter_private.cancellation_lane(p_tournament_id uui
 AS $function$
 DECLARE
  g bigint := hashtextextended('ca:tournament-terminal-settlement:v1',0);
+ f bigint := hashtextextended('ca:tournament-finish-lane:v1',0);
  b bigint := hashtextextended('ca:hand-settlement-barrier:v1',0);
  held text := COALESCE(current_setting('ca.finish_lane_tournament',true),'');
  scope text := COALESCE(current_setting('ca.finish_lane_scope',true),'');
- gx boolean; bx boolean; gs boolean; prior_t boolean;
+ gx boolean; bx boolean; gs boolean; fx boolean; prior_t boolean;
 BEGIN
  IF p_tournament_id IS NULL THEN
   RAISE EXCEPTION 'Tournament id is required' USING ERRCODE='22004';
  END IF;
  SELECT COALESCE(bool_or(k.key=g AND l.mode='ExclusiveLock'),false),
         COALESCE(bool_or(k.key=b AND l.mode='ExclusiveLock'),false),
-        COALESCE(bool_or(k.key=g AND l.mode IN('ShareLock','ExclusiveLock')),false)
- INTO gx,bx,gs
- FROM pg_catalog.pg_locks l JOIN (VALUES(g),(b)) k(key)
+        COALESCE(bool_or(k.key=g AND l.mode IN('ShareLock','ExclusiveLock')),false),
+        COALESCE(bool_or(k.key=f AND l.mode='ExclusiveLock'),false)
+ INTO gx,bx,gs,fx
+ FROM pg_catalog.pg_locks l JOIN (VALUES(g),(b),(f)) k(key)
  ON l.classid=((k.key>>32)&4294967295)::oid AND l.objid=(k.key&4294967295)::oid
  WHERE l.pid=pg_backend_pid() AND l.locktype='advisory' AND l.objsubid=1
  AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=current_database()) AND l.granted;
@@ -28,10 +30,10 @@ BEGIN
   RETURN;
  END IF;
  -- A marker alone is never authority. Validate its existing global/event
- -- identity and reject bank scope. F is not this admission's authority:
- -- every success must still acquire the full original exclusive G/B below.
+ -- identity, reject bank scope, and require the already-held finish barrier.
+ -- Only this existing sweep authority may retain its original shared G lane.
  IF held<>'' OR scope<>'' THEN
-  IF NOT gs OR scope<>'' THEN
+  IF NOT gs OR NOT fx OR scope<>'' THEN
    RAISE EXCEPTION 'CANCELLATION_FINISH_AUTHORITY_INCOMPLETE' USING ERRCODE='55000';
   END IF;
   SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks l
@@ -43,6 +45,7 @@ BEGIN
   IF held<>p_tournament_id::text OR NOT prior_t THEN
    RAISE EXCEPTION 'CANCELLATION_EVENT_AUTHORITY_INCOMPLETE' USING ERRCODE='55000';
   END IF;
+  RETURN;
  END IF;
  -- Preserve the original complete financial exclusion. A try-lock never
  -- queues an exclusive global request ahead of subsequent hand readers.

@@ -44,6 +44,26 @@ describe('Cancellation cannot queue an exclusive lane ahead of hand readers', ()
     expect(read(migration)).toContain(helper);
   });
 
+  it('preserves existing sweep authority and limits the doctrine exception to exact catalog identity', () => {
+    expect(helper).toContain("IF NOT gs OR NOT fx OR scope<>'' THEN");
+    expect(helper).toContain('held<>p_tournament_id::text OR NOT prior_t');
+    const before = JSON.parse(read(base + 'doctrine.json'));
+    const after = JSON.parse(read(base + 'doctrine-postimage.json'));
+    expect(createHash('md5').update(before.definition).digest('hex')).toBe(before.definition_md5);
+    expect(createHash('md5').update(after.definition).digest('hex')).toBe(after.definition_md5);
+    const addition = after.definition.slice(
+      after.definition.indexOf('\n     -- Only this exact owner-only observer'),
+      after.definition.indexOf('\n  IF v_set IS DISTINCT FROM\n')
+    );
+    expect(addition).toContain("to_regprocedure('smarter_private.cancellation_lane(uuid)')");
+    expect(addition).toContain("md5(pg_get_functiondef(p.oid))='bc4f86f56d7349416264a237817969b2'");
+    expect(addition).toContain("p.proowner='postgres'::regrole");
+    expect(addition).toContain("p.proacl::text='{postgres=X/postgres}'");
+    expect(addition).toContain('AND NOT p.prosecdef,false);');
+    expect(after.definition.replace(addition, ';')).toBe(before.definition);
+    expect(read(migration)).toContain(after.definition_md5);
+  });
+
   it('retains full financial bodies behind the four reviewed entry prefixes', () => {
     const before = JSON.parse(read(base + 'preimages.json'));
     const after = JSON.parse(read(base + 'postimages.json'));

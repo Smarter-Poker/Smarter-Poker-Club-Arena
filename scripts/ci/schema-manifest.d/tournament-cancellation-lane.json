@@ -1,5 +1,5 @@
 {
   "_owner": "fix/mtt-cancellation-lane-01a18860",
-  "_comment": "Private nonblocking admission preserves original exclusive global/hand-barrier financial exclusion; no public execute grant.",
+  "_comment": "Private nonblocking admission preserves original exclusive global/hand-barrier financial exclusion for ordinary cancellation and physically validated existing sweep reentry; no public execute grant.",
   "functions": ["smarter_private.cancellation_lane"]
 }

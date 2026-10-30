@@ -120,8 +120,14 @@ def run_admission(e,db):
         case('diamond-null-input-refused',refuse('SELECT public.fn_poker_diamond_tournament_cancel(NULL,NULL);','Tournament id is required'))
         case('partial-global-refused','BEGIN;SELECT pg_advisory_xact_lock('+G+');'+refuse(admit(),'CANCELLATION_GLOBAL_AUTHORITY_INCOMPLETE')+'ROLLBACK;')
         case('existing-global-batch-preserved','BEGIN;SELECT public.fn_ca_lock_settlement_lane_global();'+admit()+admit(OTHER)+"DO $$ BEGIN IF COALESCE(current_setting('ca.finish_lane_tournament',true),'')<>'' THEN RAISE EXCEPTION 'global batch marker invented'; END IF; END $$;ROLLBACK;")
-        case('existing-real-finish-upgrades-only-when-free','BEGIN;SELECT pg_advisory_xact_lock_shared('+G+');SELECT pg_advisory_xact_lock('+F+');SELECT pg_advisory_xact_lock('+event_key(EVENT)+");SELECT set_config('ca.finish_lane_tournament','"+EVENT+"',true);"+admit()+"DO $$ BEGIN IF current_setting('ca.finish_lane_tournament')<>'"+EVENT+"' OR NOT "+held(G,'ExclusiveLock')+' OR NOT '+held(B,'ExclusiveLock')+" THEN RAISE EXCEPTION 'finish authority changed'; END IF;END $$;ROLLBACK;")
-        case('same-event-marker-without-finish-still-requires-full-global-barrier','BEGIN;SELECT pg_advisory_xact_lock_shared('+G+');SELECT pg_advisory_xact_lock('+event_key(EVENT)+");SELECT set_config('ca.finish_lane_tournament','"+EVENT+"',true);"+admit()+"DO $$ BEGIN IF NOT "+held(G,'ExclusiveLock')+' OR NOT '+held(B,'ExclusiveLock')+" THEN RAISE EXCEPTION 'original exclusion missing';END IF; END $$;ROLLBACK;")
+        b.query('BEGIN;SELECT pg_advisory_xact_lock_shared('+G+');SELECT pg_advisory_xact_lock('+F+');SELECT pg_advisory_xact_lock('+event_key(EVENT)+");SELECT set_config('ca.finish_lane_tournament','"+EVENT+"',true);"+admit())
+        assert b.query('SELECT '+held(G,'ShareLock')+' AND '+held(F,'ExclusiveLock')+' AND '+held(event_key(EVENT),'ExclusiveLock')+' AND NOT '+held(G,'ExclusiveLock')+' AND NOT '+held(B,'ExclusiveLock')+';').strip()=='t'
+        assert c.query('SELECT pg_try_advisory_xact_lock_shared('+G+');').strip()=='t'
+        assert c.query('SELECT pg_try_advisory_xact_lock_shared('+F+');').strip()=='f'
+        assert c.query('SELECT pg_try_advisory_xact_lock('+event_key(EVENT)+');').strip()=='f'
+        b.query('ROLLBACK;');cases.append('existing-finish-retains-shared-global-and-exclusive-finish-event')
+        case('same-event-marker-without-finish-refused','BEGIN;SELECT pg_advisory_xact_lock_shared('+G+');SELECT pg_advisory_xact_lock('+event_key(EVENT)+");SELECT set_config('ca.finish_lane_tournament','"+EVENT+"',true);"+refuse(admit(),'CANCELLATION_FINISH_AUTHORITY_INCOMPLETE')+'ROLLBACK;')
+        case('same-event-shared-finish-refused','BEGIN;SELECT pg_advisory_xact_lock_shared('+G+');SELECT pg_advisory_xact_lock_shared('+F+');SELECT pg_advisory_xact_lock('+event_key(EVENT)+");SELECT set_config('ca.finish_lane_tournament','"+EVENT+"',true);"+refuse(admit(),'CANCELLATION_FINISH_AUTHORITY_INCOMPLETE')+'ROLLBACK;')
         e.sql(db,'CREATE TABLE cancellation_native_row(id integer PRIMARY KEY, value integer);INSERT INTO cancellation_native_row VALUES(1,0);',label='prelocked-row-fixture')
         a.query('BEGIN;SELECT pg_advisory_xact_lock_shared('+G+');SELECT pg_advisory_xact_lock_shared('+F+');')
         # Model caller's already-owned row with a real row, then verify all
@@ -135,6 +141,51 @@ def run_admission(e,db):
         return cases
     finally:
         for s in sessions:s.close()
+
+def run_existing_sweep(e,db):
+    target='d3000000-0000-4000-8000-000000000003'
+    table='d5000000-0000-4000-8000-000000000002'
+    # A separate zero-fee entry is charged through the real admission door.
+    # Only the unstarted Spin seating/time scene is synthetic; no balance,
+    # entitlement, escrow or fee record is fabricated or changed.
+    setup="""BEGIN;SET LOCAL session_replication_role=replica;
+CREATE TABLE IF NOT EXISTS public.spin_fill_policy(id boolean PRIMARY KEY DEFAULT true,unfilled_timeout_minutes integer NOT NULL DEFAULT 30,updated_at timestamptz NOT NULL DEFAULT now());
+INSERT INTO public.spin_fill_policy(id,unfilled_timeout_minutes) VALUES(true,30) ON CONFLICT(id) DO UPDATE SET unfilled_timeout_minutes=30;
+INSERT INTO public.tournaments(id,name,buy_in_amount,buy_in_fee,starting_chips,start_time,status,current_players,max_players,current_level,club_id,prize_pool,total_rake,bounty_pool,entry_contract_locked,is_rebuy,is_reentry,rebuy_levels,late_reg_levels,late_reg_mins)
+VALUES('d3000000-0000-4000-8000-000000000003','Cancellation zero fee paid entry',100,0,1000,now()+interval '1 day','REGISTERING',0,3,1,'d2000000-0000-4000-8000-000000000002',0,0,0,false,false,false,0,0,0);
+SET LOCAL session_replication_role=origin;
+SELECT set_config('request.jwt.claims','{"sub":"d1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"d4000000-0000-4000-8000-000000000001"}',true);
+SET LOCAL ROLE authenticated;
+SELECT public.fn_register_for_tournament_request('d3000000-0000-4000-8000-000000000003','d4000000-0000-4000-8000-000000000009');
+RESET ROLE;
+DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.tournament_escrow WHERE tournament_id='d3000000-0000-4000-8000-000000000003' AND prize_balance=100 AND fee_balance=0) THEN RAISE EXCEPTION 'zero-fee paid entry did not fund100'; END IF;END $$;
+SET LOCAL session_replication_role=replica;
+UPDATE public.tournaments SET variant='spin' WHERE id='d3000000-0000-4000-8000-000000000003';
+INSERT INTO public.tables(id,name,tournament_id,status,lifecycle,current_players,game_type,club_id,seat_game_scope,seat_admission_key)
+VALUES('d5000000-0000-4000-8000-000000000002','Isolated cancellation sweep','d3000000-0000-4000-8000-000000000003','waiting','live',1,'tournament','d2000000-0000-4000-8000-000000000002','table:d5000000-0000-4000-8000-000000000002','tournament:d3000000-0000-4000-8000-000000000003');
+INSERT INTO public.table_seats(id,table_id,seat_number,user_id,stack,status,left_at,leave_pending,is_sitting_out,is_away,club_id,active_game_scope,active_parent_key,joined_at)
+SELECT ('d6000000-0000-4000-8000-00000000000'||(row_number() OVER(ORDER BY user_id)+1)::text)::uuid,'d5000000-0000-4000-8000-000000000002',row_number() OVER(ORDER BY user_id),user_id,1000,'active',NULL,false,false,false,club_id,'table:d5000000-0000-4000-8000-000000000002','tournament:d3000000-0000-4000-8000-000000000003',now()-interval '31 minutes'
+FROM public.tournament_players WHERE tournament_id='d3000000-0000-4000-8000-000000000003';
+COMMIT;"""
+    e.sql(db,setup,label='synthetic-unstarted-sweep-scene-only')
+    sweep=json.loads((DATA/'sweep.json').read_text())
+    assert hashlib.md5(sweep['definition'].encode()).hexdigest()==sweep['definition_md5']
+    e.sql(db,sweep['definition']+';',label='exact-existing-sweep-caller')
+    a=Session(e,db);b=Session(e,db);c=Session(e,db)
+    try:
+        a.query('BEGIN;SELECT pg_advisory_xact_lock_shared('+G+');')
+        b.query("BEGIN;SELECT set_config('request.jwt.claims','{\"role\":\"service_role\"}',true),set_config('request.jwt.claim.role','service_role',true);")
+        result=json.loads(b.query('SELECT public.fn_spin_expire_unfilled(50);').strip())
+        assert result['expired']==1 and result['failed']==0 and result['tournament_ids']==[target],result
+        assert b.query('SELECT '+held(G,'ShareLock')+' AND '+held(F,'ExclusiveLock')+' AND '+held(event_key(target),'ExclusiveLock')+' AND NOT '+held(G,'ExclusiveLock')+' AND NOT '+held(B,'ExclusiveLock')+';').strip()=='t'
+        assert c.query('SELECT pg_try_advisory_xact_lock_shared('+G+');').strip()=='t'
+        assert c.query('SELECT pg_try_advisory_xact_lock_shared('+F+');').strip()=='f'
+        assert c.query('SELECT pg_try_advisory_xact_lock('+event_key(target)+');').strip()=='f'
+        assert b.query("SELECT total_refunded=100 AND fees_reversed=0 AND refund_line_count=1 FROM public.tournament_cancellation_receipts WHERE tournament_id='"+target+"';").strip()=='t'
+        b.query('ROLLBACK;');a.query('ROLLBACK;')
+        e.report['existing_sweep']={'status':'passed','definition_md5':sweep['definition_md5'],'result':result,'refund':100,'fees_reversed':0,'unrelated_reader_progress':True,'finish_and_same_event_excluded':True}
+    finally:
+        for s in (a,b,c):s.close()
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -165,7 +216,7 @@ def main():
         (out/'current-catalog.sql').write_text(setup);e.sql(db,file=out/'current-catalog.sql',label='exact-installed-entry-dependencies')
         doctrine=json.loads((DATA/'doctrine.json').read_text())
         assert hashlib.md5(doctrine['definition'].encode()).hexdigest()==doctrine['definition_md5']
-        e.sql(db,doctrine['definition']+';',label='actual-installed-lane-doctrine')
+        e.sql(db,doctrine['definition']+';REVOKE ALL ON FUNCTION public.fn_ca_settlement_lane_doctrine() FROM PUBLIC,anon,authenticated,service_role;GRANT EXECUTE ON FUNCTION public.fn_ca_settlement_lane_doctrine() TO service_role;',label='actual-installed-lane-doctrine')
         _,baseline,_=e.sql(db,'SELECT public.fn_ca_settlement_lane_doctrine();',label='actual-doctrine-before-cancellation-admission')
         e.report['doctrine_before']=json.loads(baseline.strip())
         e.report['native']=run_admission(e,db)
@@ -173,6 +224,17 @@ def main():
         e.report['doctrine']=json.loads(verdict.strip())
         assert e.report['doctrine']['violations']==e.report['doctrine_before']['violations']
         assert not any(v['rule']=='f_named_only_by_finish_helpers' for v in e.report['doctrine']['violations'])
+        # A name-only exemption would hide future writers. Actual catalog mutations
+        # must each restore the F finding; rollback keeps the candidate unchanged.
+        helper=(DATA/'admission.sql').read_text()
+        for name,mutation in [
+            ('helper-body-drift',helper.replace('BEGIN','BEGIN\n -- changed body',1)),
+            ('helper-acl-drift','GRANT EXECUTE ON FUNCTION smarter_private.cancellation_lane(uuid) TO service_role;'),
+            ('other-f-reader',"CREATE FUNCTION smarter_private.other_f_reader() RETURNS bigint LANGUAGE sql AS $$ SELECT "+F+" $$;"),
+        ]:
+            _,bad,_=e.sql(db,'BEGIN;'+mutation+'SELECT public.fn_ca_settlement_lane_doctrine();ROLLBACK;',label=name)
+            assert any(v['rule']=='f_named_only_by_finish_helpers' for v in json.loads(bad.strip())['violations']),name
+        e.report['doctrine_negative_cases']=3
         if args.admission_only:
             e.report['scope']='admission and exact installation only; funded evidence retained separately'
             e.report['status']='passed';e.report['passed']=True
@@ -226,6 +288,7 @@ END $started_refusal$;
         funded='BEGIN;\n'+probe.replace('-- @FINAL_DEAL_RUNTIME@','')
         (out/'funded-cancellation.sql').write_text(funded)
         e.sql(db,file=out/'funded-cancellation.sql',label='real-funded-cross-origin-cancellation-and-rollback',seconds=90)
+        run_existing_sweep(e,db)
         e.report['scope']='nonblocking original exclusion, exact entry installation, retained real funded cancellation assertions'
         e.report['status']='passed';e.report['passed']=True
     finally:

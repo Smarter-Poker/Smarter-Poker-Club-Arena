@@ -204,13 +204,14 @@ except FileExistsError:
     sys.stderr.write("[legacy-engine-checkpoint] the one-shot intent for this run key already exists at "+path+"\n")
     raise SystemExit(70)
 try:
-    os.write(fd,(json.dumps(intent)+"\n").encode())
+    serialized=json.dumps(intent,separators=(",",":"))
+    os.write(fd,(serialized+"\n").encode())
     os.fsync(fd)
 finally: os.close(fd)
 fd=os.open(os.path.dirname(path),os.O_RDONLY|os.O_DIRECTORY)
 try: os.fsync(fd)
 finally: os.close(fd)
-print(json.dumps(intent,separators=(",",":")))
+print(serialized)
 PY
 )"
 CHECKPOINT_INTENT_RC=$?

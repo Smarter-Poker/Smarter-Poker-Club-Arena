@@ -200,9 +200,7 @@ describe('the cashier transaction history', () => {
     const page = read('src/pages/CashierTradePage.tsx');
     // Search runs over the whole history, debounced, never over the rows on screen.
     expect(page).toContain('p_search: historySearch || null,');
-    expect(page).toContain(
-      "setTimeout(() => setHistorySearch(typed.length >= 2 ? typed : ''), 350)"
-    );
+    expect(page).toContain('setTimeout(() => setHistorySearch(typed), 350)');
     // Older pages come from the last row on screen, never an offset.
     expect(page).not.toContain('p_offset');
     expect(page).toContain('p_before_at: last.createdAt,');

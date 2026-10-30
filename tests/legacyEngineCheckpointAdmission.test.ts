@@ -18,6 +18,10 @@ import { parse } from 'yaml';
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 const installer = read('server/scripts/install-engine-supervisor.sh');
 const checkpointShell = read('server/scripts/legacy-engine-checkpoint.sh');
 const checkpointTransport = read('server/scripts/legacy-engine-checkpoint.mjs');
@@ -52,7 +56,7 @@ function probe(patch: Record<string, unknown> = {}, httpStatus = 200) {
       `set -euo pipefail
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
-legacy_entry_read() { "$@"; }
+${entryRead}
 MIN_BREAK_REMAINING_MS=285000
 curl() { printf '%s\\n%s' "$CHECKPOINT_TEST_BODY" "$CHECKPOINT_TEST_HTTP"; }
 ${countdown}

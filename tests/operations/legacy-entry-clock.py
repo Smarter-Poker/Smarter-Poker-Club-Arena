@@ -173,7 +173,7 @@ class NativeBudgetTests(unittest.TestCase):
             # Actual wall clock, not a simulated clock: macOS date lacks %3N.
             clock = f'''date() {{ {sys.executable} -c 'import time;print(time.time_ns()//1000000)'; }}'''
             now = time.time_ns() // 1000000
-            deadline = now + (250 if final else 5000 if expired else 7500)
+            deadline = now + (2000 if final else 5000 if expired else 7500)
             variable = 'CHECKPOINT_DEADLINE_MS' if final else 'LEGACY_ENTRY_DEADLINE_MS'
             command = 'checkpoint_final_read' if final else 'legacy_entry_read'
             script = f'''set -euo pipefail

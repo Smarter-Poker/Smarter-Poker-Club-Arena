@@ -63,6 +63,10 @@ const TRANSACTION = readFileSync(
   join(ROOT, 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
+const entryRead = TRANSACTION.slice(
+  TRANSACTION.indexOf('legacy_entry_read() {'),
+  TRANSACTION.indexOf('legacy_entry_trace() {')
+);
 const BREAK = readFileSync(join(ROOT, 'server/src/maintenance/MaintenanceBreak.ts'), 'utf8');
 
 const PREDECESSOR = '778075b419d078c58565c284c0ca7c5225bb773a';
@@ -130,7 +134,7 @@ function certificate({
 MIN_BREAK_REMAINING_MS=285000
 ENV_FILE=/dev/null
 INFLIGHT_HANDS="$MOCK_INFLIGHT"
-legacy_entry_read() { "$@"; }
+${entryRead}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper}
 maintenance_certificate`,

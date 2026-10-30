@@ -95,6 +95,10 @@ vi.setConfig({ testTimeout: 90_000 });
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 const checkpointShell = read('server/scripts/legacy-engine-checkpoint.sh');
 const guard = read('server/scripts/legacy-engine-checkpoint-guard.mjs');
 const maintenance = read('server/src/maintenance/MaintenanceBreak.ts');
@@ -134,7 +138,7 @@ function admit(remainingMs: number, headroomMs: number) {
       `set -euo pipefail
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
-legacy_entry_read() { "$@"; }
+${entryRead}
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${countdown}
@@ -526,7 +530,7 @@ function certificate(remainingMs: number, minimum?: number) {
       `set -u
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
-legacy_entry_read() { "$@"; }
+${entryRead}
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper}

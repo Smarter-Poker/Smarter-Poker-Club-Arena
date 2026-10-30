@@ -11,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
+ENTRY_READ = SOURCE[SOURCE.index('legacy_entry_read() {'):SOURCE.index('legacy_entry_trace() {')]
 RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_break_deadline() {')]
 CERTIFICATE = SOURCE[SOURCE.index('maintenance_certificate() {'):SOURCE.index('# This is one optional event')]
 
@@ -59,7 +60,7 @@ def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=
             calls_script.append(f'NOW=$((NOW + {advance}))')
         script = f'''
 set -euo pipefail
-legacy_entry_read() {{ "$@"; }}
+{ENTRY_READ}
 EVENTS={shlex.quote(str(events))}
 SHA={TARGET}; RUN_ID=900-2; REPO_DIR=/fixture; CONTAINER=fixture; RELEASE_SEAL=fixture-seal
 REQUEST_ROOT={shlex.quote(str(request_root))}
@@ -162,7 +163,7 @@ RECOVERY_ADMISSION_MISSED={int(missed)}
 
 def missed(*, waiting_since, remaining_ms, now=1800003360):
     script = f'''set -euo pipefail
-legacy_entry_read() {{ "$@"; }}
+{ENTRY_READ}
 BREAK_WINDOW_MS=300000
 BREAK_ADMISSION_MIN_BREAK_MS=260000
 date() {{ echo {now}; }}
@@ -179,7 +180,7 @@ echo "$RECOVERY_ADMISSION_MISSED"
 def certificate(maintenance, *, running=True, transport=True, http=200, minimum=None):
     response = json.dumps({'running': running, 'weeklyPayout': None, 'maintenance': maintenance}) + f'\n{http}'
     script = f'''set -euo pipefail
-legacy_entry_read() {{ "$@"; }}
+{ENTRY_READ}
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000

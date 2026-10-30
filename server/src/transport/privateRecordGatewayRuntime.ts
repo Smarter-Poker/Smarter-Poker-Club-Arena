@@ -1,3 +1,30 @@
+import type { RequestListener } from 'node:http';
+
+/** The standalone entry and its real HTTP regression share the same handler. */
+export function createPrivateRecordGatewayHealthHandler(
+  revision: string,
+  sourceState: () => { sourceReady: boolean; sourcePhase: 'connecting' | 'unavailable' }
+): RequestListener {
+  return (req, res) => {
+    // Cache-busting parameters do not change the exact health request path.
+    if (req.url?.split('?', 1)[0] !== '/health') {
+      res.writeHead(404).end();
+      return;
+    }
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    // Reachability and the current source readiness remain separate signals.
+    res.end(
+      JSON.stringify({
+        service: 'private-record-gateway',
+        revision,
+        processReachable: true,
+        ...sourceState(),
+      })
+    );
+  };
+}
+
 /** Exact first-party web/iOS/Android origins; no wildcard or originless admission. */
 export const PRIVATE_RECORD_GATEWAY_ORIGINS: ReadonlySet<string> = new Set([
   'https://smarter.poker',

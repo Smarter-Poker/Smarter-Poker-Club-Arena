@@ -195,4 +195,79 @@ printf '%s' inspector-boundary-reached
       rmSync(root, { recursive: true, force: true });
     }
   });
+  it.each(['owned', 'tampered', 'unknown'])(
+    'BEHAVIOUR: writer-to-retirer preserves exact intent ownership (%s)',
+    (outcome) => {
+      const writer = checkpointShell.slice(
+        checkpointShell.indexOf('# Persist intent before opening debugger access.'),
+        checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
+      );
+      const retirement = checkpointShell.slice(
+        checkpointShell.indexOf('if [ "$CHECKPOINT_RC" = 75 ]; then')
+      );
+      expect(writer).toContain('O_EXCL');
+      expect(retirement).toContain('os.fsync(fd)');
+      const root = mkdtempSync(join(tmpdir(), 'release-intent-roundtrip-'));
+      try {
+        const result = spawnSync(
+          'bash',
+          [
+            '-c',
+            `set -euo pipefail
+ die() { echo "$*" >&2; exit 1; }
+ defer() { echo "$*" >&2; exit 75; }
+ defer_proved_not_started() { echo "$*" >&2; exit 75; }
+ checkpoint_entry_read() { "$@"; }
+ checkpoint_final_read() { "$@"; }
+ timeout() { shift; "$@"; }
+ date() { "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; }
+ CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
+ REQUEST_ROOT="$PROBE_ROOT"
+ RUN_ID=35626149078-1
+ INSTANCE=1-3846b8bb
+ LEGACY_SHA=${PREDECESSOR}
+ CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
+ STARTED_AT=2026-09-18T21:55:50.88305198Z
+ HOST_PID=1231816
+ REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
+ ${writer}
+ if [ "$PROBE_OUTCOME" = tampered ]; then printf ' ' >> "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"; fi
+ cp "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$PROBE_ROOT/before"
+ CHECKPOINT_RC=75
+ if [ "$PROBE_OUTCOME" = unknown ]; then CHECKPOINT_RC=1; fi
+ ${retirement}
+ `,
+          ],
+          {
+            encoding: 'utf8',
+            timeout: 10_000,
+            env: {
+              ...process.env,
+              CHECKPOINT_TEST_NODE: process.execPath,
+              PROBE_ROOT: root,
+              PROBE_OUTCOME: outcome,
+            },
+          }
+        );
+        const intent = join(root, INTENT_NAME);
+        if (outcome === 'owned') {
+          // Exit 75 follows the actual unlink AND directory fsync. Only this
+          // positively non-acting entry can reach the caller's absence gate.
+          expect(result.status, result.stderr).toBe(75);
+          expect(result.stderr).toContain('this entry retired its own intent');
+          expect(existsSync(intent)).toBe(false);
+        } else {
+          expect(result.status).toBe(1);
+          expect(existsSync(intent)).toBe(true);
+          expect(readFileSync(intent, 'utf8')).toBe(readFileSync(join(root, 'before'), 'utf8'));
+          expect(result.stderr).not.toContain('this entry retired its own intent');
+          if (outcome === 'tampered')
+            expect(result.stderr).toContain('intent on disk is not the one this entry wrote');
+          else expect(result.stderr).toContain('do not retry this operation');
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
 });

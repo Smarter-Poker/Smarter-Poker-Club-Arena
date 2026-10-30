@@ -7188,7 +7188,7 @@
   "allocated": true,
   "version": "20261030064511",
   "name": "weekly_tournament_quality_uses_bounded_source_and_fee_cover_",
-  "migration_sha256": "5f1db87cfcf68ad940fac96267b341ce6a53635889f6173815288d633596321c",
+  "migration_sha256": "e334b085b2b32bfea0323c794908c64b42ae157ce6363d9ac2d84f516b9904b6",
   "history_metadata": {
     "rollback": null,
     "created_by": null,

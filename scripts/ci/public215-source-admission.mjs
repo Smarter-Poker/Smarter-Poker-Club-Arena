@@ -133,9 +133,23 @@ export async function collectSourceAdmission(selected,{read,readArray,readLog,gi
  return {format:'public215_protected_source_admission_v1',candidate_sha:selected.candidate_sha,qualified_pr:pr.number,qualified_head:head,qualified_head_fetch:head,source,classifier:witness,integration,head_observation:{state:headObservation.state,required_problems:headObservation.requiredProblems,failures:headObservation.failures,active_runs:headObservation.activeRuns},candidate_observation:{state:candidateObservation.state,required_problems:candidateObservation.requiredProblems,failures:candidateObservation.failures,active_runs:candidateObservation.activeRuns},status:'source_evidence_only_not_deployed_frozen_or_certified'};
 }
 
-export function boundedSourceReaders(){
+// Emit only our canonical metadata route and typed failure facts. Never echo
+// CLI stderr, response bodies, headers, redirects or credential-bearing URLs.
+export function sourceCommandFailure(binary,args,result){
+ const exit=Number.isInteger(result.status)?result.status:'unavailable';
+ if(binary!=='gh')return `Immutable Git source command refused (exit ${exit})`;
+ const prefix=`repos/${REPO}`,path=args.length===2&&args[0]==='api'&&args[1].startsWith(prefix)?args[1].slice(prefix.length):'';
+ const allowed=/^\/(?:commits\/[0-9a-f]{40}\/(?:pulls|check-runs)|pulls\/[1-9][0-9]*|rules\/branches\/main|actions\/(?:runs(?:\/[1-9][0-9]*(?:\/jobs)?)?|jobs\/[1-9][0-9]*\/logs))(?:\?(?:(?:filter=(?:all|latest)|head_sha=[0-9a-f]{40})&)?per_page=100&page=[1-9][0-9]*)?$/;
+ const route=allowed.test(path)?path:'[unrecognized route]';
+ const stderr=Buffer.isBuffer(result.stderr)?result.stderr.toString('utf8'):'';
+ const http=stderr.match(/\bHTTP ([1-5][0-9]{2})\b/);
+ const kind=result.error?.code==='ETIMEDOUT'?'timeout':result.error?'unavailable':/\b(?:API rate limit exceeded|secondary rate limit)\b/i.test(stderr)?'api_rate_limit':'command_failed';
+ return `GitHub source metadata command refused (route ${route}; kind ${kind}; HTTP ${http?.[1]??'unknown'}; exit ${exit})`;
+}
+
+export function boundedSourceReaders(run=spawnSync){
  const started=Date.now(),deadline=started+120000;let calls=0;const cache=new Map();
- const command=(binary,args)=>{demand(++calls<=80&&Date.now()<deadline,'Finite source admission budget exceeded');const r=spawnSync(binary,args,{encoding:null,maxBuffer:16*1024*1024,timeout:Math.min(20000,deadline-Date.now())});demand(!r.error&&r.status===0,`${binary==='gh'?'GitHub source metadata':'Immutable Git source'} command refused (exit ${Number.isInteger(r.status)?r.status:'unavailable'})`);return r.stdout;};
+ const command=(binary,args)=>{demand(++calls<=80&&Date.now()<deadline,'Finite source admission budget exceeded');const r=run(binary,args,{encoding:null,maxBuffer:16*1024*1024,timeout:Math.min(20000,deadline-Date.now())});demand(!r.error&&r.status===0,sourceCommandFailure(binary,args,r));return r.stdout;};
  const json=path=>JSON.parse(command('gh',['api',`repos/${REPO}${path}`]).toString('utf8'));
  const read=async path=>{if(!cache.has(path))cache.set(path,json(path));return cache.get(path);};
  const readArray=async path=>{const result=[];for(let page=1;page<=10;page++){const rows=await read(`${path}?per_page=100&page=${page}`);demand(Array.isArray(rows),'Readable merge associations required');result.push(...rows);if(rows.length<100)return result;}throw Error('Unbounded merge associations');};

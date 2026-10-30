@@ -1554,7 +1554,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
                   .select('is_horse')
                   .eq('id', userId)
                   .maybeSingle();
-                if (error || typeof profile?.is_horse !== 'boolean' || profile.is_horse)
+                if (
+                  error ||
+                  !profile ||
+                  (profile.is_horse !== null && typeof profile.is_horse !== 'boolean') ||
+                  profile.is_horse === true
+                )
                   return {
                     success: false,
                     immediate: false,

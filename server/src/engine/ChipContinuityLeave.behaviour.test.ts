@@ -683,6 +683,7 @@ describe('2/5 PLO5 Horse profit floor', () => {
       error?: boolean;
       live?: boolean;
       missingRoster?: boolean;
+      nullableHuman?: boolean;
     } = {}
   ) {
     const e = makeEngine();
@@ -700,7 +701,10 @@ describe('2/5 PLO5 Horse profit floor', () => {
       eq: vi.fn(() => chain),
       is: vi.fn(() => chain),
       maybeSingle: vi.fn(async () => ({
-        data: baseline === null ? null : { baseline, is_horse: !options.human },
+        data:
+          baseline === null
+            ? null
+            : { baseline, is_horse: options.nullableHuman ? null : !options.human },
         error: options.error ? { message: 'unavailable' } : null,
       })),
     };
@@ -763,6 +767,13 @@ describe('2/5 PLO5 Horse profit floor', () => {
     expect((await attempt(1000, 500, { missingRoster: true, human: true })).result.success).toBe(
       true
     );
+    expect(cashout).toHaveBeenCalled();
+  });
+  it('preserves a human reserved-seat profile with the nullable default', async () => {
+    expect(
+      (await attempt(1000, 500, { missingRoster: true, human: true, nullableHuman: true })).result
+        .success
+    ).toBe(true);
     expect(cashout).toHaveBeenCalled();
   });
   it('binds the read to this Horse, table and open session', async () => {

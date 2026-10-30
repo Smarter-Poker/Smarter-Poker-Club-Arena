@@ -1,13 +1,5 @@
 /* Owner October 29: choose a family before opening its controls. The plates
    use the lobby's approved blank NLH plate at its native 307:174 proportions. */
-.club-home .club-lobby-command-top .lobby-controls__heading {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 12px 8px 8px;
-  text-align: center;
-}
-
 .lobby-game-sections {
   display: grid;
   width: 100%;

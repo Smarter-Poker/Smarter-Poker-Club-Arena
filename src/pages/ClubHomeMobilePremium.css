@@ -3,10 +3,8 @@
 
    Two surfaces, both phone-only (the unified mobile lobby):
 
-   1. "FIND YOUR GAME + 273 GAMES NEEDS TO BE LAID OUT BETTER. IT NEEDS TO BE
-      LAID OUT (LIKE THE ATTACHED IMAGE) AS ONE LINE, NOT STACKED." The desktop
-      heading row: title then eyebrow on one baseline at the left, the count on
-      the same line at the right.
+   1. October 29: Find Your Game is centered above Cash Games and Tournaments.
+      The prior title/eyebrow/count row no longer exists.
 
    2. "'MY WALLETS' NEEDS THE SAME PREMIUM BUTTON LOOK AND FEEL THAT EVERYTHING
       ELSE HAS" - and on 2026-09-04, "MAKE THE WALLETS LOOK EXACTLY LIKE THIS":
@@ -24,8 +22,8 @@
   .club-home--unified-mobile .club-lobby-command-top .lobby-controls__heading {
     flex-direction: row;
     flex-wrap: nowrap;
-    align-items: baseline;
-    justify-content: space-between;
+    align-items: center;
+    justify-content: center;
     gap: 10px;
     padding: 2px 4px 4px;
   }

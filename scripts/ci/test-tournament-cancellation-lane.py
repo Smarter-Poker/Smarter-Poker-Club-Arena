@@ -167,7 +167,9 @@ INSERT INTO public.table_seats(id,table_id,seat_number,user_id,stack,status,left
 SELECT ('d6000000-0000-4000-8000-00000000000'||(row_number() OVER(ORDER BY user_id)+1)::text)::uuid,'d5000000-0000-4000-8000-000000000002',row_number() OVER(ORDER BY user_id),user_id,1000,'active',NULL,false,false,false,club_id,'table:d5000000-0000-4000-8000-000000000002','tournament:d3000000-0000-4000-8000-000000000003',now()-interval '31 minutes'
 FROM public.tournament_players WHERE tournament_id='d3000000-0000-4000-8000-000000000003';
 COMMIT;"""
-    e.sql(db,setup,label='synthetic-unstarted-sweep-scene-only')
+    setup_file=e.output/'synthetic-unstarted-sweep-scene.sql'
+    setup_file.write_text(setup)
+    e.sql(db,file=setup_file,label='synthetic-unstarted-sweep-scene-only')
     sweep=json.loads((DATA/'sweep.json').read_text())
     assert hashlib.md5(sweep['definition'].encode()).hexdigest()==sweep['definition_md5']
     e.sql(db,sweep['definition']+';',label='exact-existing-sweep-caller')
@@ -220,6 +222,35 @@ def main():
         _,baseline,_=e.sql(db,'SELECT public.fn_ca_settlement_lane_doctrine();',label='actual-doctrine-before-cancellation-admission')
         e.report['doctrine_before']=json.loads(baseline.strip())
         e.report['native']=run_admission(e,db)
+        candidate = ROOT/'supabase/migrations/20261030142407_a_free_diamond_registration_closes_as_zero_disposition.sql'
+        e.report['source_sha256'][str(candidate.relative_to(ROOT))]=hashlib.sha256(candidate.read_bytes()).hexdigest()
+        e.sql(db,file=candidate,label='free-diamond-disposition-install')
+        _,definition,_=e.sql(db,"SELECT pg_get_functiondef('public.fn_poker_diamond_tournament_cancel(uuid,uuid)'::regprocedure);",label='free-diamond-disposition-installed-source')
+        begin=definition.index("      -- A free entry releases zero custody")
+        end=definition.index("      IF COALESCE((v_refund->>'idempotent')",begin)
+        branch=definition[begin:end]
+        assert branch.count('CONTINUE;')==1
+        # Run the installed original-result classification in native PostgreSQL.
+        # The unchanged real funded cancellation suite below separately qualifies
+        # charge/refund/receipt rails; no financial helper is mocked here.
+        for label,result,expected_zero,expected_paid in [
+            ('free',{'free_entry':True,'fully_settled':True,'paid':0,'ledger_id':None,'obligation_id':None,'journal_id':None},1,0),
+            ('paid',{'fully_settled':True,'paid':20,'ledger_id':1},0,1),
+        ]:
+            payload=json.dumps(result).replace("'","''")
+            sql="DO $classify$ DECLARE v_refund jsonb:='"+payload+"'::jsonb;v_player record;v_zero_refund_registration_ids uuid[]:=ARRAY[]::uuid[];paid integer:=0;BEGIN FOR v_player IN SELECT 'a0000000-0000-4000-8000-000000000001'::uuid id LOOP "+branch+" paid:=paid+1;END LOOP;IF cardinality(v_zero_refund_registration_ids)<>"+str(expected_zero)+" OR paid<>"+str(expected_paid)+" THEN RAISE EXCEPTION 'wrong disposition';END IF;END $classify$;"
+            e.sql(db,sql,label='installed-'+label+'-classification')
+        for label,result in [
+            ('nonzero',{'free_entry':True,'fully_settled':True,'paid':1}),
+            ('missing-total',{'free_entry':True,'fully_settled':True}),
+            ('unsettled',{'free_entry':True,'fully_settled':False,'paid':0}),
+            ('unexpected-ledger',{'free_entry':True,'fully_settled':True,'paid':0,'ledger_id':1}),
+        ]:
+            payload=json.dumps(result).replace("'","''")
+            sql="DO $invalid$ DECLARE v_refund jsonb:='"+payload+"'::jsonb;v_player record;v_zero_refund_registration_ids uuid[]:=ARRAY[]::uuid[];refused boolean:=false;BEGIN BEGIN FOR v_player IN SELECT 'a0000000-0000-4000-8000-000000000001'::uuid id LOOP "+branch+" END LOOP;EXCEPTION WHEN SQLSTATE 'P0404' THEN refused:=true;END;IF NOT refused THEN RAISE EXCEPTION 'invalid free result accepted';END IF;END $invalid$;"
+            e.sql(db,sql,label='installed-free-'+label+'-refused')
+        e.report['free_disposition_cases']=6
+
         _,verdict,_=e.sql(db,"SELECT public.fn_ca_settlement_lane_doctrine();",label='actual-doctrine-after-cancellation-admission')
         e.report['doctrine']=json.loads(verdict.strip())
         assert e.report['doctrine']['violations']==e.report['doctrine_before']['violations']

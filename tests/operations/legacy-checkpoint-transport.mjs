@@ -64,6 +64,8 @@ try {
     ? 'hang'
     : scenario === 'exception'
       ? 'throw'
+      : scenario === 'protocol_error'
+        ? 'protocol_error'
       : scenario.startsWith('refusal')
         ? 'refusal'
         : scenario === 'malformed_refusal'
@@ -84,6 +86,9 @@ try {
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
       "  process.stdout.write(JSON.stringify({type:'guard_started'})+'\\n');",
       "  if(process.argv[2]==='throw')throw Error('synthetic-secret-refusal');",
+      // A value the inspector cannot return by value (a BigInt): the CDP
+      // answer is an error object, not a result, and the client must say so.
+      "  if(process.argv[2]==='protocol_error')return {ok:true,completedCalls:1,unreturnable:1n};",
       "  if(process.argv[2]==='hang'){globalThis.__legacyEngineCheckpointProgress={schema:'legacy-engine-checkpoint-progress/v1',elapsedMs:123,stage:'preflight',note:'joinPreviousWork',detail:'rpc=fn_f06_prepare_mixed_manager_custody,phase=commit',attemptedTables:0,completedCalls:0,verifiedTables:0,reason:null,privatePayload:'synthetic-secret-must-not-export'};return new Promise(()=>{});}",
       "  if(process.argv[2]==='refusal')return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
       "  if(process.argv[2]==='malformed_refusal')return {schema:'synthetic-secret-schema',ok:false,reason:'synthetic-secret-refusal',stage:'synthetic-secret-stage',attemptedTables:'synthetic-secret-count',completedCalls:-1,verifiedTables:0.5,bankCount:Infinity,uninitializedSeats:true,remainingMs:-1,readyForRestart:'synthetic-secret-ready',checkpointOutcome:'synthetic-secret-outcome',paidAccountingQualification:'synthetic-secret-accounting',restartAuthorized:true};",
@@ -447,6 +452,19 @@ try {
     }
     if (scenario === 'exception')
       assert.equal(result.reason, 'target checkpoint evaluation refused');
+    if (scenario === 'protocol_error') {
+      // A PROTOCOL REFUSAL SAYS WHICH ONE (2026-10-30, run 41071578166): the
+      // reason does not move, and the detail names the operation, the CDP
+      // method and the inspector's own error.
+      assert.equal(result.reason, 'inspector protocol refused');
+      assert.equal(result.checkpointInvoked, true);
+      assert.equal(result.retryAllowed, false);
+      assert.match(
+        result.transportDetail,
+        /^op=guardCall,cause=cdp_error,method=Runtime.callFunctionOn,code=-?\d+,message=/
+      );
+      assert.ok(!JSON.stringify(result).includes('unreturnable'));
+    }
     if (['timeout', 'early_timeout'].includes(scenario)) {
       assert.equal(result.reason, 'inspector operation outcome unknown');
       // An unknown outcome says how far the guard got (2026-09-24): the

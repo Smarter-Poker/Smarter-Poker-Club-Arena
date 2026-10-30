@@ -127,7 +127,7 @@ describe('tournament card information', () => {
         actions={{ primaryLabel: 'Register' }}
       />
     );
-    expect(await screen.findByText('Satellite To Target Main-Event')).toBeTruthy();
+    expect(await screen.findByText('Wins A Seat Into Target Main-Event')).toBeTruthy();
     expect(mocks.select).toHaveBeenCalledWith('name');
   });
 });

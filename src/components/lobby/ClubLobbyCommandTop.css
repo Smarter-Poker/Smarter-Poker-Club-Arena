@@ -2482,3 +2482,260 @@
     box-shadow: none;
   }
 }
+
+/* Family-specific controls form a readable grid instead of two overflowing
+   horizontal strips. Preserve the existing control materials and handlers. */
+@media (max-width: 900px) {
+  .club-home--unified-mobile #lobby-game-section-controls {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .club-home.club-home--unified-mobile .club-lobby-command-top .lobby-controls .game-bar {
+    display: block;
+    margin: 0;
+  }
+
+  .club-home.club-home--unified-mobile .club-lobby-command-top .lobby-controls .game-bar__types {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    height: 44px;
+    padding: 0 8px;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: normal;
+    text-align: center;
+    box-shadow: none;
+  }
+
+  .club-home.club-home--unified-mobile .club-lobby-command-top .lobby-controls .lobby-refinements {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px 0 0;
+    margin: 0;
+  }
+
+  .club-home.club-home--unified-mobile .club-lobby-command-top .lobby-controls .quickprefs {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status
+    .quickprefs__chip {
+    grid-column: auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    height: auto;
+    padding: 8px 4px;
+    font-size: 11px;
+    line-height: 1.25;
+    white-space: normal;
+    text-align: center;
+    box-shadow: none;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn {
+    justify-self: stretch;
+    width: 100%;
+    min-height: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0 12px;
+    font-size: 11px;
+    box-shadow: none;
+  }
+}
+
+/* The secondary controls are live words on the shared console glass. Keep
+   the family plates as the primary actions and avoid another framed surface. */
+@media (max-width: 900px) {
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status
+    .quickprefs__chip,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn {
+    min-height: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #cbd2d7;
+    font-size: 12px;
+    letter-spacing: 0;
+    text-shadow: none;
+    box-shadow: none;
+    filter: none;
+    transform: none;
+    white-space: normal;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type.is-active,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status
+    .quickprefs__chip.is-on,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn.is-set {
+    color: #45adff;
+    font-weight: 800;
+    text-decoration: underline;
+    text-underline-offset: 5px;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type::before,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type::after,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__chip::before,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn::before {
+    display: none;
+  }
+
+  .club-home.club-home--unified-mobile .club-lobby-command-top .lobby-controls .lobby-refinements {
+    border-top: 1px solid #25313a;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn {
+    justify-self: end;
+    width: 116px;
+  }
+}
+
+@media (min-width: 901px) {
+  .club-home .club-lobby-command-top .lobby-controls .game-bar__types .game-bar__type {
+    flex-basis: 88px;
+    width: 88px;
+    min-width: 88px;
+  }
+}
+
+@media (max-width: 900px) {
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type {
+    font-size: 14px;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status:has(> :nth-child(5):last-child) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status:has(> :nth-child(5):last-child)
+    > .quickprefs__chip {
+    grid-column: span 2;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status:has(> :nth-child(5):last-child)
+    > .quickprefs__chip:nth-last-child(-n + 2) {
+    grid-column: span 3;
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status:has(> :nth-child(2):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 360px) {
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status
+    .quickprefs__chip {
+    font-size: 11px;
+  }
+}

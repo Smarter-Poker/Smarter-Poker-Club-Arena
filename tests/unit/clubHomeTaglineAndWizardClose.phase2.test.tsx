@@ -387,7 +387,7 @@ describe('Find Your Game starts with two separate sections', () => {
     await flush();
     fireEvent.click(tournaments);
     await flush();
-    expect(names()).toEqual(['MTT', 'SPINS', 'HEADS UP']);
+    expect(names()).toEqual(['MTT', 'SPINS', "SIT N GO'S", 'SATELLITES']);
     expect(document.querySelector('.lt-row[data-id="event-a"]')).not.toBeNull();
     expect(document.querySelector('.lt-row[data-id="cash-a"]')).toBeNull();
     expect(cash.getAttribute('aria-expanded')).toBe('false');
@@ -413,4 +413,46 @@ it('keeps the saved cash tab behind the closed section until it is opened', asyn
   expect(screen.getByRole('tab', { name: 'PLO', exact: true }).getAttribute('aria-selected')).toBe(
     'true'
   );
+});
+
+it('shows only recorded MTT and SNG satellites when Satellites is selected', async () => {
+  h.setupReads = [DONE];
+  const row = {
+    club_id: 'club-a',
+    game_type: 'NLH',
+    status: 'REGISTERING',
+    start_time: new Date().toISOString(),
+    current_players: 0,
+    buy_in_amount: 10,
+    buy_in_fee: 1,
+    starting_chips: 1000,
+    table_size: 9,
+  };
+  h.tournaments = [
+    {
+      ...row,
+      id: 'sat-mtt',
+      name: 'MTT Qualifier',
+      format_contract: 'mtt-v1',
+      tournament_type: 'SATELLITE',
+    },
+    {
+      ...row,
+      id: 'sat-sng',
+      name: 'SNG Qualifier',
+      format_contract: 'seat-first-satellite-v1',
+      max_players: 2,
+    },
+    { ...row, id: 'regular-mtt', name: 'Satellite Name Only', format_contract: 'mtt-v1' },
+    { ...row, id: 'regular-sng', name: 'Regular SNG', format_contract: 'sng-v1', max_players: 6 },
+  ];
+  await mountLobby();
+  fireEvent.click(screen.getByRole('button', { name: 'Tournaments', exact: true }));
+  fireEvent.click(screen.getByRole('tab', { name: 'SATELLITES', exact: true }));
+  await flush();
+  for (const id of ['sat-mtt', 'sat-sng'])
+    expect(document.querySelector(`.lt-row[data-id="${id}"]`)).not.toBeNull();
+  for (const id of ['regular-mtt', 'regular-sng'])
+    expect(document.querySelector(`.lt-row[data-id="${id}"]`)).toBeNull();
+  expect(h.register).not.toHaveBeenCalled();
 });

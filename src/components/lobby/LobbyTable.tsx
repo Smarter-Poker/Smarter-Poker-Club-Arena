@@ -1,3 +1,5 @@
+import { isRecordedSatelliteTournament } from '../../utils/tournamentFilters';
+import { useSatelliteDestination } from './game-cards/useTournamentCardText';
 import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { useSharedSecondTick } from './useSharedSecondTick';
 /**
@@ -55,7 +57,16 @@ import './CompactLobbyRows.css';
 
 type SortDir = 'asc' | 'desc';
 
-export type LobbyCategory = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+export type LobbyCategory =
+  | 'ALL'
+  | 'HOLDEM'
+  | 'OMAHA'
+  | 'LIMIT'
+  | 'MIXED'
+  | 'MTT'
+  | 'SNG'
+  | 'SPIN'
+  | 'SATELLITE';
 
 /**
  * The order a tab opens in when the player has never sorted it themselves.
@@ -338,6 +349,19 @@ function compactRowClass(entry: LobbyEntry): string | undefined {
   return cls.join(' ') || undefined;
 }
 
+function SatelliteRowDestination({ entry }: { entry: LobbyEntry }) {
+  const row = entry.kind !== 'cash' ? (entry.raw as LobbyTournamentRow) : undefined;
+  const destination = useSatelliteDestination(row?.satellite_target_id || row?.satellite_target);
+  const label =
+    destination ||
+    (row && isRecordedSatelliteTournament({ ...row })
+      ? 'Satellite Destination Unavailable'
+      : undefined);
+  return label ? (
+    <span className="compact-lobby__meta compact-lobby__destination">{label}</span>
+  ) : null;
+}
+
 function TournamentRowSignals({
   entry,
   badgesOnly = false,
@@ -602,6 +626,7 @@ const COL_NAME: ColumnDef = {
             {mttTitleLine(e)}
           </span>
           <MttTitleMeta entry={e} />
+          <SatelliteRowDestination entry={e} />
           <TournamentRowSignals entry={e} badgesOnly />
           <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
@@ -645,6 +670,7 @@ const COL_NAME: ColumnDef = {
           {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
           {e.name}
         </span>
+        <SatelliteRowDestination entry={e} />
         {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
         <LobbyFlagChips entry={e} />
         <PlayerStateChip entry={e} ctx={ctx} />
@@ -1350,6 +1376,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_ACTIONS,
       ];
     case 'MTT':
+    case 'SATELLITE':
       /* Dan 2026-08-25: "THAT SHOULD BE THE FIRST LINE DISPLAYED." The title
          led no board here - it sat fourth, behind Starting Time, Game Type and
          Buy-In, which are all facts ABOUT a tournament and answer nothing until
@@ -2172,7 +2199,7 @@ export default function LobbyTable({
                 COL_NAME,
                 category === 'ALL'
                   ? COL_COST
-                  : ['MTT', 'SPIN', 'SNG'].includes(category)
+                  : ['MTT', 'SPIN', 'SNG', 'SATELLITE'].includes(category)
                     ? COL_BUYIN
                     : COL_STAKES,
                 COL_PLAYERS,
@@ -2295,6 +2322,7 @@ export default function LobbyTable({
                         entry.variantLabel
                       )}
                     </span>
+                    {entry.kind !== 'cash' && <SatelliteRowDestination entry={entry} />}
                     {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
                     <PlayerStateChip entry={entry} ctx={rowCtx} />
                   </button>

@@ -28,7 +28,7 @@ describe('create controls fail closed on union scope', () => {
     expect(gate).toBeGreaterThan(-1);
     expect(control).toBeGreaterThan(gate);
     expect(PAGE.slice(gate, control).trim()).toBe(
-      '{canCreateClubGames && (\n                    <div className="lobby-controls__operator-actions">'
+      '{canCreateClubGames && (\n                      <div className="lobby-controls__operator-actions">'
     );
     /* One mount, so there is no second, ungated control. */
     expect(PAGE.split('<GameCreationActions').length - 1).toBe(1);

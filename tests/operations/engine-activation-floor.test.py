@@ -160,10 +160,18 @@ echo CHECKPOINT_MUST_NOT_RUN
         previous = floor.policy(str(self.repo), old_sha, old_sha)
         current = self.owner_record()
         self.assertNotEqual(current['ownerWindowId'], previous['ownerWindowId'])
-        self.assertEqual(current['activationEpoch'], previous['activationEpoch']+19800)
-        self.assertEqual(current['expiresEpoch']-current['activationEpoch'], 21600)
+        # A current carrier can belong to a later finite owner. Historical
+        # target dates stay immutable rather than forcing future restamps.
+        source = json.loads((ROOT/MANIFEST).read_text())
+        from datetime import datetime
+        epoch = lambda value: int(datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp())
+        self.assertEqual(current['activationEpoch'], epoch(source['activationAt']))
+        self.assertEqual(current['expiresEpoch'], epoch(source['expiresAt']))
+        self.assertGreaterEqual(current['activationEpoch'], previous['expiresEpoch'])
+        self.assertGreaterEqual(current['expiresEpoch']-current['activationEpoch'], 420)
+        self.assertLessEqual(current['expiresEpoch']-current['activationEpoch'], 21600)
         self.assertEqual(current['clientPublicationEpoch'], current['activationEpoch'])
-        now = previous['expiresEpoch']+1
+        now = current['activationEpoch']
         with self.assertRaises(ValueError): floor.check_window(previous, now, now+8400, 'admit')
         floor.check_window(current, now, now+8400, 'admit')
         floor.check_window(current, current['activationEpoch'], now+8400, 'publish')
@@ -259,7 +267,17 @@ echo CHECKPOINT_MUST_NOT_RUN
         source=(ROOT/'server/scripts/engine-release-transaction.sh').read_text()
         start=source.index('owner_window_reason() {');end=source.index('\n# The seal and the serving engine',start)
         body=source[start:end]
-        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(r['activationEpoch']+30)+'; }\n'
+        # A floor opens preparation; its owner still controls the allowed
+        # announcement minute. Exercise the first such minute inside this floor.
+        window = next(w for w in json.loads((ROOT/'server/release/owner-maintenance-windows.json').read_text())['windows'] if w['id'] == r['ownerWindowId'])
+        stamp = r['activationEpoch'] + 30
+        if window.get('announceAtChicagoMinutes'):
+            from datetime import datetime, timezone
+            instant = datetime.fromtimestamp(stamp, timezone.utc)
+            stamp = int(instant.replace(minute=window['announceAtChicagoMinutes'][0], second=30).timestamp())
+            if stamp < r['activationEpoch']: stamp += 3600
+        self.assertLess(stamp + 420, r['expiresEpoch'])
+        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(stamp)+'; }\n'
         env={**os.environ,'REPO_DIR':str(self.repo),'SHA':self.sha,'ACTIVATION_FLOOR_OWNER_WINDOW':r['ownerWindowId']}
         import shlex
         def reason(serving):

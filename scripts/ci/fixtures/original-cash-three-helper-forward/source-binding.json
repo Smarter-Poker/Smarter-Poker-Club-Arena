@@ -1,11 +1,11 @@
 {
   "version": "20261029230502",
   "migration": "20261029230502_original_cash_reads_keep_their_complete_proof_without_changi.sql",
-  "sha256": "7f7fff91bf446111f125b53c27bc6ab8599455f9aeddd3de32f1033ffaa954cc",
-  "held": "PUBLIC install only after actual current-public-linked+three TEMP original report capacity PASS; TQba40 must be installed first",
+  "sha256": "0ee1d1b5137daceba04863609cb52c4c37b02677a500e049fa2e79d3022a30f6",
+  "held": "PUBLIC install only after actual current-public-linked+three TEMP original report capacity PASS; original installed TQ28a retained; no TQ230441 prerequisite",
   "generation": "GEN72 unchanged; no sealed owner body change",
   "historical_unallocated_source_sha256": "a8a952c308aac1d66dd4d472c9c04a76dba6c8f1c9b3cfca105efa491a80ae7c",
   "historical_inverse": "restore ONE allocator version placeholder and original firstline \u2192 exact retained unallocated source",
-  "inverse_to_prior_protected_source": "restore sole90331 prerequisite hash972621->edbd143 restores exact protected b5c7052a0df09cbd3398d1256f763e484f1b88ecf67b5109e8a38895fd68d914",
+  "inverse_to_prior_protected_source": "restore ONLY two live TQ full-definition pins28a\u2192ba40 and comment original-TQ28a\u2192after-TQba40 restores exact 7f7fff91bf446111f125b53c27bc6ab8599455f9aeddd3de32f1033ffaa954cc; historical28a unchanged",
   "stats90331_required_sha256": "972621710dd08d96b4077b0887fbc4a81ee339ed5df6c85916d2b40580e0f48e"
 }

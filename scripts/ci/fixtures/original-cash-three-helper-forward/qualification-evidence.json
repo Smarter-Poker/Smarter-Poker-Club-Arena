@@ -1,7 +1,7 @@
 {
   "passed": true,
   "source_only": true,
-  "source_sha256": "7f7fff91bf446111f125b53c27bc6ab8599455f9aeddd3de32f1033ffaa954cc",
+  "source_sha256": "0ee1d1b5137daceba04863609cb52c4c37b02677a500e049fa2e79d3022a30f6",
   "exact27_canonical_before": true,
   "exact3_changed": [
     "public.fn_union_pnl_touched_registrations(timestamp with time zone,timestamp with time zone,boolean)",

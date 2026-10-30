@@ -120,7 +120,36 @@ WebSocket.prototype.send = function(bytes) {
 };
 `
       : '';
-  const source = closeBoundaryLoad + maintainedSource;
+  // Observe actual HTTP/socket operations without substituting their results.
+  // The claimed listener must be requalified without creating another
+  // discovery client between the real root ACK and the real native close.
+  const discoveryObservation = `
+const fixtureHttpNative = process.getBuiltinModule('node:http');
+const fixtureHttpGet = fixtureHttpNative.get;
+let fixtureClaimAckSeen = false, fixtureCloseSent = false;
+let fixtureInitialDiscovery = 0, fixturePostAckDiscovery = 0;
+process.stdin.prependListener('data', () => { fixtureClaimAckSeen = true; });
+fixtureHttpNative.get = function(...args) {
+ const options = args[0];
+ if(options?.host === '127.0.0.1' && options.port === 9229 && options.path === '/json/list' && !fixtureCloseSent) {
+  if(fixtureClaimAckSeen) fixturePostAckDiscovery++;
+  else fixtureInitialDiscovery++;
+ }
+ return fixtureHttpGet.apply(this, args);
+};
+process.getBuiltinModule('node:module').syncBuiltinESMExports();
+const fixtureObservedSend = WebSocket.prototype.send;
+WebSocket.prototype.send = function(bytes) {
+ const command = JSON.parse(bytes);
+ if(command.method === 'Runtime.evaluate' && command.params?.expression === OWNED_MAIN_INSPECTOR_CLOSE_EXPRESSION)
+  fixtureCloseSent = true;
+ return fixtureObservedSend.call(this, bytes);
+};
+process.once('exit', () => process.getBuiltinModule('node:fs').writeSync(2, 'fixture-discovery:' + JSON.stringify({
+ initial: fixtureInitialDiscovery, afterAckBeforeClose: fixturePostAckDiscovery,
+}) + '\\n'));
+`;
+  const source = discoveryObservation + closeBoundaryLoad + maintainedSource;
   assert.ok(
     fixtureWorkDeadline - Date.now() >= 21000,
     'full native20s plus CLI exit observation must fit the original fixture work bound'
@@ -248,6 +277,9 @@ WebSocket.prototype.send = function(bytes) {
         assert.equal(lines.length, 2);
         assert.equal(lines[0], proposalLine);
         assert.match(claimDigest, /^[a-f0-9]{64}$/);
+        const discovery = stderr.match(/^fixture-discovery:(.+)$/m);
+        assert.ok(discovery, 'actual discovery operation counts must be observed');
+        assert.deepEqual(JSON.parse(discovery[1]), { initial: 1, afterAckBeforeClose: 0 });
         const outcome = JSON.parse(lines[1]);
         assert.equal(outcome.ok, scenario === 'success');
         assert.equal(

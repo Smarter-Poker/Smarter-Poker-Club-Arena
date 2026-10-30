@@ -3175,6 +3175,21 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Roster tournament fees read only their charged window
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-roster-tournament-fee-window.py --pg-bin "$PG_BIN" --scratch "$RUNNER_TEMP" --output artifacts/roster-fee-window/native.json
+
+      - name: Retain roster fee window index qualification
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: roster-fee-window-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/roster-fee-window/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Check composed alert fixture admission and cleanup guards
         if: matrix.shard == 4
         run: python3 scripts/ci/test_production_alert_core_postgres.py

@@ -1,0 +1,9 @@
+# Lightning missing-card incident settlement qualification
+
+`native.py --pg-bin PATH --scratch EXTERNAL_PATH --output RESULT_JSON` creates and removes one private local PostgreSQL 17 cluster. It has no production connection path or credentials. The existing directly triggered `lightning-card-incident.yml` check runs this same finite proof when the migration or its exact fixture inputs change.
+
+The fixture preserves captured columns and PK/unique/check constraints for the directly read incident and written monetary relations. It executes the current union debit, explicit club credit, approval, original member journal writer, ledger enrichment, real-actor FK, operation/key guards, immutable correction intent, freeze and deferred balance/journal tally bodies. Synthetic incident rows reproduce the closed 400 -> 401 -> 375 evidence, including the thirteen normal folds totaling -26. An unrelated home-club wallet starts with a different balance and must remain unchanged.
+
+Cases cover the exact migration's rollback, the single-call self-aborting operator probe, changed admission/funding/hands, partial receipt, freeze, a late receipt failure after bank/wallet writes, two actual concurrent backends, commit/replay without a second credit, prohibited caller identities, immutable original intent and editable display metadata refusing replay.
+
+External foreign keys except the original journal-performer FK, unrelated membership notifications, accounting document delivery, network sinks and external business triggers are not recreated. The external ledger-refusal recorder is a controlled non-network observer; its actual accounting invariant still refuses. The production operator must rollback-probe the exact DO block against the full installed trigger graph, then install protected-main bytes and independently read the bank, original KINGS wallet, immutable intent and linked receipt. Local proof is not payment or production qualification.

@@ -57,14 +57,45 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       'diamond-playfield-e2e': browserRoute,
     };
     // Assert each authorized route before normalizing just that field. The
-    // original fingerprint still protects every command and financial gate.
+    // exhaustive sectional fingerprints protect every command and financial gate.
     for (const [name, route] of Object.entries(intendedRoutes)) {
       expect(normalized.jobs[name]['runs-on'], name).toBe(route);
       normalized.jobs[name]['runs-on'] = formerClientRoute;
     }
-    expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '756ebaa3b74445e08a3e0fb4e9408607539376c85540311e0fa9e90fda64cbd5'
-    );
+    // Ordered inventories plus all non-job fields and every whole job cover the
+    // complete reviewed workflow. Unrelated job edits update only their own pin.
+    const fingerprint = (value: unknown) =>
+      createHash('sha256').update(JSON.stringify(value)).digest('hex');
+    expect(Object.keys(normalized)).toEqual(['name', 'on', 'concurrency', 'jobs']);
+    expect(
+      fingerprint(Object.fromEntries(Object.entries(normalized).filter(([key]) => key !== 'jobs')))
+    ).toBe('bf371889e58c11a6f6178fd7405b0cb3a484ed6016b88629bc790f4b4ed83d0e');
+    const expectedJobs = {
+      changes: 'f9d317d1503f4dc8a8945bb2b9238bcfa89b2ea551a970dd23ddb3d531f4a481',
+      source_windows: 'a9830648dfc81b5558d0e9a45d75307210fa1535926da65e087f6647e1fa4189',
+      stub_gate: '166528cc83e7d0c075c59b6facb1a6782f3e2eda6c334f9608b933319aca9c80',
+      fixture_native: '0df5b9e9f46fe331ce65fbdeaed5584c18e4756fddc7b4e3f417fc4694d2e2ff',
+      typecheck: '07758ff6fff680beb77a9e38725eecc5776b94db14cdc3499783c049ce771750',
+      typecheck_compile: '88a03bf85dc749608900101f598720ad93c957e5b5bf75791c589c9e25228168',
+      unit_shards: 'a694772adb1e9b9c9cf9e8ff24d9a655deb26d18b5d1f191b120ac3b4516c474',
+      unit: '69c8c0e64dddf305dd3336a22d977be302c177d26adb4f19a9928efd40fe42a0',
+      accounting_postgres: '9aa75d4201e1fd985ff50ac75dc347c673d927308e1208d323dc8b0cda28f52b',
+      server_shards: 'bc1fd50307204678e389933752de1d0f012468ff40c63235f0024e8a469f2a5b',
+      server: '086cab96ac6e24b0ced5ab9407a2c406eddfa451de33d6b614953b1f9f94bd1d',
+      verdict: 'cbcc5b069cdc625a6fb5a5c23b6a5c6a4ed2c3669f37bf74163c3eea6c5fbd0f',
+      build: '1b0ed1fea04c1e6ef74fcde68387787cf36b0fe589539caf71cdfe7e314fa76b',
+      'live-e2e': 'fae9db0fd7b5ad3a502a34981574aa5ac43c01d763d2a0c518a7d98572ae796d',
+      'post-deploy-check': '86936192ff526aab46d57a6e263e27475c3e60da754b0f04f4948ec40b8b4fcd',
+      'css-beats-e2e': '4fc89c871e60dd6d303d87c79e32a25022dc944a772de6b69c919f623f208bbf',
+      'diamond-playfield-e2e': '2802fb1377e89b20cfd5dfd89155194bd41921da2b014220040728d27e4d690d',
+      'css-beats-gate': '71e08443dc0eee58fbb9055054e02643edbe532aeae3c3073fcf04ae8e35a944',
+    };
+    expect(Object.keys(normalized.jobs)).toEqual(Object.keys(expectedJobs));
+    expect(
+      Object.fromEntries(
+        Object.entries(normalized.jobs).map(([name, job]) => [name, fingerprint(job)])
+      )
+    ).toEqual(expectedJobs);
   });
   it('preserves every native qualification stage and cleanup requirement', () => {
     const normalized = structuredClone(native);

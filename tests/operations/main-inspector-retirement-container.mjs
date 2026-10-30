@@ -86,6 +86,9 @@ async function fixtureNativeEntry(container, identity, scenario = 'success', hos
       fs.readFileSync(new URL('../../server/scripts/' + name, import.meta.url), 'utf8')
     )
     .join('\n');
+  const busyNonce = randomUUID();
+  const busyMarker = '/fixture-state/busy-' + busyNonce + '.json';
+  const busyObservation = '/fixture-state/observed-' + busyNonce + '.json';
   // The fault belongs after actual kernel close qualification. Starting busy
   // JavaScript before attachment can correctly refuse at attach and never
   // exercise the native-close interruption this case is intended to qualify.
@@ -96,6 +99,29 @@ async function fixtureNativeEntry(container, identity, scenario = 'success', hos
     scenario === 'deferred-close-timeout'
       ? `
 const fixtureDelayHttp = await import('node:http');
+const fixtureDelayFs = await import('node:fs');
+const fixtureBusyNonce = ${JSON.stringify(busyNonce)};
+const fixtureBusyWitness = ${JSON.stringify(fixtureWitness)};
+const fixtureBusyMarker = ${JSON.stringify(busyMarker)};
+const fixtureBusyObservation = ${JSON.stringify(busyObservation)};
+let fixtureBusyReadDeadline;
+function fixtureReadBusy() {
+ let fd;
+ try {
+  fd = fixtureDelayFs.openSync(fixtureBusyMarker, fixtureDelayFs.constants.O_RDONLY | fixtureDelayFs.constants.O_NOFOLLOW);
+  const stat = fixtureDelayFs.fstatSync(fd);
+  if(!stat.isFile() || stat.size < 1 || stat.size > 4096) throw new Error('fixture_busy_marker_bound');
+  const marker = JSON.parse(fixtureDelayFs.readFileSync(fd, 'utf8'));
+  if(marker.nonce !== fixtureBusyNonce || marker.witness !== fixtureBusyWitness || marker.pid !== 1 || marker.version !== ${JSON.stringify(fixtureNativeVersion)} || marker.gameActions !== 0 ||
+   !Number.isSafeInteger(marker.startedAt) || !Number.isSafeInteger(marker.busyUntil) || marker.busyUntil-marker.startedAt !== 25000 ||
+   marker.startedAt > Date.now() || marker.busyUntil <= Date.now()+20000) throw new Error('fixture_busy_marker_unproved');
+  return marker;
+ } catch(error) {
+  if(error.code === 'ENOENT') return null;
+  throw error;
+ } finally { if(fd !== undefined) fixtureDelayFs.closeSync(fd); }
+}
+
 const fixtureActualSend = WebSocket.prototype.send;
 let fixtureDelayTriggered = false;
 WebSocket.prototype.send = function(bytes) {
@@ -104,15 +130,26 @@ WebSocket.prototype.send = function(bytes) {
   return fixtureActualSend.call(this, bytes);
  if(fixtureDelayTriggered) throw new Error('fixture_native_close_replayed');
  fixtureDelayTriggered = true;
+ fixtureBusyReadDeadline = Date.now() + 1500;
  const socket = this;
- const request = fixtureDelayHttp.get('http://127.0.0.1:8080/fixture-delay-close', response => {
+ const request = fixtureDelayHttp.get('http://127.0.0.1:8080/fixture-delay-close?nonce=' + fixtureBusyNonce, response => {
   let body = '';
   response.on('data', chunk => { body += chunk; if(body.length > 4096) request.destroy(); });
   response.on('end', () => {
    const observed = JSON.parse(body);
-   if(response.statusCode !== 200 || observed.pid !== 1 || observed.gameActions !== 0 || !Number.isSafeInteger(observed.busyUntil) || observed.busyUntil <= Date.now()+20000)
+   if(response.statusCode !== 200 || observed.pid !== 1 || observed.gameActions !== 0 || observed.witness !== fixtureBusyWitness || observed.nonce !== fixtureBusyNonce)
     throw new Error('fixture_close_boundary_load_unproved');
-   fixtureActualSend.call(socket, bytes);
+   function forwardWhenBusyEntered() {
+    try {
+     if(Date.now() >= fixtureBusyReadDeadline) throw new Error('fixture_busy_entry_deadline');
+     const marker = fixtureReadBusy();
+     if(!marker) { setImmediate(forwardWhenBusyEntered); return; }
+     const observedAt = Date.now();
+     fixtureDelayFs.writeFileSync(fixtureBusyObservation, JSON.stringify({...marker, observedAt, beforeFixedClose:true}), {flag:'wx',mode:0o644});
+     fixtureActualSend.call(socket, bytes);
+    } catch { process.exit(90); }
+   }
+   forwardWhenBusyEntered();
   });
  });
  request.setTimeout(1500, () => request.destroy(new Error('fixture_close_boundary_load_timeout')));
@@ -149,6 +186,51 @@ process.once('exit', () => process.getBuiltinModule('node:fs').writeSync(2, 'fix
  initial: fixtureInitialDiscovery, afterAckBeforeClose: fixturePostAckDiscovery,
 }) + '\\n'));
 `;
+  function busyEntryProof() {
+    if (scenario === 'success') return undefined;
+    const read = (name) => {
+      const fd = fs.openSync(
+        join(fixtureDirectory, 'state', name),
+        fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
+      );
+      try {
+        const stat = fs.fstatSync(fd);
+        assert.ok(stat.isFile() && stat.size > 0 && stat.size <= 4096);
+        return JSON.parse(fs.readFileSync(fd, 'utf8'));
+      } finally {
+        fs.closeSync(fd);
+      }
+    };
+    const marker = read('busy-' + busyNonce + '.json');
+    const observation = read('observed-' + busyNonce + '.json');
+    assert.deepEqual(marker, {
+      nonce: busyNonce,
+      witness: fixtureWitness,
+      pid: 1,
+      version: fixtureNativeVersion,
+      gameActions: 0,
+      startedAt: marker.startedAt,
+      busyUntil: marker.startedAt + 25000,
+    });
+    assert.ok(Number.isSafeInteger(marker.startedAt));
+    assert.deepEqual(observation, {
+      ...marker,
+      observedAt: observation.observedAt,
+      beforeFixedClose: true,
+    });
+    assert.ok(Number.isSafeInteger(observation.observedAt));
+    assert.ok(observation.observedAt >= marker.startedAt);
+    assert.ok(marker.busyUntil - observation.observedAt > 20000);
+    return {
+      targetBusyEntered: true,
+      nonceBound: true,
+      witnessBound: true,
+      pid: 1,
+      gameActions: 0,
+      beforeFixedClose: true,
+      remainingMs: marker.busyUntil - observation.observedAt,
+    };
+  }
   const source = discoveryObservation + closeBoundaryLoad + maintainedSource;
   if (hostWrapper) {
     const hostRoot = join(fixtureDirectory, 'host-wrapper-' + scenario);
@@ -186,7 +268,7 @@ process.once('exit', () => process.getBuiltinModule('node:fs').writeSync(2, 'fix
     assert.equal(proof.extraOuterGraceMs, 0);
     assert.equal(proof.hostDeadlineMs, 20000);
     assert.ok(proof.elapsedMs < 19700);
-    return proof;
+    return { ...proof, busyEntry: busyEntryProof() };
   }
   assert.ok(
     fixtureWorkDeadline - Date.now() >= 21000,
@@ -333,7 +415,7 @@ process.once('exit', () => process.getBuiltinModule('node:fs').writeSync(2, 'fix
           assert.notEqual(outcome.listenerAbsent, true);
         }
         assert.equal(outcome.retryAllowed, false);
-        resolve({ outcome, proposalDigest: claimDigest });
+        resolve({ outcome, proposalDigest: claimDigest, busyEntry: busyEntryProof() });
       } catch (error) {
         reject(error);
       }
@@ -354,6 +436,7 @@ if (process.platform !== 'linux') {
     await fixtureDocker(['pull', fixtureImage], 120000);
     fixtureDirectory = fs.mkdtempSync(join(tmpdir(), 'main-inspector-container-'));
     fs.mkdirSync(join(fixtureDirectory, 'dist'));
+    fs.mkdirSync(join(fixtureDirectory, 'state'));
     fs.writeFileSync(
       join(fixtureDirectory, 'dist/index.js'),
       `
@@ -370,14 +453,20 @@ require('node:http').createServer((request,response)=>{
   response.end(JSON.stringify({releaseSha:${JSON.stringify(fixtureSource)},running:true,
    status:'ok',liveness:'ok',uptime:process.uptime(),instanceId:'1-1234abcd',
    maintenance:{active:false,phase:'idle'}}));
- } else if(request.url==='/fixture-delay-close') {
-  const busyUntil=Date.now()+25000;
+ } else if(request.url.startsWith('/fixture-delay-close?nonce=')) {
+  const nonce=request.url.slice('/fixture-delay-close?nonce='.length);
+  if(!/^[a-f0-9-]{36}$/.test(nonce)) {response.statusCode=400;response.end('{}');return;}
   response.once('finish',()=>setImmediate(()=>{
-   // Ordinary busy JavaScript permits V8 Inspector command interrupts. The
-   // production fixed setImmediate(close) stays queued until this loop ends.
+   const startedAt=Date.now(), busyUntil=startedAt+25000;
+   const fs=require('node:fs'), marker='/fixture-state/busy-'+nonce+'.json';
+   fs.writeFileSync(marker+'.tmp',JSON.stringify({...health,nonce,startedAt,busyUntil}),{flag:'wx',mode:0o644});
+   fs.renameSync(marker+'.tmp',marker);
+   // Marker publication and the busy loop belong to this SAME synchronous
+   // callback. An Inspector interrupt can queue the original fixed close,
+   // but its setImmediate cannot execute until this callback returns.
    while(Date.now()<busyUntil) Math.sqrt(Date.now());
   }));
-  response.end(JSON.stringify({...health,busyUntil}));
+  response.end(JSON.stringify({...health,nonce}));
  } else response.end(JSON.stringify(health));
 }).listen(8080,'127.0.0.1');
 `
@@ -396,6 +485,8 @@ require('node:http').createServer((request,response)=>{
         'none',
         '--mount',
         'type=bind,source=' + fixtureDirectory + ',target=/app,readonly',
+        '--mount',
+        'type=bind,source=' + join(fixtureDirectory, 'state') + ',target=/fixture-state',
         '-w',
         '/app',
         '-e',

@@ -7,10 +7,10 @@
     "scripts/ci/fixtures/original-linked-cash-spgist/meaningful-table-contract.json": "c9359ef5475f5dc6e973f7458ea1b23eaa74df83f3d858e999f28798a8463203",
     "scripts/ci/fixtures/original-linked-cash-spgist/original-linked-cash.sql": "8216b2d2446f16d24816735d2886f17d125d1684871c465d267795c4462419a9",
     "scripts/ci/fixtures/original-linked-cash-spgist/table-contract-projection.sql": "5393eb8d126350283f4df7c3ca599bb1d52e914b19c2c5521c0422e7506d4623",
-    "scripts/ci/fixtures/original-linked-cash-statistics/README.md": "01e58a2a560fbf92fcd6bb957aedabf5689d2f93501c521bbbeeeec9cf1cc8b0",
-    "scripts/ci/test-original-linked-cash-statistics-postgres.py": "b399d88eb9a5570e7e7b156ba0cec263d7e70ac656f175f18e51a4f3236af13c",
-    "supabase/migrations/20261029190331_original_cash_link_union_expression_has_real_statistics.sql": "edbd14382c5dc891356c59596df472aeef92e830de0b13cafe0d25add278979a",
-    "scripts/ci/fixtures/original-linked-cash-statistics/qualification-evidence.json": "e83c47d8281e1579b9cbc36ab9f1e5469729cc0cccaa5ea8b1d9d6a527e907fc"
+    "scripts/ci/fixtures/original-linked-cash-statistics/README.md": "75db14d181503020222e8fa74491aad135f61f79262a825e23892c14ddec0683",
+    "scripts/ci/test-original-linked-cash-statistics-postgres.py": "0d9fda1d1f86628503b3911ded706e08e0d52f196b409e632d4bcd3a6543e957",
+    "supabase/migrations/20261029190331_original_cash_link_union_expression_has_real_statistics.sql": "972621710dd08d96b4077b0887fbc4a81ee339ed5df6c85916d2b40580e0f48e",
+    "scripts/ci/fixtures/original-linked-cash-statistics/qualification-evidence.json": "356e5300ec630eae0a9572d7269059c0ebc68feeca6490cf6510e82c728b2c37"
   },
-  "qualification": "privatePG17 estimate evidence; no production capacity claim"
+  "qualification": "private PG17 real sampled-expression statistics and LOCAL target rollback evidence; production15s capacity unproved"
 }

@@ -577,7 +577,11 @@ describe('the member record survives a failed background refresh', () => {
     await act(async () => options.onPayload?.({}));
   };
   it('keeps the record on screen with a stale banner and no toast', async () => {
-    render(<MemberManagementPage />);
+    // Finish initial scope effects before delivering the authority event. The
+    // heading can paint before the passive effect installs its refresh ref.
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
     // Own the authority read explicitly: rendering the heading alone does not
     // finish every initial read. A range read must not consume this failure.

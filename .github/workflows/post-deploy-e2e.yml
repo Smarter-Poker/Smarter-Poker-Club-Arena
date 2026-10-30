@@ -189,7 +189,9 @@ jobs:
   # Explicit, closed recovery of the one release-bound Stats case. It never publishes.
   stats-pagination-proof:
     needs: certification-cleanup-safety
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'
+    # The focused event deliberately skips publication-gate. Evaluate this
+    # lane despite that ancestor, but never bypass cleanup qualification.
+    if: always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'
     name: Exact published Stats pagination proof
     runs-on: ubuntu-latest
     timeout-minutes: 15

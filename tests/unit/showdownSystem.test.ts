@@ -308,10 +308,15 @@ describe('polish: per-pot awards ride the wire end to end (spec 16/19/33)', () =
        them live after the sleep lost them to HAND_COMPLETE's reset, which is
        how pot_win died on every contested showdown. */
     expect(EVENTS).toMatch(/const capturedPotAwards = this\.buildPotAwardGroups\(\);/);
-    expect(EVENTS).toMatch(/pot_awards: (a\.)?capturedPotAwards/);
+    // Lightning supplies flat controller awards; the shared frame must put
+    // them into the same public grouped contract the physical table sends.
+    expect(EVENTS).toMatch(
+      /pot_awards: potAwardGroups\(a\.capturedPotAwards, capturedShowdownResults\)/
+    );
     expect(EVENTS).toMatch(/potWinFrame\(\{[\s\S]*?capturedPotAwards,/);
     expect(TABLE_PAGE).toMatch(/buildAwardGroups\(/);
     expect(TABLE_PAGE).toMatch(/boardLabelFromAwards\(/);
+    expect(TABLE_PAGE).toMatch(/const potAwardsWire = normalizePotAwardWire\(/);
   });
 
   it('the hi-lo LOW WINNER line renders above the board', () => {

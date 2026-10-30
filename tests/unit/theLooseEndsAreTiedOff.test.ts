@@ -16,7 +16,7 @@
  *   - the agent console's exclusion carries a reason and an expiry;
  *   - the agent dashboard pages its ledgers from the server and its cache no
  *     longer truncates the arrays the stat cards sum;
- *   - the rake channel is shared, not one per subscriber;
+ *   - rake refresh reuses scoped record events, without a dead raw-table channel;
  *   - three dead AgentService methods are gone, the one that UPDATEd a table
  *     with no UPDATE policy and returned true included;
  *   - the empty icon wrappers left when emoji were stripped are gone;
@@ -174,11 +174,16 @@ describe('the services', () => {
     }
   });
 
-  it('the rake channel is one per club and shared', () => {
-    expect(RAKE).toContain('const rakeChannels = new Map<');
-    expect(RAKE).toContain('.channel(`downline-rake-${key}`)');
+  it('rake reuses private record events instead of an unpublished table channel', () => {
+    const records = readFileSync('src/pages/stats/StatsLiveRecords.tsx', 'utf8');
+    const panel = readFileSync('src/components/agent/DownlineRakePanel.tsx', 'utf8');
+    expect(RAKE).not.toContain('agent_commissions');
+    expect(RAKE).not.toContain('.channel(');
     expect(RAKE).not.toContain('Math.random()');
-    expect(RAKE).toContain('if (current.listeners.size === 0) {');
+    expect(records).toContain('new Set(clubIds)');
+    expect(records).toContain("event: 'record_changed'");
+    expect(panel).not.toContain('setInterval');
+    expect(panel).toContain('liveRevision');
   });
 });
 

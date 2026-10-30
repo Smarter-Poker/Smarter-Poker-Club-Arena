@@ -72,6 +72,33 @@ describe('WalletService', () => {
     mockRpc.mockReset();
   });
 
+  describe('anonymous balance reads', () => {
+    it.each(['guest', ''])('does not request a wallet or fabricate zero for %j', async (userId) => {
+      mockRpc.mockResolvedValue({ data: { balance: 999 }, error: null });
+      expect(await WalletService.readPlayerBalance(userId)).toEqual({
+        balance: null,
+        source: 'unauthenticated',
+      });
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('still reads an authenticated player through the existing scoped door', async () => {
+      mockRpc.mockResolvedValueOnce({ data: { balance: 12.34 }, error: null });
+      expect(
+        await WalletService.readPlayerBalance('player', { clubId: 'club', tableId: 'table' })
+      ).toEqual({
+        balance: 12.34,
+        source: 'rpc',
+      });
+      expect(mockRpc).toHaveBeenCalledWith('fn_player_spendable_balance', {
+        p_user_id: 'player',
+        p_club_id: 'club',
+        p_table_id: 'table',
+        p_tournament_id: null,
+      });
+    });
+  });
+
   it('does not expose transfers into the retired global wallet pool', () => {
     expect(WalletService).not.toHaveProperty('internalTransfer');
     expect(WalletService).not.toHaveProperty('transferToUser');

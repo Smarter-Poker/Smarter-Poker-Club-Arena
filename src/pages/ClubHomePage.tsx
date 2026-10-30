@@ -3988,6 +3988,15 @@ function ClubHomePageContent({
   const [seatedTableIds, setSeatedTableIds] = useState<Set<string>>(new Set());
   const [registeredTournamentIds, setRegisteredTournamentIds] = useState<Set<string>>(new Set());
   const [favoriteTableIds, setFavoriteTableIds] = useState<Set<string>>(new Set());
+  const [favoriteTournamentIds, setFavoriteTournamentIds] = usePlayerPreference<string[]>(
+    'lobby-tournament-favorites',
+    [],
+    'global'
+  );
+  const favoriteGameIds = useMemo(
+    () => new Set([...favoriteTableIds, ...favoriteTournamentIds]),
+    [favoriteTableIds, favoriteTournamentIds]
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   /* The card closed: apply what was held for it, unless the player has since
@@ -4155,12 +4164,18 @@ function ClubHomePageContent({
 
   /** Star / unstar a cash table. Reuses the favorite_tables infrastructure. */
   const handleToggleFavorite = useCallback(
-    async (tableId: string, next: boolean) => {
+    async (tableId: string, next: boolean, kind?: LobbyEntry['kind']) => {
       if (!currentUserId) {
         toast.error('Sign In To Save Favorites');
         return;
       }
       haptic.selection();
+      if (kind && kind !== 'cash') {
+        setFavoriteTournamentIds((previous) =>
+          next ? [...new Set([...previous, tableId])] : previous.filter((id) => id !== tableId)
+        );
+        return;
+      }
       setFavoriteTableIds((prev) => {
         const s = new Set(prev);
         if (next) s.add(tableId);
@@ -4193,7 +4208,7 @@ function ClubHomePageContent({
         toast.error(next ? 'Could Not Save Favorite' : 'Could Not Remove Favorite');
       }
     },
-    [currentUserId, toast]
+    [currentUserId, toast, setFavoriteTournamentIds]
   );
 
   /** Row selection — opens the game lobby panel. NEVER joins or spends. */
@@ -4564,7 +4579,7 @@ function ClubHomePageContent({
       return entry;
     };
 
-    const tourns = filteredTournaments.map((t) =>
+    let tourns = filteredTournaments.map((t) =>
       stable(t as unknown as LobbyTournamentRow, (r) => tournamentEntry(r, classifyTournament(r)))
     );
     /* R10 (Dan 2026-09-04): a must-move game is ONE row on the board - its
@@ -4580,8 +4595,10 @@ function ClubHomePageContent({
        render - so leaving the filter applied there stripped the board to two
        tables with no control anywhere on screen to undo it, and only a reload
        cleared it. A filter with no switch is not a filter, it is a fault. */
-    if (favoritesOnly && gameType !== 'ALL')
-      cash = cash.filter((e) => favoriteTableIds.has(e.id) || e.id === linkedGameId);
+    if (favoritesOnly && gameType !== 'ALL') {
+      cash = cash.filter((e) => favoriteGameIds.has(e.id) || e.id === linkedGameId);
+      tourns = tourns.filter((e) => favoriteGameIds.has(e.id) || e.id === linkedGameId);
+    }
 
     /* ── WHAT "ALL" MEANS (Dan, 2026-08-25) ────────────────────────────────
        "WE DON'T HAVE MIXED CASH GAMES, AND THE CAP IS 10 FOR MTT ONLY.
@@ -4630,7 +4647,7 @@ function ClubHomePageContent({
     filteredTournaments,
     filteredTables,
     favoritesOnly,
-    favoriteTableIds,
+    favoriteGameIds,
     gameType,
     waitlistCounts,
     club?.id,
@@ -4763,7 +4780,7 @@ function ClubHomePageContent({
       waitlistedIds: waitlistedTableIds,
       seatedIds: seatedTableIds,
       registeredIds: registeredTournamentIds,
-      favoriteIds: favoriteTableIds,
+      favoriteIds: favoriteGameIds,
       onToggleFavorite: currentUserId ? handleToggleFavorite : undefined,
       /* The card's buttons run the SAME flows the game-lobby panel
                runs — registerMtt for a tournament, the table navigation for
@@ -4853,7 +4870,7 @@ function ClubHomePageContent({
       waitlistedTableIds,
       seatedTableIds,
       registeredTournamentIds,
-      favoriteTableIds,
+      favoriteGameIds,
       currentUserId,
       handleToggleFavorite,
       handleRegister,

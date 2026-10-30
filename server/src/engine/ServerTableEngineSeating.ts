@@ -1539,6 +1539,35 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
               if (this.postHandTasksPromise === pending) break;
             }
             if (this.isTournamentTable()) return stale();
+            // A reserved seat can be absent from the in-memory roster. Do
+            // not let that fallback bypass the Horse profit floor. Wait for
+            // its actual roster/session to be available before cashing it out.
+            if (
+              !opts.forced &&
+              this.tableInfo?.game_variant === 'plo5' &&
+              Number(this.tableInfo.small_blind) === 2 &&
+              Number(this.tableInfo.big_blind) === 5
+            ) {
+              try {
+                const { data: profile, error } = await supabase
+                  .from('profiles')
+                  .select('is_horse')
+                  .eq('id', userId)
+                  .maybeSingle();
+                if (error || typeof profile?.is_horse !== 'boolean' || profile.is_horse)
+                  return {
+                    success: false,
+                    immediate: false,
+                    error: 'The Session Could Not Be Verified. Please Retry.',
+                  };
+              } catch {
+                return {
+                  success: false,
+                  immediate: false,
+                  error: 'The Session Could Not Be Verified. Please Retry.',
+                };
+              }
+            }
             const replacement = this.seatedPlayers.find((p) => p.user_id === userId);
             if (
               replacement &&

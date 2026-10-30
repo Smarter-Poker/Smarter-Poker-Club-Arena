@@ -682,6 +682,7 @@ describe('2/5 PLO5 Horse profit floor', () => {
       bb?: number;
       error?: boolean;
       live?: boolean;
+      missingRoster?: boolean;
     } = {}
   ) {
     const e = makeEngine();
@@ -692,13 +693,14 @@ describe('2/5 PLO5 Horse profit floor', () => {
     });
     const id = options.human ? HUMAN : HORSE;
     e.seatedPlayers.find((p: any) => p.user_id === id).stack = stack;
+    if (options.missingRoster) e.seatedPlayers = [];
     if (options.live) e.handController = { getState: () => ({ players: [{ user_id: id }] }) };
     const chain: any = {
       select: vi.fn(() => chain),
       eq: vi.fn(() => chain),
       is: vi.fn(() => chain),
       maybeSingle: vi.fn(async () => ({
-        data: baseline === null ? null : { baseline },
+        data: baseline === null ? null : { baseline, is_horse: !options.human },
         error: options.error ? { message: 'unavailable' } : null,
       })),
     };
@@ -706,7 +708,10 @@ describe('2/5 PLO5 Horse profit floor', () => {
     cashoutVoluntary.mockResolvedValue({ ok: true, stack });
     cashout.mockResolvedValue(stack);
     try {
-      const result = await e.leaveTable(id, { forced: options.forced });
+      const result = await e.leaveTable(id, {
+        forced: options.forced,
+        ...(options.missingRoster ? { occupancyId, seatNumber: options.human ? 1 : 2 } : {}),
+      });
       return { result, chain, fromCalls: [...from.mock.calls] };
     } finally {
       from.mockRestore();
@@ -748,6 +753,17 @@ describe('2/5 PLO5 Horse profit floor', () => {
     const { result, fromCalls } = await attempt(500, null, options);
     expect(result.success).toBe(true);
     expect(fromCalls.filter(([table]) => table === 'cash_player_session')).toHaveLength(0);
+  });
+  it('retains a reserved Horse seat missing from the in-memory roster', async () => {
+    const { result } = await attempt(1000, 500, { missingRoster: true });
+    expect(result.success).toBe(false);
+    expect(cashout).not.toHaveBeenCalled();
+  });
+  it('preserves the verified human reserved-seat fallback', async () => {
+    expect((await attempt(1000, 500, { missingRoster: true, human: true })).result.success).toBe(
+      true
+    );
+    expect(cashout).toHaveBeenCalled();
   });
   it('binds the read to this Horse, table and open session', async () => {
     const { chain, fromCalls } = await attempt(2250, 500);

@@ -12,6 +12,6 @@ describe('existing release recovery evidence stays a fixed read', () => {
       timeout: 15000,
     });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toMatch(/Ran 76 tests/);
+    expect(result.stderr).toMatch(/Ran 77 tests/);
   });
 });

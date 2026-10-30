@@ -208,6 +208,16 @@ for (const width of [375, 393, 430, 1440]) {
     await expect(board.locator('.sc')).toHaveCount(0);
     await expect(board.locator('.club-page-section')).toHaveCount(1);
     await expect(board.getByRole('heading', { name: 'Leaderboards', level: 1 })).toBeAttached();
+    // Scope is a saved player preference. The two-view keyboard contract
+    // belongs to My Clubs; Global intentionally exposes only Rankings.
+    // Make this a real preference transition even during saved-state hydration.
+    const globalScope = board.getByRole('button', { name: 'Global', exact: true });
+    await globalScope.click();
+    await expect(globalScope).toHaveAttribute('aria-pressed', 'true');
+    const myClubs = board.getByRole('button', { name: 'My Clubs', exact: true });
+    await myClubs.click();
+    await expect(myClubs).toHaveAttribute('aria-pressed', 'true');
+    await expect(board.getByRole('tab', { name: 'Tournament Stats', exact: true })).toBeVisible();
     await expect(board.getByRole('tab', { name: 'Rankings' })).toHaveAttribute(
       'aria-selected',
       'true'

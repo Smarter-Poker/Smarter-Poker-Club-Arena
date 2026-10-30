@@ -111,6 +111,9 @@ export async function collectSourceAdmission(selected,{read,readArray,readLog,gi
  const exact=pulls.filter(p=>p.merge_commit_sha===selected.candidate_sha&&p.state==='closed'&&p.merged_at);
  demand(exact.length===1,'One associated protected squash PR required');
  const pr=await read(`/pulls/${exact[0].number}`),head=mergedQualification(pulls,pr,selected.candidate_sha);
+ // A squash head need not be reachable from a fresh main-only checkout.
+ git(['fetch','--quiet','--no-tags','origin',head]);
+ demand(git(['rev-parse','--verify','FETCH_HEAD^{commit}']).toString().trim()===head,'Fetched qualification must match the verified exact head');
  const required=sourceRequirements(await read('/rules/branches/main'));
  const headObservation=await commitState(head,required,read);
  const checks=await readPages(`/commits/${head}/check-runs?filter=all`,'check_runs',read);
@@ -127,7 +130,7 @@ export async function collectSourceAdmission(selected,{read,readArray,readLog,gi
  const jobs=await readPages(`/actions/runs/${selected.stage_run}/jobs?filter=latest`,'jobs',read);
  const integration=candidateIntegration(candidateObservation,run,jobs,selected.candidate_sha,selected.stage_run);
  const after=await readFresh(`/pulls/${pr.number}`);demand(mergedQualification(pulls,after,selected.candidate_sha)===head,'Protected qualification identity changed');
- return {format:'public215_protected_source_admission_v1',candidate_sha:selected.candidate_sha,qualified_pr:pr.number,qualified_head:head,source,classifier:witness,integration,head_observation:{state:headObservation.state,required_problems:headObservation.requiredProblems,failures:headObservation.failures,active_runs:headObservation.activeRuns},candidate_observation:{state:candidateObservation.state,required_problems:candidateObservation.requiredProblems,failures:candidateObservation.failures,active_runs:candidateObservation.activeRuns},status:'source_evidence_only_not_deployed_frozen_or_certified'};
+ return {format:'public215_protected_source_admission_v1',candidate_sha:selected.candidate_sha,qualified_pr:pr.number,qualified_head:head,qualified_head_fetch:head,source,classifier:witness,integration,head_observation:{state:headObservation.state,required_problems:headObservation.requiredProblems,failures:headObservation.failures,active_runs:headObservation.activeRuns},candidate_observation:{state:candidateObservation.state,required_problems:candidateObservation.requiredProblems,failures:candidateObservation.failures,active_runs:candidateObservation.activeRuns},status:'source_evidence_only_not_deployed_frozen_or_certified'};
 }
 
 export function boundedSourceReaders(){

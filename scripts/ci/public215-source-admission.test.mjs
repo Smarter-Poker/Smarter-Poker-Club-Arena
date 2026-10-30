@@ -26,7 +26,11 @@ function fixture(){
   if(u.pathname==='/actions/runs/123')return f.stage;
   throw Error('Unexpected fixture read '+path);
  };
+ f.gitCalls=[];
  f.git=args=>{
+  f.gitCalls.push(args);
+  if(args[0]==='fetch'){assert.deepEqual(args,['fetch','--quiet','--no-tags','origin',head]);return Buffer.alloc(0);}
+  if(args[0]==='rev-parse'){assert.deepEqual(args,['rev-parse','--verify','FETCH_HEAD^{commit}']);return Buffer.from((f.fetchHead??head)+'\n');}
   if(args[0]==='rev-list')return Buffer.from(`${candidate} ${parent}\n`);
   if(args[0]==='merge-base')return Buffer.from(args[1]==='--all'?base+'\n':'');
   if(args[0]==='diff'){assert.equal(args[4],`${base}..${head}`);return f.paths;}
@@ -39,6 +43,8 @@ function fixture(){
 test('actual shared observer reproduces main missing contexts while merged-head component proof remains honest',async()=>{
  const f=fixture(),r=await f.invoke();
  assert.equal(r.qualified_head,head);assert.equal(r.qualified_pr,7);
+ const fetched=f.gitCalls.findIndex(a=>a[0]==='fetch'),verified=f.gitCalls.findIndex(a=>a[0]==='rev-parse'),compared=f.gitCalls.findIndex(a=>a[0]==='rev-list');
+ assert.ok(fetched>=0&&fetched<verified&&verified<compared);assert.equal(r.qualified_head_fetch,head);
  assert.equal(r.candidate_observation.state,'RED');assert.equal(r.candidate_observation.required_problems.length,6);
  assert.equal(r.head_observation.state,'NOT_RUN');assert.equal(r.source.not_applicable.length,2);
  assert.ok(r.source.not_applicable.every(x=>x.conclusion==='skipped'&&x.disposition==='not_applicable'));
@@ -49,7 +55,7 @@ test('actual shared observer reproduces main missing contexts while merged-head 
 });
 
 test('wrong, missing, ambiguous, foreign or changing protected PR identity refuses',async()=>{
- for(const change of [f=>f.pulls=[],f=>f.pulls=[f.pr,{...f.pr,number:8}],f=>f.pr.merge_commit_sha=base,f=>f.pr.merged=false,f=>f.pr.base.ref='feature',f=>f.pr.base.repo.id=1,f=>f.pr.head.repo.id=1,f=>f.pr.head.sha='wrong']){
+ for(const change of [f=>f.pulls=[],f=>f.pulls=[f.pr,{...f.pr,number:8}],f=>f.pr.merge_commit_sha=base,f=>f.pr.merged=false,f=>f.pr.base.ref='feature',f=>f.pr.base.repo.id=1,f=>f.pr.head.repo.id=1,f=>f.pr.head.sha='wrong',f=>f.fetchHead=parent]){
   const f=fixture();change(f);await assert.rejects(f.invoke());
  }
  const f=fixture();await assert.rejects(collectSourceAdmission(selection,{read:f.read,readArray:async()=>f.pulls,readLog:async()=>f.log,git:f.git,readFresh:async()=>({...f.pr,head:{...f.pr.head,sha:parent}})}));

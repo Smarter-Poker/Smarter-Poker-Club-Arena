@@ -1,7 +1,7 @@
 {
   "exact_one_version_and_header_inverse": true,
   "original_prototype_sha256": "5b4951edcb64b00c900e0e6e2006dd6ac2b9a5a85c7ee2f192bfd38890f4486d",
-  "protected64511_sha256": "d07924602347721d9ea1d5adec7bc3387e7d6d440eadb8f54e2c240ddfc3a5e7",
+  "protected64511_sha256": "ca7016039faab68bce7314c13f8108eb1bf90f71d3ccaa20428819e89a375985",
   "both_source_bodies_unchanged": true,
   "explicit_per_owner_REVOKE_delta": {
     "before_sha256": "5f1db87cfcf68ad940fac96267b341ce6a53635889f6173815288d633596321c",
@@ -20,5 +20,13 @@
     "new54822": "2cc84fd0955cca35ed399ca993bd3d1196d0d5dd1e7d3d4372353efe186fff5a",
     "exact_single_required_history_hash_inverse": true,
     "all_original_function_bodies_ACL_GEN_paid_guards_unchanged": true
+  },
+  "credit51934_qualified54822_dependency_delta": {
+    "before_sql_sha256": "d07924602347721d9ea1d5adec7bc3387e7d6d440eadb8f54e2c240ddfc3a5e7",
+    "after_sql_sha256": "ca7016039faab68bce7314c13f8108eb1bf90f71d3ccaa20428819e89a375985",
+    "old54822": "2cc84fd0955cca35ed399ca993bd3d1196d0d5dd1e7d3d4372353efe186fff5a",
+    "new54822": "16477275b149bb802791e31f0153db074b820565727e4a003368cf3ad756b656",
+    "exact_single_required_history_hash_inverse": true,
+    "same_function_bodies_ACL_GEN_paid_guards": true
   }
 }

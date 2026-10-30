@@ -1,3 +1,5 @@
+import { lex, isWord } from './helpers/sql-reader.mjs';
+import { catalogSQLUnits } from './helpers/migrationSQLUnits';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  A HORSE IS NEVER THE REASON A PLAYER IS NOT PAID
@@ -250,11 +252,56 @@ function executableUnits(code: string): string[] {
   return units;
 }
 
-export function horseDenials(sql: string): Finding[] {
-  const code = stripSqlComments(sql);
+// Read actual EXECUTE tokens, not comments or metadata strings. A catalog
+// value can become SQL through a variable/extraction; in that case inspect
+// each decoded value separately, never concatenate independent definitions.
+function dynamicSQL(code: string): { executes: boolean; literals: string[] } {
+  const result = { executes: false, literals: [] as string[] };
+  const { tokens } = lex(code);
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (isWord(token, 'execute')) {
+      result.executes = true;
+      const argument = tokens[i + 1];
+      if (argument?.type === 'string') {
+        result.literals.push(code.slice(argument.start + 1, argument.end - 1).replace(/''/g, "'"));
+      } else if (argument?.type === 'dollar') {
+        result.literals.push(code.slice(argument.contentStart, argument.contentEnd));
+      }
+    }
+    if (token.type === 'dollar') {
+      const nested = dynamicSQL(code.slice(token.contentStart, token.contentEnd));
+      result.executes ||= nested.executes;
+      result.literals.push(...nested.literals);
+    }
+  }
+  return result;
+}
+
+export function horseDenials(sql: string, dynamicFragment = false): Finding[] {
+  // Catalog assertions preserve historical source as JSON values, not runnable
+  // SQL. Keep the executable outer SQL; ordinary dollar-quoted routine bodies
+  // and EXECUTE SQL are preserved by the shared reader.
+  const executable = catalogSQLUnits(sql)[0].sql;
+  const code = stripSqlComments(executable);
   const findings: Finding[] = [];
-  for (const rawUnit of executableUnits(sql)) {
-    const unit = stripSqlComments(rawUnit);
+  let units: string[];
+  try {
+    units = executableUnits(sql);
+  } catch (error) {
+    // EXECUTE may concatenate a partial CREATE header with a later body.
+    // Inspect the fragment independently rather than inventing a SQL boundary.
+    if (!dynamicFragment) throw error;
+    units = [sql];
+  }
+  for (const rawUnit of units) {
+    const catalog = catalogSQLUnits(rawUnit);
+    const unit = stripSqlComments(catalog[0].sql);
+    const dynamic = dynamicSQL(unit);
+    for (const source of dynamic.literals) findings.push(...horseDenials(source, true));
+    if (dynamic.executes) {
+      for (const value of catalog.slice(1)) findings.push(...horseDenials(value.sql, true));
+    }
     const bare = codeOnly(unit);
     if (HORSE_PREDICATE.test(bare)) {
       const takes = TAKE_BACK.filter(
@@ -324,6 +371,31 @@ describe('a horse is never the reason a player is not paid', () => {
 });
 
 describe('the scanner itself', () => {
+  it('does not combine quoted catalog source with executable horse identification', () => {
+    const sql = `DO $body$ DECLARE expected jsonb := $catalog$
+      [{"definition":"CREATE FUNCTION public.old() RETURNS void AS $$ BEGIN claw_back; END $$;"}]
+      $catalog$::jsonb;
+      BEGIN PERFORM is_horse FROM public.profiles; END $body$;`;
+    expect(horseDenials(sql)).toEqual([]);
+    expect(
+      horseDenials(sql.replace('PERFORM is_horse', 'PERFORM claw_back, is_horse')).map(
+        (finding) => finding.rule
+      )
+    ).toContain('code');
+  });
+
+  it('still inspects actual dynamic SQL in quoted, dollar-quoted and extracted catalog values', () => {
+    const denial =
+      'UPDATE public.club_members SET chip_balance=chip_balance-amount WHERE is_horse IS TRUE;';
+    for (const source of [
+      `DO $body$ BEGIN EXECUTE $sql$${denial}$sql$; END $body$;`,
+      `DO $body$ BEGIN EXECUTE '${denial}'; END $body$;`,
+      `DO $body$ DECLARE source jsonb := $catalog$[${JSON.stringify({ definition: denial })}]$catalog$::jsonb;
+        BEGIN EXECUTE source->0->>'definition'; END $body$;`,
+    ])
+      expect(horseDenials(source).map((finding) => finding.rule)).toContain('code');
+  });
+
   it('keeps independent roster identification separate from another routine wallet debit', () => {
     const roster =
       'CREATE FUNCTION public.roster() RETURNS boolean LANGUAGE sql AS $$ SELECT is_horse FROM profiles $$;';

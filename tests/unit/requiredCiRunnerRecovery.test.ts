@@ -45,6 +45,23 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
+    const formerClientRoute = '$' + '{{ ' + trusted + " && 'ca-linux-4core' || 'ubuntu-latest' }}";
+    const browserRoute = '$' + '{{ ' + trusted + " && 'ca-linux-delivery' || 'ubuntu-latest' }}";
+    const intendedRoutes = {
+      typecheck: 'ubuntu-latest',
+      unit: 'ubuntu-latest',
+      server: 'ubuntu-latest',
+      verdict: 'ubuntu-latest',
+      'css-beats-gate': 'ubuntu-latest',
+      'css-beats-e2e': browserRoute,
+      'diamond-playfield-e2e': browserRoute,
+    };
+    // Assert each authorized route before normalizing just that field. The
+    // original fingerprint still protects every command and financial gate.
+    for (const [name, route] of Object.entries(intendedRoutes)) {
+      expect(normalized.jobs[name]['runs-on'], name).toBe(route);
+      normalized.jobs[name]['runs-on'] = formerClientRoute;
+    }
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
       '756ebaa3b74445e08a3e0fb4e9408607539376c85540311e0fa9e90fda64cbd5'
     );

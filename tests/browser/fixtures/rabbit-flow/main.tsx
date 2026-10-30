@@ -56,7 +56,7 @@ function Fixture() {
   );
   return (
     <ToastProvider>
-      <div style={{ padding: 12 }}>
+      <div style={{ padding: 12 }} data-fixture-hand-timestamp={hand.timestamp}>
         <button onClick={() => setNext(true)}>Next Hand</button>
         <button
           onClick={() => {

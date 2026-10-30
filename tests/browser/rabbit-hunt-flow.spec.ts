@@ -244,7 +244,15 @@ test('a purchase accepted before expiry stays visible until its delayed result a
   await page.clock.install();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Review Hand', exact: true }).click();
-  await page.clock.fastForward(88000);
+  // Anchor the boundary to the hand actually rendered after reload, then pause
+  // it so WebKit's normal click actionability cannot consume the offer window.
+  const handTimestamp = Number(
+    await page.locator('[data-fixture-hand-timestamp]').getAttribute('data-fixture-hand-timestamp')
+  );
+  expect(Number.isFinite(handTimestamp)).toBe(true);
+  const beforeExpiry = handTimestamp + 88000;
+  await page.clock.pauseAt(beforeExpiry);
+  expect(await page.evaluate(() => Date.now())).toBe(beforeExpiry);
   let requests = 0;
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {

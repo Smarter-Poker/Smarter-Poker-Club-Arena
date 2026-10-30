@@ -79,7 +79,7 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       typecheck_compile: '88a03bf85dc749608900101f598720ad93c957e5b5bf75791c589c9e25228168',
       unit_shards: 'a694772adb1e9b9c9cf9e8ff24d9a655deb26d18b5d1f191b120ac3b4516c474',
       unit: '69c8c0e64dddf305dd3336a22d977be302c177d26adb4f19a9928efd40fe42a0',
-      accounting_postgres: '0d016658b2661c3870dc67d79522b60abba916cf858f8cb1f7263933ea0da120',
+      accounting_postgres: '92254f3f8e2638c8d3729c82eedad4a91135a507ca1f27d9a61c03d8c7c92cdb',
       server_shards: 'bc1fd50307204678e389933752de1d0f012468ff40c63235f0024e8a469f2a5b',
       server: '086cab96ac6e24b0ced5ab9407a2c406eddfa451de33d6b614953b1f9f94bd1d',
       verdict: 'cbcc5b069cdc625a6fb5a5c23b6a5c6a4ed2c3669f37bf74163c3eea6c5fbd0f',

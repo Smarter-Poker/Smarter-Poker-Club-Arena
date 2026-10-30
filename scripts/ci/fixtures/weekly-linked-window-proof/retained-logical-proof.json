@@ -1,0 +1,13 @@
+{
+  "private_only": true,
+  "bag": {
+    "new": 17801,
+    "old": 17801,
+    "diff": 0
+  },
+  "dropped_check_refused": true,
+  "notvalid_refused": true,
+  "nullable_refused": true,
+  "invalid_proof_insert_check_refused": true,
+  "production_capacity_claimed": false
+}

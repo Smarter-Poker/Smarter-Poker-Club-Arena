@@ -45,3 +45,17 @@ fi
 grep -q 'share lags the hands' "$WORK/share-before.log"
 "${PSQL[@]}" -f "${SHARE[0]}" -f "$FIXTURE/rake-share-assert.sql"
 echo 'PASS: the standing rake share replaces the cron; exact, immediate, funded club, ended rule, grants, fixed events kept and no cron writes the redemptions'
+
+# Rake uses the same viewer-calendar population as the Stats overview.
+CALENDAR="$ROOT/scripts/ci/fixtures/rake-calendar"
+CALENDAR_MIGRATION="$ROOT/supabase/migrations/20261030050254_rake_statistics_use_the_selected_calendar_window.sql"
+"${PSQL[@]}" -f "$CALENDAR/preimages.sql" -f "$CALENDAR/share-preimage.sql" -f "$CALENDAR/before.sql"
+if "${PSQL[@]}" -f "$CALENDAR/after.sql" > "$WORK/calendar-before.log" 2>&1; then
+  echo 'Calendar rake regression unexpectedly passed before the fix'; exit 1
+fi
+grep -q 'ca_player_rake_stats_calendar' "$WORK/calendar-before.log"
+"${PSQL[@]}" -f "$CALENDAR_MIGRATION" -f "$CALENDAR/after.sql"
+if "${PSQL[@]}" -f "$CALENDAR_MIGRATION" > "$WORK/calendar-replay.log" 2>&1; then
+  echo 'Calendar rake migration replay unexpectedly accepted'; exit 1
+fi
+grep -q 'already exists' "$WORK/calendar-replay.log"

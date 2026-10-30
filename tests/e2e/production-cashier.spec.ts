@@ -718,7 +718,7 @@ test.describe('Production Cashier Certification', () => {
       panel.getByRole('button', { name: 'Chip Movements', exact: true })
     ).toHaveAttribute('aria-pressed', 'true');
     await expect(
-      panel.getByRole('button', { name: 'Latest Transactions', exact: true })
+      panel.getByRole('button', { name: 'All Transactions', exact: true })
     ).toHaveAttribute('aria-pressed', 'true');
     await expect(panel.getByRole('button', { name: 'Managed', exact: true })).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Games', exact: true })).toHaveCount(0);
@@ -858,11 +858,27 @@ test.describe('Production Cashier Certification', () => {
     const searched = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
-        response.request().postDataJSON()?.p_search === searchText,
+        response.request().postDataJSON()?.p_search === searchText &&
+        response.request().postDataJSON()?.p_from === null &&
+        response.request().postDataJSON()?.p_kind === 'all',
       { timeout: 30_000 }
     );
-    await panel.getByRole('searchbox', { name: 'Search Transaction History' }).fill(searchText);
+    const historySearch = panel.getByRole('searchbox', { name: 'Search Transaction History' });
+    await historySearch.fill(searchText);
+    await historySearch.press('Enter');
     const searchResponse = await searched;
+    await expect(panel.getByRole('button', { name: 'All Dates', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await expect(
+      panel.getByRole('button', { name: 'All Transactions', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(searchResponse.request().postDataJSON()).toMatchObject({
+      p_person: null,
+      p_kind: 'all',
+      p_from: null,
+    });
     expect(searchResponse.status()).toBe(200);
     expect(await searchResponse.json()).toEqual([]);
     await expect(
@@ -886,6 +902,11 @@ test.describe('Production Cashier Certification', () => {
       { timeout: 30_000 }
     );
     const downloaded = page.waitForEvent('download');
+    const statementTools = panel.locator('details').filter({ hasText: 'Statement Tools' });
+    await expect(
+      panel.getByRole('button', { name: 'Download These Transactions', exact: true })
+    ).toBeHidden();
+    await statementTools.locator('summary').click();
     await panel.getByRole('button', { name: 'Download These Transactions', exact: true }).click();
     const exportFeed = await exportResponse;
     expect(exportFeed.status()).toBe(200);

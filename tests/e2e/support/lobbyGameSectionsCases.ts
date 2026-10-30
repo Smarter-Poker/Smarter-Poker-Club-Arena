@@ -28,6 +28,12 @@ export function registerLobbyGameSectionsCases(lobbyGameSectionsFixture: () => P
           });
         }
       );
+      await page.route('**/assets/club-buttons/club-nav-shell-d45f56465bad.png', (route) =>
+        route.fulfill({
+          contentType: 'image/png',
+          body: readFileSync('public/assets/club-buttons/club-nav-shell-d45f56465bad.png'),
+        })
+      );
       await page.setContent(
         `<base href="https://fixture.invalid/"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;800&display=swap"><style>body{margin:0;background:#000;color:#e4e7ec}.club-home{width:100%;padding:0}.club-lobby-command-top{display:block!important;min-height:0!important;padding:0!important}${css}</style><div id="root"></div>`
       );

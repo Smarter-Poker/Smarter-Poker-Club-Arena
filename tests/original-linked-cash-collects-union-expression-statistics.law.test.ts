@@ -21,6 +21,9 @@ describe('original linked cash collects genuine union expression statistics', ()
     expect(sql).toContain("statement_timeout='15s'");
     expect(sql).toContain("transaction_timeout='60s'");
     expect(sql).toContain("lock_timeout='1s'");
+    expect(sql.match(/^SET LOCAL default_statistics_target='10';/gm)).toHaveLength(1);
+    expect(sql).toContain('linked_union_statistics_inherited_sample_target_required');
+    expect(sql).not.toMatch(/ALTER\s+(?:TABLE|STATISTICS|INDEX).*SET\s+STATISTICS/i);
     expect(sql).toContain("qualified->'schema_metadata'");
     expect(sql).toContain("qualified->'function_authorities'");
     expect(sql).toContain("qualified->'raw_triggers'");
@@ -42,7 +45,7 @@ describe('original linked cash collects genuine union expression statistics', ()
     const runner = read('scripts/ci/test-original-linked-cash-statistics-postgres.py');
     for (const proof of [
       'ordinary_analyze_partial_index_stats_leave_union_default_selectivity',
-      'single_expression_stats_correct_custom_union_estimate_to_actual17804',
+      'single_expression_stats_correct_custom_union_estimate_to_sampled_majority',
       'post_failure_atomic_rollback_no_orphan_statistics',
       'history_replay_refuses',
     ])

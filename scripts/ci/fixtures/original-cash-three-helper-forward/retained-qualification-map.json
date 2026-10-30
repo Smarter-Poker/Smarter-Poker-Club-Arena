@@ -1,7 +1,7 @@
 {
-  "state": "SOURCE_ONLY_NONMIGRATION_UNALLOCATED_INSTALL_HOLD",
+  "state": "SOURCE_ONLY_ORIGINAL_INSTALLED_TQ_BUILD_ORDER_REBOUND",
   "base_eight_sha256": "b812054bf8f9b54f95cd8ccead7c13e2a5592e6a16e112e998be66df4abbf67c",
-  "stats90331_required_sha256": "edbd14382c5dc891356c59596df472aeef92e830de0b13cafe0d25add278979a",
+  "stats90331_required_sha256": "972621710dd08d96b4077b0887fbc4a81ee339ed5df6c85916d2b40580e0f48e",
   "changed3": {
     "fn_union_pnl_touched_registrations": {
       "full_md5": "5e99f9d6957afdad7da857ed75b4ff97",
@@ -31,7 +31,7 @@
     "all five paid plus84earned/R2 unchanged"
   ],
   "remaining": [
-    "Actual90331 edbd protected install/readback",
+    "Actual90331 LOCAL10 97262171 protected install/readback",
     "Actual whole c49 current-public-linked+three TEMP capacity PASS",
     "Allocator/version normal bundle integration",
     "protected merge/rootsoleinstall/strict beforeafter/publicScope proof"
@@ -42,21 +42,39 @@
     "current-TQ28a-three-helper-transition-UNALLOCATED.sql": "22e2206fc9b1f49ae03aec0b2445b58c203ef29f225e7abd5fea337ad237f8e9",
     "after-TQcf775-three-helper-transition-UNALLOCATED.sql": "79046f5074a76967347b55701bc324486480195d32fc77e1281f9e42c2fc22f5",
     "after-TQba40-three-helper-transition-UNALLOCATED.sql": "a8a952c308aac1d66dd4d472c9c04a76dba6c8f1c9b3cfca105efa491a80ae7c",
-    "after-TQba40-expected27.json": "54fa799fa8eadd77a930cdf87da8f732be23910cb223a5a8af4c905462e6f4c6"
+    "after-TQba40-expected27.json": "54fa799fa8eadd77a930cdf87da8f732be23910cb223a5a8af4c905462e6f4c6",
+    "expected27.json": "552fe29218388bb53abb7279d8ee545c7cef584a64d27fc839e8e5cdef8f7b48"
   },
-  "current_TQ_candidate": {
+  "obsolete_adapter_do_not_use": "after-TQcf775 superseded by ba40 exact2 rr ANY memberships; retained historicalsource only",
+  "native_wrapper_qualification": {
+    "status": "PASS_SOURCE_ONLY_NOT_CAPACITY_OR_INSTALL",
+    "result_sha256": "7d1e4240cf01aaf28d5e12961bf0de7cd4f2e8b62029213109b1b86e66ebb410",
+    "script_sha256": "2e37be11b82c6dc65ac526bb827cb86e07daf903d3d5bdabbfdc94fc6f47bcab",
+    "cases": 9,
+    "limits": "GENgate/maintenance/stats history and financial preservation still actual installation pre/post; no fake GEN or financial rows",
+    "fixture_expected27_sha256": "bf3782b9ccbec3893957a3248bcb517ef04c8928add18de0505da87cef68015b",
+    "actual_corrected_run": "native-original-TQ-nine-SOURCE-CRITICAL.json",
+    "actual_two_source_TQ_critical_predicates_executed": true,
+    "fixture_formatting_only": {
+      "executed_input_sha256": "bf3782b9ccbec3893957a3248bcb517ef04c8928add18de0505da87cef68015b",
+      "current_input_sha256": "552fe29218388bb53abb7279d8ee545c7cef584a64d27fc839e8e5cdef8f7b48",
+      "parsed_all27_before_after_exact_equal": true
+    }
+  },
+  "current_allocated_source_sha256": "6e83a4a48bf8e2d3e4f23f8cdd826426b76c3cc175fd409345f8a362cce908e6",
+  "inverse_to_prior_protected_source": "Exact TWO live TQ rows: restore md5 pins28a\u2192ba40 AND metadata.prosrc originala927\u2192ba406830, plus top identifying comment, recovers exact protected7f7; no other metadata or business body change",
+  "historical_future_TQ_candidate": {
     "name": "ba40",
     "full_md5": "ba40f5f1f0aedf382134f246e8297e26",
     "prosrc_md5": "6830362a7dc8bb5354dc6113a2fed4b1",
     "source": "/Volumes/SmarterWork/agent-work/shared-capacity/dss-quality-bounded-cover-consumer-20261029/scripts/ci/fixtures/tournament-quality-bounded-evidence/candidate.sql",
     "sha256": "6f81406b009e7038ff1f0e58b067c1e93bfdc18b7e3b41b9311d0ff2e8d305f9"
   },
-  "obsolete_adapter_do_not_use": "after-TQcf775 superseded by ba40 exact2 rr ANY memberships; retained historicalsource only",
-  "native_wrapper_qualification": {
-    "status": "PASS_SOURCE_ONLY_NOT_CAPACITY_OR_INSTALL",
-    "result_sha256": "4b4165b66c42d9e983018af054dc6b0958ccb9990c989f1a9047b8c2758b55af",
-    "script_sha256": "9514b47bf36aa2944a5c376809b51aef5ac89ebfd71d925afc970afd16446201",
-    "cases": 9,
-    "limits": "GENgate/maintenance/stats history and financial preservation still actual installation pre/post; no fake GEN or financial rows"
+  "current_TQ_candidate": {
+    "name": "original installed28a",
+    "full_md5": "28a130f35342357a4dfa61043f1ce2a2",
+    "prosrc_md5": "a9271e7d468df1e2453aafbd3674a1ee",
+    "source": "scripts/ci/fixtures/tournament-quality-bounded-evidence/owners41-before.json",
+    "exact_nonprosrc_metadata_unchanged": true
   }
 }

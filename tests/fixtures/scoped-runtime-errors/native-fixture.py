@@ -22,6 +22,25 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_rebuy_diagnostic_keeps_selected_generation_and_outcome_only(self):
+        value = {'schema': 'horse-rebuy-decision/v1', 'tournamentId': EVENT, 'userId': TABLE,
+                 'handNumber': 777, 'choice': True, 'phase': 'purchase_unproven',
+                 'bustAtMs': 1000, 'promptUntilMs': 31000, 'observedAtMs': 31001,
+                 'remainingMs': -1, 'elapsedMs': 500, 'sqlstate': '55000', 'failureClass': 'cutoff',
+                 'secret': 'PRIVATE', 'message': 'PRIVATE arbitrary error'}
+        raw = (STAMP+'[Tournament.horse_rebuy_decision] '+json.dumps(value)+'\n').encode()
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 1)
+        decision = result['records'][0]['rebuyDecision']
+        self.assertEqual(decision['handNumber'], 777)
+        self.assertEqual(decision['remainingMs'], -1)
+        self.assertEqual(decision['failureClass'], 'cutoff')
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        for key, invalid in [('phase', 'PRIVATE'), ('phase', []), ('tournamentId', []), ('handNumber', True), ('choice', 1),
+                             ('elapsedMs', 'PRIVATE'), ('tournamentId', TABLE)]:
+            changed = {**value, key: invalid}
+            self.assertIsNone(reader.rebuy_decision(['[Tournament.horse_rebuy_decision] '+json.dumps(changed)], {EVENT}))
+
     def test_continuation_failure_retains_only_fixed_category_and_phase(self):
         cases = [
             ('Error: Hand Continuation Write Is Unproven',

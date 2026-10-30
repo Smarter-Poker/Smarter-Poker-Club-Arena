@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { handleHealth, handleWsMetrics, handleMetrics } from './health.js';
 import { mockRes, parseJson } from './_testHelpers.js';
 import type { HorseJournalHealth } from '../services/HorseDecisionJournal.js';
+import {
+  horsePlo5DepartureEvidence,
+  recordHorsePlo5Departure,
+} from '../services/HorsePlo5DepartureEvidence.js';
 
 describe('handleHealth', () => {
   // 2026-09-26: the default journal source reports every state, including
@@ -21,6 +25,7 @@ describe('handleHealth', () => {
     ...status,
     horseJournal: expect.objectContaining({ mode: 'disabled', lastFailureReason: null }),
     horseDiamondSpins: expect.objectContaining({ active: false, spins: 0, errors: 0 }),
+    horsePlo5Departure: horsePlo5DepartureEvidence(),
   });
   function statusCodeFor(status: Record<string, unknown>): number {
     const { res, captured } = mockRes();
@@ -124,7 +129,11 @@ describe('handleHealth', () => {
     handleHealth(res, { gameServer, horseJournal: journal, horseDiamondSpins: () => null });
     expect(journal).toHaveBeenCalledTimes(1);
     expect(captured.statusCode).toBe(200);
-    expect(parseJson(captured)).toEqual({ ...status, horseJournal });
+    expect(parseJson(captured)).toEqual({
+      ...status,
+      horseJournal,
+      horsePlo5Departure: horsePlo5DepartureEvidence(),
+    });
   });
 
   it('leaves the body untouched when the journal source answers null', () => {
@@ -136,7 +145,10 @@ describe('handleHealth', () => {
     };
     handleHealth(res, { gameServer, horseJournal: () => null, horseDiamondSpins: () => null });
     expect(captured.statusCode).toBe(503);
-    expect(parseJson(captured)).toEqual(status);
+    expect(parseJson(captured)).toEqual({
+      ...status,
+      horsePlo5Departure: horsePlo5DepartureEvidence(),
+    });
     expect(parseJson(captured)).not.toHaveProperty('horseJournal');
   });
 
@@ -177,7 +189,49 @@ describe('handleHealth', () => {
       horseDiamondSpins: () => horseDiamondSpins,
     });
     expect(captured.statusCode).toBe(200);
-    expect(parseJson(captured)).toEqual({ ...status, horseDiamondSpins });
+    expect(parseJson(captured)).toEqual({
+      ...status,
+      horseDiamondSpins,
+      horsePlo5Departure: horsePlo5DepartureEvidence(),
+    });
+  });
+
+  it('publishes bounded immutable departure counts without private events or snapshot mutation', () => {
+    const before = horsePlo5DepartureEvidence();
+    recordHorsePlo5Departure('below_profit_floor');
+    const after = horsePlo5DepartureEvidence();
+    expect(after.counts.below_profit_floor).toBe(before.counts.below_profit_floor + 1);
+    expect(before.counts.below_profit_floor).toBe(after.counts.below_profit_floor - 1);
+    expect(Object.isFrozen(after)).toBe(true);
+    expect(Object.isFrozen(after.counts)).toBe(true);
+    expect(Object.keys(after).sort()).toEqual([
+      'counts',
+      'minimumBuyIn',
+      'profitBuyIns',
+      'requiredStackBuyIns',
+    ]);
+    expect(Object.keys(after.counts).sort()).toEqual([
+      'below_profit_floor',
+      'eligible',
+      'in_hand',
+      'unknown_investment',
+      'unverified_roster',
+    ]);
+    const status = Object.freeze({
+      liveness: 'ok',
+      status: 'ok',
+      dealerPrerequisitesReady: true,
+      liveHorseDecision: { phase: 'ready' },
+    });
+    const { res, captured } = mockRes();
+    handleHealth(res, {
+      gameServer: { getStatus: () => status, getPrometheusMetrics: () => '' },
+      horseJournal: () => null,
+      horseDiamondSpins: () => null,
+    });
+    expect(captured.statusCode).toBe(200);
+    expect(parseJson(captured)).toEqual({ ...status, horsePlo5Departure: after });
+    expect(status).not.toHaveProperty('horsePlo5Departure');
   });
 
   it('requests the scoped table snapshot without weakening dealer routing readiness', () => {

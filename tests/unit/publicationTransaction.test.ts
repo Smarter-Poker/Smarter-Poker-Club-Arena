@@ -108,7 +108,7 @@ describe('one publication transaction follows parallel preparation', () => {
       const body = { ...job };
       delete body.if;
       delete body.needs;
-      // Assert only the approved warm routes and two-worker client cap, then
+      // Assert only the approved warm routes and hardware-bounded client worker cap, then
       // retain the complete original command/permission/secret snapshot.
       if (
         [
@@ -127,13 +127,30 @@ describe('one publication transaction follows parallel preparation', () => {
           label +
           "' || 'ubuntu-latest' }}";
         if (key === 'client-tests') {
-          expect(body.env.VITEST_MAX_THREADS).toBe(2);
+          expect(body.env.VITEST_MAX_THREADS).toBe(4);
           body.env = {
             ...body.env,
             VITEST_MAX_THREADS:
               "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}",
           };
         }
+      }
+
+      // The qualified gateway URL is the only intentionally changed build input.
+      // Assert its exact value, then compare every other byte with the retained baseline.
+      if (key === 'build-and-store' || key === 'publish-to-app') {
+        const builds = body.steps.filter((step: any) =>
+          Object.hasOwn(step.env ?? {}, 'VITE_PRIVATE_RECORD_FALLBACK_URL')
+        );
+        expect(builds).toHaveLength(1);
+        expect(builds[0].env.VITE_PRIVATE_RECORD_FALLBACK_URL).toBe(
+          'https://ca-static.smarter.poker/private-record'
+        );
+        body.steps = body.steps.map((step: any) =>
+          step === builds[0]
+            ? { ...step, env: { ...step.env, VITE_PRIVATE_RECORD_FALLBACK_URL: '' } }
+            : step
+        );
       }
 
       if (key === 'publish-to-origin') {

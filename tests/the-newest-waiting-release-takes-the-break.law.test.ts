@@ -29,6 +29,10 @@ const transaction = readFileSync(
   join(process.cwd(), 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 
 const slice = (from: string, to: string) => {
   const start = transaction.indexOf(from);
@@ -384,6 +388,7 @@ const certificate = (maintenance: Record<string, unknown>, hands = 0) => {
 MIN_BREAK_REMAINING_MS=285000
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
+${entryRead}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper()}
 maintenance_certificate 260000`,

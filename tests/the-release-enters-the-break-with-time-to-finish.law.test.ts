@@ -47,7 +47,8 @@
  * THE RECONCILED CONTRACT (this branch's budget plus #5026's deferral):
  *
  *   admission  legacy_checkpoint_countdown       >= 285000 (+ headroom, ceiling 0)
- *   probe      legacy-engine-checkpoint.sh       >= 245000 + 40000 = 285000
+ *   locked     same countdown                    >= 285000 - elapsed entry
+ *   probe      legacy-engine-checkpoint.sh       >= 245000 + unspent entry
  *   guard      reserveMs                          >= 245000 at EVERY check
  *   after      maintenance_certificate 245000     >= 245000, only once attempted
  *
@@ -94,6 +95,10 @@ vi.setConfig({ testTimeout: 90_000 });
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 const checkpointShell = read('server/scripts/legacy-engine-checkpoint.sh');
 const guard = read('server/scripts/legacy-engine-checkpoint-guard.mjs');
 const maintenance = read('server/src/maintenance/MaintenanceBreak.ts');
@@ -133,6 +138,7 @@ function admit(remainingMs: number, headroomMs: number) {
       `set -euo pipefail
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
+${entryRead}
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${countdown}
@@ -205,12 +211,12 @@ describe('the release enters the break with time to finish', () => {
     expect(guard).toContain("'maintenance_not_durable_countdown'");
   });
 
-  it('the physical probe demands the guard reserve PLUS the whole budget, and adds nothing above 285000', () => {
+  it('the physical probe demands the guard reserve plus only the unspent same-entry budget', () => {
     const probe = checkpointShell.slice(
-      checkpointShell.indexOf('INSTANCE="$(curl'),
-      checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3')
+      checkpointShell.indexOf('INSTANCE="$(checkpoint_entry_read curl'),
+      checkpointShell.indexOf('CHECKPOINT_INTENT="$(checkpoint_entry_read python3')
     );
-    expect(probe).toContain('reserve=245000+40000');
+    expect(probe).toContain('reserve=245000+remaining_entry');
     expect(245_000 + 40_000).toBe(ENTRY_MS);
     expect(probe).toContain('m.get("remainingMs",0)>=reserve');
     // No measured boot term is added to the threshold: the boot is inside
@@ -218,7 +224,8 @@ describe('the release enters the break with time to finish', () => {
     // runtime check the helper already pays for, as evidence for the next
     // re-derivation rather than as an admission term.
     expect(probe).not.toContain('CHECKPOINT_GUARD_ENTRY_MS');
-    expect(probe).not.toContain('sys.argv[2]');
+    expect(probe).toContain('remaining_entry=int(sys.argv[2])-math.floor(time.time()*1000)');
+    expect(probe).toContain('math.floor(m["breakEndsAt"]/1000)==int(sys.argv[3])');
     expect(checkpointShell).toContain('NODE_BOOT_MS=$(( $(date +%s%3N) - NODE_BOOT_STARTED_MS ))');
     expect(checkpointShell).toContain(
       'predecessor runtime check took ${NODE_BOOT_MS}ms; the guard boot it proxies is inside the 40000ms legacy checkpoint budget'
@@ -235,7 +242,9 @@ describe('the release enters the break with time to finish', () => {
     // the rollback proof is still timed on this host and logged against the
     // entry allowance inside the budget
     expect(transaction).toContain('ENTRY_STARTED_MS="$(date +%s%3N)"');
-    expect(transaction).toContain('ROLLBACK_PROOF_MS=$(( $(date +%s%3N) - ENTRY_STARTED_MS ))');
+    expect(transaction).toContain(
+      'ROLLBACK_PROOF_MS=$(( $(date +%s%3N) - ROLLBACK_PROOF_STARTED_MS ))'
+    );
     expect(transaction).toContain('BREAK_ENTRY_BUDGET_MS=$(( ROLLBACK_PROOF_MS * 2 ))');
     // and the ceiling is DERIVED: what the break offers above the threshold
     // minus what the budget already reserves for the entry - which is 0, so
@@ -263,7 +272,7 @@ describe('the release enters the break with time to finish', () => {
     );
     const clamp = transaction.slice(
       transaction.indexOf('    BREAK_ENTRY_BUDGET_MS=$(( ROLLBACK_PROOF_MS * 2 ))'),
-      transaction.indexOf('    LEGACY_CHECKPOINT_ATTEMPTED=1\n    set +e')
+      transaction.indexOf('    LEGACY_CHECKPOINT_ATTEMPTED=1\n')
     );
     const result = spawnSync(
       'bash',
@@ -308,7 +317,7 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
     expect(checkpointShell).toContain(
       'defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }'
     );
-    const intentAt = checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3');
+    const intentAt = checkpointShell.indexOf('CHECKPOINT_INTENT="$(checkpoint_entry_read python3');
     expect(intentAt).toBeGreaterThan(0);
     const defers = [...checkpointShell.matchAll(/^\s*.*\|\| defer /gm)].map((m) => m.index!);
     expect(defers.length).toBeGreaterThan(0);
@@ -326,7 +335,7 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
     // the reserve plus the boot still to come, and prove it exits 75 having
     // created nothing. This is the exact shape that ended run 35615604946.
     const block = checkpointShell.slice(
-      checkpointShell.indexOf('INSTANCE="$(curl'),
+      checkpointShell.indexOf('INSTANCE="$(checkpoint_entry_read curl'),
       checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
     );
     const root = mkdtempSync(join(tmpdir(), 'release-window-defer-'));
@@ -343,6 +352,7 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
             phase: 'counting_down',
             durableConfirmed: true,
             remainingMs,
+            breakEndsAt: Math.floor(Date.now() / 1000) * 1000 + 299000,
           },
         });
       const run = (remainingMs: number) =>
@@ -353,6 +363,7 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
             `set -euo pipefail
 die() { echo "$*" >&2; exit 1; }
 defer() { echo "$*" >&2; exit 75; }
+checkpoint_entry_read() { "$@"; }
 curl() { printf '%s' "$PROBE_HEALTH"; }
 CONTROL_DIR=/immutable-reviewed-control
 LEGACY_SHA=${PREDECESSOR}
@@ -360,6 +371,7 @@ REQUEST_ROOT="$PROBE_ROOT"
 RUN_ID=35615604946-1
 date() { if [ "$1" = +%s%3N ]; then "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; else command date "$@"; fi; }
 CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
+CHECKPOINT_BREAK_END_EPOCH="$CHECKPOINT_TEST_BREAK_END"
 REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
 CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
 STARTED_AT=2026-09-18T21:55:50.88305198Z
@@ -374,14 +386,15 @@ printf '%s' inspector-boundary-reached
             env: {
               ...process.env,
               CHECKPOINT_TEST_NODE: process.execPath,
+              CHECKPOINT_TEST_BREAK_END: String(Math.floor(Date.now() / 1000) + 299),
               PROBE_HEALTH: health(remainingMs),
               PROBE_ROOT: root,
             },
           }
         );
 
-      // 284.999s left: below the 245000 + 40000 entry threshold. Defer.
-      const late = run(ENTRY_MS - 1);
+      // Below the unchanged guard floor cannot fit any remaining entry budget. Defer.
+      const late = run(GUARD_RESERVE_MS - 1);
       expect(late.status).toBe(75);
       expect(late.stdout).not.toContain('inspector-boundary-reached');
       // and, decisively, the one-shot intent was never created
@@ -424,9 +437,9 @@ printf '%s' inspector-boundary-reached
     );
     // the one-shot flag is raised BEFORE the helper runs, so a crash mid-call
     // can never be mistaken for a deferral
-    const raise = transaction.indexOf('LEGACY_CHECKPOINT_ATTEMPTED=1\n    set +e');
+    const raise = transaction.indexOf('LEGACY_CHECKPOINT_ATTEMPTED=1\n    legacy_entry_trace');
     const invoke = transaction.indexOf(
-      '"$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))"\n    LEGACY_CHECKPOINT_RC'
+      '"$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))" "$LEGACY_ENTRY_BREAK_END_EPOCH"\n    LEGACY_CHECKPOINT_RC'
     );
     expect(raise).toBeGreaterThan(0);
     expect(raise).toBeLessThan(invoke);
@@ -517,6 +530,7 @@ function certificate(remainingMs: number, minimum?: number) {
       `set -u
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
+${entryRead}
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper}

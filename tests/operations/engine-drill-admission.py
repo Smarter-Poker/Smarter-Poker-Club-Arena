@@ -28,6 +28,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
+ENTRY_READ = SOURCE[SOURCE.index('legacy_entry_read() {'):SOURCE.index('legacy_entry_trace() {')]
 INSTALLER = ROOT / 'server/scripts/install-engine-drill.sh'
 HOST_GATE = SOURCE[SOURCE.index('source_target_is_current() {'):
                    SOURCE.index('parse_health_instance_for_sha()')]
@@ -170,6 +171,7 @@ timeout() {{
 flock() {{ :; }}
 sleep() {{ :; }}
 die() {{ printf 'REFUSED:%s\\n' "$*" >&2; exit 1; }}
+{ENTRY_READ}
 {code}
 {tail}
 '''

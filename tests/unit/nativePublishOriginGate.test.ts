@@ -123,7 +123,7 @@ describe('native publishing requires the exact origin verification', () => {
     );
     expect(tests.run).not.toMatch(/origin\/main|github\.event\.before|continue-on-error/);
     const ci = parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
-    const workers = 2;
+    const workers = 4;
     expect(client.env.VITEST_MAX_THREADS).toBe(workers);
     expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(workers);
     expect(workflow.jobs.production.concurrency).toEqual({

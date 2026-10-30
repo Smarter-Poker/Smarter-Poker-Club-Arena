@@ -372,12 +372,18 @@ def retained_reason(request, window, result):
 
 
 PENDING_SCHEMA = 'existing-release-pending-observation/v3'
+PENDING_RECOVERY_STATUSES = ('accepted', 'active', 'pending', 'busy', 'expired',
+                             'use_hourly', 'unavailable', 'unknown')
+PENDING_RECOVERY_CATEGORIES = {
+    'recovery_newer_owner', 'recovery_inspector_unproved',
+    'recovery_reservation_unestablished', 'recovery_rate_limited',
+} | {'recovery_announcement_' + status for status in PENDING_RECOVERY_STATUSES}
 PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
                       'locked_budget_missed', 'legacy_entry_deferred',
                       'certificate_also_shut', 'rollback_readiness_completed',
                       'rollback_certificate_lost', 'weekly_owner_active',
                       'inflight_evidence_unavailable', 'mutation_lock_unavailable',
-                      'mutation_lock_deadline', 'hands_in_air'}
+                      'mutation_lock_deadline', 'hands_in_air'} | PENDING_RECOVERY_CATEGORIES
 # Compact, closed v3 certificate tuple: [remainingMs, unparkedTables,
 # handsInFlightTotal, reasonCounts]. reasonCounts follows this order, with
 # one final count of UNRECOGNIZED KEYS; private/future names never leave host.
@@ -430,6 +436,36 @@ def pending_certificate_details(message, also=False):
         return result
     except (SyntaxError, ValueError, TypeError, RecursionError):
         return None
+
+
+def pending_recovery_category(message):
+    # Existing producer literals only. Validate, then discard every source,
+    # run, cause and announcement timestamp. These signs grant no authority.
+    prefix = r'\[engine-release-transaction\] '
+    if re.fullmatch(prefix + r'newer release [0-9a-f]{40} \(run [1-9][0-9]{0,19}(?:-[1-9][0-9]{0,3})?\) is in flight and owns any off-cycle window; this release waits for the scheduled break', message):
+        return 'recovery_newer_owner'
+    fixed = {
+        '[engine-release-transaction] legacy inspector absence is not proved; no recovery window requested and no inspector was touched': 'recovery_inspector_unproved',
+        '[engine-release-transaction] recovery announcement reservation could not be established; no window was announced, waiting for the scheduled break': 'recovery_reservation_unestablished',
+    }
+    if message in fixed:
+        return fixed[message]
+    cause = (r'(?:owner-ordered [a-z0-9][a-z0-9-]{0,63}|engine-degraded '
+             r'(?:liveness=dead(?:,wholeFleetStalled)?(?:,tournamentManagersQuarantined=[1-9][0-9]*)?'
+             r'|wholeFleetStalled(?:,tournamentManagersQuarantined=[1-9][0-9]*)?'
+             r'|tournamentManagersQuarantined=[1-9][0-9]*))')
+    if re.fullmatch(prefix + r'off-cycle window wanted \(' + cause + r'\) but one was already announced in the last hour; waiting for the scheduled break', message):
+        return 'recovery_rate_limited'
+    match = re.fullmatch(prefix + r'fixed recovery announcement ([1-9][0-9]{12}): ('
+                         + '|'.join(PENDING_RECOVERY_STATUSES)
+                         + r'); existing certificate and rollback budget remain required', message)
+    if match:
+        try:
+            timestamp(int(match.group(1)))
+        except ValueError:
+            return None
+        return 'recovery_announcement_' + match.group(2)
+    return None
 
 
 def validate_pending_details(category, details):
@@ -538,7 +574,7 @@ def pending_journal(request, unit):
         '--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID,_SYSTEMD_UNIT,__REALTIME_TIMESTAMP',
         # Below-budget "also shut" chatter must not evict the early causal
         # refusal from the existing twelve-row selection. Absence stays unknown.
-        '--grep=^(\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
+        '--grep=^(\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|newer release [0-9a-f]{40} \\(run [1-9][0-9]*(-[1-9][0-9]*)?\\) is in flight and owns any off-cycle window; |legacy inspector absence is not proved; |recovery announcement reservation could not be established; |off-cycle window wanted \\(|fixed recovery announcement [1-9][0-9]{12}: |prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
         '_SYSTEMD_INVOCATION_ID=' + invocation, '_SYSTEMD_UNIT=' + name])
     if reply.returncode:
         raise ValueError('Pending journal unavailable')
@@ -553,7 +589,7 @@ def pending_journal(request, unit):
         if (not isinstance(stamp, str) or not re.fullmatch(r'[0-9]{16}', stamp)
                 or not isinstance(message, str) or len(message) > 2048):
             raise ValueError('Pending journal shape refused')
-        category = None
+        category = pending_recovery_category(message)
         details = None
         # Literal producer prefixes in engine-release-transaction.sh. Unknown
         # messages remain unknown; their text never leaves the host.

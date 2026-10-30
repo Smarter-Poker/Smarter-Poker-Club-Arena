@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { lobbyGameSectionsFixture } from '../helpers/lobby-game-sections-fixture.mjs';
 
-export function registerLobbyGameSectionsCases() {
+export function registerLobbyGameSectionsCases(lobbyGameSectionsFixture: () => Promise<string>) {
   for (const width of [375, 393, 1280]) {
     test(`Find Your Game separates two large doors at ${width}px`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 850 });

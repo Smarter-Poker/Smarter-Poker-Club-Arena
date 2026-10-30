@@ -1,5 +1,6 @@
 import { registerLobbyGameSectionsCases } from './support/lobbyGameSectionsCases';
-registerLobbyGameSectionsCases();
+import { lobbyGameSectionsFixture } from './helpers/lobby-game-sections-fixture.mjs';
+registerLobbyGameSectionsCases(lobbyGameSectionsFixture);
 import { registerCssPreloadRetryCase } from './css/vite-css-preload-retry.fixture';
 import { tournamentScrollFeedbackFixture } from './helpers/tournament-scroll-feedback.mjs';
 import { registerInitialTableReadinessCases } from './support/initialTableReadinessCases';

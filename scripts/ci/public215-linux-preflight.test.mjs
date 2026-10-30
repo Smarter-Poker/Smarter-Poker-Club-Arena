@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
-import {invocation,stageAdmission,sourceGraph,remoteCommand,GRAPH_FILES,digest,programRequest,executionEvidence} from './public215-linux-preflight.mjs';
+import {invocation,stageAdmission,sourceGraph,remoteCommand,GRAPH_FILES,digest,programRequest,executionEvidence,RESOLVE_EXISTING_IMAGE,remoteImageResolutionCommand,existingImageIdentity,resolveImageSelection} from './public215-linux-preflight.mjs';
 const sha='a'.repeat(40),image='sha256:'+'b'.repeat(64),hex='c'.repeat(64);
 const env={GITHUB_REPOSITORY:'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',GITHUB_REPOSITORY_ID:'1132369872',GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main'};
 const inputs={dataset:'11111111-1111-4111-8111-111111111111',candidate_sha:sha,image_id:image,stage_run:'123'};
@@ -49,4 +49,36 @@ test('Linux stdout and actual terminal metadata remain separate assembler-compat
  assert.throws(()=>executionEvidence({...result,request_checksum:hex},metadata,()=>{}));
  assert.throws(()=>executionEvidence(result,{...metadata,exit_code:1},()=>{}));
  const partial=[];assert.throws(()=>executionEvidence(result,metadata,(name)=>{partial.push(name);throw Error('result write failed');}));assert.deepEqual(partial,[hex+'.result.json']);
+});
+
+test('existing canonical build tag resolves once to one retained immutable identity; manual IDs are unchanged',()=>{
+ const tree='d'.repeat(40),identity={format:'public215_existing_image_identity_v1',candidate_sha:sha,image_id:image,server_tree:tree,build_contract:'clean-server-archive-v1'};
+ const selection={...inputs,image_id:RESOLVE_EXISTING_IMAGE};
+ assert.equal(invocation(env,{inputs:selection}),selection);
+ const calls=[],files=[];
+ assert.equal(resolveImageSelection(selection,tree,command=>{calls.push(command);return JSON.stringify(identity);},(name,bytes)=>files.push({name,value:JSON.parse(bytes)})),image);
+ assert.equal(calls.length,1);assert.deepEqual(files,[{name:'existing-image-identity.json',value:identity}]);
+ assert.equal(resolveImageSelection(inputs,tree,()=>{throw Error('manual ID must not resolve');},()=>{throw Error('manual ID must not write resolution');}),image);
+ assert.equal(existingImageIdentity(identity,sha,tree),image);
+ for(const bad of [{...identity,candidate_sha:'e'.repeat(40)},{...identity,server_tree:'e'.repeat(40)},{...identity,build_contract:'other'},{...identity,image_id:'club-arena-engine:'+sha},{...identity,extra:true},{}]){
+  assert.throws(()=>existingImageIdentity(bad,sha,tree));
+  assert.throws(()=>resolveImageSelection(selection,tree,()=>JSON.stringify(bad),()=>{throw Error('must not retain invalid metadata');}));
+ }
+ assert.throws(()=>resolveImageSelection(selection,tree,()=>'{',()=>{}));
+ assert.throws(()=>resolveImageSelection(selection,tree,()=>{throw Error('missing image or locked host');},()=>{}));
+ assert.throws(()=>resolveImageSelection({...inputs,image_id:'club-arena-engine:'+sha},tree,()=>{},()=>{}));
+ assert.throws(()=>remoteCommand(sha,RESOLVE_EXISTING_IMAGE,tree,hex,'123-1'));
+ const source=readFileSync(new URL('./public215-linux-preflight.mjs',import.meta.url),'utf8');
+ assert.ok(source.indexOf('imageId=resolveImageSelection')<source.indexOf('for(let offset='));
+ assert.match(source,/remoteCommand\(selected.candidate_sha,imageId,tree/);
+ assert.doesNotMatch(source,/image_id:selected.image_id|remoteCommand\(selected.candidate_sha,selected.image_id/);
+});
+test('existing image discovery is read-only, exact-source bound and guarded against serving changes',()=>{
+ const command=remoteImageResolutionCommand(sha,'d'.repeat(40));
+ assert.equal(command.split('club-arena-engine:'+sha).length-1,1);
+ for(const required of ['flock -n 9','America/Chicago','-ge 350','-le 406','before=$(docker container inspect','after=$(docker container inspect','org.opencontainers.image.revision','com.smarterpoker.engine.source-tree','com.smarterpoker.engine.build-contract','clean-server-archive-v1','public215_existing_image_identity_v1'])assert.ok(command.includes(required),required);
+ assert.equal((command.match(/docker image inspect/g)||[]).length,5);
+ assert.doesNotMatch(command,/docker run|docker build|docker pull|docker images|docker tag|docker rm|--env|--volume|systemctl|\.env/);
+ assert.throws(()=>remoteImageResolutionCommand('main','d'.repeat(40)));
+ assert.throws(()=>remoteImageResolutionCommand(sha,'tree;false'));
 });

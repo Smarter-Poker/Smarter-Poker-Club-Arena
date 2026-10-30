@@ -2070,6 +2070,12 @@ export interface HorseDecideOpts {
   v57TournamentAggression?: boolean;
   /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
   v60CashPressure?: boolean;
+  /** V62 (2026-10-30) Hold'em river bettor polarity: a river wager's sampled
+   *  hand is kept by how often a human bets it at that size (HorseEval
+   *  V62_KEEP), so a one-pair call is priced against value and bluffs rather
+   *  than against any pair that connected. Default on; false is the
+   *  historical arm for recorded corpora. */
+  v62RiverBettorPolarity?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -6662,6 +6668,32 @@ export class HorseLogic {
           noteFire('v56_omaha_pressure_range');
       }
     }
+    // ═══ V62 RIVER BETTOR POLARITY (2026-10-30) ═══ Single-board Hold'em,
+    // facing a river wager from a bettor without an over-bluffer read: the
+    // sampler keeps that bettor's hand by the likelihood they bet it at this
+    // size (HorseEval V62_KEEP). The read says WHO wagered on the river; the
+    // exploit read (callDownMod above 1 = a measured over-bluffer) keeps the
+    // full contact range so a credible bluffer is still called down.
+    let polar62 = false;
+    if (
+      (opts.v62RiverBettorPolarity ?? true) !== false &&
+      isRiver &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !vi.isFixedLimit &&
+      extraBoards.length === 0 &&
+      gs.bombPot !== true &&
+      exploit.callDownMod <= 1 &&
+      oppReads &&
+      oppReads.some((read) => read?.lastStage === 'river')
+    ) {
+      oppReads = oppReads.map((read) =>
+        read && read.lastStage === 'river' ? { ...read, riverPolar: true } : read
+      );
+      polar62 = true;
+      if (tele15) noteFire('v62_river_bettor_polarity');
+    }
     let equity: number;
     /**
      * ═══ V36 BOMB POTS (Dan 2026-09-02) ═══════════════════════════════════
@@ -9595,7 +9627,9 @@ export class HorseLogic {
       // a fresh flush/straight completion hero does not beat (and cannot
       // block) got the same call bar as a blank. The A4-two-pair-calls-a-jam
       // -on-a-three-diamond-river hand from the review table pays this.
-      const scare21 = useV21 && dangered ? 0.05 : 0;
+      // V62: the polar river sampler already carries the completed draws in
+      // the bettor's value stratum, so the scare margin is not added twice.
+      const scare21 = useV21 && dangered && !polar62 ? 0.05 : 0;
       if (tele15 && scare21 > 0) noteFire('v21_scare_commit');
       // ═══ V23 PKO BOUNTY PRICING (2026-08-28) ═══ calling off against an
       // all-in hero COVERS pays the bounty on top of the pot — the required
@@ -9669,6 +9703,9 @@ export class HorseLogic {
       let shade61c = 0;
       if (
         (opts.v61RiverOnePairShade ?? true) !== false &&
+        // V62 sampled this bettor polar: the model carries what the shade
+        // corrected for, so the price shade is not stacked on top of it.
+        !polar62 &&
         isRiver &&
         !vi.isOmaha &&
         !vi.isShortDeck &&
@@ -10303,12 +10340,17 @@ export class HorseLogic {
         let shade61 = 0;
         if (
           (opts.v61RiverOnePairShade ?? true) !== false &&
+          !polar62 &&
           !vi.isOmaha &&
           !vi.isShortDeck &&
           vi.holeCount === 2 &&
           !multiBoard36 &&
           !gs.bombPot &&
-          respect >= 1 &&
+          // the measured over-bluffer read, as the committed branch reads it:
+          // `respect` also carries the style's callRespect offset, which sat
+          // at 0.96 for a neutral read with the mind on and left the shade
+          // unfired in production until 2026-10-30.
+          exploit.callDownMod <= 1 &&
           cat > 0 &&
           (cat <= 2 || (cat === 3 && pairedBoard)) &&
           toCall > 0 &&

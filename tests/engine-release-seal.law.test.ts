@@ -1,3 +1,4 @@
+import { enteredFloorFixture, portableFloorReader } from './helpers/engineActivationFloorFixture';
 import {
   chmodSync,
   existsSync,
@@ -2543,7 +2544,9 @@ describe('every host mutation path obeys the durable release authority', () => {
 
   // Builds a repository sandbox and runs the real image builder, so it is
   // subprocess-bound like the provenance case above; it timed out at 5046ms in
-  // a loaded full-suite run with every assertion holding. Budget, not behaviour.
+  // a loaded full-suite run with every assertion holding. The scoped Cashier
+  // workflow preflight measured 18179ms on 2026-10-30; use the existing 90s
+  // subprocess allowance above instead of overriding it with 15s.
   it('excludes mutable host files and credentials from the executable image build path', () => {
     const sandbox = mkdtempSync(join(tmpdir(), 'engine-clean-build-'));
     try {
@@ -2816,7 +2819,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  }, 15_000);
+  }, 90_000);
 
   it('revalidates restart authority under the shared lock and starts in that same shell', () => {
     const releaseLoop = transaction.indexOf(
@@ -3027,7 +3030,8 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       );
       expect(executableRecovery).not.toBe(recovery);
       const recoveryPath = join(generation, 'engine-release-recover.sh');
-      writeFileSync(recoveryPath, executableRecovery);
+      writeFileSync(recoveryPath, portableFloorReader(executableRecovery));
+      enteredFloorFixture(generation, requestRoot, runKey, B_SHA, C_SHA);
       chmodSync(recoveryPath, 0o755);
       writeFileSync(
         join(generation, 'engine-release-seal.py'),
@@ -3064,7 +3068,11 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         join(bin, 'timeout'),
         '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
       );
-      writeFileSync(join(bin, 'python3'), `#!/usr/bin/env bash\n[ "\${2:-}" != '${pinRoot}' ]\n`);
+      const actualPython = spawnSync('which', ['python3'], { encoding: 'utf8' }).stdout.trim();
+      writeFileSync(
+        join(bin, 'python3'),
+        `#!/usr/bin/env bash\ncase "\${1:-}" in *engine-release-activation-floor.py) exec '${actualPython}' "$@" ;; esac\n[ "\${2:-}" != '${pinRoot}' ]\n`
+      );
       for (const name of ['id', 'flock', 'docker', 'stat', 'timeout', 'python3']) {
         chmodSync(join(bin, name), 0o755);
       }
@@ -3453,6 +3461,7 @@ printf '%s\n' '[engine-release-transaction] FATAL: target is stale; protected ma
         writeFileSync(join(generation, 'engine-release-transaction.sh'), executableFixture);
         chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
         writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
+        enteredFloorFixture(generation, requestRoot, runKey, B_SHA, controlSha);
         writeFileSync(
           join(requestRoot, `${runKey}.request`),
           [

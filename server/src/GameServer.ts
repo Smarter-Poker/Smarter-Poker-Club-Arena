@@ -2077,6 +2077,7 @@ export class GameServer {
     if (this.tableEngines.get(tableId) !== engine) return;
 
     this.tableEngines.delete(tableId);
+    this.releaseWeeklyPayout(engine);
     tableStateHub.dropTable(tableId);
     if (!this.running) return;
 
@@ -2137,6 +2138,8 @@ export class GameServer {
   /** Where boot time goes, phase by phase, published on /health as bootPhases. */
   private readonly bootTimeline = new BootPhaseTimeline();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
+  /** Cursor for the existing bounded never-dealt candidate pass; no new timer. */
+  private neverDealtCandidateCursor: string | null = null;
   /**
    * When each installed manager was admitted. The never-dealt sweep measures a
    * manager's idleness from here, not from the event's started_at: an event
@@ -3996,7 +3999,21 @@ export class GameServer {
   private weeklyPayoutRead: Promise<void> | null = null;
   private weeklyPayoutReadPending = false;
   private weeklyPayoutGeneration = 0;
-  private readonly weeklyPayoutTableListeners = new Map<ServerTableEngine, () => void>();
+  /**
+   * Weekly-payout boundary subscriptions, keyed by the engine that owns them.
+   *
+   * This must never be a strong registry. Until 2026-10-29 it was a `Map`,
+   * so every engine generation ever adopted (each tournament table, each
+   * replacement after lease loss, each cash wake or zombie rebuild) stayed
+   * reachable from GameServer for the life of the process together with its
+   * hand controller, telemetry rings and, through its owner callbacks, its
+   * whole TournamentManager. Nothing removed an entry before shutdown, and the
+   * main isolate exhausted its V8 heap twice in one day on the first image to
+   * carry it. A WeakMap keeps the subscription for exactly as long as the
+   * engine is alive somewhere else; `releaseWeeklyPayout` drops it the moment
+   * an engine leaves the process registry.
+   */
+  private readonly weeklyPayoutTableListeners = new WeakMap<ServerTableEngine, () => void>();
   private readonly weeklyPayoutStore = createWeeklyPayoutPauseStore(INSTANCE_ID, () => {
     const claims: WeeklyPayoutLeaseClaim[] = [];
     for (const [tableId, engine] of this.enginesIncludingMixedF06Custody()) {
@@ -4066,6 +4083,22 @@ export class GameServer {
     this.weeklyPayoutPause.adopt(engine);
   }
 
+  /**
+   * An engine that has left the process registry owns no further hand
+   * boundaries. Drop its weekly-payout subscription so neither the listener
+   * set on the engine nor this registry keeps the retired generation alive.
+   * Idempotent: an engine that was never adopted, or was already released, is
+   * a no-op. A quarantined engine still in `tableEngines` is not released.
+   */
+  private releaseWeeklyPayout(engine: ServerTableEngine): void {
+    // A retained lifecycle harness may release tables before this owner exists.
+    if (!this.weeklyPayoutTableListeners) return;
+    const unsubscribe = this.weeklyPayoutTableListeners.get(engine);
+    if (!unsubscribe) return;
+    this.weeklyPayoutTableListeners.delete(engine);
+    unsubscribe();
+  }
+
   private refreshWeeklyPayout(): Promise<void> {
     this.weeklyPayoutReadPending = true;
     if (this.weeklyPayoutRead) return this.weeklyPayoutRead;
@@ -4129,8 +4162,11 @@ export class GameServer {
     const channel = this.weeklyPayoutChannel;
     this.weeklyPayoutChannel = null;
     if (channel) await supabase.removeChannel(channel);
-    for (const unsubscribe of this.weeklyPayoutTableListeners.values()) unsubscribe();
-    this.weeklyPayoutTableListeners.clear();
+    // Engines that already left the registry released their subscription on
+    // the way out; the ones still published (including retained mixed F06
+    // custody) release here.
+    for (const [, engine] of this.enginesIncludingMixedF06Custody())
+      this.releaseWeeklyPayout(engine);
     await this.weeklyPayoutRead?.catch((error) =>
       reportError(error, 'GameServer.weekly_payout_stop_unknown')
     );
@@ -5366,7 +5402,10 @@ export class GameServer {
         );
         continue;
       }
-      if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
+      if (this.tableEngines.get(tableId) === engine) {
+        this.tableEngines.delete(tableId);
+        this.releaseWeeklyPayout(engine);
+      }
     }
     for (let index = 0; index < managerStopResults.length; index++) {
       const result = managerStopResults[index];
@@ -7472,9 +7511,18 @@ export class GameServer {
    */
   private async waitForAllTablesParked(managers: TournamentManager[]): Promise<boolean> {
     const generation = this.lifecycleGeneration;
+    const breakGeneration = this.synchronizedBreakGeneration;
     const startedAt = Date.now();
     let nextReportAt = startedAt + GameServer.PARK_WAIT_REPORT_MS;
-    while (this.running && this.directAdmissionIsCurrent(generation)) {
+    while (
+      this.running &&
+      this.directAdmissionIsCurrent(generation) &&
+      this.synchronizedBreakGeneration === breakGeneration
+    ) {
+      // A stopped manager cannot certify this break. Release its waiter
+      // without claiming its original hand finished. A newer hourly break
+      // likewise owns a different waiter, never an accumulated loop.
+      if (managers.some((tm) => !tm.isRunning())) return false;
       const waitingOn = managers.filter((tm) => !tm.areAllTablesParked());
       if (waitingOn.length === 0) return true;
       const waitedMs = Date.now() - startedAt;
@@ -7484,24 +7532,9 @@ export class GameServer {
           String((tm as unknown as { tournamentId?: string }).tournamentId ?? '?').slice(0, 8)
         )
         .join(', ');
-      /* A LIVENESS CEILING, NOT A GRACE ESTIMATE (2026-09-10).
-         A guessed two minutes is no authority to start a break over a hand
-         that is still being played. But with no ceiling at all, one wedged
-         table holds its tournament on the break screen for as long as it
-         stays wedged - until a restart - and nothing says which table it was.
-         A hand still in the air a whole break after :55 is not a slow hand;
-         start the countdown, and say loudly which event never parked. */
-      if (waitedMs >= GameServer.PARK_WAIT_CEILING_MS) {
-        reportError(
-          new Error(
-            `[GameServer] synchronized break: ${waitingOn.length} tournament(s) still had a table ` +
-              `in play ${Math.round(waitedMs / 1000)}s after the last hand was called (${names}); ` +
-              'starting the countdown so the tournament is not held on a wedged table'
-          ),
-          'GameServer.synchronized_break_park_ceiling'
-        );
-        return true;
-      }
+      // Elapsed time cannot prove that an accepted hand completed. Keep the
+      // existing diagnostic cadence while the hand's own authority resolves
+      // it; shutdown returns false below and never begins a false countdown.
       if (Date.now() >= nextReportAt) {
         console.warn(
           `[GameServer] synchronized break still waiting on ${waitingOn.length} tournament(s) ` +
@@ -7516,12 +7549,6 @@ export class GameServer {
 
   /** How long the drain may run before it names who it is waiting on, and how often after. */
   private static readonly PARK_WAIT_REPORT_MS = 15_000;
-  /**
-   * The drain's liveness ceiling: a whole break after the last hand was
-   * called. Far beyond any real hand (the maintenance break has had every
-   * table finishing since :53), so it only ever fires on a wedged table.
-   */
-  private static readonly PARK_WAIT_CEILING_MS = 5 * 60 * 1000;
 
   // ═════════════════════════════════════════════════════════════════════════════
   // STALE DATA CLEANUP — Run on startup
@@ -9650,39 +9677,87 @@ export class GameServer {
          * it is this same stall, recovering by luck on a later re-adoption.
          */
         const neverDealtCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-        const { data: maybeNeverDealt } = await supabase
+        let neverDealtQuery = supabase
           .from('tournaments')
           .select('id, name, started_at')
           .eq('status', 'RUNNING')
-          .lt('started_at', neverDealtCutoff);
-        for (const t of (maybeNeverDealt || []).slice(0, 15)) {
-          const { data: tRows, error: tErr } = await supabase
-            .from('tables')
-            .select('id, status')
-            .eq('tournament_id', t.id);
-          if (tErr) continue; // unreadable is UNKNOWN, never "it never dealt"
-          const tableIds = (tRows || []).map((r) => String((r as { id: string }).id));
-          if (tableIds.length === 0) continue; // no table at all - creation path owns it
+          .lt('started_at', neverDealtCutoff)
+          .order('id', { ascending: true })
+          .limit(15);
+        const candidateCursor = this.neverDealtCandidateCursor ?? null;
+        if (candidateCursor) neverDealtQuery = neverDealtQuery.gt('id', candidateCursor);
+        const { data: maybeNeverDealt, error: neverDealtError } = await neverDealtQuery;
+        if (!this.directAdmissionIsCurrent(generation)) break;
+        if (neverDealtError || !Array.isArray(maybeNeverDealt)) {
+          throw neverDealtError ?? new Error('Never-dealt candidate board unavailable');
+        }
+        // Advance only a valid ordered page. Healthy early events must not
+        // permanently hide the later candidates behind the per-pass budget.
+        let previousCandidate = candidateCursor;
+        for (const candidate of maybeNeverDealt) {
+          if (
+            typeof candidate.id !== 'string' ||
+            !candidate.id ||
+            (previousCandidate !== null && candidate.id <= previousCandidate)
+          ) {
+            throw new Error('Never-dealt candidate cursor unavailable');
+          }
+          previousCandidate = candidate.id;
+        }
+        this.neverDealtCandidateCursor = maybeNeverDealt.length < 15 ? null : previousCandidate;
+        neverDealtCandidate: for (const t of maybeNeverDealt) {
+          if (!this.directAdmissionIsCurrent(generation)) break;
+          const tableRead = await fetchAllRows<{ id: string; status: string }>(
+            (cursor, want) => {
+              let query = supabase
+                .from('tables')
+                .select('id, status')
+                .eq('tournament_id', t.id)
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) query = query.gt('id', cursor);
+              return query;
+            },
+            {
+              label: 'GameServer.neverDealtTables',
+              pageAttempts: 1,
+              shouldContinue: () => this.directAdmissionIsCurrent(generation),
+            }
+          );
+          if (!this.directAdmissionIsCurrent(generation)) break;
+          if (!tableRead.complete) continue;
+          const tRows = tableRead.rows;
+          const tableIds = tRows.map((r) => r.id);
+          if (tableIds.length === 0) continue; // creation path owns an event with no tables
 
-          const { count: dealt, error: dealtErr } = await supabase
-            .from('hand_history')
-            .select('id', { count: 'exact', head: true })
-            .in('table_id', tableIds);
-          if (dealtErr || dealt === null || dealt === undefined) continue;
-          if (dealt > 0) continue; // it played; the sweeps above own it
+          // Every table must prove zero completed hands. A truncated table
+          // prefix cannot establish that the event never dealt. Bound each IN
+          // request so a large field cannot exceed the gateway URL limit.
+          for (let offset = 0; offset < tableIds.length; offset += 200) {
+            const { count: dealt, error: dealtErr } = await supabase
+              .from('hand_history')
+              .select('id', { count: 'exact', head: true })
+              .in('table_id', tableIds.slice(offset, offset + 200));
+            if (!this.directAdmissionIsCurrent(generation)) break neverDealtCandidate;
+            if (dealtErr || dealt === null || dealt === undefined || dealt !== 0)
+              continue neverDealtCandidate;
+          }
 
-          // Only a game that can actually deal goes back in the queue: 2+
-          // live seats on a non-closed table.
-          const openTableIds = (tRows || [])
-            .filter((r) => String((r as { status?: string }).status) !== 'closed')
-            .map((r) => String((r as { id: string }).id));
+          const openTableIds = tRows.filter((r) => r.status !== 'closed').map((r) => r.id);
           if (openTableIds.length === 0) continue;
-          const { count: liveSeats, error: seatErr } = await supabase
-            .from('table_seats')
-            .select('id', { count: 'exact', head: true })
-            .in('table_id', openTableIds)
-            .is('left_at', null);
-          if (seatErr || !liveSeats || liveSeats < 2) continue;
+          let liveSeats = 0;
+          for (let offset = 0; offset < openTableIds.length; offset += 200) {
+            const { count, error } = await supabase
+              .from('table_seats')
+              .select('id', { count: 'exact', head: true })
+              .in('table_id', openTableIds.slice(offset, offset + 200))
+              .is('left_at', null);
+            if (!this.directAdmissionIsCurrent(generation)) break neverDealtCandidate;
+            if (error || count === null || count === undefined || count < 0)
+              continue neverDealtCandidate;
+            liveSeats += count;
+          }
+          if (liveSeats < 2) continue;
 
           /**
            * SEATING HAS TO BE FINISHED BEFORE "NEVER DEALT" MEANS "DEAD".
@@ -9703,6 +9778,7 @@ export class GameServer {
             .select('id', { count: 'exact', head: true })
             .eq('tournament_id', t.id)
             .eq('status', 'playing');
+          if (!this.directAdmissionIsCurrent(generation)) break;
           if (playingCountErr || stillPlaying === null || stillPlaying === undefined) continue;
           if (liveSeats < stillPlaying) continue;
 
@@ -10934,9 +11010,12 @@ export class GameServer {
 
   /** One bounded, keyset-paged snapshot of durable manager wake receipts. */
   private async drainTournamentManagerWakePages(tournamentId?: string): Promise<boolean> {
+    const lifecycle = this.lifecycleGeneration;
+    const ownsRead = () => this.running && this.lifecycleGeneration === lifecycle;
     const pageSize = tournamentId ? 50 : 200;
     let afterId = 0;
     for (;;) {
+      if (!ownsRead()) return true;
       let query = supabase
         .from('tournament_manager_wakes')
         .select('id,tournament_id,reason,generation,created_at,consumed_at')
@@ -10953,15 +11032,23 @@ export class GameServer {
           return null;
         }
       })();
+      if (!ownsRead()) return true;
       if (!response) return false;
       const { data, error } = response;
       if (error) {
         reportError(error, 'GameServer.tournament_manager_wake_drain_read_failed');
         return false;
       }
-      const rows = data || [];
+      if (!Array.isArray(data)) {
+        reportError(
+          new Error('Tournament wake inbox returned no readable page'),
+          'GameServer.tournament_manager_wake_drain_read_failed'
+        );
+        return false;
+      }
+      const rows = data;
       for (const row of rows) {
-        if (!this.running) return true;
+        if (!ownsRead()) return true;
         await this.admitTournamentManagerWake(row as Record<string, unknown>);
       }
       if (rows.length < pageSize) return true;
@@ -11618,45 +11705,45 @@ export class GameServer {
    * reopen a no-op if something opened the table in the meantime.
    */
   private async reopenTablesClosedUnderLiveTournaments(): Promise<void> {
-    /* Every live tournament, a page at a time: one 500-row read left the
-       tail of a 594-tournament board out of the sweep entirely. */
-    const tournaments: LiveTournamentRow[] = [];
-    const PAGE = 500;
-    for (let from = 0; ; from += PAGE) {
-      const { data: liveRows, error: liveErr } = await supabase
-        .from('tournaments')
-        .select('id, status, start_time')
-        .in('status', ['REGISTERING', 'RUNNING'])
-        .order('id')
-        .range(from, from + PAGE - 1);
-      if (liveErr) {
-        reportError(
-          new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
-          'GameServer.reopen_sweep_tournament_read_failed'
-        );
-        return;
-      }
-      const page = (liveRows ?? []) as LiveTournamentRow[];
-      tournaments.push(...page);
-      if (page.length < PAGE) break;
-    }
+    const generation = this.lifecycleGeneration;
+    const current = () => this.directAdmissionIsCurrent(generation) && !isMaintenanceFrozen();
+    if (!current()) return;
+    const tournamentRead = await fetchAllRows<LiveTournamentRow & Record<string, unknown>>(
+      (cursor, want) => {
+        let query = supabase
+          .from('tournaments')
+          .select('id, status, start_time')
+          .in('status', ['REGISTERING', 'RUNNING'])
+          .order('id', { ascending: true })
+          .limit(want);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'GameServer.reopenTournamentBoard', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!current() || !tournamentRead.complete) return;
+    const tournaments = tournamentRead.rows;
     if (tournaments.length === 0) return;
 
-    // Bounded `in.(...)` lists: see REOPEN_SWEEP_ID_CHUNK.
+    // A bounded event list can still own more than one response of tables.
+    // The planner must see every open sibling before it may reopen a closed one.
     const tables: TournamentTableRow[] = [];
     for (const chunk of reopenSweepIdChunks(tournaments.map((t) => String(t.id)))) {
-      const { data: tableRows, error: tableErr } = await supabase
-        .from('tables')
-        .select('id, tournament_id, status, is_deleted, created_at')
-        .in('tournament_id', chunk);
-      if (tableErr) {
-        reportError(
-          new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
-          'GameServer.reopen_sweep_table_read_failed'
-        );
-        return;
-      }
-      tables.push(...((tableRows ?? []) as TournamentTableRow[]));
+      const tableRead = await fetchAllRows<TournamentTableRow & Record<string, unknown>>(
+        (cursor, want) => {
+          let query = supabase
+            .from('tables')
+            .select('id, tournament_id, status, is_deleted, created_at')
+            .in('tournament_id', chunk)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) query = query.gt('id', cursor);
+          return query;
+        },
+        { label: 'GameServer.reopenTableBoard', pageAttempts: 1, shouldContinue: current }
+      );
+      if (!current() || !tableRead.complete) return;
+      tables.push(...tableRead.rows);
     }
 
     /* Seat counts for the CLOSED candidates only. A seat row survives its
@@ -11672,9 +11759,12 @@ export class GameServer {
         .select('table_id')
         .in('table_id', chunk)
         .is('left_at', null);
-      if (seatErr) {
+      if (!current()) return;
+      if (seatErr || !Array.isArray(seatRows)) {
         reportError(
-          new Error(`[GameServer] reopen sweep seat read failed: ${seatErr.message}`),
+          new Error(
+            `[GameServer] reopen sweep seat read failed: ${seatErr?.message ?? 'missing seat array'}`
+          ),
           'GameServer.reopen_sweep_seat_read_failed'
         );
         return;
@@ -11691,10 +11781,11 @@ export class GameServer {
 
     let reopened = 0;
     for (const plan of plans) {
+      if (!current()) return;
       if (!this.tournamentRetirementCustody.admissionAllowed(plan.tableId)) continue;
       const { error: reopenErr } = await this.tournamentRetirementCustody.withAdmission(
         plan.tableId,
-        () => this.running,
+        current,
         async (assertCurrent) => {
           const result = await supabase
             .from('tables')
@@ -11716,6 +11807,7 @@ export class GameServer {
       }
       reopened++;
 
+      if (!current()) return;
       if (plan.refreshHumanWindow) {
         /* The window closed hours ago. Hand the board a fresh one rather than
            straight to the past-start filler, so a repaired game is a game that
@@ -12732,6 +12824,8 @@ export class GameServer {
       replaced = true;
     }
     if (!replaced) return false;
+    // The stopped generation has left the registry whichever branch follows.
+    this.releaseWeeklyPayout(expected);
     if (!this.running) {
       await replacement.stop().catch(() => undefined);
       unregisterOwnedTournamentTableEngine(
@@ -12739,7 +12833,10 @@ export class GameServer {
         this.tournamentOwnedTables,
         tableId,
         replacement,
-        () => tableStateHub.dropTable(tableId)
+        () => {
+          tableStateHub.dropTable(tableId);
+          this.releaseWeeklyPayout(replacement);
+        }
       );
       return false;
     }
@@ -12760,7 +12857,10 @@ export class GameServer {
       this.tournamentOwnedTables,
       tableId,
       engine,
-      () => tableStateHub.dropTable(tableId)
+      () => {
+        tableStateHub.dropTable(tableId);
+        this.releaseWeeklyPayout?.(engine);
+      }
     );
   }
 
@@ -12775,9 +12875,13 @@ export class GameServer {
    */
   unregisterTableEngine(tableId: string, engine: ServerTableEngine): boolean {
     const current = this.tableEngines.get(tableId);
+    // Retained lifecycle harnesses borrow this method onto a bare registry
+    // host (no weekly-payout owner), exactly as adoptWeeklyPayout tolerates.
+    const release = this.releaseWeeklyPayout?.bind(this);
     if (current === undefined) {
       this.tournamentOwnedTables.delete(tableId);
       tableStateHub.dropTable(tableId);
+      release?.(engine);
       return true;
     }
     if (current !== engine) return false;
@@ -12785,6 +12889,7 @@ export class GameServer {
     this.tableEngines.delete(tableId);
     this.tournamentOwnedTables.delete(tableId);
     tableStateHub.dropTable(tableId);
+    release?.(engine);
     return true;
   }
 

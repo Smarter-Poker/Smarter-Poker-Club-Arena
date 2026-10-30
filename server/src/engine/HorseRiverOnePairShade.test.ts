@@ -139,6 +139,37 @@ describe('V61: a hold em one-pair river call is shaded against the price', () =>
   });
 });
 
+describe('V61 yields to the V62 polar bettor model', () => {
+  beforeEach(() => {
+    seedFastRandom(0x5eed61);
+    HorseMind.reset();
+    enableBrainTelemetry();
+    drainFires();
+  });
+
+  it('with opponent reads the river bettor is sampled polar and the price shade is not stacked', () => {
+    const s = river('nlh', '9s8d', 'Qh9d3s7c2c', 20);
+    HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, { telemetry: true } as never);
+    const f = fires();
+    expect(f['v62_river_bettor_polarity']).toBe(1);
+    expect(f['v61_river_one_pair_shade']).toBeUndefined();
+    // the shade still carries the no-read path (V62 cannot engage without reads)
+    seedFastRandom(0x5eed61);
+    HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, { telemetry: true, mind: false } as never);
+    const g = fires();
+    expect(g['v62_river_bettor_polarity']).toBeUndefined();
+    expect(g['v61_river_one_pair_shade']).toBe(1);
+    // and returns when V62 is switched off with reads present
+    seedFastRandom(0x5eed61);
+    HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, {
+      telemetry: true,
+      v62RiverBettorPolarity: false,
+    } as never);
+    const h = fires();
+    expect(h['v61_river_one_pair_shade']).toBe(1);
+  });
+});
+
 describe('V61 shade shape', () => {
   it('is zero under a fifth of the pot and twelve points from half a pot', () => {
     expect(v61RiverOnePairShade(10, 100)).toBe(0);

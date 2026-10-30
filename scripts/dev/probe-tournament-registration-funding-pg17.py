@@ -28,6 +28,12 @@ overlay = repo / 'scripts/dev/fixtures/registration-funding/installed.sql'
 migrations = list((repo/'supabase/migrations').glob('*_tournament_entry_receipts_use_the_charged_club_wallet.sql'))
 assert len(migrations) == 1, 'Expected one recorded entry-receipt migration'
 migration = migrations[0]
+if any(flag in sys.argv for flag in ['--mtt-player-lock-financial-only','--mtt-player-lock-mission-convoy-only']) and '--mtt-player-lock' not in sys.argv:
+    raise SystemExit('focused player-lock selection requires --mtt-player-lock')
+if '--mtt-player-lock-financial-only' in sys.argv and '--mtt-player-lock-mission-convoy-only' in sys.argv:
+    raise SystemExit('choose one focused player-lock selection')
+if '--mtt-player-lock' in sys.argv and (os.environ.get('PGNODE') or '--purchases-only' not in sys.argv):
+    raise SystemExit('--mtt-player-lock requires --purchases-only and native psql (PGNODE is unsupported)')
 configured = os.environ.get('POKER_AUDIT_PG_BIN') or os.environ.get('PGBIN')
 pg = Path(configured) if configured else Path(subprocess.check_output(['brew','--prefix','postgresql@17'],text=True).strip())/'bin'
 root = Path(tempfile.mkdtemp(prefix='ca-fund-'))
@@ -242,7 +248,11 @@ with (root/'results.log').open('w') as log:
             verify(q,fresh,overlap,call,check)
         elif '--purchases-only' in sys.argv:
             from tournament_purchase_funding_cases import verify
-            if '--lobby-rebuy' in sys.argv:
+            if '--mtt-player-lock' in sys.argv:
+                import mtt_player_lock_cases as player_lock
+                player_lock.configure(client_command, connection_env)
+                verify(q,fresh,overlap,call,check,prepare=player_lock.prepare)
+            elif '--lobby-rebuy' in sys.argv:
                 lobby_migration = list((repo/'supabase/migrations').glob('*_a_declined_tournament_rebuy_remains_available_in_the_lobby.sql'))
                 assert len(lobby_migration) == 1
                 verify(q,fresh,overlap,call,check,prepare=lambda query: query(lobby_migration[0].read_text()))

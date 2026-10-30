@@ -143,6 +143,53 @@ describe('the Trade record prints a treasury-funded seat as a Club Bank send', (
     expect(document.body.textContent).not.toContain('Desk Admin');
   });
 
+  it('submits a player search across all dates and renders every returned entry', async () => {
+    mockClub([horseRow, humanRow]);
+    await openRecord();
+    fireEvent.click(screen.getByRole('button', { name: 'Outgoing', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cash-Outs', exact: true }));
+    const search = screen.getByRole('searchbox', { name: 'Search Transaction History' });
+    fireEvent.change(search, { target: { value: '  Midnight  ' } });
+    fireEvent.submit(screen.getByRole('search'));
+    await waitFor(() => {
+      const reads = vi
+        .mocked(supabase.rpc)
+        .mock.calls.filter(([name]) => name === 'fn_cashier_history_feed');
+      expect(reads.at(-1)?.[1]).toMatchObject({
+        p_search: 'Midnight',
+        p_from: null,
+        p_kind: 'all',
+        p_person: null,
+        p_scope: 'club',
+      });
+    });
+    expect(screen.getByRole('button', { name: 'All Dates', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'All Transactions', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(
+      await screen.findByRole('button', { name: /Chip Movement Club Bank To Midnight Run/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Chip Movement Club Bank To Night Owl/ })
+    ).toBeInTheDocument();
+    // Repeated Enter refreshes the same book, rather than doing nothing.
+    const before = vi
+      .mocked(supabase.rpc)
+      .mock.calls.filter(([name]) => name === 'fn_cashier_history_feed').length;
+    fireEvent.submit(screen.getByRole('search'));
+    await waitFor(() =>
+      expect(
+        vi.mocked(supabase.rpc).mock.calls.filter(([name]) => name === 'fn_cashier_history_feed')
+          .length
+      ).toBeGreaterThan(before)
+    );
+  });
+
   it('opens a receipt whose sentence is the human send sentence', async () => {
     mockClub([horseRow, humanRow]);
     await openRecord();
@@ -154,16 +201,17 @@ describe('the Trade record prints a treasury-funded seat as a Club Bank send', (
     ).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/horse/i);
   });
-  it('opens Today and Latest Transactions with chip movements only', async () => {
+  it('opens Today and All Transactions with chip movements only', async () => {
     mockClub([]);
     await openRecord();
     expect(screen.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true'
     );
-    expect(
-      screen.getByRole('button', { name: 'Latest Transactions', exact: true })
-    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'All Transactions', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
     expect(screen.getByRole('button', { name: 'Chip Movements', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true'

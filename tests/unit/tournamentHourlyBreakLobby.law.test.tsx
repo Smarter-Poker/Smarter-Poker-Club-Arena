@@ -91,6 +91,27 @@ describe('hourly tournament lobby breaks', () => {
     );
     expect(screen.getByText('4:59')).toBeInTheDocument();
   });
+  it('does not carry the previous tournament break into a different event', () => {
+    const { rerender } = render(<BlindsTab {...input()} />);
+    act(() =>
+      handlers.get('BREAK_START')!({
+        tournamentId: 'hourly-test',
+        breakEndsAt: new Date(now + 300_000).toISOString(),
+      })
+    );
+    expect(screen.getByRole('heading', { name: 'On Break' })).toBeInTheDocument();
+    rerender(<BlindsTab {...input({ id: 'other-event' })} />);
+    expect(screen.queryByRole('heading', { name: 'On Break' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Current Level' })).toBeInTheDocument();
+  });
+  it('does not carry the previous tournament level into a different event', () => {
+    const { rerender } = render(<BlindsTab {...input()} />);
+    act(() => handlers.get('BLIND_LEVEL_CHANGE')!({ tournamentId: 'hourly-test', level: 3 }));
+    expect(screen.getByText('Level 3')).toBeInTheDocument();
+    rerender(<BlindsTab {...input({ id: 'other-event' })} />);
+    expect(screen.queryByText('Level 3')).toBeNull();
+    expect(screen.getByText('Level 1')).toBeInTheDocument();
+  });
   it('uses the persisted countdown after reload', () => {
     render(
       <BlindsTab

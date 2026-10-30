@@ -19,7 +19,7 @@ RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_bre
 def run_queue(certificates, *, now=100, deadline=1000, certificate_deadline=900,
               supersede_on=0, cancellation=False, already_released=False, legacy=False,
               checkpoint_exits=(0,), intent_after_defer=False, waiting_since=0):
-    with tempfile.TemporaryDirectory(prefix='engine-window-queue-') as temp:
+    with tempfile.TemporaryDirectory(prefix='engine-window-queue-', dir=ROOT.parent) as temp:
         directory = Path(temp)
         sequence = directory / 'certificate-sequence'
         sequence.write_text('0')
@@ -52,6 +52,8 @@ BREAK_ENTRY_BUDGET_MS=0
 REQUEST_ROOT={shlex.quote(str(directory))}
 CHECKPOINT_SEQUENCE={shlex.quote(str(checkpoint_sequence))}
 LOCK_HELD=0
+FLOOR_DISPOSITION=legacy
+record_floor_runtime_entry() {{ :; }}
 RECOVERY_WAIT_STARTED_EPOCH={waiting_since}
 LEGACY_CHECKPOINT_REQUIRED={int(legacy)}
 LEGACY_CHECKPOINT_ATTEMPTED=0
@@ -128,6 +130,8 @@ maintenance_certificate() {{
   esac
 }}
 {HELPERS}
+# Queue boundary doubles: native process budget is exercised separately.
+legacy_entry_read() {{ "$@"; }}
 {RECOVERY}
 {QUEUE}
   [ "$LOCK_HELD" = 1 ] || exit 95

@@ -45,6 +45,7 @@ const gate = (overrides: Record<string, string> = {}) => {
     build: 'success',
     gateway: 'skipped',
     admission: 'success',
+    floor: 'success',
     ...overrides,
   };
   const expr = caller.jobs.production.if
@@ -52,6 +53,7 @@ const gate = (overrides: Record<string, string> = {}) => {
     .replaceAll('needs.publish-needed.outputs.publish', JSON.stringify(values.publish))
     .replaceAll('needs.publish-needed.outputs.tests_proven', JSON.stringify(values.tests_proven))
     .replaceAll('needs.publish-needed.result', JSON.stringify(values.admission))
+    .replaceAll('needs.publication-floor.result', JSON.stringify(values.floor))
     .replaceAll('needs.client-tests.result', JSON.stringify(values.client))
     .replaceAll('needs.build-and-store.result', JSON.stringify(values.build))
     .replaceAll('needs.build-record-gateway.result', JSON.stringify(values.gateway));
@@ -80,6 +82,7 @@ describe('one publication transaction follows parallel preparation', () => {
       'client-tests',
       'build-and-store',
       'build-record-gateway',
+      'publication-floor',
     ]);
     expect(caller.jobs.production.with).toEqual({
       target_sha: '${{ needs.publish-needed.outputs.target_sha }}',
@@ -108,10 +111,11 @@ describe('one publication transaction follows parallel preparation', () => {
       const body = { ...job };
       delete body.if;
       delete body.needs;
-      // Only these client jobs move to the isolated paid pool. Preserve the
-      // complete original command/permission/secret snapshot after that route.
+      // Assert only the approved warm routes and hardware-bounded client worker cap, then
+      // retain the complete original command/permission/secret snapshot.
       if (
         [
+          'publish-needed',
           'client-tests',
           'build-and-store',
           'retain-runtime',
@@ -119,10 +123,73 @@ describe('one publication transaction follows parallel preparation', () => {
           'publish-to-origin',
         ].includes(key)
       ) {
-        const route =
-          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}";
-        expect(body['runs-on']).toBe(route);
-        body['runs-on'] = route.replace('ca-linux-delivery', 'ca-linux-8core');
+        expect(body['runs-on']).toBe('ubuntu-latest');
+        const label = key === 'publish-needed' ? 'ca-linux-4core' : 'ca-linux-8core';
+        body['runs-on'] =
+          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+          label +
+          "' || 'ubuntu-latest' }}";
+        if (key === 'client-tests') {
+          expect(body.strategy).toEqual({
+            'fail-fast': true,
+            matrix: { shard: Array.from({ length: 16 }, (_, index) => index + 1) },
+          });
+          body.strategy = { 'fail-fast': true, matrix: { shard: [1, 2, 3, 4] } };
+          const suite = body.steps.filter((step: any) =>
+            step.name?.startsWith('Client tests must pass')
+          );
+          expect(suite).toHaveLength(1);
+          expect(suite[0].name).toBe(
+            'Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/16)'
+          );
+          expect(suite[0].run).toBe(
+            'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/16'
+          );
+          body.steps = body.steps.map((step: any) =>
+            step === suite[0]
+              ? {
+                  ...step,
+                  name: 'Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)',
+                  run: 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4',
+                }
+              : step
+          );
+          expect(body.env.VITEST_MAX_THREADS).toBe(4);
+          body.env = {
+            ...body.env,
+            VITEST_MAX_THREADS:
+              "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}",
+          };
+        }
+      }
+
+      // The qualified gateway URL is the only intentionally changed build input.
+      // Assert its exact value, then compare every other byte with the retained baseline.
+      if (key === 'build-and-store' || key === 'publish-to-app') {
+        const builds = body.steps.filter((step: any) =>
+          Object.hasOwn(step.env ?? {}, 'VITE_PRIVATE_RECORD_FALLBACK_URL')
+        );
+        expect(builds).toHaveLength(1);
+        expect(builds[0].env.VITE_PRIVATE_RECORD_FALLBACK_URL).toBe(
+          'https://ca-static.smarter.poker/private-record'
+        );
+        body.steps = body.steps.map((step: any) =>
+          step === builds[0]
+            ? { ...step, env: { ...step.env, VITE_PRIVATE_RECORD_FALLBACK_URL: '' } }
+            : step
+        );
+      }
+
+      if (key === 'publish-to-origin') {
+        // Independently exercised by mttPayoutPublication.test.ts; the original
+        // transaction snapshot must remain identical after this narrow addition.
+        const additions = [
+          'Use the production Node major for payout admission',
+          'Install locked payout publication driver',
+          'Verify installed MTT payout policy before origin publication',
+        ];
+        expect(body.steps.filter((step: any) => additions.includes(step.name))).toHaveLength(3);
+        body.steps = body.steps.filter((step: any) => !additions.includes(step.name));
       }
 
       expect(createHash('sha256').update(normalizeSteps(body)).digest('hex')).toBe(
@@ -153,6 +220,7 @@ describe('one publication transaction follows parallel preparation', () => {
       expect(gate({ client: status })).toBe(false);
       expect(gate({ build: status })).toBe(false);
       expect(gate({ admission: status })).toBe(false);
+      expect(gate({ floor: status })).toBe(false);
     }
     expect(
       gate({

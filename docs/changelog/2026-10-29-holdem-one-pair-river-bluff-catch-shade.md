@@ -27,7 +27,7 @@ tournaments across the table above.
 Single-board Hold'em (not Omaha, short deck, multiple boards or bomb pots),
 facing a river wager, hero holding at most one pair, or two pair that shares
 the board's pair, and no exploit read marking the bettor as an over-bluffer
-(`respect < 1` keeps the unshaded call-down): the equity handed to the MDF
+(`exploit.callDownMod > 1` keeps the unshaded call-down): the equity handed to the MDF
 river verdict drops by `min(0.12, max(0, (toCall/pot - 0.2) x 0.4))`: nothing
 under a fifth of the pot, where the measured calls were about break-even, and
 the full twelve points from half a pot, and the committed
@@ -46,3 +46,25 @@ the pre-candidate tournament corpus digests and the captured Phase 8 replays
 explicit off arm, as V57 and V58 did, so recorded receipts keep their meaning. This is a measured calibration of the
 call price, not a range-model repair (checklist item 13) and not a held-out
 profit certificate; the live re-measure is the same table after activation.
+
+## Amended 2026-10-30, before activation (merge with V62, #8733)
+
+Two corrections landed in this PR when main took V62:
+
+1. **The verdict-path gate read `respect >= 1`, and `respect` is not the
+   read.** `respect = 2 - callDownMod + callRespect (+0.15 on a scare
+   runout)`, and the style's `callRespect` sits at -0.04 with the mind on, so
+   a neutral opponent read gave 0.96 and the shade never fired on the
+   production path (the V61 tests decided with `mind: false`, where the
+   offset is +0.04, and passed). The committed branch already read
+   `exploit.callDownMod <= 1`; the verdict path now reads the same measured
+   over-bluffer flag. Pinned by the new "V61 yields to the V62 polar bettor
+   model" case, whose third arm fires the shade with reads present and V62
+   off.
+2. **V61 yields to V62.** When the V62 sampler has conditioned the river
+   bettor (`polar62`), the bettor's range already carries what the shade
+   corrected for, so the shade is withheld in both the verdict path and the
+   committed branch; stacking both folded a top-pair call-once against a
+   river raise at 32.7% equity versus a 35.1% bar (`HorseHeadsUpCommitment`).
+   The shade still carries every path V62 cannot reach (no opponent reads,
+   `mind: false`, and the V62 off arm).

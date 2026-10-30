@@ -894,13 +894,16 @@ export const ClubRosterService = {
   async getDownline(
     clubId: string,
     userId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    range: MemberRange = RANGE_OVERALL
   ): Promise<DownlineMember[]> {
     const data = await readMemberRpc(
-      'ca_club_member_downline',
+      'ca_club_member_downline_in_range',
       {
         p_club_id: clubId,
         p_user_id: userId,
+        p_from: range.from,
+        p_to: range.to,
       },
       signal
     );

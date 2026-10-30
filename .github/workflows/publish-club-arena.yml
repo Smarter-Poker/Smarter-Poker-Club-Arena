@@ -48,7 +48,7 @@ on:
 
 jobs:
   publish-needed:
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -252,17 +252,18 @@ jobs:
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
     if: needs.publish-needed.outputs.component == 'client' && needs.publish-needed.outputs.tests_proven != 'true'
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
+    # Partition the same selected client files sixteen ways; all results still gate production.
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     env:
       HUSKY: '0'
-      VITEST_MAX_THREADS: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}
+      VITEST_MAX_THREADS: 4
     steps:
       - name: Checkout Club Arena at the publish target
         uses: actions/checkout@v4
@@ -292,16 +293,16 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
+      - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/16)
         env:
           CI_BASE_SHA: ${{ needs.publish-needed.outputs.selection_base }}
           CI_HEAD_SHA: ${{ needs.publish-needed.outputs.target_sha }}
-        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4
+        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/16
 
   build-and-store:
     needs: publish-needed
     if: needs.publish-needed.outputs.publish != 'false'
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
@@ -417,8 +418,8 @@ jobs:
           VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
-          # Remains off until a protected source change follows hosted qualification.
-          VITE_PRIVATE_RECORD_FALLBACK_URL: ''
+          # Qualified by gateway publisher 40977779005; paid Realtime stays enabled.
+          VITE_PRIVATE_RECORD_FALLBACK_URL: 'https://ca-static.smarter.poker/private-record'
           VITE_APP_ENV: production
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
@@ -614,13 +615,38 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  publication-floor:
+    name: Admit The Selected Client Publication Window
+    needs: publish-needed
+    if: needs.publish-needed.outputs.component == 'client'
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact selected protected source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Refuse early publication independently of backlog or runtime reuse
+        env:
+          TARGET_SHA: ${{ needs.publish-needed.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          python3 -B server/scripts/engine-release-activation-floor.py publish \
+            --repo . --target "$TARGET_SHA" --control "$TARGET_SHA" \
+            --deadline "$(( $(date +%s) + 120 ))"
+
   production:
     name: production
-    needs: [publish-needed, client-tests, build-and-store, build-record-gateway]
+    needs: [publish-needed, client-tests, build-and-store, build-record-gateway, publication-floor]
     if: >-
       always() &&
       needs.publish-needed.result == 'success' &&
       ((needs.publish-needed.outputs.component == 'client' &&
+        needs.publication-floor.result == 'success' &&
         (needs.client-tests.result == 'success' ||
          (needs.client-tests.result == 'skipped' && needs.publish-needed.outputs.tests_proven == 'true')) &&
         (needs.publish-needed.outputs.publish == 'false' || needs.build-and-store.result == 'success')) ||

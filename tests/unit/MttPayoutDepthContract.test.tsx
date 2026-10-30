@@ -63,46 +63,50 @@ function Form({ initial = 'payout3' }: { initial?: string }) {
 }
 
 describe('manual MTT paid depth reaches the database creation contract', () => {
-  it.each([
-    ['payout2', 12.5],
-    ['payout1', 10],
-    ['payout3', 15],
-    ['payout20', 20],
-  ] as const)('keeps %s provisional regardless of a legacy field cap', (choice, percent) => {
-    const legacy = vi.spyOn(payoutEngine, 'payoutsForChoice').mockImplementation(() => {
-      throw new Error('The SNG capacity generator must not price a provisional MTT');
-    });
-    for (const capacity of [2, 34, 300, 1_000_000]) {
-      const input = Object.freeze({
-        ...draft,
-        payoutStructure: choice,
-        maxPlayersRange: capacity,
+  it.each([['payout3', 15]] as const)(
+    'keeps %s provisional regardless of a legacy field cap',
+    (choice, percent) => {
+      const legacy = vi.spyOn(payoutEngine, 'payoutsForChoice').mockImplementation(() => {
+        throw new Error('The SNG capacity generator must not price a provisional MTT');
       });
-      const payload = tournamentService.buildRpcConfig(buildTournamentConfig(input, 'nlh'));
-      expect(payload.payoutPercent).toBe(percent);
-      expect(payload.maxPlayers).toBeNull();
-      expect(payload.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
-      expect(input.maxPlayersRange).toBe(capacity);
+      for (const capacity of [2, 34, 300, 1_000_000]) {
+        const input = Object.freeze({
+          ...draft,
+          payoutStructure: choice,
+          maxPlayersRange: capacity,
+        });
+        const payload = tournamentService.buildRpcConfig(buildTournamentConfig(input, 'nlh'));
+        expect(payload.payoutPercent).toBe(percent);
+        expect(payload.maxPlayers).toBeNull();
+        expect(payload.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
+        expect(input.maxPlayersRange).toBe(capacity);
+      }
+      expect(legacy).not.toHaveBeenCalled();
     }
-    expect(legacy).not.toHaveBeenCalled();
-  });
+  );
+
+  it.each(['payout1', 'payout2', 'payout20'])(
+    'normalizes legacy saved MTT draft %s to fifteen',
+    (choice) => {
+      const payload = tournamentService.buildRpcConfig(
+        buildTournamentConfig({ ...draft, payoutStructure: choice }, 'nlh')
+      );
+      expect(payload.payoutPercent).toBe(15);
+      expect(payload.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
+      render(<Form initial={choice} />);
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByRole('option', { name: 'Top 15% Of Field (Standard)' })).toBeTruthy();
+    }
+  );
 
   it('requires a supported SNG choice when switching from the new MTT-only depth', () => {
     expect(() =>
       buildTournamentConfig({ ...draft, gameMode: 'sng', payoutStructure: 'payout20' }, 'nlh')
     ).toThrow('Choose A Sit And Go Payout Structure');
   });
-  it.each([
-    ['payout2', 12.5, 'Top 12.5% Of Field (Standard)'],
-    ['payout1', 10, 'Top 10% Of Field'],
-    ['payout3', 15, 'Top 15% Of Field'],
-    ['payout20', 20, 'Top 20% Of Field'],
-  ] as const)(
+  it.each([['payout3', 15, 'Top 15% Of Field (Standard)']] as const)(
     'selecting %s persists %s percent through the actual mapper and serializer',
     (choice, percent, label) => {
-      /* Dan, 2026-10-21: every MTT pays the top 12.5% by default and a
-         standalone club may choose any depth, so every depth is offered to a
-         new event (the 2026-09-20 10-15% ceiling is superseded). */
       render(<Form />);
       expect(screen.getByRole('option', { name: label })).toBeTruthy();
       fireEvent.change(screen.getByRole('combobox'), { target: { value: choice } });
@@ -149,7 +153,7 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
     const mapped = buildTournamentConfig(
       {
         ...draft,
-        payoutStructure: 'payout20',
+        payoutStructure: 'payout3',
         nextStepSatellite: true,
         satelliteTargetId: 'd3000000-0000-4000-8000-000000000099',
         satelliteSeats: 3,
@@ -157,7 +161,7 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
       'nlh'
     );
     const payload = tournamentService.buildRpcConfig(mapped);
-    expect(payload.payoutPercent).toBe(20);
+    expect(payload.payoutPercent).toBe(15);
     expect(mapped.satelliteTarget).toEqual({
       tournamentId: 'd3000000-0000-4000-8000-000000000099',
       seatsAwarded: 3,
@@ -165,12 +169,7 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
     expect(mapped.type).toBe('satellite');
   });
 
-  it.each([
-    ['payout2', 12.5],
-    ['payout1', 10],
-    ['payout3', 15],
-    ['payout20', 20],
-  ] as const)(
+  it.each([['payout3', 15]] as const)(
     'saved schedules retain selected %s instead of reverting at the next occurrence',
     async (choice, percent) => {
       const rpc = vi

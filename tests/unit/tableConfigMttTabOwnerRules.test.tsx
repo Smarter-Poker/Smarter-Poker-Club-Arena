@@ -358,22 +358,17 @@ describe('Repeat: Does Not Repeat, Daily, Weekly or Monthly', () => {
 });
 
 describe('paid places', () => {
-  it('a new MTT defaults to 12.5 percent and is offered every depth', async () => {
+  it('a new MTT pays fifteen percent and offers only that depth', async () => {
     await openMttTab();
     const payout = screen
       .getAllByRole('combobox')
-      .find((el) => within(el).queryByRole('option', { name: 'Top 10% Of Field' }))!;
+      .find((el) => within(el).queryByRole('option', { name: 'Top 15% Of Field (Standard)' }))!;
     expect(
       within(payout)
         .getAllByRole('option')
         .map((o) => o.textContent)
-    ).toEqual([
-      'Top 12.5% Of Field (Standard)',
-      'Top 10% Of Field',
-      'Top 15% Of Field',
-      'Top 20% Of Field',
-    ]);
-    expect((payout as HTMLSelectElement).value).toBe('payout2');
+    ).toEqual(['Top 15% Of Field (Standard)']);
+    expect((payout as HTMLSelectElement).value).toBe('payout3');
   });
 });
 

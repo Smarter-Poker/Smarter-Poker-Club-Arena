@@ -333,14 +333,15 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
       .map((match) => match[1].trim());
     expect(runners.length).toBeGreaterThanOrEqual(4);
     expect(new Set(runners)).toEqual(
-      new Set(
-        ['ca-linux-4core', 'ca-linux-8core', 'ca-linux-delivery'].map(
+      new Set([
+        'ubuntu-latest',
+        ...['ca-linux-4core', 'ca-linux-8core'].map(
           (label) =>
             "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
             label +
             "' || 'ubuntu-latest' }}"
-        )
-      )
+        ),
+      ])
     );
     expect(publish).not.toContain('vars.CI_RUNNER');
     // Attestation verification explicitly denies self-hosted provenance.
@@ -352,7 +353,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   it('requires both the built artifact and the test verdict before publishing', () => {
     const origin = originJob();
     expect(job(publish, 'production')).toContain(
-      'needs: [publish-needed, client-tests, build-and-store, build-record-gateway]'
+      'needs: [publish-needed, client-tests, build-and-store, build-record-gateway, publication-floor]'
     );
     expect(origin).toContain("inputs.build_result == 'success'");
     expect(origin).toContain("inputs.client_result == 'success'");
@@ -551,7 +552,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     const jobTimeouts = [publish, transaction]
       .flatMap((source) => [...source.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)])
       .map((match) => Number(match[1]));
-    expect(jobTimeouts).toHaveLength(11);
+    expect(jobTimeouts).toHaveLength(12);
     expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
     const origin = originJob();
     expect(origin).toContain('timeout 35s ssh');

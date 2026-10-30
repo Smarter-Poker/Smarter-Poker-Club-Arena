@@ -4,6 +4,7 @@ import importlib.util,json,os,subprocess,tempfile,unittest
 from pathlib import Path
 R=Path(__file__).resolve().parents[2]
 S=(R/'server/scripts/engine-release-transaction.sh').read_text()
+ENTRY_READ=S[S.index('legacy_entry_read() {'):S.index('legacy_entry_trace() {')]
 CERT=S[S.index('maintenance_certificate() {'):S.index("\n# Entry to the exact predecessor's checkpoint")]
 LEGACY=S[S.index('legacy_checkpoint_countdown() {'):S.index('\n# This is one optional event',S.index('legacy_checkpoint_countdown() {'))]
 class WeeklyPriority(unittest.TestCase):
@@ -41,7 +42,7 @@ m.get_json=read;m.main()
      body={'running':True,'handsInFlightTotal':0,'maintenance':{'reason':'Deployment Recovery','active':True,'phase':'counting_down','durableConfirmed':True,'readyForRestart':kind=='normal','unparkedTables':1 if kind=='f06' else 0,'unparkedReasons':{'f06_preparation_stuck':1}if kind=='f06'else{},'remainingMs':296000,'breakEndsAt':(__import__('time').time()+296)*1000}}
      if field!='missing':body['weeklyPayout']=None if field in ['null','rpc-budget']else{'phase':field}
      events=d/'events';events.write_text('');health_file=d/'health';health_file.write_text(json.dumps(body))
-     script='set -u\nMIN_BREAK_REMAINING_MS=285000\nENV_FILE=/dev/null\nINFLIGHT_HANDS="$ADAPTER"\ncurl() { printf \'HEALTH\\n\' >> "$EVENTS"; cat "$HEALTH_FILE"; printf \'\\n200\'; }\n'+CERT+'\n'+LEGACY+'\n'+('legacy_checkpoint_countdown'if kind=='legacy'else'maintenance_certificate')+'\n'
+     script='set -u\nMIN_BREAK_REMAINING_MS=285000\nENV_FILE=/dev/null\nINFLIGHT_HANDS="$ADAPTER"\ncurl() { printf \'HEALTH\\n\' >> "$EVENTS"; cat "$HEALTH_FILE"; printf \'\\n200\'; }\n'+ENTRY_READ+'\n'+CERT+'\n'+LEGACY+'\n'+('legacy_checkpoint_countdown'if kind=='legacy'else'maintenance_certificate')+'\n'
      p=subprocess.run(['bash','-c',script],capture_output=True,text=True,timeout=10,env={**os.environ,'EVENTS':str(events),'HEALTH_FILE':str(health_file),'CONSUME_RPC_BUDGET':'yes'if field=='rpc-budget'else'no','RPC_STATE':json.dumps(state),'READ_FAILURE':'yes'if fail else'no','ADAPTER':str(adapter),'ACTUAL_ADAPTER':str(R/'server/scripts/engine-release-inflight-hands.py')})
      self.assertEqual(p.returncode==0,allow,(p.returncode,p.stdout,p.stderr))
      order=events.read_text().splitlines();self.assertTrue(order and order[0]=='DB',order)

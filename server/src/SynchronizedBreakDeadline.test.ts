@@ -99,12 +99,14 @@ describe('Synchronized Break Deadline', () => {
       ['quick', Date.parse('2026-09-10T12:55:00.000Z')],
       ['slow', Date.parse('2026-09-10T12:55:40.000Z')],
     ]);
-    owner.waitForAllTablesParked.mockImplementation(async (managers: { tournamentId: string }[]) => {
-      expect(managers).toHaveLength(1);
-      const at = parkedAt.get(managers[0].tournamentId)!;
-      await vi.advanceTimersByTimeAsync(Math.max(0, at - Date.now()));
-      return true;
-    });
+    owner.waitForAllTablesParked.mockImplementation(
+      async (managers: { tournamentId: string }[]) => {
+        expect(managers).toHaveLength(1);
+        const at = parkedAt.get(managers[0].tournamentId)!;
+        await vi.advanceTimersByTimeAsync(Math.max(0, at - Date.now()));
+        return true;
+      }
+    );
     const writes = persistence();
     await owner.triggerSynchronizedBreak();
 
@@ -394,23 +396,56 @@ describe('A table the maintenance break holds is parked', () => {
     expect(participant.areAllTablesParked()).toBe(true);
   });
 
-  it('starts the countdown after a liveness ceiling, naming the event it waited on', async () => {
-    const participant = manager('wedged-event');
+  it('never substitutes five minutes of waiting for a completed hand', async () => {
+    const participant = manager('slow-event');
     const owner = server([participant]);
-    participant.areAllTablesParked = () => false;
+    const started = Date.now();
+    participant.areAllTablesParked = () => Date.now() >= started + 301_000;
     owner.sleep = async (milliseconds: number) => {
       vi.setSystemTime(Date.now() + milliseconds);
     };
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const started = Date.now();
     const parked = await (GameServer.prototype as any).waitForAllTablesParked.call(owner, [
       participant,
     ]);
     expect(parked).toBe(true);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(5 * 60 * 1000);
-    expect(Date.now() - started).toBeLessThan(5 * 60 * 1000 + 1_000);
-    expect(warn.mock.calls.some(([line]) => String(line).includes('wedged-e'))).toBe(true);
+    expect(Date.now() - started).toBe(301_000);
+  });
+
+  it.each(['new-break', 'stopped-manager'])(
+    'retires the old unproven drain when its owner changes: %s',
+    async (change) => {
+      const participant = manager('retired-event');
+      const owner = server([participant]);
+      participant.areAllTablesParked = () => false;
+      owner.sleep = async () => {
+        if (change === 'new-break') owner.synchronizedBreakGeneration++;
+        if (change === 'stopped-manager') participant.isRunning = () => false;
+      };
+      const parked = await (GameServer.prototype as any).waitForAllTablesParked.call(owner, [
+        participant,
+      ]);
+      expect(parked).toBe(false);
+    }
+  );
+
+  it('returns an unproven drain when shutdown interrupts a hand beyond five minutes', async () => {
+    const participant = manager('unresolved-event');
+    const owner = server([participant]);
+    const started = Date.now();
+    participant.areAllTablesParked = () => false;
+    owner.sleep = async (milliseconds: number) => {
+      vi.setSystemTime(Date.now() + milliseconds);
+      if (Date.now() - started >= 301_000) owner.running = false;
+    };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const parked = await (GameServer.prototype as any).waitForAllTablesParked.call(owner, [
+      participant,
+    ]);
+    expect(parked).toBe(false);
+    expect(Date.now() - started).toBe(301_000);
   });
 });
 

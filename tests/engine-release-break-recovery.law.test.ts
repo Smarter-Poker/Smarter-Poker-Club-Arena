@@ -1,3 +1,4 @@
+import { enteredFloorFixture, portableFloorReader } from './helpers/engineActivationFloorFixture';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,10 @@ import { describe, expect, it } from 'vitest';
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 const supervisor = read('server/scripts/engine-supervisor.sh');
 const recovery = read('server/scripts/engine-release-recover.sh');
 // The real shell fixture already owns a 20-second absolute deadline. Bound its
@@ -132,6 +137,7 @@ exec "$@"
 break_proof_seconds() { echo ${proof}; }
 remaining_seconds() { echo ${overall}; }
 die() { echo "$*" >&2; exit 1; }
+${entryRead}
 ${helper}
 BREAK_CUTOVER_PROOF_SECONDS=150
 ENGINE_UP="${launcher}"; TARGET_IMAGE_ID=fixture; CONTAINER=fixture; ENV_FILE=fixture; TOKEN=fixture
@@ -303,8 +309,20 @@ printf '%s\n%s' '{"running":true,"releaseSha":"${desiredSha}","liveness":"ok","i
       mkdirSync(requests);
       mkdirSync(pins);
       mkdirSync(leases);
-      writeFileSync(join(requests, '77-1.request'), 'must remain on uncertain abort\n');
-      writeFileSync(join(control, 'engine-release-recover.sh'), recovery);
+      writeFileSync(
+        join(requests, '77-1.request'),
+        [
+          'a'.repeat(40),
+          'https://example.invalid/run/77',
+          'must remain on uncertain abort',
+          control,
+          'b'.repeat(40),
+          String(Math.floor(Date.now() / 1000) + 1200),
+          '',
+        ].join('\n')
+      );
+      enteredFloorFixture(control, requests, '77-1', 'a'.repeat(40), 'b'.repeat(40));
+      writeFileSync(join(control, 'engine-release-recover.sh'), portableFloorReader(recovery));
       chmodSync(join(control, 'engine-release-recover.sh'), 0o755);
       writeFileSync(
         join(control, 'engine-release-seal.py'),

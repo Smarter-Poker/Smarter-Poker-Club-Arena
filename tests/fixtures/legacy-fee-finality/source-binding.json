@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822",
+    "scripts/ci/classify-ci-changes.mjs": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1271,5 +1271,16 @@
       }
     ],
     "financial_recertification": false
+  },
+  "cancellationAdmissionSelectorAudit20261030": {
+    "scope": "New cancellation native fixture/runner inputs explicitly select existing accounting and source checks. Existing selectors and financial assertions unchanged.",
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "bindings": [
+      {
+        "section": "repository_files",
+        "previous": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822",
+        "current": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
+      }
+    ]
   }
 }

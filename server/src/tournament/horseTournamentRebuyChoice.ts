@@ -2,11 +2,10 @@ import { createHash } from 'node:crypto';
 
 /** Share of eligible tournament busts on which a horse buys back in.
  *
- * Owner rule, 2026-10-24 (replaces 45% from 2026-10-22): "HORSES NEED TO BE
- * REBUYING 75% OF THE TIME IN ANY MTT'S IF THEY ARE ELIGIBLE TO." A field of
- * 276 entries showing 9 rebuys "LOOKS FAKE".
+ * Owner rule, 2026-10-29: horses rebuy on 70% of eligible busts before
+ * the rebuy period ends. This supersedes the 75% share from 2026-10-24.
  */
-export const HORSE_TOURNAMENT_REBUY_SHARE = 0.75;
+export const HORSE_TOURNAMENT_REBUY_SHARE = 0.7;
 
 /** Bind the draw to the accepted busting hand, not a sweep, clock or process.
  * A retry/restart must preserve a decline. A later bust gets a fresh draw.

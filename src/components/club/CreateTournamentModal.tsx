@@ -108,10 +108,8 @@ type MttPrizeStyle = 'regular' | 'bounty' | 'progressive_bounty' | 'mystery_boun
 type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 const EVERY_DAY_OF_WEEK = [0, 1, 2, 3, 4, 5, 6];
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, index) => index + 1);
-/* EVERY MTT PAYS THE TOP 12.5 PERCENT OF THE FIELD BY DEFAULT (Dan,
-   2026-10-21; supersedes the 2026-09-20 10-15% ceiling). A standalone club may
-   choose any listed depth; the database (ca_mtt_payout_depth_guard) pays 12.5
-   for every union and Diamond Arena event whatever this form sends. */
+/* Owner October 29: every new and unfinalized MTT pays the top 15%.
+   The database enforces this for every club. Finalized ladders stay booked. */
 const CREATOR_PAID_FIELD_PERCENTS: readonly MttPayoutDepth[] = MTT_PAYOUT_DEPTH_CHOICES.map(
   (choice) => choice.percent
 );
@@ -183,7 +181,7 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('6');
-  // See CREATOR_PAID_FIELD_PERCENTS. 12.5 is the default for every new MTT.
+  // See CREATOR_PAID_FIELD_PERCENTS. 15 is the default for every new MTT.
   const [payoutPercent, setPayoutPercent] = useState<MttPayoutDepth>(MTT_DEFAULT_PAYOUT_DEPTH);
   const isSngOrSpin = format === 'sng' || format === 'spin';
   const fieldCap = isSngOrSpin ? fieldCapFor(maxPlayers) : null;
@@ -1726,8 +1724,8 @@ export default function CreateTournamentModal({
                   ))}
                 </select>
                 <span className={styles.helperText}>
-                  Paid Places Follow Actual Entries When Registration Closes, Rounded Up. Union
-                  Tournaments Always Pay The Top 12.5 Percent.
+                  Paid Places Follow Actual Entries When Registration Closes, Rounded Up. MTT
+                  Tournaments Always Pay The Top 15 Percent.
                 </span>
               </div>
             )}
@@ -1822,8 +1820,8 @@ export default function CreateTournamentModal({
                 )}
                 {format === 'mystery_bounty' && (
                   <span className={styles.helperText}>
-                    The Chest Inventory Is Built In Whole Chips From The Funded Bounty Pool When
-                    The Tournament Reaches The Money, After Registration And Purchases Close. The
+                    The Chest Inventory Is Built In Whole Chips From The Funded Bounty Pool When The
+                    Tournament Reaches The Money, After Registration And Purchases Close. The
                     Selected Prize Ladder Sets The Chest Amounts And Counts.
                   </span>
                 )}

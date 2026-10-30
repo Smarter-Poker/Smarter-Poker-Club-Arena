@@ -7,6 +7,7 @@ import io
 import ast
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import types
@@ -25,6 +26,143 @@ RESULT = {'schema': 1, 'runId': REQUEST['runKey'], 'sha': REQUEST['releaseSha'],
           'private_metadata': {'never_export': 'secret fixture'}}
 
 
+class ServingRoleTests(unittest.TestCase):
+    def test_serving_role_exact_selector(self):
+        request = {'mode':'current_serving_inspector_role', 'releaseSha':R.EED,
+                   'instanceId':'1-12345678'}
+        self.assertEqual(R.selection(request), request)
+
+
+    def test_serving_role_selector_refuses_every_extra_or_changed_identity(self):
+        good={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        bad=[None,[],{},dict(good,runKey=REQUEST['runKey']),dict(good,host='localhost'),
+             dict(good,port=9229),dict(good,path='/proc'),dict(good,releaseSha='a'*40),
+             dict(good,instanceId='1-1234567'),dict(good,instanceId='2-12345678'),
+             dict(good,instanceId='1-ABCDEF12'),dict(good,instanceId=1)]
+        bad += [{k:v for k,v in good.items() if k!=missing} for missing in good]
+        for request in bad:
+            with self.subTest(request=request),self.assertRaises(ValueError):R.selection(request)
+        for old in [REQUEST,dict(REQUEST,mode='pending_transaction'),dict(REQUEST,mode='legacy_checkpoint_inspector')]:
+            self.assertEqual(R.selection(old),old)
+
+    def test_serving_role_dispatch_never_opens_transaction_files(self):
+        request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        sentinel={'schema':'current-serving-inspector-role/v1','readOnly':True,**request,
+            'inspectorOwner':'unknown','limitation':'Kernel role only; no inspector ownership, provenance or action authority.'}
+        with patch.object(R,'serving_role_remote',return_value=sentinel,create=True) as reader, \
+                patch.object(R.os,'open',side_effect=AssertionError('transaction file access')):
+            self.assertEqual(R.remote(request),sentinel)
+        reader.assert_called_once_with(request)
+
+
+    def setUp(self):
+        self.request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        self.identity={'container':'c'*64,'image':'sha256:'+'d'*64,'running':'true',
+            'startedAt':'2026-10-30T01:00:00.000Z','hostPid':'1234','restarts':'0'}
+        self.health={'source':R.EED,'instance':self.request['instanceId']}
+        self.boot='12345678-1234-1234-1234-123456789abc'
+
+    @contextlib.contextmanager
+    def bound(self,role='main',overrides=None):
+        defaults={'_serving_boot_id':{'return_value':self.boot},
+            'inspector_identity':{'return_value':self.identity},
+            'pending_tcp_health':{'return_value':self.health},
+            '_kernel_pid_stat':{'return_value':'987654'},
+            'inspector_command':{'return_value':(R.EED+'\n').encode()},
+            'pending_socket_owner':{'return_value':role}}
+        defaults.update(overrides or {})
+        with contextlib.ExitStack() as stack:
+            mocks={name:stack.enter_context(patch.object(R,name,create=True,**options))
+                   for name,options in defaults.items()}
+            for name in ['pending_tcp_presence','inspector_remote','pending_remote','read_json']:
+                stack.enter_context(patch.object(R,name,side_effect=AssertionError('forbidden read '+name)))
+            yield mocks
+
+    def test_serving_role_exact_minimal_private_reply_and_shared_deadline(self):
+        for role in ['main','other_container_process','unknown']:
+            with self.subTest(role=role),self.bound(role) as mocks:
+                answer=R.serving_role_remote(self.request)
+                self.assertEqual(answer,{'schema':'current-serving-inspector-role/v1','readOnly':True,
+                    **self.request,'inspectorOwner':role,
+                    'limitation':'Kernel role only; no inspector ownership, provenance or action authority.'})
+                self.assertEqual(R.validate_reply(answer,self.request),answer)
+                text=json.dumps(answer)
+                for private in [self.boot,self.identity['container'],self.identity['image'],'987654','hostPid','/proc','runKey']:
+                    self.assertNotIn(private,text)
+                owner=mocks['pending_socket_owner'];owner.assert_called_once()
+                self.assertEqual(owner.call_args.args[0],self.identity)
+                deadline=owner.call_args.args[1]
+                self.assertGreater(deadline,R.time.monotonic());self.assertLessEqual(deadline-R.time.monotonic(),8)
+                for name in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat','inspector_command']:
+                    self.assertGreaterEqual(mocks[name].call_count,1)
+                    for call in mocks[name].call_args_list:
+                        self.assertIn(deadline,call.args)
+                for call in mocks['inspector_command'].call_args_list:
+                    self.assertEqual(call.args[0][:3],['docker','image','inspect'])
+                    self.assertEqual(call.args[0][-1],self.identity['image'])
+
+    def test_serving_role_identity_mutations_refuse_even_unknown_kernel(self):
+        cases=[('_serving_boot_id',[self.boot,'aaaaaaaa-1234-1234-1234-123456789abc']),
+               ('_kernel_pid_stat',['987654','987655']),
+               ('pending_tcp_health',[self.health,dict(self.health,source='a'*40)]),
+               ('pending_tcp_health',[self.health,dict(self.health,instance='1-87654321')])]
+        for key in self.identity:
+            changed=dict(self.identity);changed[key]=str(changed[key])+'changed'
+            cases.append(('inspector_identity',[self.identity,changed]))
+        for helper,values in cases:
+            with self.subTest(helper=helper,values=values),self.bound('unknown',{helper:{'side_effect':values}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_wrong_source_instance_revision_and_invalid_kernel_refuse(self):
+        cases=[('pending_tcp_health',{'source':'a'*40,'instance':self.request['instanceId']}),
+               ('pending_tcp_health',dict(self.health,instance='1-87654321')),
+               ('inspector_command',('a'*40+'\n').encode())]
+        for helper,value in cases:
+            with self.subTest(helper=helper,value=value),self.bound(overrides={helper:{'return_value':value}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_kernel_ambiguity_never_skips_final_bindings(self):
+        for options in [{'return_value':None},{'return_value':'child'},
+                        {'side_effect':PermissionError('private fixture')},
+                        {'side_effect':ValueError('private fixture')}]:
+            with self.subTest(options=options),self.bound(overrides={'pending_socket_owner':options}) as mocks:
+                self.assertEqual(R.serving_role_remote(self.request)['inspectorOwner'],'unknown')
+                for helper in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat']:
+                    self.assertEqual(mocks[helper].call_count,2)
+            with self.bound(overrides={'pending_socket_owner':options,
+                    '_serving_boot_id':{'side_effect':[self.boot,'aaaaaaaa-1234-1234-1234-123456789abc']}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_unavailable_and_expired_bindings_refuse_without_private_error(self):
+        for helper in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat','inspector_command']:
+            for error in [PermissionError('private fixture'),ValueError('private fixture')]:
+                with self.subTest(helper=helper,error=type(error)),self.bound(overrides={helper:{'side_effect':error}}):
+                    with self.assertRaises(R.ScopedRefusal) as caught:R.serving_role_remote(self.request)
+                    self.assertEqual(caught.exception.phase,'serving_role')
+                    self.assertIn(caught.exception.code,{'binding_unproved','evidence_unavailable'})
+                    self.assertNotIn('private fixture',str(caught.exception))
+        with self.bound(),patch.object(R.time,'monotonic',side_effect=[100]+[109]*40):
+            with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_boot_reader_fixed_private_bounded_metadata_only(self):
+        deadline=R.time.monotonic()+8
+        with patch.object(R,'_kernel_read',return_value=(self.boot+'\n').encode()) as read:
+            self.assertEqual(R._serving_boot_id(deadline),self.boot)
+        read.assert_called_once_with(Path('/proc/sys/kernel/random/boot_id'),64,deadline)
+        for raw in [b'',b'not-a-boot-id',b'A'*36,b'12345678-1234-1234-1234-123456789abc extra']:
+            with self.subTest(raw=raw),patch.object(R,'_kernel_read',return_value=raw):
+                with self.assertRaises(ValueError):R._serving_boot_id(deadline)
+
+    def test_serving_role_reply_refuses_extra_missing_wrong_fields(self):
+        good={'schema':'current-serving-inspector-role/v1','readOnly':True,**self.request,
+            'inspectorOwner':'unknown','limitation':'Kernel role only; no inspector ownership, provenance or action authority.'}
+        bad=[dict(good,hostPid=1234),dict(good,readOnly=1),dict(good,inspectorOwner='child'),
+             dict(good,releaseSha='a'*40),dict(good,instanceId='1-87654321'),dict(good,limitation='owned')]
+        bad += [{k:v for k,v in good.items() if k!=missing} for missing in good]
+        for answer in bad:
+            with self.subTest(answer=answer),self.assertRaises(ValueError):R.validate_reply(answer,self.request)
+
+
 class ReaderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='native-recovery-', dir=ROOT.parent)
@@ -36,8 +174,13 @@ class ReaderTests(unittest.TestCase):
         self.result.write_text(json.dumps(RESULT))
         self.patcher = patch.object(R, 'STATE_ROOT', self.root)
         self.patcher.start()
+        # Exact-file fixtures never inspect the machine running the tests.
+        self.tcp_patcher = patch.object(R, 'pending_tcp_presence', create=True,
+            return_value=({'state':'unknown','binding':'unproved','code':'not_read'}, 'unknown'))
+        self.tcp_patcher.start()
 
     def tearDown(self):
+        self.tcp_patcher.stop()
         self.patcher.stop()
         self.temp.cleanup()
 
@@ -73,6 +216,32 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('/opt/', json.dumps(answer))
         self.assertEqual(R.validate_reply(answer, request), answer)
 
+    def test_pending_kernel_role_projection_keeps_original_unit_recheck(self):
+        request={**REQUEST,'mode':'pending_transaction'}
+        directory=self.root/'engine-release-requests';directory.mkdir()
+        raw='\n'.join([REQUEST['releaseSha'],
+            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+            'private actor','/usr/local/lib/club-arena/engine-control-generations/'+'b'*40,'b'*40,'1791829999'])+'\n'
+        for suffix in ['.request','.intent']:
+            path=directory/(REQUEST['runKey']+suffix);path.write_text(raw);path.chmod(0o600)
+        unit={'activeState':'active','subState':'running','invocationId':'1'*32}
+        tcp={'state':'listening','binding':'matched','code':'connection_established'}
+        with patch.object(R,'pending_unit',return_value=unit) as reads, \
+                patch.object(R,'pending_journal',return_value=[]), \
+                patch.object(R,'pending_tcp_presence',return_value=(tcp,'main')):
+            answer=R.remote(request)
+        self.assertEqual(answer['inspectorOwner'],'main');self.assertEqual(answer['inspectorTcp'],tcp)
+        self.assertEqual(reads.call_count,2);self.assertEqual(R.validate_reply(answer,request),answer)
+        self.assertNotIn('private',json.dumps(answer))
+        for mutation in [{'inspectorOwner':'private PID123'},{'schema':'existing-release-pending-observation/v4'},
+                         {'inspectorTcp':{'state':'closed','binding':'matched','code':'connection_refused'}}]:
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):R.validate_reply({**answer,**mutation},request)
+        with patch.object(R,'pending_unit',side_effect=[unit,{**unit,'invocationId':'2'*32}]), \
+                patch.object(R,'pending_journal',return_value=[]), \
+                patch.object(R,'pending_tcp_presence',return_value=(tcp,'main')),self.assertRaises(R.ScopedRefusal) as refused:
+            R.remote(request)
+        self.assertEqual((refused.exception.phase,refused.exception.code),('pending_recheck_unit','evidence_unavailable'))
+
     def test_pending_remote_failure_reports_fixed_stage_without_private_detail(self):
         request = {**REQUEST, 'mode': 'pending_transaction'}
         with self.assertRaises(R.ScopedRefusal) as caught:
@@ -94,7 +263,7 @@ class ReaderTests(unittest.TestCase):
             path.write_text(raw); path.chmod(0o600)
         unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
         cases = [('read_lines', 'request_read'), ('pending_metadata', 'request_binding'),
-                 ('pending_unit', 'unit'), ('pending_journal', 'journal')]
+                 ('pending_unit', 'unit')]
         for function, stage in cases:
             with self.subTest(stage=stage), \
                     patch.object(R, 'pending_unit', return_value=unit), \
@@ -112,6 +281,55 @@ class ReaderTests(unittest.TestCase):
             with self.assertRaises(R.ScopedRefusal) as caught:
                 R.remote(request)
             self.assertEqual(caught.exception.phase, 'pending_recheck_unit')
+
+    def test_pending_journal_failure_preserves_only_rechecked_metadata_as_unknown(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        directory = self.root / 'engine-release-requests'; directory.mkdir()
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private actor fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        for suffix in ('.request', '.intent'):
+            path = directory / (REQUEST['runKey'] + suffix)
+            path.write_text('\n'.join(rows) + '\n'); path.chmod(0o600)
+        unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
+        with patch.object(R, 'pending_unit', return_value=unit) as reads, \
+                patch.object(R, 'pending_journal', side_effect=ValueError('private journal detail')):
+            answer = R.remote(request)
+        self.assertEqual(reads.call_count, 2)
+        self.assertEqual(answer['journalStatus'], 'unavailable')
+        self.assertIsNone(answer['journalSigns'])
+        self.assertEqual(answer['journalFailure'], {'phase': 'pending_journal', 'code': 'evidence_unavailable'})
+        self.assertEqual(R.validate_reply(answer, request), answer)
+        self.assertNotIn('private', json.dumps(answer))
+        failures = [(ValueError('Recovery witness output refused'), 'output_bound'),
+                    (ValueError('Pending journal unavailable'), 'command_nonzero'),
+                    (ValueError('Pending journal ownership refused'), 'ownership_refused'),
+                    (ValueError('Pending journal shape refused'), 'shape_refused'),
+                    (ValueError('Duplicate persisted field'), 'fields_refused'),
+                    (subprocess.TimeoutExpired('private command', 5), 'command_deadline'),
+                    (OSError('private command'), 'command_unavailable'),
+                    (json.JSONDecodeError('private', 'private', 0), 'json_refused')]
+        for error, code in failures:
+            with self.subTest(code=code), self.assertRaises(R.ScopedRefusal) as caught:
+                R.pending_stage('journal', lambda: (_ for _ in ()).throw(error))
+            self.assertEqual((caught.exception.phase, caught.exception.code), ('pending_journal', code))
+        with self.assertRaises(RuntimeError):
+            R.pending_stage('journal', lambda: (_ for _ in ()).throw(RuntimeError('unexpected')))
+        for mutation in [{'journalSigns': []}, {'journalStatus': 'observed'},
+                         {'journalFailure': {'phase': 'pending_unit', 'code': 'evidence_unavailable'}},
+                         {'journalFailure': {'phase': 'pending_journal', 'code': 'private detail'}},
+                         {'schema': 'existing-release-pending-observation/v1'}]:
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                R.validate_reply({**answer, **mutation}, request)
+        for target in ('unit', 'requests'):
+            def journal(*args):
+                if target == 'requests':
+                    path = directory / (REQUEST['runKey'] + '.request')
+                    path.write_text('changed')
+                raise ValueError('private journal detail')
+            with patch.object(R, 'pending_unit', side_effect=[unit, {**unit, 'invocationId': '2' * 32}] if target == 'unit' else None, return_value=unit), \
+                    patch.object(R, 'pending_journal', side_effect=journal), self.assertRaises(R.ScopedRefusal):
+                R.remote(request)
 
     def test_pending_mode_refuses_unknown_modes_and_export_forgery(self):
         request = {**REQUEST, 'mode': 'pending_transaction'}
@@ -157,7 +375,9 @@ class ReaderTests(unittest.TestCase):
             return types.SimpleNamespace(returncode=0, stdout=json.dumps(row).encode())
         with patch.object(R, 'bounded_journal', side_effect=journal):
             signs = R.pending_journal(request, unit)
-        self.assertEqual(signs, [{'category': 'certificate_shut', 'observedAtMs': 1791821800000}])
+        # This historical fixture's unquoted key is not Python producer repr.
+        # Preserve its category while retaining unavailable causal details.
+        self.assertEqual(signs, [{'category': 'certificate_shut', 'observedAtMs': 1791821800000, 'details': None}])
         self.assertNotIn('private', json.dumps(signs))
         self.assertIn('_SYSTEMD_INVOCATION_ID=' + '1' * 32, calls[-1])
         self.assertIn('_SYSTEMD_UNIT=' + calls[0][2], calls[-1])
@@ -169,6 +389,246 @@ class ReaderTests(unittest.TestCase):
         row['MESSAGE'] = 'arbitrary private message'
         with patch.object(R, 'bounded_journal', side_effect=journal):
             self.assertEqual(R.pending_journal(request, unit), [])
+
+    def test_pending_certificate_retains_literal_counts_without_private_reason_names(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        template = ('[engine-release-transaction] the restart certificate is shut with %dms of the break left: '
+                    'unparkedTables=%r unparkedReasons=%r handsInFlightTotal=%r\\n')
+        self.assertIn(template, (ROOT / 'server/scripts/engine-release-transaction.sh').read_text())
+        message = template.replace('\\n', '\n') % (296969, 3,
+            {'cards_in_air': 2, 'private player fixture': 1}, 2)
+        row = {'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+               '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+               '__REALTIME_TIMESTAMP': '1793318108736000', 'MESSAGE': message.rstrip('\n')}
+        with patch.object(R, 'bounded_journal', return_value=types.SimpleNamespace(returncode=0, stdout=json.dumps(row).encode())):
+            signs = R.pending_journal(request, unit)
+        self.assertEqual(signs[0]['details'][:3], [296969, 3, 2])
+        self.assertEqual(signs[0]['details'][3][R.PENDING_REASON_ORDER.index('cards_in_air')], 2)
+        self.assertEqual(signs[0]['details'][3][-1], 1)
+        self.assertNotIn('private', json.dumps(signs))
+        R.validate_pending_signs(signs)
+
+    def test_pending_legacy_intent_absence_is_a_read_not_retry_authority(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        directory = self.root / 'engine-release-requests'; directory.mkdir()
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            summary, binding = R.pending_legacy_intent(request, fd, 'b' * 40)
+            self.assertEqual(summary, {'status': 'absent_at_read', 'code': None})
+            self.assertIsNone(binding)
+            path = directory / (request['runKey'] + '.legacy-checkpoint-intent')
+            value = {'instance': '1-12345678', 'container': 'c' * 64,
+                     'startedAt': '2026-10-29T23:10:28.589Z', 'hostPid': 1234,
+                     'source': R.EED, 'runId': request['runKey'], 'controlSha': 'b' * 40,
+                     'at': 1793318108, 'retryAllowed': False}
+            path.write_text(json.dumps(value)); path.chmod(0o600)
+            summary, binding = R.pending_legacy_intent(request, fd, 'b' * 40)
+            self.assertEqual(summary, {'status': 'bound_at_read', 'code': None})
+            self.assertIsNotNone(binding)
+            self.assertNotIn('1234', json.dumps(summary))
+            self.assertEqual(R.pending_legacy_intent(request, fd, 'd' * 40)[0],
+                             {'status': 'unknown', 'code': 'binding_refused'})
+            path.unlink(); path.symlink_to(self.window)
+            self.assertEqual(R.pending_legacy_intent(request, fd, 'b' * 40)[0],
+                             {'status': 'unknown', 'code': 'evidence_unavailable'})
+        finally:
+            os.close(fd)
+
+    def test_pending_literal_categories_counts_and_unknown_details_are_closed(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        cases = [
+            ('[engine-release-transaction] the restart certificate is also shut: unparkedTables=None unparkedReasons=None', 'certificate_also_shut', [None, None, None, None]),
+            ('[engine-release-transaction] the durable table break has 284999ms remaining, below the 285000ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate', 'candidate_budget_missed', [284999, 285000]),
+            ('[engine-release-transaction] the locked table break has 244999ms remaining, below the 245000ms candidate-and-recovery budget; waiting for a later certificate', 'locked_budget_missed', [244999, 245000]),
+            ('[engine-release-transaction] prove_rollback_readiness took 11000ms of the 15000ms entry allowance inside the 40s legacy checkpoint budget', 'rollback_readiness_completed', [11000, 15000, 40]),
+            ('[engine-release-transaction] FATAL: legacy checkpoint did not retain the full restart certificate and 245000ms legacy reserve (240000ms remaining, certificate rc 2)', 'rollback_certificate_lost', [245000, 240000, 2]),
+            ('[engine-release-inflight-hands] weekly payout owns the boundary; refusing cutover', 'weekly_owner_active', None),
+            ('[engine-release-inflight-hands] UNKNOWN: private exception fixture', 'inflight_evidence_unavailable', None),
+            ('[engine-release-transaction] FATAL: could not acquire the engine mutation lock for maintenance cutover', 'mutation_lock_unavailable', None),
+            ('[engine-release-transaction] FATAL: deadline expired before maintenance cutover', 'mutation_lock_deadline', None),
+            ('[engine-release-inflight-hands] 3 hand(s) in the air within 120s - refusing the cutover:', 'hands_in_air', [3, 120]),
+        ]
+        for message, category, details in cases:
+            with self.subTest(category=category):
+                row = {'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+                       '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+                       '__REALTIME_TIMESTAMP': '1793318108736000', 'MESSAGE': message}
+                with patch.object(R, 'bounded_journal', return_value=types.SimpleNamespace(returncode=0, stdout=json.dumps(row).encode())):
+                    signs = R.pending_journal(request, unit)
+                self.assertEqual(signs, [{'category': category, 'observedAtMs': 1793318108736, 'details': details}])
+                R.validate_pending_signs(signs)
+                self.assertNotIn('private', json.dumps(signs))
+        prefix = '[engine-release-transaction] the restart certificate is shut with 299000ms of the break left: '
+        for reasons in ["{'cards_in_air': True}", "{'cards_in_air': -1}",
+                        "{'cards_in_air': 1, 'cards_in_air': 2}",
+                        "__import__('os').system('private')", "{'cards_in_air': [1]}"]:
+            self.assertIsNone(R.pending_certificate_details(prefix + 'unparkedTables=1 unparkedReasons=' + reasons + ' handsInFlightTotal=0'))
+        for details in [[299000, 1, True, None], [299000, 1, 0, [1]],
+                        [299000, 1, 0, [-1] * (len(R.PENDING_REASON_ORDER) + 1)]]:
+            with self.assertRaises(ValueError):
+                R.validate_pending_signs([{'category': 'certificate_shut', 'observedAtMs': 1793318108736, 'details': details}])
+
+    def test_pending_optional_intent_changes_never_bypass_request_or_unit_rechecks(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        directory = self.root / 'engine-release-requests'; directory.mkdir()
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        for suffix in ('.request', '.intent'):
+            path = directory / (request['runKey'] + suffix)
+            path.write_text('\n'.join(rows) + '\n'); path.chmod(0o600)
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        absent = ({'status': 'absent_at_read', 'code': None}, None)
+        bound = ({'status': 'bound_at_read', 'code': None}, 'private binding')
+        with patch.object(R, 'pending_unit', return_value=unit) as unit_reads, \
+                patch.object(R, 'read_lines', wraps=R.read_lines) as file_reads, \
+                patch.object(R, 'pending_journal', side_effect=ValueError('private journal')), \
+                patch.object(R, 'pending_legacy_intent', side_effect=[absent, bound]), \
+                patch.object(R, 'pending_tcp_presence', side_effect=OSError('private TCP failure')):
+            answer = R.remote(request)
+        self.assertEqual(unit_reads.call_count, 2)
+        self.assertEqual(file_reads.call_count, 8)
+        self.assertEqual(answer['legacyIntent'], {'status': 'unknown', 'code': 'changed_during_read'})
+        self.assertIsNone(answer['journalSigns'])
+        self.assertEqual(answer['inspectorTcp'], {'state':'unknown','binding':'unproved','code':'evidence_unavailable'})
+        self.assertEqual(R.validate_reply(answer, request), answer)
+        self.assertNotIn('private', json.dumps(answer))
+        for mutation in [{'legacyIntent': {'status': 'absent_at_read', 'code': 'never_entered'}},
+                         {'legacyIntent': {'status': 'bound_at_read', 'code': None, 'hostPid': 1}},
+                         {'schema': 'existing-release-pending-observation/v2'}]:
+            with self.assertRaises(ValueError): R.validate_reply({**answer, **mutation}, request)
+
+    def test_pending_native_selector_retains_early_counts_despite_late_budget_noise(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        early = ('[engine-release-transaction] the restart certificate is shut with 296969ms of the break left: '
+                 "unparkedTables=1 unparkedReasons={'cards_in_air': 1} handsInFlightTotal=1")
+        late = "[engine-release-transaction] the restart certificate is also shut: unparkedTables=1 unparkedReasons={'cards_in_air': 1}"
+        messages = [early] + [late] * 20
+        def journal(args):
+            # Exercise the actual fixed ERE with native grep, then the same
+            # latest-N selection as journalctl. No systemd/host read occurs.
+            pattern = next(arg.removeprefix('--grep=') for arg in args if arg.startswith('--grep='))
+            selected = subprocess.run(['grep', '-E', pattern], input='\n'.join(messages) + '\n',
+                                      capture_output=True, text=True, timeout=2, check=True).stdout.splitlines()
+            limit = int(next(arg.removeprefix('--lines=') for arg in args if arg.startswith('--lines=')))
+            self.assertEqual(limit, 12)
+            rows = [{'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+                     '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+                     '__REALTIME_TIMESTAMP': str(1793318108736000 + ordinal * 1000), 'MESSAGE': message}
+                    for ordinal, message in enumerate(selected[-limit:])]
+            return types.SimpleNamespace(returncode=0, stdout='\n'.join(json.dumps(row) for row in rows).encode())
+        with patch.object(R, 'bounded_journal', side_effect=journal):
+            signs = R.pending_journal(request, unit)
+        self.assertEqual([sign['category'] for sign in signs], ['certificate_shut'])
+        self.assertEqual(signs[0]['details'][:3], [296969, 1, 1])
+
+    def recovery_messages(self):
+        prefix = '[engine-release-transaction] '
+        return [
+            (prefix + 'newer release ' + 'c' * 40 + ' (run 40980634821-1) is in flight and owns any off-cycle window; this release waits for the scheduled break', 'recovery_newer_owner'),
+            (prefix + 'legacy inspector absence is not proved; no recovery window requested and no inspector was touched', 'recovery_inspector_unproved'),
+            (prefix + 'recovery announcement reservation could not be established; no window was announced, waiting for the scheduled break', 'recovery_reservation_unestablished'),
+            (prefix + 'off-cycle window wanted (owner-ordered private-window-fixture) but one was already announced in the last hour; waiting for the scheduled break', 'recovery_rate_limited'),
+        ] + [(prefix + 'fixed recovery announcement 1793318108736: ' + status + '; existing certificate and rollback budget remain required', 'recovery_announcement_' + status)
+             for status in ['accepted', 'active', 'pending', 'busy', 'expired', 'use_hourly', 'unavailable', 'unknown']]
+
+    def recovery_signs(self, messages, native=False):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        def journal(args):
+            selected = messages
+            if native:
+                pattern = next(arg.removeprefix('--grep=') for arg in args if arg.startswith('--grep='))
+                result = subprocess.run(['grep', '-E', pattern], input='\n'.join(messages) + '\n',
+                                        capture_output=True, text=True, timeout=2)
+                self.assertIn(result.returncode, [0, 1], result.stderr)
+                self.assertIn('--lines=12', args)
+                selected = result.stdout.splitlines()[-12:]
+            rows = [{'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+                     '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+                     '__REALTIME_TIMESTAMP': str(1793318108736000 + ordinal * 1000), 'MESSAGE': message}
+                    for ordinal, message in enumerate(selected)]
+            return types.SimpleNamespace(returncode=0, stdout='\n'.join(json.dumps(row) for row in rows).encode())
+        with patch.object(R, 'bounded_journal', side_effect=journal):
+            return R.pending_journal(request, unit)
+
+    def test_pending_recovery_producer_messages_export_closed_categories_only(self):
+        cases = self.recovery_messages()
+        signs = self.recovery_signs([message for message, _ in cases])
+        self.assertEqual([sign['category'] for sign in signs], [category for _, category in cases])
+        self.assertTrue(all(sign['details'] is None for sign in signs))
+        R.validate_pending_signs(signs)
+        body = json.dumps(signs)
+        for private in ['c' * 40, '40980634821', 'private-window-fixture']:
+            self.assertNotIn(private, body)
+        producer = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
+        for literal in ['newer release ${newer#* } (run ${newer%% *})',
+                        'legacy inspector absence is not proved; no recovery window requested',
+                        'recovery announcement reservation could not be established; no window was announced',
+                        'off-cycle window wanted ($reason) but one was already announced',
+                        'fixed recovery announcement $stamp: $outcome; existing certificate and rollback budget remain required']:
+            self.assertIn(literal, producer)
+
+    def test_pending_recovery_native_selector_retains_the_maintained_forms(self):
+        cases = self.recovery_messages()
+        signs = self.recovery_signs([message for message, _ in cases], native=True)
+        self.assertEqual([sign['category'] for sign in signs], [category for _, category in cases])
+        for reason in ['engine-degraded liveness=dead', 'engine-degraded wholeFleetStalled',
+                       'engine-degraded tournamentManagersQuarantined=100',
+                       'engine-degraded liveness=dead,wholeFleetStalled,tournamentManagersQuarantined=101']:
+            message = cases[3][0].replace('owner-ordered private-window-fixture', reason)
+            self.assertEqual(self.recovery_signs([message], native=True)[0]['category'], 'recovery_rate_limited')
+
+    def test_pending_recovery_malformed_private_tails_are_not_classified(self):
+        cases = self.recovery_messages()
+        malformed = [cases[0][0].replace('c' * 40, 'C' * 40),
+                     cases[0][0].replace('40980634821-1', 'private-run'),
+                     cases[1][0] + ' private endpoint', cases[2][0] + ' private reason',
+                     cases[3][0].replace('owner-ordered private-window-fixture', 'private cause'),
+                     cases[3][0].replace('owner-ordered private-window-fixture', 'engine-degraded private=1'),
+                     cases[3][0].replace('owner-ordered private-window-fixture', 'owner-ordered ' + 'x' * 65),
+                     cases[4][0].replace(': accepted;', ': private;'),
+                     cases[4][0].replace('1793318108736', '9999999999999'),
+                     cases[4][0] + ' private endpoint']
+        self.assertEqual(self.recovery_signs(malformed), [])
+
+    def test_pending_recovery_export_refuses_unknown_statuses_and_details(self):
+        sign = {'category': 'recovery_announcement_accepted', 'observedAtMs': 1793318108736, 'details': None}
+        R.validate_pending_signs([sign])
+        for mutation in [{'category': 'recovery_announcement_private'}, {'details': [1793318108736]},
+                         {'reason': 'private fixture'}]:
+            with self.assertRaises(ValueError): R.validate_pending_signs([{**sign, **mutation}])
+
+    def test_pending_recovery_latest_rows_preserve_unknown_earlier_evidence(self):
+        early = ('[engine-release-transaction] the restart certificate is shut with 296969ms of the break left: '
+                 "unparkedTables=1 unparkedReasons={'cards_in_air': 1} handsInFlightTotal=1")
+        signs = self.recovery_signs([early] + [self.recovery_messages()[1][0]] * 20, native=True)
+        self.assertEqual(len(signs), 12)
+        self.assertTrue(all(sign['category'] == 'recovery_inspector_unproved' for sign in signs))
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        answer = R.pending_observation(request, rows, rows, [REQUEST['releaseSha']], None, unit, signs)
+        self.assertIn('unknown', answer['absenceMeans'])
+        self.assertLessEqual(len(json.dumps(answer).encode()), 4096)
+        self.assertEqual(R.validate_reply(answer, request), answer)
+
+    def test_pending_twelve_causal_signs_fit_unchanged_transport_on_realistic_full_counts(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        signs = [{'category': 'certificate_shut', 'observedAtMs': 1793318108736,
+                  'details': [299999, 1000, 1000, [1000] * (len(R.PENDING_REASON_ORDER) + 1)]} for _ in range(12)]
+        answer = R.pending_observation(request, rows, rows, [REQUEST['releaseSha']], None, unit, signs)
+        self.assertLessEqual(len(json.dumps(answer).encode()), 4096)
+        self.assertEqual(R.validate_reply(answer, request), answer)
 
     def test_pending_native_files_refuse_links_fifo_changed_and_oversized_bytes(self):
         fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
@@ -723,6 +1183,34 @@ class InspectorTests(unittest.TestCase):
             self.assertEqual(R.validate_refusal(exported,self.request).code, code)
             self.assertNotIn('private',json.dumps(exported))
 
+    def test_actual_inspector_observer_child_isolates_inherited_options_in_both_phases(self):
+        import socket
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        for expected in [None,self.digest]:
+            with patch.object(R,'inspector_command',return_value=b'{"state":"closed","endpointSha256":null}') as command:
+                result=R.inspector_probe(self.identity['container'],123,expected)
+            self.assertEqual(result,{'state':'closed','endpointSha256':None})
+            self.assertEqual(command.call_args.args[0],['docker','exec','-i','-e','NODE_OPTIONS=',
+                self.identity['container'],'node','--no-inspect','--input-type=module','-',
+                'read' if expected else 'probe',expected or ''])
+            self.assertEqual(command.call_args.args[1],123)
+            self.assertEqual(command.call_args.kwargs,
+                {'input_bytes':R.INSPECTOR_NODE.encode(),'limit':16384,'stage':'probe'})
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1',0));port=closed.getsockname()[1]
+        source=R.INSPECTOR_NODE.replace('9229',str(port)).encode()
+        inherited={**os.environ,'NODE_OPTIONS':'--inspect=127.0.0.1:'+str(port)}
+        before=subprocess.run([node,'--input-type=module','-','probe',''],input=source,
+            capture_output=True,env=inherited,timeout=5)
+        self.assertEqual(before.returncode,0,before.stderr)
+        self.assertIn(b'Debugger listening',before.stderr)
+        self.assertEqual(json.loads(before.stdout)['state'],'open')
+        after=subprocess.run([node,'--no-inspect','--input-type=module','-','probe',''],input=source,
+            capture_output=True,env={**inherited,'NODE_OPTIONS':''},timeout=5)
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'closed','endpointSha256':None})
+
     def test_actual_native_scalar_read_and_proxy_environment_independence(self):
         # Actual native inspector evaluation in an isolated child. Linux PID 1
         # binding is separately pinned in the maintained transport; this local
@@ -753,19 +1241,40 @@ class InspectorTests(unittest.TestCase):
         import re
         node=os.environ.get('RELEASE_RECOVERY_TEST_NODE', 'node')
         target=R.subprocess.Popen([node,'--input-type=module','-e',
-            "import inspector from 'node:inspector';inspector.open(0,'127.0.0.1');console.log(JSON.stringify({url:inspector.url(),pid:process.pid}));process.stdin.resume();"],
-            stdin=R.subprocess.PIPE,stdout=R.subprocess.PIPE,stderr=R.subprocess.DEVNULL)
-        try:
+            "import inspector from 'node:inspector';import readline from 'node:readline';console.log(JSON.stringify({ready:'fixture-ready',closed:inspector.url()===undefined}));readline.createInterface({input:process.stdin}).once('line',line=>{if(line!=='open')process.exit(2);inspector.open(0,'127.0.0.1');console.log(JSON.stringify({url:inspector.url(),pid:process.pid}));});"],
+            stdin=R.subprocess.PIPE,stdout=R.subprocess.PIPE,stderr=R.subprocess.PIPE)
+        def fixture_line(seconds):
+            deadline=R.time.monotonic()+seconds
+            out=bytearray();err=bytearray()
             with R.selectors.DefaultSelector() as selector:
-                selector.register(target.stdout,R.selectors.EVENT_READ)
-                self.assertTrue(selector.select(2),'isolated target startup deadline')
-                selected=json.loads(target.stdout.readline())
+                selector.register(target.stdout,R.selectors.EVENT_READ,'out')
+                selector.register(target.stderr,R.selectors.EVENT_READ,'err')
+                while R.time.monotonic()<deadline:
+                    events=selector.select(max(0,deadline-R.time.monotonic()))
+                    for key,_ in events:
+                        chunk=os.read(key.fileobj.fileno(),4096)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        selected=out if key.data=='out' else err
+                        selected.extend(chunk)
+                        self.assertLessEqual(len(selected),4096,'isolated fixture output bound')
+                        if b'\n' in out:
+                            line,extra=out.split(b'\n',1)
+                            self.assertFalse(extra,'unexpected fixture output')
+                            return json.loads(line)
+                    if not selector.get_map():break
+            self.fail('isolated fixture deadline/exit: '+str(target.poll())+' stderr='+err.decode(errors='replace'))
+        try:
+            self.assertEqual(fixture_line(5),{'ready':'fixture-ready','closed':True})
+            target.stdin.write(b'open\n');target.stdin.flush()
+            selected=fixture_line(2)
             port=int(selected['url'].split(':')[2].split('/')[0])
             source=R.INSPECTOR_NODE.replace(':9229',':'+str(port)).replace('v?.pid!==1','v?.pid!=='+str(selected['pid']))
             source=re.sub(r'const connections=\(\)=>\{.*?\n\};', 'let nativeConnectionReads=0;const connections=()=>Math.min(nativeConnectionReads++,1);',source,flags=re.S)
             digest=R.hashlib.sha256(selected['url'].encode()).hexdigest()
-            reply=R.subprocess.run([node,'--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
-                env={**os.environ,'HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
+            reply=R.subprocess.run([node,'--no-inspect','--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
+                env={**os.environ,'NODE_OPTIONS':'','HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
             self.assertEqual(reply.returncode,0,reply.stderr)
             value=json.loads(reply.stdout)
             self.assertEqual(value['state'],'owned');self.assertEqual(value['native']['pid'],selected['pid'])
@@ -773,7 +1282,7 @@ class InspectorTests(unittest.TestCase):
             self.assertGreater(value['native']['usedHeapBytes'],0)
             self.assertIsNone(target.poll(),'reader must not stop its target')
         finally:
-            target.kill();target.wait(timeout=2);target.stdin.close();target.stdout.close()
+            target.kill();target.wait(timeout=2);target.stdin.close();target.stdout.close();target.stderr.close()
 
 
     def retired(self):
@@ -827,6 +1336,433 @@ class InspectorTests(unittest.TestCase):
         with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
         self.receipt.unlink();self.receipt.symlink_to(self.path)
         with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+
+
+
+
+class PendingTcpTests(unittest.TestCase):
+    def setUp(self):
+        self.identity={'container':'c'*64,'image':'sha256:'+'d'*64,'running':'true',
+            'startedAt':'2026-10-30T01:00:00.000Z','hostPid':'123','restarts':'0'}
+        self.health={'source':'a'*40,'instance':'1-12345678'}
+
+    def test_native_tcp_closed_and_listening_send_no_payload(self):
+        import socket
+        import threading
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
+        source=R.TCP_PRESENCE_NODE.replace('9229',str(port))
+        reply=subprocess.run([node,'--input-type=module','-'],input=source.encode(),capture_output=True,timeout=5)
+        self.assertEqual(reply.returncode,0,reply.stderr)
+        self.assertEqual(json.loads(reply.stdout),{'state':'closed','code':'connection_refused'})
+        received=[]
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(3)
+            port=listener.getsockname()[1]
+            def accept():
+                conn,_=listener.accept()
+                with conn:
+                    conn.settimeout(2);received.append(conn.recv(1))
+            thread=threading.Thread(target=accept);thread.start()
+            source=R.TCP_PRESENCE_NODE.replace('9229',str(port))
+            reply=subprocess.run([node,'--input-type=module','-'],input=source.encode(),capture_output=True,timeout=5)
+            thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(reply.returncode,0,reply.stderr)
+        self.assertEqual(json.loads(reply.stdout),{'state':'listening','code':'connection_established'})
+        self.assertEqual(received,[b''])
+        for forbidden in ['node:inspector','Runtime.evaluate','WebSocket','node:http','socket.write','process.kill']:
+            self.assertNotIn(forbidden,R.TCP_PRESENCE_NODE)
+
+    def test_native_tcp_child_options_cannot_create_its_own_listener_or_load_preloads(self):
+        import socket
+        import threading
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1',0));port=closed.getsockname()[1]
+        source=R.TCP_PRESENCE_NODE.replace('9229',str(port)).encode()
+        inherited={**os.environ,'NODE_OPTIONS':'--inspect=127.0.0.1:'+str(port)}
+        # Demonstrate the actual inherited-options counterexample in isolation.
+        before=subprocess.run([node,'--input-type=module','-'],input=source,
+            capture_output=True,env=inherited,timeout=5)
+        self.assertEqual(before.returncode,0,before.stderr)
+        self.assertIn(b'Debugger listening',before.stderr)
+        self.assertEqual(json.loads(before.stdout)['state'],'listening')
+        isolated={**inherited,'NODE_OPTIONS':''}
+        after=subprocess.run([node,'--no-inspect','--input-type=module','-'],input=source,
+            capture_output=True,env=isolated,timeout=5)
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'closed','code':'connection_refused'})
+        self.assertEqual(inherited['NODE_OPTIONS'],'--inspect=127.0.0.1:'+str(port))
+        with tempfile.TemporaryDirectory(prefix='tcp-preload-',dir=ROOT.parent) as temp:
+            marker=Path(temp)/'preload-ran';preload=Path(temp)/'preload.cjs'
+            preload.write_text("require('node:fs').writeFileSync("+json.dumps(str(marker))+",'fixture');")
+            inherited={**os.environ,'NODE_OPTIONS':'--require='+str(preload)}
+            before=subprocess.run([node,'--input-type=module','-'],input=source,
+                capture_output=True,env=inherited,timeout=5)
+            self.assertEqual(before.returncode,0,before.stderr)
+            self.assertEqual(marker.read_text(),'fixture');marker.unlink()
+            after=subprocess.run([node,'--no-inspect','--input-type=module','-'],input=source,
+                capture_output=True,env={**inherited,'NODE_OPTIONS':''},timeout=5)
+            self.assertEqual(after.returncode,0,after.stderr)
+            self.assertFalse(marker.exists(),'probe must not execute inherited preloads')
+        # Clearing child options must still see a genuine, separate listener.
+        received=[]
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(3)
+            port=listener.getsockname()[1]
+            def accept():
+                conn,_=listener.accept()
+                with conn:conn.settimeout(2);received.append(conn.recv(1))
+            thread=threading.Thread(target=accept);thread.start()
+            after=subprocess.run([node,'--no-inspect','--input-type=module','-'],
+                input=R.TCP_PRESENCE_NODE.replace('9229',str(port)).encode(),
+                capture_output=True,env={**os.environ,'NODE_OPTIONS':''},timeout=5)
+            thread.join(timeout=3);self.assertFalse(thread.is_alive())
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'listening','code':'connection_established'})
+        self.assertEqual(received,[b''])
+
+    def run_bound_probe(self, probe, *, after=None, after_health=None, failure=None, owner='unknown', owner_error=None, expected_owner='unknown'):
+        identity=' '.join(self.identity.values()).encode()
+        health=json.dumps({'status':'ok','running':True,'releaseSha':self.health['source'],
+            'version':self.health['source'][:8],'instanceId':self.health['instance']}).encode()
+        rows=[identity,health,self.health['source'].encode(),json.dumps(probe).encode(),identity,health]
+        if after is not None:rows[4]=' '.join(after.values()).encode()
+        if after_health is not None:rows[5]=json.dumps(after_health).encode()
+        if failure is not None:rows[failure[0]]=failure[1]
+        with patch.object(R,'inspector_command',side_effect=rows) as native, \
+                patch.object(R,'pending_socket_owner',return_value=owner,side_effect=owner_error) as kernel:
+            answer,observed_owner=R.pending_tcp_presence()
+        self.last_kernel_read=kernel
+        self.assertEqual(observed_owner,expected_owner)
+        if kernel.called:
+            self.assertEqual(kernel.call_args.args,(self.identity,native.call_args_list[0].args[1]))
+        self.assertNotIn(self.identity['container'],json.dumps(answer))
+        self.assertNotIn('private',json.dumps(answer))
+        return answer,native
+
+    def test_kernel_role_uses_existing_tcp_deadline_and_never_survives_binding_change(self):
+        probe={'state':'listening','code':'connection_established'}
+        expected={'state':'listening','code':'connection_established','binding':'matched'}
+        for role in ['main','other_container_process']:
+            answer,_=self.run_bound_probe(probe,owner=role,expected_owner=role)
+            self.assertEqual(answer,expected);self.last_kernel_read.assert_called_once()
+        answer,_=self.run_bound_probe(probe,owner='main',after={**self.identity,'hostPid':'124'})
+        self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':'identity_changed'})
+        changed={'status':'ok','running':True,'releaseSha':self.health['source'],
+            'version':self.health['source'][:8],'instanceId':'1-87654321'}
+        answer,_=self.run_bound_probe(probe,owner='main',after_health=changed)
+        self.assertEqual(answer['code'],'identity_changed')
+        answer,_=self.run_bound_probe(probe,owner_error=PermissionError('private proc path'))
+        self.assertEqual(answer,expected)
+        answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},owner='main')
+        self.assertEqual(answer['state'],'closed');self.last_kernel_read.assert_not_called()
+
+    def test_tcp_binds_current_runtime_before_and_after_without_legacy_intent(self):
+        for state,code in [('closed','connection_refused'),('listening','connection_established')]:
+            answer,native=self.run_bound_probe({'state':state,'code':code})
+            self.assertEqual(answer,{'state':state,'code':code,'binding':'matched'})
+            self.assertEqual(native.call_count,6)
+            calls=native.call_args_list
+            self.assertEqual(calls[3].args[0],['docker','exec','-i','-e','NODE_OPTIONS=',self.identity['container'],'node','--no-inspect','--input-type=module','-'])
+            self.assertEqual(calls[3].kwargs['input_bytes'],R.TCP_PRESENCE_NODE.encode())
+            shared=[call.args[1] for call in calls if call is not calls[3]]
+            self.assertTrue(all(value==shared[0] for value in shared))
+            self.assertLessEqual(calls[3].args[1],shared[0])
+        for key,value in [('container','e'*64),('image','sha256:'+'f'*64),('hostPid','124'),('restarts','1')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},after={**self.identity,key:value})
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':'identity_changed'})
+        changed={'status':'ok','running':True,'releaseSha':self.health['source'],
+            'version':self.health['source'][:8],'instanceId':'1-87654321'}
+        answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},after_health=changed)
+        self.assertEqual(answer['code'],'identity_changed')
+
+    def test_tcp_native_startup_failure_deadline_and_bad_health_stay_unknown(self):
+        for error,code in [(ValueError('Inspector read deadline'),'command_deadline'),
+                           (ValueError('Inspector read size'),'command_size'),
+                           (ValueError('Inspector native unavailable'),'command_nonzero')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},failure=(3,error))
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':code})
+        for index,bad,code in [(0,b'private unknown','container_unproved'),
+                               (1,b'{"running":true}','health_unproved'),
+                               (2,b'private wrong image','image_unproved'),
+                               (3,b'{"state":"closed","code":"private"}','probe_unproved')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},failure=(index,bad))
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':code})
+
+    def test_tcp_schema_rejects_false_binding_private_fields_and_future_codes(self):
+        for value in [
+            {'state':'closed','binding':'unproved','code':'connection_refused'},
+            {'state':'unknown','binding':'matched','code':'probe_unproved'},
+            {'state':'listening','binding':'matched','code':'connection_refused'},
+            {'state':'unknown','binding':'unproved','code':'secret error'},
+            {'state':'closed','binding':'matched','code':'connection_refused','container':'private'}]:
+            with self.subTest(value=value),self.assertRaises(ValueError):R.validate_pending_tcp(value)
+        for state,code in [('closed','connection_refused'),('listening','connection_established')]:
+            R.validate_pending_tcp({'state':state,'binding':'matched','code':code})
+        R.validate_pending_tcp({'state':'unknown','binding':'unproved','code':'not_read'})
+
+
+
+class KernelOwnerTests(unittest.TestCase):
+    def setUp(self):
+        self.identity={'container':'c'*64,'hostPid':'123'}
+        self.deadline=R.time.monotonic()+3
+        self.snapshot={'members':('123','124'),'processes':(('123','10'),('124','20')),
+            'namespace':'net:[123456]','inode':'456789','owners':('123',)}
+
+    def test_kernel_docker_top_accepts_only_bounded_unique_pid_membership(self):
+        with patch.object(R,'inspector_command',return_value=b'PID\n124\n123\n') as native:
+            self.assertEqual(R._kernel_members(self.identity,self.deadline),('123','124'))
+        self.assertEqual(native.call_args.args,(['docker','top','c'*64,'-eo','pid'],self.deadline))
+        self.assertEqual(native.call_args.kwargs,{'limit':4096})
+        for data in [b'PID COMMAND\n123 private\n',b'PID\n124\n',b'PID\n123\n123\n',
+                     b'PID\n0\n123\n',b'PID\n123\n-2\n',b'PID\n123\n124 extra\n',
+                     ('PID\n'+'\n'.join(str(i) for i in range(1,258))).encode()]:
+            with self.subTest(data=data[:30]),patch.object(R,'inspector_command',return_value=data),self.assertRaises(ValueError):
+                R._kernel_members(self.identity,self.deadline)
+
+    def test_kernel_native_file_bound_symlink_and_expired_deadline(self):
+        with tempfile.TemporaryDirectory(prefix='kernel-owner-file-',dir=ROOT.parent) as temp:
+            path=Path(temp)/'fixed';path.write_bytes(b'12345678')
+            self.assertEqual(R._kernel_read(path,8,self.deadline),b'12345678')
+            path.write_bytes(b'123456789')
+            with self.assertRaises(ValueError):R._kernel_read(path,8,self.deadline)
+            link=Path(temp)/'linked';link.symlink_to(path)
+            with self.assertRaises(OSError):R._kernel_read(link,8,self.deadline)
+            with patch.object(R.os,'open') as opened,self.assertRaises(ValueError):
+                R._kernel_read(path,8,R.time.monotonic()-1)
+            opened.assert_not_called()
+
+    def test_kernel_stat_starttime_handles_private_comm_without_export(self):
+        record=('123 (private ) comm (name)) S '+' '.join(['0']*18+['98765']+['0']*30)).encode()
+        with patch.object(R,'_kernel_read',return_value=record) as read:
+            self.assertEqual(R._kernel_pid_stat('123',self.deadline),'98765')
+        self.assertEqual(read.call_args.args,(R.KERNEL_PROC_ROOT/'123'/'stat',4096,self.deadline))
+        for pid in ['../123','0','123/private','-1']:
+            with self.subTest(pid=pid),patch.object(R,'_kernel_read') as read,self.assertRaises(ValueError):
+                R._kernel_pid_stat(pid,self.deadline)
+            read.assert_not_called()
+        for record in [b'124 (private) S '+b'0 '*18+b'98765',b'123 (private) S 0',
+                       b'123 (private) S '+b'0 '*18+b'private']:
+            with patch.object(R,'_kernel_read',return_value=record),self.assertRaises(ValueError):
+                R._kernel_pid_stat('123',self.deadline)
+
+    @staticmethod
+    def socket_table(*rows):
+        return ('sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n'+''.join(
+            '0: 0100007F:%04X 00000000:0000 %s 00000000:00000000 00:00000000 00000000 1000 0 %s\n'%row
+            for row in rows)).encode()
+
+    def test_kernel_listener_is_fixed_port_listen_only_and_exclusive_inode(self):
+        empty=self.socket_table()
+        with patch.object(R,'_kernel_read',side_effect=[self.socket_table((9228,'0A','7'),(9229,'01','8'),(9229,'0A','9')),empty]) as read:
+            self.assertEqual(R._kernel_listeners('123',self.deadline),'9')
+        self.assertEqual([call.args[0] for call in read.call_args_list],
+            [R.KERNEL_PROC_ROOT/'123'/'net'/'tcp',R.KERNEL_PROC_ROOT/'123'/'net'/'tcp6'])
+        for first,second in [(empty,empty),
+            (self.socket_table((9229,'0A','9'),(9229,'0A','10')),empty),
+            (self.socket_table((9229,'0A','9')),self.socket_table((9229,'0A','10'))),
+            (self.socket_table((9229,'0A','0')),empty),
+            (b'private malformed',empty),
+            (self.socket_table(*[(9229,'0A',str(i)) for i in range(1,11)]),empty)]:
+            with patch.object(R,'_kernel_read',side_effect=[first,second]),self.assertRaises(ValueError):
+                R._kernel_listeners('123',self.deadline)
+
+    def test_kernel_two_snapshots_bind_owner_and_refuse_race_permission_or_deadline(self):
+        with patch.object(R.sys,'platform','linux'):
+            for owners,expected in [(('123',),'main'),(('124',),'other_container_process')]:
+                snapshot={**self.snapshot,'owners':owners}
+                with patch.object(R,'_socket_owner_snapshot',return_value=snapshot) as read:
+                    result=R.pending_socket_owner(self.identity,self.deadline)
+                self.assertEqual(result,expected);self.assertEqual(read.call_count,2)
+                self.assertNotIn('123',json.dumps(result));self.assertNotIn('private',json.dumps(result))
+            for changed in [{'members':('123','125')},{'processes':(('123','11'),('124','20'))},
+                            {'namespace':'net:[999]'},{'inode':'456790'},{'owners':('124',)}]:
+                with self.subTest(changed=changed),patch.object(R,'_socket_owner_snapshot',side_effect=[self.snapshot,{**self.snapshot,**changed}]):
+                    self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
+            for error in [PermissionError('private path'),FileNotFoundError('private process'),ValueError('private overflow'),
+                          subprocess.TimeoutExpired(['private'],1)]:
+                with patch.object(R,'_socket_owner_snapshot',side_effect=error):
+                    self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
+            with patch.object(R,'_socket_owner_snapshot',return_value=self.snapshot):
+                self.assertEqual(R.pending_socket_owner(self.identity,R.time.monotonic()-1),'unknown')
+        with patch.object(R.sys,'platform','darwin'),patch.object(R,'_socket_owner_snapshot') as read:
+            self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
+        read.assert_not_called()
+
+    def test_kernel_wire_role_requires_matched_listening_and_never_accepts_private_fields(self):
+        listening={'state':'listening','binding':'matched','code':'connection_established'}
+        for role in ['main','other_container_process','unknown']:R.validate_pending_owner(role,listening)
+        for role in ['123',{'pid':123},True,None,'foreign/private']:
+            with self.subTest(role=role),self.assertRaises(ValueError):R.validate_pending_owner(role,listening)
+        for tcp in [{'state':'closed','binding':'matched','code':'connection_refused'},
+                    {'state':'unknown','binding':'unproved','code':'probe_unproved'}]:
+            R.validate_pending_owner('unknown',tcp)
+            for role in ['main','other_container_process']:
+                with self.assertRaises(ValueError):R.validate_pending_owner(role,tcp)
+        self.assertEqual(R.PENDING_SCHEMA,'existing-release-pending-observation/v5')
+
+    def test_kernel_snapshot_bounds_shared_unmapped_descriptors_and_process_races(self):
+        # Native Linux components below exercise /proc; these finite adversarial
+        # records qualify refusal branches without touching this host's processes.
+        def run(*,fd_targets=('socket:[456789]',),names=('3',),stats=('10','20','10','20'),
+                members=(('123','124'),('123','124')),listeners=('456789','456789'),networks=('net:[123456]','net:[123456]'),end_networks=None,other_targets=(),budget=None):
+            entries=[types.SimpleNamespace(name=name,path='/private/'+name) for name in names]
+            with patch.object(R,'_kernel_members',side_effect=members), \
+                    patch.object(R,'_kernel_pid_stat',side_effect=stats), \
+                    patch.object(R,'_kernel_listeners',side_effect=listeners), \
+                    patch.object(R.os,'readlink',side_effect=[*networks,*fd_targets,*other_targets,*(end_networks or networks)]), \
+                    patch.object(R.os,'scandir',side_effect=[contextlib.nullcontext(iter(entries)),contextlib.nullcontext(iter([types.SimpleNamespace(name=str(i+8),path='/private/other'+str(i)) for i in range(len(other_targets))]))]):
+                return R._socket_owner_snapshot(self.identity,self.deadline,budget)
+        self.assertEqual(run()['owners'],('123',))
+        shared_budget={'fds':16383}
+        self.assertEqual(run(budget=shared_budget)['owners'],('123',))
+        self.assertEqual(shared_budget['fds'],16384)
+        with self.assertRaises(ValueError):run(budget=shared_budget)
+        for kwargs in [dict(fd_targets=('socket:[999]',)),dict(names=('private',)),
+                       dict(fd_targets=(PermissionError('private'),)),
+                       dict(stats=('10','20','11','20')),dict(members=(('123','124'),('123',))),
+                       dict(listeners=('456789','999')),dict(networks=('net:[123456]','net:[999]')),
+                       dict(end_networks=('net:[123456]','net:[999]')),dict(other_targets=('socket:[456789]',))]:
+            with self.subTest(kwargs=str(kwargs)),self.assertRaises((OSError,ValueError)):
+                run(**kwargs)
+        entries=(types.SimpleNamespace(name=str(i),path='/private/'+str(i)) for i in range(16385))
+        with patch.object(R,'_kernel_members',return_value=('123',)), \
+                patch.object(R,'_kernel_pid_stat',return_value='10'), \
+                patch.object(R,'_kernel_listeners',return_value='456789'), \
+                patch.object(R.os,'readlink',side_effect=lambda path:'net:[123456]' if str(path).endswith('/ns/net') else '/private/ignored'), \
+                patch.object(R.os,'scandir',return_value=contextlib.nullcontext(entries)),self.assertRaises(ValueError):
+            R._socket_owner_snapshot(self.identity,self.deadline)
+
+
+@unittest.skipUnless(R.sys.platform=='linux','actual Linux proc/socket qualification required; unavailable on Mac')
+class LinuxKernelOwnerTests(unittest.TestCase):
+    # Owned fork fixtures only. The Docker-top boundary supplies exactly the
+    # fixture members; socket tables, stat, namespaces and descriptor links are
+    # read from the real Linux kernel by the maintained implementation.
+    FIXTURE=r"""
+import json,os,signal,socket,sys
+role=sys.argv[1]
+srv=None;child=None;control=None;ack=None;port=None
+try:
+ if role in ('main','shared'):
+  srv=socket.socket();srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);srv.bind(('127.0.0.1',0));srv.listen();port=srv.getsockname()[1]
+ if role in ('other','shared'):
+  read,write=os.pipe();ready_read,ready_write=os.pipe();child=os.fork()
+  if child==0:
+   os.close(write);os.close(ready_read)
+   if role=='other':
+    srv=socket.socket();srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);srv.bind(('127.0.0.1',0));srv.listen();port=srv.getsockname()[1]
+   os.write(ready_write,(str(port)+'\n').encode());os.close(ready_write)
+   while True:
+    command=os.read(read,1)
+    if command in (b'',b'q'):break
+    if command==b'c':
+     srv.close();srv=None
+     os.write(1,b'{"childClosed":true}\n')
+   os._exit(0)
+  os.close(read);os.close(ready_write);control=write
+  raw=b''
+  while not raw.endswith(b'\n'):raw+=os.read(ready_read,32)
+  os.close(ready_read);port=int(raw)
+ print(json.dumps({'main':os.getpid(),'child':child,'port':port}),flush=True)
+ for line in sys.stdin:
+  if line.strip()=='quit':break
+  if line.strip() in ('close','replace'):
+   if child:raise RuntimeError('commands are main fixture only')
+   if srv:srv.close();srv=None
+   if line.strip()=='replace':
+    srv=socket.socket();srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);srv.bind(('127.0.0.1',port));srv.listen()
+   print(json.dumps({'replaced':True} if srv else {'closed':True}),flush=True)
+finally:
+ if child:
+  os.write(control,b'q');os.close(control);os.waitpid(child,0)
+ if srv:srv.close()
+"""
+
+    @contextlib.contextmanager
+    def fixture(self,role):
+        import signal
+        child=subprocess.Popen([R.sys.executable,'-u','-c',self.FIXTURE,role],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+        def line():
+            deadline=R.time.monotonic()+5;data=bytearray()
+            with R.selectors.DefaultSelector() as selector:
+                selector.register(child.stdout,R.selectors.EVENT_READ)
+                while R.time.monotonic()<deadline:
+                    if not selector.select(max(0,deadline-R.time.monotonic())):break
+                    part=os.read(child.stdout.fileno(),4096)
+                    if not part:break
+                    data.extend(part);self.assertLessEqual(len(data),4096)
+                    if b'\n' in data:
+                        raw,extra=data.split(b'\n',1);self.assertFalse(extra)
+                        return json.loads(raw)
+            self.fail('owned Linux fixture readiness deadline; exit='+str(child.poll()))
+        try:
+            ready=line();main=str(ready['main']);members=tuple(str(pid) for pid in [ready['main'],ready['child']] if pid)
+            identity={'container':'c'*64,'hostPid':main}
+            with patch.object(R,'_kernel_members',return_value=tuple(sorted(members,key=int))), \
+                    patch.object(R,'KERNEL_INSPECTOR_PORT',ready['port']):
+                yield identity,child,line
+        finally:
+            if child.poll() is None:
+                child.stdin.write(b'quit\n');child.stdin.flush()
+                try:child.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    # Fault cleanup may only kill this isolated fixture group.
+                    os.killpg(child.pid,signal.SIGKILL);child.wait(timeout=2)
+            child.stdin.close();child.stdout.close();child.stderr.close()
+
+    def test_real_linux_serving_wrapper_uses_actual_proc_socket_role(self):
+        # Docker/health are explicit metadata seams; actual owned process,
+        # socket, proc stat/ns/net/FD joins and two snapshots stay native.
+        with self.fixture('main') as (owned,_,__):
+            identity={**owned,'image':'sha256:'+'d'*64,'running':'true',
+                'startedAt':'2026-10-30T01:00:00.000Z','restarts':'0'}
+            request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+            with patch.object(R,'inspector_identity',return_value=identity), \
+                    patch.object(R,'pending_tcp_health',return_value={'source':R.EED,'instance':request['instanceId']}), \
+                    patch.object(R,'inspector_command',return_value=(R.EED+'\n').encode()), \
+                    patch.object(R,'pending_tcp_presence',side_effect=AssertionError('TCP forbidden')):
+                answer=R.remote(request)
+            self.assertEqual(answer['inspectorOwner'],'main')
+            self.assertEqual(R.validate_reply(answer,request),answer)
+            self.assertEqual(set(answer), {'schema','readOnly','mode','releaseSha',
+                'instanceId','inspectorOwner','limitation'})
+            self.assertNotIn('hostPid',answer)
+            self.assertNotIn('container',answer)
+
+    def test_real_linux_main_and_child_listener_roles(self):
+        for fixture,expected in [('main','main'),('other','other_container_process')]:
+            with self.subTest(role=fixture),self.fixture(fixture) as (identity,_,__):
+                role=R.pending_socket_owner(identity,R.time.monotonic()+3)
+                self.assertEqual(role,expected)
+                self.assertNotIn(identity['hostPid'],json.dumps(role))
+
+    def test_real_linux_shared_parent_child_descriptor_is_unknown(self):
+        with self.fixture('shared') as (identity,_,__):
+            self.assertEqual(R.pending_socket_owner(identity,R.time.monotonic()+3),'unknown')
+
+    def test_real_linux_disappearing_and_replaced_listener_between_snapshots_is_unknown(self):
+        for command,ack in [(b'close\n',{'closed':True}),(b'replace\n',{'replaced':True})]:
+            with self.subTest(command=command),self.fixture('main') as (identity,child,line):
+                original=R._socket_owner_snapshot
+                calls=0
+                def snapshot(*args):
+                    nonlocal calls
+                    calls+=1;value=original(*args)
+                    if calls==1:
+                        child.stdin.write(command);child.stdin.flush()
+                        self.assertEqual(line(),ack)
+                    return value
+                with patch.object(R,'_socket_owner_snapshot',side_effect=snapshot):
+                    self.assertEqual(R.pending_socket_owner(identity,R.time.monotonic()+3),'unknown')
+                self.assertEqual(calls,2)
 
 
 if __name__ == '__main__':

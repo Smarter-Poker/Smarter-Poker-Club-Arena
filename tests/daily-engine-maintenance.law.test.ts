@@ -275,6 +275,57 @@ describe('daily routine admission uses the existing protected receiver only', ()
     expect(recovery.ownerOrder).toContain('five seconds reserved for cleanup');
     expect(recovery.ownerOrder).toContain('Do not attach to or close a foreign inspector');
   });
+  it('binds the single MTT incident activation to its protected feature without extending timing', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const entry = windows.find(
+      (w: { id: string }) => w.id === '2026-10-29-mtt-registration-half-before-start'
+    );
+    expect(entry.contains).toBe('8d34e9c06efa21adc71dc343c57113d447913889');
+    expect(entry.notBefore).toBe('2026-10-29T21:25:00Z');
+    expect(entry.notAfter).toBe('2026-10-30T03:25:00Z');
+    expect(entry.announceAtChicagoMinutes).toEqual([53]);
+    expect(entry.migrations).toEqual([]);
+    expect(entry.releaseWitness).toBeUndefined();
+    // Exercise the real admission shell with an unserved/served feature. Only
+    // isolated fixture times move, so this regression remains valid after expiry.
+    const fixture = JSON.stringify({
+      version: 1,
+      windows: [
+        {
+          ...entry,
+          notBefore: new Date(Date.now() - 60_000).toISOString(),
+          notAfter: new Date(Date.now() + 60_000).toISOString(),
+        },
+      ],
+    });
+    const healthy = JSON.stringify({
+      liveness: 'ok',
+      releaseSha: 'ea9c894938e383c4b08b3f4fae965e93e8fde87d',
+    });
+    expect(
+      admit('push', '18', 'routine', healthy, undefined, undefined, {
+        windows: fixture,
+        ancestor: true,
+        served: false,
+      })
+    ).toBe(true);
+    expect(
+      admit('push', '18', 'routine', healthy, undefined, undefined, {
+        windows: fixture,
+        ancestor: true,
+        served: true,
+      })
+    ).toBe(false);
+    expect(
+      admit('push', '18', 'routine', healthy, undefined, undefined, {
+        windows: fixture,
+        ancestor: false,
+        served: false,
+      })
+    ).toBe(false);
+  });
   it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {
     const witness = {
       path: 'supabase/migrations/20261028171228_fixture_rebuy.sql',
@@ -536,6 +587,27 @@ it('every declared source witness is supported by the installed stage and host a
   for (const window of document.windows) {
     if (!Object.hasOwn(window, 'releaseWitness')) continue;
     expect(Object.keys(window.releaseWitness).sort(), window.id).toEqual(['path', 'sha256']);
+    if (window.releaseWitness.path === 'server/release/activation-floor.json') {
+      const raw = readFileSync(join(root, window.releaseWitness.path));
+      const floor = JSON.parse(raw.toString());
+      expect(floor.schema).toBe('engine-release-activation-floor/v2-owner-window');
+      expect(window.releaseWitness.sha256, window.id).toMatch(/^[0-9a-f]{64}$/);
+      if (window.id === floor.ownerWindowId) {
+        expect(window.releaseWitness.sha256).toBe(createHash('sha256').update(raw).digest('hex'));
+        expect(window.notBefore).toBe(floor.activationAt);
+        expect(window.notAfter).toBe(floor.expiresAt);
+      } else {
+        // Historical immutable requests retain their own witness and expiry.
+        // Stage/host admission never treats it as the currently selected floor.
+        expect(window.releaseWitness.sha256).not.toBe(
+          createHash('sha256').update(raw).digest('hex')
+        );
+        expect(Date.parse(window.notAfter)).toBeLessThan(Date.parse(floor.expiresAt));
+      }
+      expect(admission).toContain('floor_witness');
+      expect(admission).toContain('--find-object=');
+      continue;
+    }
     expect(window.releaseWitness.path, window.id).toMatch(
       /^(?:supabase\/migrations\/[0-9]{14}_[a-z0-9_]+\.sql|server\/scripts\/retained-original-checkpoint-guard\.mjs)$/
     );

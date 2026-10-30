@@ -344,6 +344,28 @@ describe('Players detail surfaces', () => {
     expect(name).toHaveValue('Newer Draft');
   });
 
+  it('scopes downline fees to the applied range and withdraws old rows while it loads', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    let finish!: (rows: unknown[]) => void;
+    state.getDownline.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }));
+    await waitFor(() => expect(state.getDownline).toHaveBeenCalledTimes(2));
+    const range = state.getMemberDetail.mock.calls.at(-1)![2];
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual(range);
+    expect(range.from).not.toBeNull();
+    expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
+    await act(async () =>
+      finish([{ user_id: 'child', alias: 'Ranged Child', role: 'player', total_fees: 7.22 }])
+    );
+    expect(await screen.findByText('Ranged Child')).toBeVisible();
+  });
+
   it('does not label old ledger figures with a failed new range', async () => {
     render(<MemberManagementPage />);
     await screen.findByRole('heading', { name: 'River Shark' });
@@ -577,20 +599,25 @@ describe('the member record survives a failed background refresh', () => {
     await act(async () => options.onPayload?.({}));
   };
   it('keeps the record on screen with a stale banner and no toast', async () => {
-    render(<MemberManagementPage />);
+    // Finish initial scope effects before delivering the authority event. The
+    // heading can paint before the passive effect installs its refresh ref.
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    // The heading can paint before the resolved-club authority effect settles.
+    // Flush pending passive effects before delivering the one-shot event.
+    await act(async () => {});
     // Own the authority read explicitly: rendering the heading alone does not
     // finish every initial read. A range read must not consume this failure.
     let failAuthority!: (error: Error) => void;
     const authorityRead = new Promise<never>((_, reject) => {
       failAuthority = reject;
     });
-    state.getMemberDetail.mockImplementation((_club, _user, range) =>
-      range === undefined ? authorityRead : Promise.resolve(memberDetail)
-    );
+    state.getMemberDetail.mockReturnValue(authorityRead);
     await authorityEvent();
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
-    expect(state.getMemberDetail.mock.calls[1][2]).toBeUndefined();
+    expect(state.getMemberDetail.mock.calls[1][2]).toEqual(state.getMemberDetail.mock.calls[0][2]);
     await act(async () => failAuthority(new Error('offline')));
     const banner = await screen.findByRole('alert');
     expect(banner).toHaveTextContent('Member Connection Interrupted');
@@ -601,11 +628,7 @@ describe('the member record survives a failed background refresh', () => {
     expect(state.toast.error).not.toHaveBeenCalled();
 
     // A second failed background read still does not toast.
-    state.getMemberDetail.mockImplementation((_club, _user, range) =>
-      range === undefined
-        ? Promise.reject(new Error('still offline'))
-        : Promise.resolve(memberDetail)
-    );
+    state.getMemberDetail.mockRejectedValue(new Error('still offline'));
     await authorityEvent();
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(3));
     expect(state.toast.error).not.toHaveBeenCalled();
@@ -629,11 +652,22 @@ describe('the member record survives a failed background refresh', () => {
     expect(state.toast.error).not.toHaveBeenCalled();
   });
 
+  it('refreshes downline fee rows on the committed record event without a range change', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    state.getDownline.mockResolvedValueOnce([
+      { user_id: 'child', alias: 'Updated Downline', role: 'player', total_fees: 7.22 },
+    ]);
+    await authorityEvent();
+    expect(await screen.findByText('Updated Downline')).toBeVisible();
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual({ from: null, to: null });
+  });
+
   it('keeps a shown downline when only its refresh fails', async () => {
     render(<MemberManagementPage />);
     expect(await screen.findByText('Cyan Rail')).toBeVisible();
     state.getDownline.mockRejectedValueOnce(new Error('downline down'));
-    fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }));
+    await authorityEvent();
     expect(
       await screen.findByText(
         'Could Not Refresh The Downline. Showing The Previous Successful Read.'

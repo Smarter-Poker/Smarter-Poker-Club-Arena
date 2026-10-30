@@ -119,12 +119,16 @@ describe('native publishing requires the exact origin verification', () => {
       ).if
     ).toBe("steps.target.outputs.component == 'client'");
     expect(tests.run).toContain(
-      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/16'
     );
     expect(tests.run).not.toMatch(/origin\/main|github\.event\.before|continue-on-error/);
     const ci = parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
-    const workers =
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}";
+    expect(client.strategy).toEqual({
+      'fail-fast': true,
+      matrix: { shard: Array.from({ length: 16 }, (_, index) => index + 1) },
+    });
+    expect(ci.jobs.unit_shards.strategy.matrix.shard).toEqual([1, 2, 3, 4]);
+    const workers = 4;
     expect(client.env.VITEST_MAX_THREADS).toBe(workers);
     expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(workers);
     expect(workflow.jobs.production.concurrency).toEqual({

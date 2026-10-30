@@ -68,6 +68,7 @@ import { ratioOrUnmeasured } from './stats/format';
 import { RANGES, num, str, type FullStats, type HandMode, type HandRow } from './stats/types';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useStatsPulse } from '../hooks/useStatsPulse';
+import StatsLiveRecords from './stats/StatsLiveRecords';
 import { resolvedTimeZone } from '../lib/localTime';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
@@ -532,6 +533,7 @@ export default function PlayerStatsPage() {
   // was never read here, so a fault rendered as "Rake Ledger Empty".
   const [rakeError, setRakeError] = useState(false);
   const [rakeReload, setRakeReload] = useState(0);
+  const [liveRevision, setLiveRevision] = useState(0);
   useEffect(() => {
     setRakeError(false);
     if (!isOwnProfile || !user?.id) {
@@ -568,7 +570,7 @@ export default function PlayerStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id, windowDays, rakeReload, statsScope, selectedClubId]);
+  }, [isOwnProfile, user?.id, windowDays, rakeReload, statsScope, selectedClubId, liveRevision]);
   const [cashOpportunityStats, setCashOpportunityStats] = useState<CashOpportunityStats | null>(
     null
   );
@@ -624,6 +626,7 @@ export default function PlayerStatsPage() {
     selectedClubId,
     statsTimezone,
     cashOpportunityReload,
+    liveRevision,
   ]);
   const openCashEvidence = useCallback(
     (metric: CashEvidenceMetric) => {
@@ -1099,9 +1102,14 @@ export default function PlayerStatsPage() {
    * range closure from overwriting the current window. */
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleRefresh = useCallback(() => {
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    // Keep the first deadline: a busy table must not postpone the read forever.
+    if (refreshTimerRef.current) return;
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
+      // Rake and opportunities are separate reads, so an overview refresh alone
+      // cannot update them. Invalidate them even when the overview read fails.
+      clearStatsRangeMemo();
+      setLiveRevision((revision) => revision + 1);
       void loadRef.current?.({ fresh: true });
     }, 2000);
   }, []);
@@ -1263,6 +1271,7 @@ export default function PlayerStatsPage() {
     wantsAllTime,
     rangeKey,
     allTimeReload,
+    liveRevision,
     isMounted,
     statsScope,
     cacheIdentityFor,
@@ -1270,7 +1279,7 @@ export default function PlayerStatsPage() {
     statsTimezone,
   ]);
   const allTimeStats: FullStats | null = rangeKey === 'all' ? full : allTimeFetched;
-  const comparisonKey = `${user?.id ?? ''}:${targetUserId ?? ''}:${statsScope}:${rangeKey}:${statsTimezone}:${clubs.map((club) => club.id).join(',')}`;
+  const comparisonKey = `${user?.id ?? ''}:${targetUserId ?? ''}:${statsScope}:${rangeKey}:${statsTimezone}:${clubs.map((club) => club.id).join(',')}:${liveRevision}`;
   const comparisonRequestRef = useRef(0);
   const loadClubComparison = useCallback(async () => {
     if (!targetUserId || !isOwnProfile || clubs.length === 0) return;
@@ -1579,6 +1588,12 @@ export default function PlayerStatsPage() {
   );
   return (
     <div className={`stats-page${privacyPresentationMode ? ' stats-page--presentation' : ''}`}>
+      <StatsLiveRecords
+        userId={targetUserId}
+        clubIds={selectedClubId ? [selectedClubId] : clubs.map((club) => club.id)}
+        enabled={isOwnProfile && !clubsLoading}
+        onChange={scheduleRefresh}
+      />
       <PageBar
         title="Player Intelligence"
         titleId="stats-page-title"

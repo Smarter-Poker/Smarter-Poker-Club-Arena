@@ -124,7 +124,8 @@ describe('the engine and ACL expose only the atomic doors', () => {
 
   it('calls the receipt-verified atomic RPC before legacy finish work, and fails closed', () => {
     expect(MANAGER).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
-    expect(SETTLEMENT_RPC).toContain("supabase.rpc('fn_settle_satellite_tournament'");
+    expect(SETTLEMENT_RPC).toContain("authority.rpc('fn_settle_satellite_tournament'");
+    expect(SETTLEMENT_RPC).toContain('const authority = maintenanceSupabase;');
     expect(MANAGER).not.toContain("supabase.rpc('fn_award_satellite_seat'");
     const finish = ELIMINATIONS.slice(ELIMINATIONS.indexOf('protected async finishTournament'));
     const satellite = finish.indexOf('if (isSatelliteFinish) {');

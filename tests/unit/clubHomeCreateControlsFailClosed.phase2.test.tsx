@@ -144,6 +144,8 @@ async function mountOnNlhTab() {
   await flush();
   await act(async () => h.clubReads[0].resolve({ data: CLUB, error: null }));
   await flush();
+  fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
+  await flush();
   /* The ALL tab never has a create control; NLH is a tab that does. */
   fireEvent.click(screen.getByRole('tab', { name: /NLH/ }));
   await flush();

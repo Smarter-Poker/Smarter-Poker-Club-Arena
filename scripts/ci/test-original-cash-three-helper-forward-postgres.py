@@ -3,6 +3,24 @@ import json,re,hashlib,subprocess,shutil,os,uuid,argparse,tempfile
 R=Path(__file__).resolve().parents[2];F=R/'scripts/ci/fixtures/original-cash-three-helper-forward'
 ap=argparse.ArgumentParser();ap.add_argument('--pg-bin',type=Path,default=Path(os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin')));ap.add_argument('--scratch',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);args=ap.parse_args();assert args.scratch.is_dir()and not args.output.exists()
 O=Path(tempfile.mkdtemp(prefix='three-',dir=args.scratch));E=json.loads((F/'expected27.json').read_text());binding=json.loads((F/'source-binding.json').read_text());S=(R/'supabase/migrations'/binding['migration']).read_text();PG=args.pg_bin;data=O/'data';sock=O;port='55493';started=False
+# Fail closed before native bootstrap: one original installed TQ in each phase,
+# and both actual wrapper critical rows must carry exactly that canonical body.
+tq_rows=[]
+for phase in ('before','after'):
+ rows=[r for r in E[phase] if r['metadata']['proname']=='fn_accounting_tournament_week_quality']
+ assert len(rows)==1,('one original TQ fixture required',phase)
+ row=rows[0];assert hashlib.md5(row['definition'].encode()).hexdigest()=='28a130f35342357a4dfa61043f1ce2a2'
+ assert hashlib.md5(row['metadata']['prosrc'].encode()).hexdigest()=='a9271e7d468df1e2453aafbd3674a1ee'
+ tq_rows.append(row)
+assert tq_rows[0]==tq_rows[1]
+critical=[]
+for block in re.findall(r'\$eight\$(.*?)\$eight\$',S,re.S):
+ rows=[r for r in json.loads(block) if r['signature'].removeprefix('public.')==tq_rows[0]['signature'].removeprefix('public.')]
+ assert len(rows)==1
+ assert rows[0]['md5']==hashlib.md5(tq_rows[0]['definition'].encode()).hexdigest()
+ assert rows[0]['metadata']==tq_rows[0]['metadata']
+ critical.append(rows[0])
+assert len(critical)==2
 before={r['signature']:r for r in E['before']};after={r['signature']:r for r in E['after']};changed=[k for k in before if before[k]!=after[k]];assert len(changed)==3
 lit=lambda x:"'"+x.replace("'","''")+"'"
 def call(s):
@@ -29,6 +47,12 @@ try:
  for k,r in before.items():
   assert baseline[k]['md5']==hashlib.md5(r['definition'].encode()).hexdigest(),k
   assert baseline[k]['metadata']['proacl']==r['metadata']['proacl'],('actual ACL not faithfully imported',k)
+ # Execute both exact source-owned critical TQ md5/full-metadata predicates;
+ # adapt only native catalog OIDs, never source body/ACL/config.
+ for r in critical:
+  local=dict(r);local['metadata']=dict(r['metadata'])
+  for k in ('oid','proowner','pronamespace','prolang','prorettype'):local['metadata'][k]=baseline[r['signature']]['metadata'][k]
+  must("DO $critical$DECLARE e jsonb:=$row$"+json.dumps(local,separators=(',',':'))+"$row$::jsonb;p pg_proc%ROWTYPE;BEGIN SELECT*INTO STRICT p FROM pg_proc WHERE oid=to_regprocedure(e->>'signature');IF md5(pg_get_functiondef(p.oid))IS DISTINCT FROM e->>'md5'OR to_jsonb(p)IS DISTINCT FROM e->'metadata'THEN RAISE EXCEPTION 'actual_source_TQ_critical_refused';END IF;END$critical$;")
  expected=json.loads(json.dumps(baseline))
  for k in changed:
   m=expected[k]['metadata'];r=after[k];m['prosrc']=r['metadata']['prosrc'];n=m['proname'];
@@ -50,7 +74,7 @@ try:
  for label,fault in [('missing_PK','ALTER TABLE union_pnl_cash_outcome_touches DROP CONSTRAINT union_pnl_cash_outcome_touches_pkey;'),('deferred_PK','ALTER TABLE union_pnl_cash_outcome_touches DROP CONSTRAINT union_pnl_cash_outcome_touches_pkey;ALTER TABLE union_pnl_cash_outcome_touches ADD PRIMARY KEY(table_id,hand_number)DEFERRABLE;')]:
   r=call('BEGIN;'+fault+pk+'ROLLBACK;');assert r.returncode!=0 and 'touch_candidate_primary_identity_changed'in r.stdout;must('BEGIN;'+pk+'ROLLBACK;');results.append(label)
  driver=S.split('BEGIN;',1)[1].rsplit('COMMIT;',1)[0];must('BEGIN;CREATE TEMP TABLE ns(x int);CREATE FUNCTION pg_temp.parse_three()RETURNS void LANGUAGE plpgsql AS $parse$BEGIN IF false THEN '+driver+' END IF;END;$parse$;ROLLBACK;')
- result={'passed':True,'source_only':True,'source_sha256':hashlib.sha256(S.encode()).hexdigest(),'exact27_canonical_before':True,'exact3_changed':changed,'other24_fullmetadata_and_canonical_definitions_byteunchanged':True,'native_cases':results,'full_wrapper_grammar_compiles':True,'native_GEN_gate_not_executed_not_actualGENproof':True,'unchanged_actual_GEN_definition':True,'fivepaid84_checks':'Exact existing query source preserved and full wrapper grammar compiled; no financial tables/rows faked; actual pre/post still required','normal_maintenance_stats_history_admission':'Full source grammar only; no fake actual edbd install or maintenance admission','no_semantic_bags_repeated':True};args.output.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
+ result={'passed':True,'source_only':True,'source_sha256':hashlib.sha256(S.encode()).hexdigest(),'exact27_canonical_before':True,'exact3_changed':changed,'other24_fullmetadata_and_canonical_definitions_byteunchanged':True,'native_cases':results,'full_wrapper_grammar_compiles':True,'native_GEN_gate_not_executed_not_actualGENproof':True,'unchanged_actual_GEN_definition':True,'fivepaid84_checks':'Exact existing query source preserved and full wrapper grammar compiled; no financial tables/rows faked; actual pre/post still required','normal_maintenance_stats_history_admission':'Full source grammar only; no fake required90331 install or maintenance admission','no_semantic_bags_repeated':True,'original_TQ_fixture_invariants_before_native_bootstrap':True,'actual_two_source_critical_TQ_md5_and_fullmetadata_predicates_executed':True,'expected27_sha256':hashlib.sha256((F/'expected27.json').read_bytes()).hexdigest()};args.output.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
 finally:
  if started:subprocess.run([str(PG/'pg_ctl'),'-D',str(data),'-m','fast','-w','stop'],stdout=subprocess.DEVNULL,check=True)
  if data.exists():shutil.rmtree(data)

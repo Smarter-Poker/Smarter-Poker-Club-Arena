@@ -11,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
+ENTRY_READ = SOURCE[SOURCE.index('legacy_entry_read() {'):SOURCE.index('legacy_entry_trace() {')]
 RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_break_deadline() {')]
 CERTIFICATE = SOURCE[SOURCE.index('maintenance_certificate() {'):SOURCE.index('# This is one optional event')]
 
@@ -34,7 +35,7 @@ def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=
     historical eligible flag. Like the real seal since 2026-10-04, the stub
     answers `unavailable` to any reservation without `--cause`.
     """
-    with tempfile.TemporaryDirectory(prefix='recovery-owner-') as temp:
+    with tempfile.TemporaryDirectory(prefix='recovery-owner-', dir=ROOT.parent) as temp:
         events = Path(temp) / 'events'
         request_root = Path(temp) / 'requests'
         request_root.mkdir()
@@ -59,6 +60,7 @@ def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=
             calls_script.append(f'NOW=$((NOW + {advance}))')
         script = f'''
 set -euo pipefail
+{ENTRY_READ}
 EVENTS={shlex.quote(str(events))}
 SHA={TARGET}; RUN_ID=900-2; REPO_DIR=/fixture; CONTAINER=fixture; RELEASE_SEAL=fixture-seal
 REQUEST_ROOT={shlex.quote(str(request_root))}
@@ -138,7 +140,7 @@ timeout() {{
       {answer_branches}
       *) echo unavailable ;;
     esac
-  elif [ "$1" = docker ] && [ "$2 $3 $4 $5" = "exec $CONTAINER node -e" ]; then
+  elif [ "$1" = docker ] && [ "${{2:-}} ${{3:-}} ${{4:-}} ${{5:-}} ${{7:-}} ${{8:-}}" = "exec $CONTAINER sh -c checkpoint-readiness -e" ]; then
     [ "$LOCK_HELD" = 1 ]; record INSPECTOR_READINESS
     return {int(inspector_status)}
   elif [ "$1" = docker ]; then
@@ -161,6 +163,7 @@ RECOVERY_ADMISSION_MISSED={int(missed)}
 
 def missed(*, waiting_since, remaining_ms, now=1800003360):
     script = f'''set -euo pipefail
+{ENTRY_READ}
 BREAK_WINDOW_MS=300000
 BREAK_ADMISSION_MIN_BREAK_MS=260000
 date() {{ echo {now}; }}
@@ -177,6 +180,7 @@ echo "$RECOVERY_ADMISSION_MISSED"
 def certificate(maintenance, *, running=True, transport=True, http=200, minimum=None):
     response = json.dumps({'running': running, 'weeklyPayout': None, 'maintenance': maintenance}) + f'\n{http}'
     script = f'''set -euo pipefail
+{ENTRY_READ}
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000

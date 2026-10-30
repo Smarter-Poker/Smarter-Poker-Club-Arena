@@ -108,7 +108,7 @@ describe('one publication transaction follows parallel preparation', () => {
       const body = { ...job };
       delete body.if;
       delete body.needs;
-      // Assert only the approved warm routes and two-worker client cap, then
+      // Assert only the approved warm routes and hardware-bounded client worker cap, then
       // retain the complete original command/permission/secret snapshot.
       if (
         [
@@ -127,7 +127,7 @@ describe('one publication transaction follows parallel preparation', () => {
           label +
           "' || 'ubuntu-latest' }}";
         if (key === 'client-tests') {
-          expect(body.env.VITEST_MAX_THREADS).toBe(2);
+          expect(body.env.VITEST_MAX_THREADS).toBe(4);
           body.env = {
             ...body.env,
             VITEST_MAX_THREADS:

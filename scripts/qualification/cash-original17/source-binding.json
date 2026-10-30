@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 251814,
-      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+      "bytes": 251893,
+      "sha256": "066e468bcbd35fe23a5dbe96ad6dc33e1edc294aab7c14afecf24f397b099cf8"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -1431,5 +1431,17 @@
       "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states, verdicts and historical source audits are preserved."
+  },
+  "clientExecutionBudgetSourceAudit20261029": {
+    "scope": "Source identity only: ten complete CSS shards and requested four client workers bounded by actual CPU capacity; all financial matrices, assertions, independent browser gates, deadlines and production safeguards preserved.",
+    "previousCiPin": {
+      "bytes": 251814,
+      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+    },
+    "currentCiPin": {
+      "bytes": 251893,
+      "sha256": "066e468bcbd35fe23a5dbe96ad6dc33e1edc294aab7c14afecf24f397b099cf8"
+    },
+    "qualification": "No financial recertification, SQL installation or live certification. Every historical input, audit, financial state and verdict is unchanged."
   }
 }

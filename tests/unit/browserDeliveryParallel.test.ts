@@ -44,8 +44,8 @@ describe('browser qualification parallel delivery', () => {
     expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
     for (const key of ['retain-runtime', 'publish-to-app', 'publish-to-origin'])
       expect(transaction.jobs[key]['runs-on']).toBe('ubuntu-latest');
-    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(2);
-    expect(publishing.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(2);
+    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(4);
+    expect(publishing.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(4);
     for (const key of [
       'publish-record-gateway',
       'bootstrap-record-gateway',
@@ -61,8 +61,8 @@ describe('browser qualification parallel delivery', () => {
     });
   });
 
-  it('partitions the existing browser selector into five complete, non-fail-fast shards', () => {
-    expect(browser.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4, 5] } });
+  it('partitions the existing browser selector into ten complete, non-fail-fast shards', () => {
+    expect(browser.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] } });
     expect(browser['timeout-minutes']).toBe(30);
     expect(browser['continue-on-error']).toBeUndefined();
     const beats = browser.steps.find((value: { id?: string }) => value.id === 'css-beats');
@@ -70,7 +70,7 @@ describe('browser qualification parallel delivery', () => {
     expect(beats.run).toContain('node scripts/ci/ui-test-selection.mjs browser ');
     expect(beats.run).toContain('--project=chromium --project=webkit-footer');
     expect(beats.run).toContain('--retries=1');
-    expect(beats.run.trim()).toMatch(/--shard=\$\{\{ matrix\.shard \}\}\/5$/);
+    expect(beats.run.trim()).toMatch(/--shard=\$\{\{ matrix\.shard \}\}\/10$/);
     expect((beats.run.match(/tests\/e2e\//g) || []).length).toBe(26);
     for (const value of browser.steps) expect(value['continue-on-error']).toBeUndefined();
     const evidence = step('Preserve failed CSS beat browser evidence');

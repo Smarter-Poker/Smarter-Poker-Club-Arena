@@ -230,8 +230,15 @@ fi
 
 set +e
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/retained-original-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | checkpoint_final_read docker exec -i "$CONTAINER_ID" env -u NODE_OPTIONS -u NODE_PATH node --no-inspect --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"
-CHECKPOINT_RC=$?
+  | checkpoint_final_read docker exec -i "$CONTAINER_ID" env -u NODE_OPTIONS -u NODE_PATH node --no-inspect --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS" \
+  | checkpoint_final_read python3 "$CONTROL_DIR/retain-checkpoint-observation.py" "$CHECKPOINT_INTENT" "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"
+CHECKPOINT_PIPE_STATUS=("${PIPESTATUS[@]}")
+CHECKPOINT_RC=${CHECKPOINT_PIPE_STATUS[1]}
+# A receipt is observation only. Collector/source loss cannot certify success
+# or turn the original helper's failure into a deferral.
+if [ "${CHECKPOINT_PIPE_STATUS[0]}" != 0 ] || [ "${CHECKPOINT_PIPE_STATUS[2]}" != 0 ]; then
+  CHECKPOINT_RC=1
+fi
 set -e
 if [ "$CHECKPOINT_RC" = 75 ]; then
   # The guard came back, closed its inspector, and reported a capture-then-

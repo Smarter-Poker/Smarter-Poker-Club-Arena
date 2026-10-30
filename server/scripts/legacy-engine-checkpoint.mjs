@@ -628,6 +628,58 @@ function nativeCensusArrayCount(value, limit) {
   return Number.isSafeInteger(count) && count <= limit ? count : null;
 }
 
+// Original-client observation only; never a cleanup or release certificate.
+export async function writeCheckpointGuardObservation(
+  checkpoint,
+  intentText,
+  sourceSha,
+  instanceId
+) {
+  const intent = JSON.parse(intentText);
+  const receipt = {
+    schema: 'legacy-checkpoint-guard-observation/v1',
+    runId: intent.runId,
+    controlSha: intent.controlSha,
+    sourceSha: sourceSha,
+    instanceId: instanceId,
+    intentSha256: process
+      .getBuiltinModule('node:crypto')
+      .createHash('sha256')
+      .update(intentText)
+      .digest('hex'),
+    cleanupStatus: 'not_yet_verified',
+    retryAllowed: false,
+    checkpoint: Object.fromEntries(
+      Object.entries(checkpoint).filter(([key]) =>
+        [
+          'schema',
+          'ok',
+          'reason',
+          'stage',
+          'attemptedTables',
+          'completedCalls',
+          'verifiedTables',
+          'bankCount',
+          'uninitializedSeats',
+          'remainingMs',
+          'readyForRestart',
+          'checkpointOutcome',
+          'paidAccountingQualification',
+          'restartAuthorized',
+          'sealedManagers',
+        ].includes(key)
+      )
+    ),
+  };
+  const line = 'LEGACY_CHECKPOINT_GUARD_OBSERVATION=' + JSON.stringify(receipt) + '\n';
+  if (Buffer.byteLength(line) > 8192) throw refused('checkpoint observation refused');
+  // A lost host collector must not crash this helper before finally cleanup.
+  process.stdout.on('error', () => {});
+  await new Promise((resolve, reject) =>
+    process.stdout.write(line, (error) => (error ? reject(error) : resolve()))
+  );
+}
+
 export async function runLegacyEngineCheckpoint({
   pid,
   instanceId,
@@ -635,6 +687,7 @@ export async function runLegacyEngineCheckpoint({
   moduleExpression,
   guard,
   custodyIntent = null,
+  onGuardResult = null,
   discoverEngines = false,
   port = 9229,
   workBudgetMs = 20000,
@@ -976,6 +1029,30 @@ export async function runLegacyEngineCheckpoint({
       )
     );
     result = checkpointSummary(response?.value);
+    // A known guard result must survive a later cleanup loss. This is only
+    // an observation; the final cleanup outcome alone controls this attempt.
+    if (onGuardResult && typeof result?.ok === 'boolean') {
+      operation = 'guardObservation';
+      let observationTimer;
+      try {
+        await Promise.race([
+          onGuardResult(result),
+          new Promise((_, reject) => {
+            const expire = () => {
+              const left = deadline - Date.now();
+              if (left > 0) observationTimer = setTimeout(expire, left);
+              else reject(refused('checkpoint observation outcome unknown'));
+            };
+            observationTimer = setTimeout(
+              expire,
+              remaining(deadline, effectiveWorkBudgetMs, operation)
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(observationTimer);
+      }
+    }
     if (result?.ok !== true) throw refused('native checkpoint did not qualify');
   } catch (error) {
     failure =
@@ -1168,6 +1245,13 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     discoverEngines: retainedEed,
     custodyIntent: JSON.parse(process.argv[4] ?? 'null'),
     checkpointDeadlineMs: Number(process.argv[5]),
+    onGuardResult: (checkpoint) =>
+      writeCheckpointGuardObservation(
+        checkpoint,
+        process.argv[4],
+        checkpointRelease,
+        process.argv[2]
+      ),
   }).catch(() => ({
     ok: false,
     reason: 'legacy checkpoint invocation refused',

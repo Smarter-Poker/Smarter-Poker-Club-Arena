@@ -49,6 +49,7 @@ REQUIRED_FILES=(
   retire-owned-main-inspector.mjs
   legacy-engine-checkpoint.sh
   legacy-engine-checkpoint.mjs
+  retain-checkpoint-observation.py
   legacy-engine-checkpoint-guard.mjs
   retained-original-checkpoint-guard.mjs
   engine-release-recover.sh
@@ -328,7 +329,7 @@ else
     bash -n "$GENERATION_STAGE/$script"
   done
   for script in engine-release-seal.py engine-release-database-proof.py \
-    engine-release-inflight-hands.py engine-release-activation-floor.py main-inspector-retirement.py; do
+    engine-release-inflight-hands.py engine-release-activation-floor.py main-inspector-retirement.py retain-checkpoint-observation.py; do
     python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
       "$GENERATION_STAGE/$script"
   done

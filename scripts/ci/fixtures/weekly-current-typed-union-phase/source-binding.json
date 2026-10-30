@@ -1,0 +1,12 @@
+{
+  "controller_migration": "20261030014346_weekly_union_round_receipts_keep_their_original_zero_payer_d.sql",
+  "controller_migration_sha256": "2b6eaf53f94dc4b6d6138a1e28e981a28ce9a85694284df45a4b2e9660c9f8ea",
+  "fixture_sha256": {
+    "controller-migration-body.sql": "2b6eaf53f94dc4b6d6138a1e28e981a28ce9a85694284df45a4b2e9660c9f8ea",
+    "union_setup.py": "9753f358860aac0db76af1283742f9c4120a2b6d6065362181b47dd16f8e9940",
+    "README.md": "c38f4cad4503194a6b6f69119136c26512934b12716d07749808a190ef6905b2",
+    "current-union-dependencies.json": "f07d97ea5845f4ff9995a14e741bece37a55786515595d822881752864088b6b",
+    "current-controller-catalog.json": "7cead478597ad992e4e22f3b655aea42b59cfa44eaa828423b8ef8c15a5b6dd5",
+    "global_extension.py": "a7be6ac26fbb10608a6fe2e948e70cc0f75a5fd93578617bcdcb587e53955f28"
+  }
+}

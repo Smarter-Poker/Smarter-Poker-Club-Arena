@@ -2367,6 +2367,8 @@ jobs:
           set -o pipefail
           mkdir -p artifacts/weekly-payout-owned-pause
           python3 -B scripts/ci/test-weekly-payout-financial-phase-postgres.py --pg-bin /usr/lib/postgresql/17/bin --scratch-root "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/financial.log
+          python3 -B scripts/ci/test-weekly-current-typed-union-phase-postgres.py --controller-migration supabase/migrations/20261030014346_weekly_union_round_receipts_keep_their_original_zero_payer_d.sql --pg-bin /usr/lib/postgresql/17/bin --scratch-root "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/current-typed-union.log
+          cp -R "$RUNNER_TEMP/weekly-current-typed-union-phase-output" artifacts/weekly-payout-owned-pause/current-typed-union-evidence
       - name: Preserve original weekly payout qualification evidence
         if: always() && matrix.shard == 1
         uses: actions/upload-artifact@v4

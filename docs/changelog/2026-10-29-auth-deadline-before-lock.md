@@ -5,7 +5,9 @@ request, while auth-js could already own the shared native session lock. That
 module download had no deadline, so a stalled chunk could prevent the existing
 network/body timeout from ever starting.
 
-Import the helper eagerly with the Supabase client. Authentication requests now
+Import the helper eagerly with the Supabase client. The branch-owned entry-module
+fragment records this intentional first-paint dependency and its reason, while
+preserving the existing reviewed-module guard and bundle-size budget. Authentication requests now
 start their existing deadline without another module download. Native cross-tab
 serialization, the single SDK token refresher, token persistence and existing
 timeout/session-retention behavior remain intact. No lock stealing, recurring

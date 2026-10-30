@@ -54,7 +54,7 @@ async function fixtureInspect() {
   return value;
 }
 async function fixtureHealth(container, path = '/health', waitMs = 1500) {
-  assert.ok(['/health', '/fixture-delay-close'].includes(path));
+  assert.ok(['/health', '/fixture-reopen', '/fixture-delay-close'].includes(path));
   const expression = `const http=require('node:http');const r=http.get('http://127.0.0.1:8080${path}',res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>{if(res.statusCode!==200)process.exit(2);console.log(b);});});r.on('error',()=>process.exit(3));r.setTimeout(${waitMs},()=>{r.destroy();process.exit(4);});`;
   return JSON.parse(
     await fixtureDocker(
@@ -77,7 +77,7 @@ async function fixtureHealth(container, path = '/health', waitMs = 1500) {
 }
 async function fixtureNativeEntry(container, identity, scenario = 'success') {
   assert.ok(['success', 'deferred-close-timeout'].includes(scenario));
-  const source = [
+  const maintainedSource = [
     'retire-owned-main-inspector.mjs',
     'main-inspector-socket-qualification.mjs',
     'main-inspector-retirement-entry.mjs',
@@ -86,6 +86,41 @@ async function fixtureNativeEntry(container, identity, scenario = 'success') {
       fs.readFileSync(new URL('../../server/scripts/' + name, import.meta.url), 'utf8')
     )
     .join('\n');
+  // The fault belongs after actual kernel close qualification. Starting busy
+  // JavaScript before attachment can correctly refuse at attach and never
+  // exercise the native-close interruption this case is intended to qualify.
+  // Observe the real fixed-command send only in the UNKNOWN fixture: request
+  // the target's ordinary busy loop, then forward the exact native bytes once.
+  // No Inspector reply, ACK, close implementation or deadline is substituted.
+  const closeBoundaryLoad =
+    scenario === 'deferred-close-timeout'
+      ? `
+const fixtureDelayHttp = await import('node:http');
+const fixtureActualSend = WebSocket.prototype.send;
+let fixtureDelayTriggered = false;
+WebSocket.prototype.send = function(bytes) {
+ const command = JSON.parse(bytes);
+ if(command.method !== 'Runtime.evaluate' || command.params?.expression !== OWNED_MAIN_INSPECTOR_CLOSE_EXPRESSION)
+  return fixtureActualSend.call(this, bytes);
+ if(fixtureDelayTriggered) throw new Error('fixture_native_close_replayed');
+ fixtureDelayTriggered = true;
+ const socket = this;
+ const request = fixtureDelayHttp.get('http://127.0.0.1:8080/fixture-delay-close', response => {
+  let body = '';
+  response.on('data', chunk => { body += chunk; if(body.length > 4096) request.destroy(); });
+  response.on('end', () => {
+   const observed = JSON.parse(body);
+   if(response.statusCode !== 200 || observed.pid !== 1 || observed.gameActions !== 0 || !Number.isSafeInteger(observed.busyUntil) || observed.busyUntil <= Date.now()+20000)
+    throw new Error('fixture_close_boundary_load_unproved');
+   fixtureActualSend.call(socket, bytes);
+  });
+ });
+ request.setTimeout(1500, () => request.destroy(new Error('fixture_close_boundary_load_timeout')));
+ request.on('error', () => { console.error('fixture_close_boundary_load_failed'); process.exit(90); });
+};
+`
+      : '';
+  const source = closeBoundaryLoad + maintainedSource;
   assert.ok(
     fixtureWorkDeadline - Date.now() >= 21000,
     'full native20s plus CLI exit observation must fit the original fixture work bound'
@@ -215,7 +250,11 @@ async function fixtureNativeEntry(container, identity, scenario = 'success') {
         assert.match(claimDigest, /^[a-f0-9]{64}$/);
         const outcome = JSON.parse(lines[1]);
         assert.equal(outcome.ok, scenario === 'success');
-        assert.equal(outcome.stage, scenario === 'success' ? 'complete' : 'native_close');
+        assert.equal(
+          outcome.stage,
+          scenario === 'success' ? 'complete' : 'native_close',
+          JSON.stringify(outcome)
+        );
         assert.equal(outcome.closeRequested, true);
         assert.equal(outcome.closeAcknowledged, true);
         assert.equal(outcome.connectionClosed, scenario === 'success');
@@ -255,8 +294,10 @@ const witness=${JSON.stringify(fixtureWitness)};
 require('node:http').createServer((request,response)=>{
  response.setHeader('Content-Type','application/json');
  const health={pid:process.pid,version:process.version,witness,gameActions:0};
- if(request.url==='/fixture-delay-close') {
+ if(request.url==='/fixture-reopen') {
   require('node:inspector').open(9229,'127.0.0.1',false);
+  response.end(JSON.stringify(health));
+ } else if(request.url==='/fixture-delay-close') {
   const busyUntil=Date.now()+25000;
   response.once('finish',()=>setImmediate(()=>{
    // Ordinary busy JavaScript permits V8 Inspector command interrupts. The
@@ -337,17 +378,7 @@ require('node:http').createServer((request,response)=>{
       2000
     );
     assert.equal(absence, 'listener-absent');
-    const delayed = await fixtureHealth(container, '/fixture-delay-close');
-    assert.deepEqual(
-      {
-        pid: delayed.pid,
-        version: delayed.version,
-        witness: delayed.witness,
-        gameActions: delayed.gameActions,
-      },
-      healthBefore
-    );
-    assert.ok(Number.isSafeInteger(delayed.busyUntil) && delayed.busyUntil > Date.now() + 20000);
+    assert.deepEqual(await fixtureHealth(container, '/fixture-reopen'), healthBefore);
     const timeoutEntry = await fixtureNativeEntry(
       container,
       fixtureTuple(before),

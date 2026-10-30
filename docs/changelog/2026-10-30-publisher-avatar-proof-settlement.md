@@ -11,3 +11,10 @@ until that response arrives, then resolve the removal and await the existing
 no-image assertion. Preserve the member identity assertion. A controlled pending
 response reproduces the old immediate assertion failure. No production behavior,
 assertion outcome, timeout or test selection changes.
+
+The newly available client report also showed Lightning lobby verification
+waiting for cash rows before its existing Cash Games browse action. Move that
+action before readiness. The executable selector regression reproduces the old
+ordering failure and exercises the real section helper. Preserve the real
+Lightning navigation and the prohibition on admission or buy-in RPCs. Reuse
+merged #8762 for the separately owned Cashier contract corrections.

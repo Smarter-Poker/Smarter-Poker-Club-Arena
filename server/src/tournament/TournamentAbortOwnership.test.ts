@@ -154,8 +154,14 @@ describe('abort certificates retain physical source and lease identity', () => {
     };
     const server = Object.create(GameServer.prototype) as any;
     server.tournamentEngines = new Map([[tournament, manager]]);
-    server.stopTournamentManagerIfOwned = vi.fn(async () => true);
-    io.rpc.mockResolvedValueOnce({
+    server.tournamentManagerPendingLeaseReleases = new Map();
+    server.tournamentManagerLeaseReleaseOperations = new Map();
+    server.tournamentManagerAdmissionLeaseGenerations = new Map();
+    server.stopTournamentManagerIfOwned = vi.fn(async () => {
+      server.tournamentEngines.delete(tournament);
+      return true;
+    });
+    io.rpc.mockResolvedValue({
       data: {
         ok: true,
         operation_id: operation,
@@ -202,7 +208,12 @@ describe('abort certificates retain physical source and lease identity', () => {
   it('releases only the same operation and generation after actual terminal receipt readback', async () => {
     const f = server({
       state: 'settled',
-      receipt: { fully_settled: true },
+      receipt: {
+        fully_settled: true,
+        operation_id: operation,
+        tournament_id: tournament,
+        quiescence: { generation },
+      },
       tournament_status: 'CANCELLED',
     });
     await f.server.acknowledgeTournamentAbortBoundary(operation, tournament);
@@ -212,5 +223,66 @@ describe('abort certificates retain physical source and lease identity', () => {
       f.manager,
       expect.any(String)
     );
+  });
+  it('keeps a false retirement pending and retries the same operation after its release flag changed', async () => {
+    const f = server({
+      state: 'settled',
+      current_generation: null,
+      tournament_status: 'CANCELLED',
+      receipt: {
+        fully_settled: true,
+        operation_id: operation,
+        tournament_id: tournament,
+        quiescence: { generation },
+      },
+    });
+    f.manager.retainsTournamentAbortBoundary = () => false;
+    f.server.stopTournamentManagerIfOwned.mockResolvedValueOnce(false);
+    await expect(
+      f.server.acknowledgeTournamentAbortBoundary(operation, tournament)
+    ).rejects.toThrow('retirement_unconfirmed');
+    expect(f.server.tournamentEngines.get(tournament)).toBe(f.manager);
+    expect(await f.server.acknowledgeTournamentAbortBoundary(operation, tournament)).toMatchObject({
+      runtime_retired: true,
+    });
+    expect(f.manager.releaseTournamentAbortBoundary).toHaveBeenNthCalledWith(1, operation);
+    expect(f.manager.releaseTournamentAbortBoundary).toHaveBeenNthCalledWith(2, operation);
+  });
+  it('rejects a different current generation even with a fully settled old receipt', async () => {
+    const f = server({
+      state: 'settled',
+      current_generation: 'different-generation',
+      tournament_status: 'CANCELLED',
+      receipt: {
+        fully_settled: true,
+        operation_id: operation,
+        tournament_id: tournament,
+        quiescence: { generation },
+      },
+    });
+    await expect(
+      f.server.acknowledgeTournamentAbortBoundary(operation, tournament)
+    ).rejects.toThrow('generation_unproven');
+    expect(f.server.stopTournamentManagerIfOwned).not.toHaveBeenCalled();
+  });
+  it('never releases another pending generation after the original manager slot is gone', async () => {
+    const f = server({
+      state: 'settled',
+      current_generation: null,
+      tournament_status: 'CANCELLED',
+      receipt: {
+        fully_settled: true,
+        operation_id: operation,
+        tournament_id: tournament,
+        quiescence: { generation },
+      },
+    });
+    f.server.tournamentEngines.clear();
+    f.server.tournamentManagerPendingLeaseReleases.set(tournament, 'foreign-generation');
+    io.rpc.mockClear();
+    await expect(
+      f.server.acknowledgeTournamentAbortBoundary(operation, tournament)
+    ).rejects.toThrow('release_generation_mismatch');
+    expect(io.rpc.mock.calls.map(([name]) => name)).toEqual(['fn_ca_tournament_abort_stop_state']);
   });
 });

@@ -3078,15 +3078,25 @@ export class GameServer {
     );
   }
 
-  private async awaitTournamentManagerLeaseRelease(tournamentId: string): Promise<void> {
+  private async awaitTournamentManagerLeaseRelease(
+    tournamentId: string,
+    expectedGeneration?: string
+  ): Promise<void> {
     for (;;) {
       const release = this.tournamentManagerLeaseReleaseOperations.get(tournamentId);
       if (release) {
+        if (
+          expectedGeneration &&
+          this.tournamentManagerPendingLeaseReleases.get(tournamentId) !== expectedGeneration
+        )
+          throw new Error('tournament_abort_pending_release_generation_unproven');
         await release;
         continue;
       }
       const leaseGeneration = this.tournamentManagerPendingLeaseReleases.get(tournamentId);
       if (!leaseGeneration) return;
+      if (expectedGeneration && leaseGeneration !== expectedGeneration)
+        throw new Error('tournament_abort_pending_release_generation_mismatch');
       const outcome = await releaseTournaments([{ tournamentId, leaseGeneration }]);
       if (outcome.status !== 'confirmed') {
         throw new Error(
@@ -11697,19 +11707,38 @@ export class GameServer {
       throw new Error('tournament_abort_original_request_unproven');
     const manager = this.tournamentEngines.get(tournamentId);
     if (data.state === 'settled') {
-      if (data.receipt?.fully_settled !== true || data.tournament_status !== 'CANCELLED')
+      if (
+        data.receipt?.fully_settled !== true ||
+        data.tournament_status !== 'CANCELLED' ||
+        data.receipt.operation_id !== operationId ||
+        data.receipt.tournament_id !== tournamentId
+      )
         throw new Error('tournament_abort_terminal_receipt_unproven');
-      if (manager?.retainsTournamentAbortBoundary()) {
-        if (manager.getTournamentLeaseGeneration() !== data.current_generation)
+      const originalGeneration = data.receipt.quiescence?.generation;
+      if (
+        typeof originalGeneration !== 'string' ||
+        !originalGeneration ||
+        (data.current_generation !== null && data.current_generation !== originalGeneration)
+      )
+        throw new Error('tournament_abort_terminal_generation_unproven');
+      if (manager) {
+        if (manager.getTournamentLeaseGeneration() !== originalGeneration)
           throw new Error('tournament_abort_terminal_owner_mismatch');
+        // This checks the stable operation even after a prior release flag.
         manager.releaseTournamentAbortBoundary(operationId);
-        await this.stopTournamentManagerIfOwned(
+        const stopped = await this.stopTournamentManagerIfOwned(
           tournamentId,
           manager,
           'GameServer.tournament_abort_final_stop_failed'
         );
+        if (!stopped) throw new Error('tournament_abort_final_retirement_unconfirmed');
       }
-      return data;
+      // A lost lease-release response may outlive the manager map slot. Join
+      // or resume only this original generation's existing release operation.
+      await this.awaitTournamentManagerLeaseRelease(tournamentId, originalGeneration);
+      if (this.tournamentEngines.has(tournamentId))
+        throw new Error('tournament_abort_runtime_slot_retained');
+      return { ...data, runtime_retired: true };
     }
     if (
       data.state === 'quiesced' &&

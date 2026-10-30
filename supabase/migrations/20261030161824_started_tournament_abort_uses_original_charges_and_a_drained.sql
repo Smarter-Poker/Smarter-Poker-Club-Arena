@@ -401,7 +401,7 @@ BEGIN
  IF (SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='public.tournament_cancellation_receipts'::regclass AND conname='tournament_cancellation_receipts_receipt_version_check') IS DISTINCT FROM 'CHECK ((receipt_version = 2))' THEN RAISE EXCEPTION 'operator_abort_receipt_version_owner_changed';END IF;
 END $version$;
 ALTER TABLE public.tournament_cancellation_receipts DROP CONSTRAINT tournament_cancellation_receipts_receipt_version_check;
-ALTER TABLE public.tournament_cancellation_receipts ADD CONSTRAINT tournament_cancellation_receipts_receipt_version_check CHECK(receipt_version=2 OR (receipt_version=3 AND receipt->>'mode'='started_operator_abort' AND receipt->>'operation_id' IS NOT NULL));
+ALTER TABLE public.tournament_cancellation_receipts ADD CONSTRAINT tournament_cancellation_receipts_receipt_version_check CHECK(receipt_version=2 OR (receipt_version=3 AND (receipt->>'mode') IS NOT DISTINCT FROM 'started_operator_abort' AND receipt->>'operation_id' IS NOT NULL));
 
 -- Component for the finite, explicitly requested started-tournament abort.
 -- Integrator supplies tournament_abort_targets and assert_tournament_abort_quiesced.

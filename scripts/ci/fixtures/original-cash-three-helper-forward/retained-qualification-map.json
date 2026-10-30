@@ -1,7 +1,7 @@
 {
-  "state": "SOURCE_ONLY_NONMIGRATION_UNALLOCATED_INSTALL_HOLD",
+  "state": "SOURCE_ONLY_CURRENT_ALLOCATED_NEVER_INSTALLED_PREREQUISITE_REBOUND",
   "base_eight_sha256": "b812054bf8f9b54f95cd8ccead7c13e2a5592e6a16e112e998be66df4abbf67c",
-  "stats90331_required_sha256": "edbd14382c5dc891356c59596df472aeef92e830de0b13cafe0d25add278979a",
+  "stats90331_required_sha256": "972621710dd08d96b4077b0887fbc4a81ee339ed5df6c85916d2b40580e0f48e",
   "changed3": {
     "fn_union_pnl_touched_registrations": {
       "full_md5": "5e99f9d6957afdad7da857ed75b4ff97",
@@ -31,7 +31,7 @@
     "all five paid plus84earned/R2 unchanged"
   ],
   "remaining": [
-    "Actual90331 edbd protected install/readback",
+    "Actual90331 LOCAL10 97262171 protected install/readback",
     "Actual whole c49 current-public-linked+three TEMP capacity PASS",
     "Allocator/version normal bundle integration",
     "protected merge/rootsoleinstall/strict beforeafter/publicScope proof"
@@ -54,9 +54,11 @@
   "obsolete_adapter_do_not_use": "after-TQcf775 superseded by ba40 exact2 rr ANY memberships; retained historicalsource only",
   "native_wrapper_qualification": {
     "status": "PASS_SOURCE_ONLY_NOT_CAPACITY_OR_INSTALL",
-    "result_sha256": "4b4165b66c42d9e983018af054dc6b0958ccb9990c989f1a9047b8c2758b55af",
-    "script_sha256": "9514b47bf36aa2944a5c376809b51aef5ac89ebfd71d925afc970afd16446201",
+    "result_sha256": "f4e3c58b71268a169941bf4b0e275ab23ecd34bc5167ddbac3e58bb46e941bb8",
+    "script_sha256": "4eedd9ef8ce8da60e2ef05186dbb15996722ed68e2e8e60a53e172a846c107ff",
     "cases": 9,
     "limits": "GENgate/maintenance/stats history and financial preservation still actual installation pre/post; no fake GEN or financial rows"
-  }
+  },
+  "current_allocated_source_sha256": "7f7fff91bf446111f125b53c27bc6ab8599455f9aeddd3de32f1033ffaa954cc",
+  "inverse_to_prior_protected_source": "One90331 prerequisite hash substitution only; all business/GEN/paid snapshots unchanged"
 }

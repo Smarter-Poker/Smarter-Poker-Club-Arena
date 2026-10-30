@@ -17,3 +17,5 @@ The retained unallocated source evidence is historical; `source-binding.json`
 identifies the actual allocator-selected migration and its current bytes.
 Production installation requires the actual full original report result, then
 root's separate protected install/readback and public book-closure proof.
+
+The never-installed230502 file now pins only the corrected90331 LOCAL10 SQL hash972621710dd08d96b4077b0887fbc4a81ee339ed5df6c85916d2b40580e0f48e. Replacing this sole hash with prior edbd restores the protected b5c migration exactly. No helper body,27-owner contract, original GEN72 definition, paid query, TQ prerequisite or other installed migration is changed. The9 native controls are requalified for the current wrapper bytes; the original capacity/install hold remains.

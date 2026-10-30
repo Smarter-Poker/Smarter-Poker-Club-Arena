@@ -6,11 +6,15 @@
     "original_nonowner_function_permission_refuses",
     "original_function_boundary_payload_evidence_NULLunion_bag",
     "ordinary_analyze_partial_index_stats_leave_union_default_selectivity",
+    "session_target10_requests3000_instead_of_default100_20006_fixture_sample",
+    "actual_game_scope_NULL_target_inherits_session_default",
     "rollback_removes_new_statistics_object_and_keeps_sources",
-    "single_expression_stats_correct_custom_union_estimate_to_actual17804",
-    "real_collected_union_MCV89percent_no_fabrication",
+    "single_expression_stats_correct_custom_union_estimate_to_sampled_majority",
+    "SET_LOCAL_sample_target_does_not_escape_transaction",
+    "real_sampled_union_MCV_around89percent_no_fabrication",
     "all27_functions_fullmetadata_original_bag_schema_old3_rawtrigger_unchanged",
     "unexpected_existing_object_refuses_without_overwrite",
+    "explicit_column_target_drift_refuses_without_catalog_rewrite",
     "post_failure_atomic_rollback_no_orphan_statistics",
     "source65_refuses",
     "gen_refuses",
@@ -26,11 +30,22 @@
     "installed_SPGiST_drift_refuses",
     "noncritical27_full_body_after_snapshot_drift_atomic_refusal"
   ],
-  "migration_sha256": "edbd14382c5dc891356c59596df472aeef92e830de0b13cafe0d25add278979a",
+  "migration_sha256": "972621710dd08d96b4077b0887fbc4a81ee339ed5df6c85916d2b40580e0f48e",
   "source65_GEN_gate_fixtures_explicit": true,
   "production_capacity_claimed": false,
   "all27_authorities_unchanged": true,
   "fixture_rows": 20006,
-  "evidence_boundary": "private PG17 actual-schema20,006rows; targeted ANALYZE(game_scope) real expression stats; no production capacity claim",
-  "guard_contract": "7static critical body/metadata pins plus full27 source/rawmetadata prepost; actual14/10/3 plus installedSPGiST unchanged"
+  "sampling_profiles": {
+    "sample_100": {
+      "rows_sampled": 20006,
+      "notice": "INFO:  analyzing \"public.union_pnl_cash_outcome_link_resolutions\"\nINFO:  \"union_pnl_cash_outcome_link_resolutions\": scanned 1539 of 1539 pages, containing 20006 live rows and 0 dead rows; 20006 rows in sample, 20006 estimated total rows\n"
+    },
+    "sample_10": {
+      "rows_sampled": 3000,
+      "notice": "INFO:  analyzing \"public.union_pnl_cash_outcome_link_resolutions\"\nINFO:  \"union_pnl_cash_outcome_link_resolutions\": scanned 1539 of 1539 pages, containing 20006 live rows and 0 dead rows; 3000 rows in sample, 20006 estimated total rows\n"
+    }
+  },
+  "sampled_custom_estimate": 17879,
+  "evidence_boundary": "private PG17 actual-schema20,006rows; inherited LOCAL10 reduces sample to3000; real expression MCV/custom estimate; no production capacity claim",
+  "guard_contract": "7static critical body/metadata pins plus full27 source/rawmetadata prepost; actual14/10/3 plus installedSPGiST unchanged; game_scope inherited NULL target required"
 }

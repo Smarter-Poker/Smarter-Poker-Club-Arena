@@ -15,13 +15,14 @@ def nodes(n):
  elif isinstance(n,list):
   for v in n:yield from nodes(v)
 def main():
- p=argparse.ArgumentParser(description=__doc__);p.add_argument('--pg-bin',type=Path,default=Path(os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin')));p.add_argument('--scratch',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();assert __debug__ and a.scratch.is_dir()and not a.output.exists();w=Path(tempfile.mkdtemp(prefix='membership-',dir=a.scratch.resolve()));data=w/'d';started=False;cases=[];plans={};E={k:v for k,v in os.environ.items()if not k.startswith('PG')};E.update(TMPDIR=str(w),TMP=str(w),TEMP=str(w),LC_ALL='C',PGTZ='UTC')
+ p=argparse.ArgumentParser(description=__doc__);p.add_argument('--pg-bin',type=Path,default=Path(os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin')));p.add_argument('--scratch',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();assert __debug__ and a.scratch.is_dir()and not a.output.exists();w=Path(tempfile.mkdtemp(prefix='membership-',dir=a.scratch.resolve()));data=w/'d';started=False;cases=[];plans={};analyze_notices=[];E={k:v for k,v in os.environ.items()if not k.startswith('PG')};E.update(TMPDIR=str(w),TMP=str(w),TEMP=str(w),LC_ALL='C',PGTZ='UTC')
  with socket.socket()as sk:sk.bind(('127.0.0.1',0));port=str(sk.getsockname()[1])
  ps=[a.pg_bin/'psql','-XqAt','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p',port,'-U','postgres','-d','postgres']
  def run(args,sql=None,error=None,timeout=90):
   with tempfile.TemporaryFile(mode='w+',dir=w)as f:
    if sql is not None:f.write(sql);f.seek(0)
    z=subprocess.run(list(map(str,args)),stdin=f if sql is not None else None,text=True,capture_output=True,env=E,timeout=timeout)
+  if sql and 'ANALYZE VERBOSE'in sql:analyze_notices.append(z.stderr)
   assert (z.returncode!=0 and error in z.stderr)if error else z.returncode==0,(z.stdout[-1000:],z.stderr[-5000:]);return z.stdout.strip()
  def q(s,error=None):return run(ps,s,error)
  def js(s):return json.loads(q(s))
@@ -69,11 +70,19 @@ def main():
     pl=js(settings+'SET plan_cache_mode='+mode+';PREPARE candidate(uuid,timestamptz,timestamptz)AS '+selector+';EXPLAIN(VERBOSE,FORMAT JSON)EXECUTE candidate('+lit(U)+','+lit(START)+','+lit(END)+');');plans[label+'_'+mode]=pl
    ns=list(nodes(plans[label+'_force_custom_plan']));r=next(n for n in ns if n.get('Relation Name')==target);return r['Plan Rows']
   q('ANALYZE '+target+';ANALYZE union_pnl_cash_outcomes;');assert explain('ordinary_analyze')==100;rec('ordinary_analyze_partial_index_stats_leave_union_default_selectivity')
+  for target_value,expected_sample in [(100,20006),(10,3000)]:
+   q('BEGIN;SET LOCAL default_statistics_target='+str(target_value)+';ANALYZE VERBOSE public.'+target+'(game_scope);ROLLBACK;')
+   msg=analyze_notices[-1];match=re.search(r'(\d+) rows in sample',msg);assert match and int(match.group(1))==expected_sample,msg
+   plans['sample_'+str(target_value)]={'rows_sampled':int(match.group(1)),'notice':msg}
+  assert q('SHOW default_statistics_target;')=='100';rec('session_target10_requests3000_instead_of_default100_20006_fixture_sample')
+  assert q("SELECT attstattarget IS NULL FROM pg_attribute WHERE attrelid='"+target+"'::regclass AND attname='game_scope';")=='t';rec('actual_game_scope_NULL_target_inherits_session_default')
   q(sql.replace('COMMIT;','ROLLBACK;'));assert q("SELECT count(*)FROM pg_statistic_ext WHERE stxname='union_pnl_cash_links_union_distribution';")=='0';rec('rollback_removes_new_statistics_object_and_keeps_sources')
-  q(sql);assert explain('genuine_expression_statistics')==17804;rec('single_expression_stats_correct_custom_union_estimate_to_actual17804')
-  assert q("SELECT count(*)FROM pg_stats_ext_exprs WHERE statistics_name='union_pnl_cash_links_union_distribution'AND most_common_freqs[1]>.88 AND most_common_freqs[1]<.90;")=='1';rec('real_collected_union_MCV89percent_no_fabrication')
+  assert q(sql+'SHOW default_statistics_target;')=='100';estimate=explain('genuine_expression_statistics');assert 17200<estimate<18400;rec('single_expression_stats_correct_custom_union_estimate_to_sampled_majority')
+  assert q('SHOW default_statistics_target;')=='100';rec('SET_LOCAL_sample_target_does_not_escape_transaction')
+  assert q("SELECT count(*)FROM pg_stats_ext_exprs WHERE statistics_name='union_pnl_cash_links_union_distribution'AND most_common_freqs[1]>.86 AND most_common_freqs[1]<.92;")=='1';rec('real_sampled_union_MCV_around89percent_no_fabrication')
   assert bag()==before and q(rawtr)==rb and q(fns)==fb and js(proj)==authority;rec('all27_functions_fullmetadata_original_bag_schema_old3_rawtrigger_unchanged')
   q(sql,'linked_union_statistics_existing_object_refused');q('DROP STATISTICS public.union_pnl_cash_links_union_distribution;');rec('unexpected_existing_object_refuses_without_overwrite')
+  q('ALTER TABLE '+target+' ALTER COLUMN game_scope SET STATISTICS100;'.replace('STATISTICS100','STATISTICS 100'));q(sql,'linked_union_statistics_inherited_sample_target_required');q('ALTER TABLE '+target+' ALTER COLUMN game_scope SET STATISTICS -1;');rec('explicit_column_target_drift_refuses_without_catalog_rewrite')
   q(sql.replace('COMMIT;',"DO $$BEGIN RAISE EXCEPTION 'native_atomic_post_failure';END$$;COMMIT;"),'native_atomic_post_failure');assert q("SELECT count(*)FROM pg_statistic_ext WHERE stxname='union_pnl_cash_links_union_distribution';")=='0';rec('post_failure_atomic_rollback_no_orphan_statistics')
   for flag,err in [('source65','source65_required'),('gen','original_generation_required')]:q("SELECT set_config('native."+flag+"','off',false);"+sql,'original_linked_cash_spgist_'+err);rec(flag+'_refuses')
   for flag in('window','frozen','boundary'):q("SELECT set_config('native."+flag+"','on',false);"+sql,'original_linked_cash_spgist_window_refused');rec(flag+'_refuses')
@@ -86,7 +95,7 @@ def main():
   q('ALTER INDEX '+INDEX+' RENAME TO native_selector;');q(sql,'original_linked_cash_spgist_actual_table_required');q('ALTER INDEX native_selector RENAME TO '+INDEX+';');rec('installed_SPGiST_drift_refuses')
   drift=owners[0]['definition'].replace('AS $function$','AS $function$\n-- native after-snapshot body drift\n')+';'
   q(sql.replace('ANALYZE public.union_pnl_cash_outcome_link_resolutions (game_scope);',drift+'ANALYZE public.union_pnl_cash_outcome_link_resolutions (game_scope);'),'original_linked_cash_spgist_original_authority_changed');assert q(fns)==fb;rec('noncritical27_full_body_after_snapshot_drift_atomic_refusal')
-  q(sql);assert bag()==before and q(rawtr)==rb and q(fns)==fb;report={'status':'passed','cases':cases,'migration_sha256':hashlib.sha256(sql.encode()).hexdigest(),'source65_GEN_gate_fixtures_explicit':True,'production_capacity_claimed':False,'all27_authorities_unchanged':True,'fixture_rows':20006};a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,indent=2)+'\n');a.output.with_name(a.output.stem+'-plans.json').write_text(json.dumps(plans,indent=2)+'\n');print(json.dumps(report))
+  q(sql);assert bag()==before and q(rawtr)==rb and q(fns)==fb;report={'status':'passed','cases':cases,'migration_sha256':hashlib.sha256(sql.encode()).hexdigest(),'source65_GEN_gate_fixtures_explicit':True,'production_capacity_claimed':False,'all27_authorities_unchanged':True,'fixture_rows':20006,'sampling_profiles':{k:v for k,v in plans.items()if k.startswith('sample_')},'sampled_custom_estimate':estimate};a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,indent=2)+'\n');a.output.with_name(a.output.stem+'-plans.json').write_text(json.dumps(plans,indent=2)+'\n');print(json.dumps(report))
  finally:
   if started:run([a.pg_bin/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
 if __name__=='__main__':main()

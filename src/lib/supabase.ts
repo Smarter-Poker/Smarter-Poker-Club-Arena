@@ -15,6 +15,7 @@ import { readLocalSession as readLocalSessionShared, AUTH_STORAGE_KEY } from './
 import { reportError } from '../utils/errorReporter';
 import { IS_NATIVE_BUILD } from './appBase';
 import { realtimeAdmission } from './realtimeAdmission';
+import { fetchAuthWithDeadline } from './authFetchDeadline';
 
 // Environment validation - follows VITE_ prefix law
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -122,7 +123,8 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
         // A timed-out socket waiter does not release auth-js's lock. Bound
         // the actual auth network/body operation, preserving the SDK as the
         // only refresher and its retryable-error session retention.
-        const { fetchAuthWithDeadline } = await import('./authFetchDeadline');
+        // Load the deadline with this client, before any session lock is held.
+        // A lazy helper download here would itself be an unbounded lock wait.
         return fetchAuthWithDeadline(input, init);
       }
       // A Diamond Spins page has no second wait to fall back on: the send it

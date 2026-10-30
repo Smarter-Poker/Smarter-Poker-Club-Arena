@@ -178,8 +178,14 @@ BEGIN
    SELECT (SELECT count(*) FROM selected_event_sources)>=GREATEST(
     pg_relation_size('public.accounting_tournament_fee_sources'::regclass)/current_setting('block_size')::bigint,1) AS stream
   ), receipt_source_rows AS NOT MATERIALIZED (
- SELECT s.*,k.recognized_at AS receipt_recognized_at FROM survivors k
- CROSS JOIN LATERAL(SELECT raw.* FROM public.accounting_tournament_fee_sources raw WHERE raw.tournament_id=k.tournament_id OFFSET 0)s
+   SELECT s.*,k.recognized_at AS receipt_recognized_at
+    FROM public.accounting_tournament_fee_sources s
+    JOIN survivors k ON k.tournament_id=s.tournament_id
+    WHERE (SELECT stream FROM receipt_access)
+   UNION ALL
+   SELECT s.*,k.recognized_at AS receipt_recognized_at FROM survivors k
+    CROSS JOIN LATERAL(SELECT raw.* FROM public.accounting_tournament_fee_sources raw WHERE raw.tournament_id=k.tournament_id OFFSET 0)s
+    WHERE NOT (SELECT stream FROM receipt_access)
   ), receipt_bad AS (
    SELECT s.tournament_id,count(*) AS bad
     FROM receipt_source_rows s

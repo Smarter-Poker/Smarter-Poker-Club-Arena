@@ -7,7 +7,7 @@ import { formatWalletChips } from '../../utils/format';
 import type { ClubRole } from '../../types/clubRoles';
 import '../../pages/MemberManagementPage.css';
 
-type Credit = { limit: number; used: number };
+type Credit = { limit: number };
 
 /** Read the agreement, never add borrowed capacity to a wallet balance. */
 export default function MemberCreditWalletRows({
@@ -42,7 +42,7 @@ export default function MemberCreditWalletRows({
           (signal) =>
             supabase
               .from('agents')
-              .select('club_id,user_id,role,is_prepaid,credit_limit,credit_used')
+              .select('club_id,user_id,role,is_prepaid,credit_limit')
               .eq('club_id', clubId)
               .eq('user_id', userId)
               .eq('status', 'active')
@@ -58,11 +58,8 @@ export default function MemberCreditWalletRows({
           data.role !== role ||
           typeof data.is_prepaid !== 'boolean' ||
           data.credit_limit == null ||
-          data.credit_used == null ||
           !Number.isFinite(Number(data.credit_limit)) ||
-          Number(data.credit_limit) < 0 ||
-          !Number.isFinite(Number(data.credit_used)) ||
-          Number(data.credit_used) < 0
+          Number(data.credit_limit) < 0
         ) {
           throw new Error('Credit Terms Could Not Be Read');
         }
@@ -70,9 +67,7 @@ export default function MemberCreditWalletRows({
           setResult({
             key,
             failed: false,
-            credit: data.is_prepaid
-              ? null
-              : { limit: Number(data.credit_limit), used: Number(data.credit_used) },
+            credit: data.is_prepaid ? null : { limit: Number(data.credit_limit) },
           });
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -96,13 +91,7 @@ export default function MemberCreditWalletRows({
   if (!result.credit) return null;
   return (
     <>
-      {(
-        [
-          ['Credit Line', result.credit.limit],
-          ['Credit Used', result.credit.used],
-          ['Credit Available', Math.max(0, result.credit.limit - result.credit.used)],
-        ] as const
-      ).map(([label, amount]) => (
+      {([['Credit Line', result.credit.limit]] as const).map(([label, amount]) => (
         <div className="mm-stat" key={label}>
           <span className="mm-stat__label">{label}</span>
           <span className="mm-stat__value">{formatWalletChips(amount)}</span>

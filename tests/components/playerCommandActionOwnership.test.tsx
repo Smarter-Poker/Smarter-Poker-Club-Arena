@@ -767,6 +767,8 @@ it('keeps the chosen ledger dates fixed across a day boundary until an explicit 
 });
 
 it('keeps the real boundary and record mounted on recipient access invalidation while clearing caches', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   const priorUser = useUserStore.getState().user;
   useUserStore.setState({ user: { id: state.viewerId } as never });
   const view = render(
@@ -775,6 +777,18 @@ it('keeps the real boundary and record mounted on recipient access invalidation 
     </ClubPrivateDataBoundary>
   );
   try {
+    // Visible notes can precede the cards' deferred initial reads. Finish the
+    // bootstrap and observe each initial RPC before measuring ambient rereads.
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => initial.resolve(memberDetail));
+    await waitFor(() => {
+      expect(
+        state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_win_loss')
+      ).toHaveLength(1);
+      expect(
+        state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_upline_chain')
+      ).toHaveLength(1);
+    });
     const nickname = await screen.findByRole('textbox', { name: 'Nickname' });
     fireEvent.change(nickname, { target: { value: 'Mounted Boundary Draft' } });
     const downlineReads = state.getDownline.mock.calls.length;

@@ -483,7 +483,7 @@ describe('authenticated production account preflight', () => {
       "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
     );
     expect(liveMobileLobby).toMatch(
-      /async function openLobby\(page: Page, openSection = true\)[\s\S]*await prepareCashLobbyActions\(page\);[\s\S]*CASH GAMES/
+      /async function openLobby\(page: Page, openSection = true\)[\s\S]*await prepareCashLobbyActions\(page\);[\s\S]*Cash Games/
     );
 
     const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');

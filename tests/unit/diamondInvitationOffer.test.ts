@@ -182,7 +182,7 @@ describe('the Diamond Spins offer is settled before the lobby is measured', () =
       'const offer = diamondEntryRead(page);',
       'await page.goto(',
       'await prepareCashLobbyActions(page);',
-      "name: 'CASH GAMES'",
+      "name: 'Cash Games'",
       'await settleDiamondSpinsOffer(page, offer);',
     ].map((needle) => openLobby.indexOf(needle));
     expect(order.every((at) => at >= 0)).toBe(true);

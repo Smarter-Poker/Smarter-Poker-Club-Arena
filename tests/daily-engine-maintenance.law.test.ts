@@ -326,6 +326,52 @@ describe('daily routine admission uses the existing protected receiver only', ()
       })
     ).toBe(false);
   });
+  it('bounds the channel-admission owner order to one qualified tournament-aligned cutover', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const matching = windows.filter(
+      (w: { id: string }) => w.id === '2026-10-30-channel-admission-next-55'
+    );
+    expect(matching).toHaveLength(1);
+    const [entry] = matching;
+    expect(entry.contains).toBe('97bcce289707e58d682d25654a5978a34327bf79');
+    expect(entry.notBefore).toBe('2026-10-30T13:40:00Z');
+    expect(entry.notAfter).toBe('2026-10-30T15:00:00Z');
+    expect(entry.announceAtChicagoMinutes).toEqual([53]);
+    expect(entry.migrations).toEqual([]);
+    expect(entry.releaseWitness).toBeUndefined();
+    expect(entry.ownerOrder).toContain('DO THE CUT OVER AT THE NEXT :55 BREAK');
+    expect(entry.ownerOrder).toContain('full 285-second');
+    // This historical order records the reviewed cutover bytes; a later legitimate
+    // ChannelHub change must not rewrite the owner's original instruction.
+    expect(entry.ownerOrder).toContain(
+      'c5b7eec46dc5afbb05eebe6584a4630b0f674e9ba7be00ba709df1f5b1b0293a'
+    );
+    const fixture = JSON.stringify({
+      version: 1,
+      windows: [
+        {
+          ...entry,
+          notBefore: new Date(Date.now() - 60_000).toISOString(),
+          notAfter: new Date(Date.now() + 60_000).toISOString(),
+        },
+      ],
+    });
+    const healthy = JSON.stringify({ liveness: 'ok', releaseSha: 'e'.repeat(40) });
+    for (const [ancestor, served, expected] of [
+      [true, false, true],
+      [true, true, false],
+      [false, false, false],
+    ])
+      expect(
+        admit('push', '18', 'routine', healthy, undefined, undefined, {
+          windows: fixture,
+          ancestor,
+          served,
+        })
+      ).toBe(expected);
+  });
   it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {
     const witness = {
       path: 'supabase/migrations/20261028171228_fixture_rebuy.sql',

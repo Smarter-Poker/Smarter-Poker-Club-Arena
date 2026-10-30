@@ -24,6 +24,75 @@ SOURCE = 'eed06fe51dea622069c661a6213d5b031ff3a9e3'
 IMAGE = 'sha256:2eb1c5a7279032240c5fff8a6b3ecf5dc6af735cc1227a51430d50dcae1b065b'
 
 
+def entry_state(run):
+    """Read-only restart gate: an unknown one-shot cannot become absent history.
+
+    No listener/process action occurs here. A completed receipt proves only
+    this exact immutable operation's retirement; the caller still checks live
+    listener absence, health and its ordinary maintenance authority.
+    """
+    def read_owned(path, limit):
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0:
+                raise ValueError('state_file_identity')
+            with os.fdopen(fd, 'rb', closefd=False) as handle:
+                value = handle.read(limit + 1)
+            if len(value) > limit:
+                raise ValueError('state_file_bound')
+            return value
+        finally:
+            os.close(fd)
+
+    try:
+        if os.geteuid() != 0 or not re.fullmatch(r'[1-9][0-9]*(?:-[1-9][0-9]*)?', run):
+            return 1
+        root = Path(os.environ.get('ENGINE_RELEASE_REQUEST_ROOT', '/var/lib/club-arena/engine-release-requests'))
+        if not root.is_absolute() or root.is_symlink() or not root.is_dir():
+            return 1
+        intent = root / (run + '.main-inspector-retirement-intent')
+        receipt = root / (run + '.main-inspector-retirement-receipt')
+        def present(path):
+            try:
+                path.lstat()
+                return True
+            except FileNotFoundError:
+                return False
+        # Do not coerce an unreadable path into absence. lstat also preserves
+        # dangling symlinks as existing, unqualified operation history.
+        intent_present, receipt_present = present(intent), present(receipt)
+        if not intent_present and not receipt_present:
+            return 0
+        if not intent_present or not receipt_present:
+            return 1
+        claim = json.loads(read_owned(intent, 32768))
+        completed = json.loads(read_owned(receipt, 65536))
+        request_bytes = read_owned(root / (run + '.request'), 16384)
+        request = request_bytes.decode('utf8').splitlines()
+        control_sha = read_owned(CONTROL / 'control-sha', 128).decode('ascii').strip()
+        if (not isinstance(claim, dict) or not isinstance(completed, dict)
+                or completed.get('claim') != claim
+                or claim.get('schema') != 'main-inspector-retirement-claim/v1'
+                or claim.get('runId') != run or claim.get('controlSha') != control_sha
+                or not re.fullmatch(r'[0-9a-f]{40}', control_sha)
+                or len(request) != 6 or request[3] != str(CONTROL) or request[4] != control_sha
+                or not re.fullmatch(r'[0-9a-f]{40}', request[0])
+                or claim.get('target') != request[0]
+                or claim.get('requestSha256') != hashlib.sha256(request_bytes).hexdigest()
+                or claim.get('retryAllowed') is not False):
+            return 1
+        outcome = completed.get('outcome')
+        if (not isinstance(outcome, dict)
+                or any(outcome.get(key) is not True for key in (
+                    'ok', 'closeRequested', 'closeAcknowledged', 'connectionClosed', 'listenerAbsent'))
+                or outcome.get('retryAllowed') is not False):
+            return 1
+        return 0
+    except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
+        return 1
+
+
 def retire():
     until = time.monotonic() + 20
     deadline_ms = int(time.time() * 1000) + 20000
@@ -229,4 +298,6 @@ def retire():
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 3 and sys.argv[1] == '--entry-state':
+        raise SystemExit(entry_state(sys.argv[2]))
     raise SystemExit(retire())

@@ -1460,6 +1460,14 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
       return 0
       ;;
   esac
+  # A closed listener does not resolve a prior unknown native close. On a
+  # resumed invocation, require this run's durable completed receipt before
+  # either announcing or considering a fresh attachment.
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA" ]; then
+    ENGINE_RELEASE_REQUEST_ROOT="$REQUEST_ROOT" \
+      python3 "$CONTROL_DIR/main-inspector-retirement.py" --entry-state "$RUN_ID" \
+      || die 'prior MAIN Inspector retirement is unresolved; no recovery window requested'
+  fi
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && ! legacy_inspector_is_closed; then
     # Only this qualified predecessor has a maintained current-main adoption
     # contract. Do not reuse a reader report or a historical missing intent as
@@ -2333,6 +2341,15 @@ while :; do
       LEGACY_CHECKPOINT_REQUIRED=0
       LEGACY_ENTRY_DEADLINE_MS=0
     fi
+  fi
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA" ]; then
+    # Scheduled and adopted countdowns bypass request_recovery_window. They
+    # must preserve unknown retirement history too, under the same lock and
+    # absolute entry clock, before any fresh Inspector or checkpoint call.
+    legacy_entry_read timeout --signal=TERM --kill-after=1s 3s \
+      env ENGINE_RELEASE_REQUEST_ROOT="$REQUEST_ROOT" \
+      python3 "$CONTROL_DIR/main-inspector-retirement.py" --entry-state "$RUN_ID" \
+      || die 'locked MAIN Inspector retirement history is unresolved; refusing checkpoint'
   fi
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
     if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS" "$LEGACY_ENTRY_BREAK_END_EPOCH" locked)"; then

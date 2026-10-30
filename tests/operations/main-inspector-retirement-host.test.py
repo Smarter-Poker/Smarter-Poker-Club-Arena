@@ -280,6 +280,96 @@ class HostTests(unittest.TestCase):
         reserve = callback.index("if (stage === 'close' && retirementRemaining() <= 5000) return false;")
         self.assertGreater(reserve, capture)
 
+    def entry(self, owner_uid=0):
+        actual_fstat = os.fstat
+
+        def owned_fstat(fd):
+            value = actual_fstat(fd)
+            return SimpleNamespace(st_mode=value.st_mode, st_uid=owner_uid)
+
+        with patch.object(HOST, 'CONTROL', self.control), \
+                patch.dict(os.environ, {'ENGINE_RELEASE_REQUEST_ROOT': str(self.root)}), \
+                patch.object(os, 'geteuid', return_value=0), \
+                patch.object(os, 'fstat', side_effect=owned_fstat), \
+                patch.object(subprocess, 'run', side_effect=AssertionError('entry gate must be read only')), \
+                patch.object(subprocess, 'Popen', side_effect=AssertionError('entry gate cannot attach')):
+            return HOST.entry_state(RUN)
+
+    def test_entry_gate_absence_unknown_orphan_and_dangling_history(self):
+        self.assertEqual(self.entry(), 0)
+        for path in [self.intent, self.receipt]:
+            path.write_text('{}')
+            self.assertEqual(self.entry(), 1)
+            path.unlink()
+            path.symlink_to(self.root / 'missing')
+            self.assertEqual(self.entry(), 1)
+            path.unlink()
+        self.intent.write_text('{malformed')
+        self.receipt.write_text('{}')
+        self.assertEqual(self.entry(), 1)
+
+    def test_entry_gate_completed_exact_operation_only(self):
+        self.assertEqual(self.execute(), 0)
+        self.assertEqual(self.entry(), 0)
+        claim_bytes, receipt_bytes = self.intent.read_bytes(), self.receipt.read_bytes()
+        for key, value in [('runId', '999-1'), ('controlSha', 'f' * 40),
+                           ('target', 'e' * 40), ('requestSha256', '0' * 64),
+                           ('retryAllowed', True)]:
+            with self.subTest(key=key):
+                claim = json.loads(claim_bytes)
+                claim[key] = value
+                receipt = json.loads(receipt_bytes)
+                receipt['claim'] = claim
+                self.intent.write_text(json.dumps(claim))
+                self.receipt.write_text(json.dumps(receipt))
+                self.assertEqual(self.entry(), 1)
+        self.intent.write_bytes(claim_bytes); self.receipt.write_bytes(receipt_bytes)
+        self.assertEqual(self.entry(owner_uid=1), 1)
+        self.request.write_text(self.request.read_text().replace(TARGET_SHA, 'd' * 40))
+        self.assertEqual(self.entry(), 1)
+
+    def test_entry_gate_requires_every_native_completion_flag_and_matching_claim(self):
+        self.assertEqual(self.execute(), 0)
+        receipt_bytes = self.receipt.read_bytes()
+        for key in ['ok', 'closeRequested', 'closeAcknowledged', 'connectionClosed', 'listenerAbsent', 'retryAllowed']:
+            with self.subTest(key=key):
+                receipt = json.loads(receipt_bytes)
+                receipt['outcome'][key] = key == 'retryAllowed'
+                self.receipt.write_text(json.dumps(receipt))
+                self.assertEqual(self.entry(), 1)
+        receipt = json.loads(receipt_bytes)
+        receipt['claim']['runId'] = '999-1'
+        self.receipt.write_text(json.dumps(receipt))
+        self.assertEqual(self.entry(), 1)
+
+    def test_entry_gate_nonregular_and_oversized_history_fail_closed(self):
+        self.receipt.write_text('{}')
+        os.mkfifo(self.intent)
+        self.assertEqual(self.entry(), 1)
+        self.intent.unlink()
+        self.intent.write_bytes(b'x' * 32769)
+        self.assertEqual(self.entry(), 1)
+
+    def test_scheduled_locked_checkpoint_cannot_bypass_unknown_retirement_with_closed_listener(self):
+        transaction = (REPO / 'server/scripts/engine-release-transaction.sh').read_text()
+        # A scheduled/adopted countdown can reach this block without entering
+        # request_recovery_window at all. Pin the common caller, not that helper.
+        locked = transaction.split("acquire_engine_lock 'maintenance cutover'", 1)[1]
+        checkpoint = locked.index('"$LEGACY_CHECKPOINT" "$RUN_ID"')
+        predecessor = locked.index('CHECKPOINT_PREDECESSOR_SHA=')
+        gate = locked.index('--entry-state "$RUN_ID"')
+        self.assertLess(predecessor, gate)
+        self.assertLess(gate, checkpoint)
+        gate_start = locked.rfind('  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]', predecessor, gate)
+        self.assertGreater(gate_start, predecessor)
+        gate_end = locked.index('\n  fi', gate)
+        gate_context = locked[gate_start:gate_end]
+        self.assertIn('"$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA"', gate_context)
+        self.assertIn('legacy_entry_read timeout', gate_context)
+        self.assertIn('3s', gate_context)
+        self.assertIn('|| die', gate_context)
+        self.assertNotIn('"$RUN_ID" "$INVOCATION_ID"', gate_context)
+
 
 if __name__ == '__main__':
     unittest.main()

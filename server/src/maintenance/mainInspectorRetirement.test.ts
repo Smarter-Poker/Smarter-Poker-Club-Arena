@@ -35,3 +35,42 @@ it('qualifies MAIN Inspector transport, kernel ownership and durable operation c
   expect(host.error?.message ?? null, host.stderr).toBeNull();
   expect(host.status, host.stdout + host.stderr).toBe(0);
 }, 40000);
+
+it.skipIf(process.platform !== 'linux')(
+  'qualifies the composed MAIN retirement on the exact production Node container',
+  () => {
+    const native = spawnSync(
+      process.execPath,
+      ['tests/operations/main-inspector-retirement-container.mjs'],
+      {
+        cwd: resolve('..'),
+        encoding: 'utf8',
+        timeout: 195000,
+        maxBuffer: 131072,
+      }
+    );
+    expect(native.error?.message ?? null, native.stderr).toBeNull();
+    expect(native.status, native.stdout + native.stderr).toBe(0);
+    const result = JSON.parse(native.stdout.trim());
+    expect(result).toMatchObject({
+      ok: true,
+      skipped: false,
+      image: 'node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5',
+      nativeVersion: 'v22.23.2',
+      sameContainerAndProcess: true,
+      witnessUnchanged: true,
+      gameActions: 0,
+      cleanupRemoved: true,
+      outcome: {
+        ok: true,
+        stage: 'complete',
+        closeRequested: true,
+        closeAcknowledged: true,
+        connectionClosed: true,
+        listenerAbsent: true,
+        retryAllowed: false,
+      },
+    });
+  },
+  200000
+);

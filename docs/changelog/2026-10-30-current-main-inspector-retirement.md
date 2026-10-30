@@ -30,3 +30,5 @@ plus isolated durable claim/identity/expiry/unknown-outcome tests. Mac Linux-onl
 skips are explicit; hosted Linux must execute them without skips. Deployment and
 all15 original hands/all128 funded seats still require actual live evidence in
 the existing recovery checkpoint.
+
+The owner explicitly resumed at13:21/13:22UTC after the usage-limit interruption. A distinct13:30-19:00UTC owner floor/window carries the now-qualified repair toward certified:55 activation. Both expired10:30/11:30 entries retain their protected historical contents; no old request, intent or deadline is extended. The common locked checkpoint path also reads completed retirement history, so a scheduled countdown cannot bypass an unresolved claim.

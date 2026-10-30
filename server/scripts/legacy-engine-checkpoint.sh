@@ -29,9 +29,12 @@ defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
 # and a retry stays forbidden however the helper exited.
 defer_proved_not_started() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
 [ "$(id -u)" = 0 ] || die 'root-owned release required'
-[ "$#" = 2 ] || die 'expected owning run key and absolute entry deadline'
+[ "$#" = 3 ] || die 'expected owning run key, absolute entry deadline and admitted break end'
 RUN_ID="$1"
 CHECKPOINT_DEADLINE_MS="$2"
+CHECKPOINT_BREAK_END_EPOCH="$3"
+[[ "$CHECKPOINT_BREAK_END_EPOCH" =~ ^[1-9][0-9]{8,9}$ ]] \
+  || die 'invalid admitted checkpoint break end'
 [[ "$CHECKPOINT_DEADLINE_MS" =~ ^[1-9][0-9]{12}$ ]] \
   || die 'invalid absolute checkpoint deadline'
 CHECKPOINT_NOW_MS="$(date +%s%3N)"
@@ -40,6 +43,43 @@ CHECKPOINT_NOW_MS="$(date +%s%3N)"
 [ "$CHECKPOINT_DEADLINE_MS" -gt "$((CHECKPOINT_NOW_MS + 5000))" ] \
   || defer 'absolute checkpoint entry budget elapsed before intent; nothing was attempted'
 [[ "$RUN_ID" =~ ^[1-9][0-9]*(-[1-9][0-9]*)?$ ]] || die 'invalid run key'
+# Read-only preflight cannot consume the five seconds reserved for native
+# cleanup. A killed client leaves the durable intent untouched and unknown.
+checkpoint_entry_read() {
+  local remaining_ms=$((CHECKPOINT_DEADLINE_MS - $(date +%s%3N) - 5000)) budget_duration
+  [ "$remaining_ms" -gt 1000 ] || return 124
+  remaining_ms=$((remaining_ms - 1000))
+  if [ "${1:-}" = timeout ]; then
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in --signal=TERM|--kill-after=1s|--kill-after=5s) shift ;; *) break ;; esac
+    done
+    [[ "${1:-}" =~ ^([1-9][0-9]*)s$ ]] || return 124
+    local requested_ms=$((BASH_REMATCH[1] * 1000))
+    [ "$requested_ms" -ge "$remaining_ms" ] || remaining_ms="$requested_ms"
+    shift
+  fi
+  printf -v budget_duration '%d.%03ds' "$((remaining_ms / 1000))" "$((remaining_ms % 1000))"
+  timeout --signal=TERM --kill-after=1s "$budget_duration" "$@"
+}
+checkpoint_final_read() {
+  local remaining_ms=$((CHECKPOINT_DEADLINE_MS - $(date +%s%3N))) budget_duration
+  [ "$remaining_ms" -gt 0 ] || return 124
+  # No extra grace outside the absolute entry budget. This kills only the
+  # bounded client, never the serving engine; unknown ownership stays retained.
+  if [ "${1:-}" = timeout ]; then
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in --signal=TERM|--kill-after=1s|--kill-after=5s) shift ;; *) break ;; esac
+    done
+    [[ "${1:-}" =~ ^([1-9][0-9]*)s$ ]] || return 124
+    local requested_ms=$((BASH_REMATCH[1] * 1000))
+    [ "$requested_ms" -ge "$remaining_ms" ] || remaining_ms="$requested_ms"
+    shift
+  fi
+  printf -v budget_duration '%d.%03ds' "$((remaining_ms / 1000))" "$((remaining_ms % 1000))"
+  timeout --signal=KILL "$budget_duration" "$@"
+}
 # /var/lock is a symlink to /run/lock on the engine host. Compare the held
 # descriptor's file identity, not a resolved path against its configured alias.
 [ "/proc/$$/fd/9" -ef "${ENGINE_LOCK_FILE:-/var/lock/club-arena-engine-up.lock}" ] \
@@ -50,7 +90,7 @@ mapfile -t REQUEST < "$REQUEST_ROOT/$RUN_ID.request"
   && [ "${REQUEST[4]}" = "$(cat "$CONTROL_DIR/control-sha")" ] \
   || die 'immutable operation generation mismatch'
 [ "$(date +%s)" -lt "${REQUEST[5]}" ] || die 'owning operation expired'
-LEGACY_SHA="$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-sha)" \
+LEGACY_SHA="$(checkpoint_entry_read timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-sha)" \
   || die 'sealed predecessor unreadable'
 # Closed, measured predecessor profiles. Neither a caller nor an environment
 # variable can supply another source, image or compiled-code profile.
@@ -67,9 +107,9 @@ case "$LEGACY_SHA" in
     LEGACY_IMAGE=sha256:2eb1c5a7279032240c5fff8a6b3ecf5dc6af735cc1227a51430d50dcae1b065b ;;
   *) die 'sealed predecessor has no qualified checkpoint profile' ;;
 esac
-[ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
+[ "$(checkpoint_entry_read timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
   || die 'sealed predecessor is not the qualified legacy image'
-IDENTITY="$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")"
+IDENTITY="$(checkpoint_entry_read timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")"
 read -r CONTAINER_ID IMAGE RUNNING STARTED_AT HOST_PID <<< "$IDENTITY"
 [[ "$CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]] && [ "$IMAGE" = "$LEGACY_IMAGE" ] \
   && [ "$RUNNING" = true ] || die 'serving predecessor identity mismatch'
@@ -79,7 +119,7 @@ if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
     || die 'original mixed-custody process changed'
 fi
 NODE_BOOT_STARTED_MS="$(date +%s%3N)"
-timeout 3s docker exec "$CONTAINER_ID" node -e '
+checkpoint_entry_read timeout 3s docker exec "$CONTAINER_ID" node -e '
 const fs = require("node:fs");
 const args = fs.readFileSync("/proc/1/cmdline", "utf8").split("\0").filter(Boolean);
 if (process.version !== "v22.23.2" ||
@@ -105,34 +145,32 @@ echo "[legacy-engine-checkpoint] predecessor runtime check took ${NODE_BOOT_MS}m
 # Installed SQL is a prerequisite, not a trial mutation. Refuse before the
 # durable one-shot intent or inspector; the existing transaction owns failure.
 if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
-  timeout 8s python3 "$CONTROL_DIR/engine-release-database-proof.py" \
+  checkpoint_entry_read timeout 8s python3 "$CONTROL_DIR/engine-release-database-proof.py" \
     --env-file "${ENGINE_ENV_FILE:-/opt/club-arena/server/.env}" --sha "$LEGACY_SHA" \
     --mixed-custody-contract \
     || die 'installed mixed-custody contract unavailable or incompatible; checkpoint not started'
 fi
 
-INSTANCE="$(curl -sS --max-time 2 http://127.0.0.1:8080/health | python3 -c '
-import json,re,sys
+INSTANCE="$(checkpoint_entry_read curl -sS --max-time 2 http://127.0.0.1:8080/health | checkpoint_entry_read python3 -c '
+import json,math,re,sys,time
 d=json.load(sys.stdin); m=d.get("maintenance",{}); instance=d.get("instanceId",""); release=sys.argv[1]
-# The entry threshold is the reserve the guard holds at every check (245000,
-# reserveMs in legacy-engine-checkpoint-guard.mjs) PLUS the whole 40000
-# budget the checkpoint still has to pay after this probe (entry, work and
-# cleanup, engine-release-transaction.sh LEGACY_CHECKPOINT_BUDGET_SECONDS):
-# 285000, the same figure legacy_checkpoint_countdown admitted on. Nothing is
-# ADDED to it for the boot that follows: the 300000 countdown has exactly
-# 15000 above 285000 and the entry spends it, so any positive term here would
-# defer at every break for ever. A break shorter than this defers (75); it
-# never dies, because nothing has been written yet.
-# (No apostrophes in this comment: it lives inside a single-quoted python -c
-# argument, and one would close the quote and break the command substitution.)
-reserve=245000+40000
+# The initial admission already held 285000ms. This same-break recheck pays
+# only the unspent portion of that exact absolute40 entry: 245000 plus the
+# remaining entry budget. It cannot grant another40 or spend rollback time.
+# (No apostrophes here: this comment is inside a single-quoted Python program.)
+remaining_entry=int(sys.argv[2])-math.floor(time.time()*1000)
+if not 5000<remaining_entry<=40000: raise SystemExit(1)
+reserve=245000+remaining_entry
 ok=(d.get("running") is True and d.get("version")==release[:8] and re.fullmatch(r"1-[0-9a-f]{8}",instance)
     and (release=="2f4e33560bcd23bfb5cc731f31816b2c2e2847e5" or d.get("releaseSha")==release)
     and m.get("active") is True and m.get("phase")=="counting_down"
-    and m.get("durableConfirmed") is True and m.get("remainingMs",0)>=reserve)
+    and m.get("durableConfirmed") is True and m.get("remainingMs",0)>=reserve
+    and isinstance(m.get("breakEndsAt"),(int,float)) and not isinstance(m.get("breakEndsAt"),bool)
+    and math.isfinite(m["breakEndsAt"]) and math.floor(m["breakEndsAt"]/1000)==int(sys.argv[3])
+    and m["breakEndsAt"]-time.time()*1000>=reserve)
 if not ok: raise SystemExit(1)
 print(instance)
-' "$LEGACY_SHA")" || defer 'the break window closed before the checkpoint could start; nothing was attempted'
+' "$LEGACY_SHA" "$CHECKPOINT_DEADLINE_MS" "$CHECKPOINT_BREAK_END_EPOCH")" || defer 'the break window closed before the checkpoint could start; nothing was attempted'
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
@@ -151,7 +189,7 @@ print(instance)
 # (CLAUDE.md 10.86 rule 1). Nothing is retried, nothing is retired, and the
 # guard still refuses: 70 ends the release exactly as 1 did.
 set +e
-CHECKPOINT_INTENT="$(python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$INSTANCE" "$CONTAINER_ID" "$STARTED_AT" "$HOST_PID" "$LEGACY_SHA" "$RUN_ID" "${REQUEST[4]}" <<'PY'
+CHECKPOINT_INTENT="$(checkpoint_entry_read python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$INSTANCE" "$CONTAINER_ID" "$STARTED_AT" "$HOST_PID" "$LEGACY_SHA" "$RUN_ID" "${REQUEST[4]}" <<'PY'
 import json,os,sys,time,uuid
 path,instance,container,started,pid,source,run,control=sys.argv[1:]
 intent={"instance":instance,"container":container,"startedAt":started,"hostPid":int(pid),
@@ -186,7 +224,7 @@ fi
 
 set +e
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/retained-original-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"
+  | checkpoint_final_read docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"
 CHECKPOINT_RC=$?
 set -e
 if [ "$CHECKPOINT_RC" = 75 ]; then
@@ -204,7 +242,7 @@ if [ "$CHECKPOINT_RC" = 75 ]; then
   # owning transaction then re-proves the absence from the filesystem itself
   # before it honours 75 (engine-release-transaction.sh), and that proof is
   # unchanged: this script does not get to tell it the intent is gone.
-  timeout 5s python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$CHECKPOINT_INTENT" <<'PY' || die 'checkpoint reported a non-acting refusal but its own durable intent could not be retired; refusing a retry'
+  checkpoint_final_read timeout 5s python3 - "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$CHECKPOINT_INTENT" <<'PY' || die 'checkpoint reported a non-acting refusal but its own durable intent could not be retired; refusing a retry'
 import os,sys
 path,intent=sys.argv[1:]
 with open(path,"rb") as handle: on_disk=handle.read()
@@ -218,7 +256,7 @@ PY
 fi
 [ "$CHECKPOINT_RC" = 0 ] \
   || die 'checkpoint or inspector cleanup refused; do not retry this operation'
-[ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
+[ "$(checkpoint_final_read timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}' "$CONTAINER")" = "$IDENTITY" ] \
   || die 'predecessor changed during checkpoint'
 # This helper cannot certify or start cutover. Entry above demanded the strict
 # 285000ms; the caller must now pass the original maintenance_certificate with

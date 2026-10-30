@@ -34,7 +34,7 @@ def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=
     historical eligible flag. Like the real seal since 2026-10-04, the stub
     answers `unavailable` to any reservation without `--cause`.
     """
-    with tempfile.TemporaryDirectory(prefix='recovery-owner-') as temp:
+    with tempfile.TemporaryDirectory(prefix='recovery-owner-', dir=ROOT.parent) as temp:
         events = Path(temp) / 'events'
         request_root = Path(temp) / 'requests'
         request_root.mkdir()
@@ -59,6 +59,7 @@ def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=
             calls_script.append(f'NOW=$((NOW + {advance}))')
         script = f'''
 set -euo pipefail
+legacy_entry_read() {{ "$@"; }}
 EVENTS={shlex.quote(str(events))}
 SHA={TARGET}; RUN_ID=900-2; REPO_DIR=/fixture; CONTAINER=fixture; RELEASE_SEAL=fixture-seal
 REQUEST_ROOT={shlex.quote(str(request_root))}
@@ -161,6 +162,7 @@ RECOVERY_ADMISSION_MISSED={int(missed)}
 
 def missed(*, waiting_since, remaining_ms, now=1800003360):
     script = f'''set -euo pipefail
+legacy_entry_read() {{ "$@"; }}
 BREAK_WINDOW_MS=300000
 BREAK_ADMISSION_MIN_BREAK_MS=260000
 date() {{ echo {now}; }}
@@ -177,6 +179,7 @@ echo "$RECOVERY_ADMISSION_MISSED"
 def certificate(maintenance, *, running=True, transport=True, http=200, minimum=None):
     response = json.dumps({'running': running, 'weeklyPayout': None, 'maintenance': maintenance}) + f'\n{http}'
     script = f'''set -euo pipefail
+legacy_entry_read() {{ "$@"; }}
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000

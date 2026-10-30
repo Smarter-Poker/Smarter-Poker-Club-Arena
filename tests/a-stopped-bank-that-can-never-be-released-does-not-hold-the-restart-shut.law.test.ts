@@ -130,6 +130,7 @@ function certificate({
 MIN_BREAK_REMAINING_MS=285000
 ENV_FILE=/dev/null
 INFLIGHT_HANDS="$MOCK_INFLIGHT"
+legacy_entry_read() { "$@"; }
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper}
 maintenance_certificate`,

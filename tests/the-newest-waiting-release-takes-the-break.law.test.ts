@@ -384,6 +384,7 @@ const certificate = (maintenance: Record<string, unknown>, hands = 0) => {
 MIN_BREAK_REMAINING_MS=285000
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
+legacy_entry_read() { "$@"; }
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper()}
 maintenance_certificate 260000`,

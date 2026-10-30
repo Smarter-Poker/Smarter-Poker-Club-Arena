@@ -9,8 +9,9 @@ subcause remain unknown; this reproduction does not establish either.
 
 The readiness and checkpoint transport docker-exec children now remove only
 their own `NODE_OPTIONS` and `NODE_PATH` and explicitly disable inspection.
-The initial runtime validator preserves its existing inspect/debug option
-refusal in the container child shell before launching neutral Node. Its version,
+The checkpoint's existing inspect/debug option refusal now also runs in the
+readiness child shell before Node or any announcement. The initial runtime
+validator retains that same refusal before launching neutral Node. Its version,
 main command-line and source checks remain unchanged. The main process environment,
 fixed loopback target, three-second outer budget, one-second socket budget,
 positive ECONNREFUSED requirement and all announcement/cutover safeguards stay

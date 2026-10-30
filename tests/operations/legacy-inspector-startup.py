@@ -60,7 +60,9 @@ class StartupTests(unittest.TestCase):
 
     def test_inherited_inspect_cannot_open_the_observers_own_listener(self):
         result = self.probe('--inspect=127.0.0.1:9229')
-        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '', ''))
+        # Preserve the checkpoint's existing incompatible-option refusal, now
+        # before announcement and without ever starting the observer Node.
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (1, '', ''))
 
     def test_inherited_preload_never_executes(self):
         marker = self.root / 'preload-ran'
@@ -71,7 +73,7 @@ class StartupTests(unittest.TestCase):
         self.assertFalse(marker.exists())
 
     def test_genuine_listener_stays_open_and_receives_no_payload(self):
-        result = self.probe('--inspect=127.0.0.1:9229', listening=True)
+        result = self.probe(listening=True)
         self.assertEqual((result.returncode, result.stdout, result.stderr), (1, '', ''))
 
     def test_child_transport_failure_cannot_prove_absence(self):

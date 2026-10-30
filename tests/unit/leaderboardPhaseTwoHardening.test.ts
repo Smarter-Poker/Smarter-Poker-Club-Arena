@@ -15,6 +15,41 @@ const migration = readFileSync(
 );
 
 describe('leaderboard phase two operational hardening', () => {
+  it('establishes My Clubs before certifying keyboard navigation from a saved Global view', async () => {
+    const route = readFileSync('tests/e2e/routes/leaderboard-console.spec.ts', 'utf8');
+    const start = route.indexOf('// Keyboard-only visitors');
+    const end = route.indexOf('    await tabs.first().focus();', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    let scope = 'global';
+    const secondaryTab = { visible: () => scope === 'my-clubs' };
+    const board = {
+      getByRole: (role: string, options?: { name: string; exact?: boolean }) => {
+        if (role === 'button' && options?.name === 'My Clubs')
+          return {
+            click: async () => {
+              scope = 'my-clubs';
+            },
+          };
+        if (role === 'tab' && options?.name === 'Tournament Stats') return secondaryTab;
+        if (role === 'tab' && !options) return { nth: () => secondaryTab };
+        throw new Error(`Unexpected keyboard preparation: ${role} ${options?.name}`);
+      },
+    };
+    const assertVisible = (target: typeof secondaryTab) => ({
+      toBeVisible: async () => {
+        if (!target.visible()) throw new Error('Tournament Stats is absent in saved Global scope');
+      },
+    });
+    const prepare = new Function(
+      'board',
+      'expect',
+      `return (async () => {${route.slice(start, end)}\nawait expect(tabs.nth(1)).toBeVisible();})();`
+    );
+    await prepare(board, assertVisible);
+    expect(scope).toBe('my-clubs');
+  });
+
   it('bounds and expires the session cache instead of keeping raw rankings forever', () => {
     expect(cache).toContain("export const LEADERBOARD_CACHE_PREFIX = 'lb_cache_v2_'");
     expect(cache).toContain('export const LEADERBOARD_CACHE_TTL_MS = 5 * 60 * 1000');

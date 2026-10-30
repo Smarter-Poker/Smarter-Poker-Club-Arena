@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 256618,
-      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+      "bytes": 257286,
+      "sha256": "0fad9d765b095be7f5c6e04ccd7d0cc40d0ce96293c21a341b62a77819e8a7d5"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1332,5 +1332,17 @@
     },
     "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation or historical receipt restamp. Actual paid admission improvement is unproven; protected hosted qualification remains mandatory.",
     "integration": "Protected main 6b4b49e216ae78d07348661f7c296242732e16e9 retained, including native profile controls and all financial qualification history. This audit changes source identity only."
+  },
+  "rosterFeeWindowIndexSourceAudit20261030": {
+    "scope": "Add the private PG17 100-member tournament-fee physical-index qualification and report to required accounting shard4. Existing financial assertions, matrices, deadlines and historical evidence remain unchanged.",
+    "previousCiPin": {
+      "bytes": 256618,
+      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+    },
+    "currentCiPin": {
+      "bytes": 257286,
+      "sha256": "0fad9d765b095be7f5c6e04ccd7d0cc40d0ce96293c21a341b62a77819e8a7d5"
+    },
+    "qualification": "Current source identity only. No historical certificate, financial verdict or production installation restamped."
   }
 }

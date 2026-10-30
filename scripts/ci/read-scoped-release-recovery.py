@@ -70,6 +70,7 @@ REFUSALS = {
     'Inspector absence identity export': ('inspector', 'export_absence_identity'),
 }
 REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused'), ('inspector', 'intent_unavailable'), ('inspector', 'identity_changed'), ('inspector', 'native_scalar_unavailable')}
+REFUSAL_CODES |= {('serving_role', 'binding_unproved'), ('serving_role', 'evidence_unavailable')}
 
 
 INSPECTOR_COMMAND_STAGES = {'container', 'health', 'image', 'probe', 'history',
@@ -112,11 +113,11 @@ def refusal(request, error):
 
 
 def validate_refusal(value, request):
-    fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'phase', 'code'} | ({'mode'} if 'mode' in request else set())
+    request = selection(request)
+    fields = {'schema', 'readOnly', 'phase', 'code'} | set(request)
     if (not isinstance(value, dict) or set(value) != fields
             or value['schema'] != FAILURE_SCHEMA or value['readOnly'] is not True
-            or value['runKey'] != request['runKey'] or value['releaseSha'] != request['releaseSha']
-            or value.get('mode') != request.get('mode')
+            or any(value[key] != expected for key, expected in request.items())
             or not isinstance(value['phase'], str) or not isinstance(value['code'], str)
             or (value['phase'], value['code']) not in REFUSAL_CODES):
         raise ValueError('Scoped evidence transport unavailable')
@@ -124,6 +125,13 @@ def validate_refusal(value, request):
 
 
 def selection(value):
+    if isinstance(value, dict) and value.get('mode') == 'current_serving_inspector_role':
+        if (set(value) != {'mode', 'releaseSha', 'instanceId'}
+                or value['releaseSha'] != EED
+                or not isinstance(value['instanceId'], str)
+                or not re.fullmatch(r'1-[0-9a-f]{8}', value['instanceId'])):
+            raise ValueError('Exact current serving identity required')
+        return dict(value)
     if (not isinstance(value, dict) or set(value) not in ({'runKey', 'releaseSha'}, {'runKey', 'releaseSha', 'mode'})
             or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector'})):
         raise ValueError('Exact existing release identity required')
@@ -1371,8 +1379,77 @@ def validate_inspector(value, request):
     return value
 
 
+SERVING_ROLE_SCHEMA = 'current-serving-inspector-role/v1'
+SERVING_ROLE_LIMITATION = 'Kernel role only; no inspector ownership, provenance or action authority.'
+
+
+def _serving_boot_id(deadline):
+    value = _kernel_read(Path('/proc/sys/kernel/random/boot_id'), 64, deadline).decode('ascii').strip()
+    if not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', value):
+        raise ValueError('Serving boot identity unavailable')
+    return value
+
+
+def serving_role_remote(request):
+    request = selection(request)
+    if request.get('mode') != 'current_serving_inspector_role':
+        raise ValueError('Exact current serving identity required')
+    deadline = time.monotonic() + 8
+    try:
+        boot = _serving_boot_id(deadline)
+        before = inspector_identity(deadline)
+        started = _kernel_pid_stat(before['hostPid'], deadline)
+        health = pending_tcp_health(deadline)
+        if health != {'source': request['releaseSha'], 'instance': request['instanceId']}:
+            raise ScopedRefusal('serving_role', 'binding_unproved')
+        label = inspector_command(['docker', 'image', 'inspect', '--format',
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']],
+            deadline, limit=256).decode().strip()
+        if label != request['releaseSha']:
+            raise ScopedRefusal('serving_role', 'binding_unproved')
+        owner = 'unknown'
+        try:
+            projected = pending_socket_owner(before, deadline)
+            if isinstance(projected, str) and projected in {'main', 'other_container_process', 'unknown'}:
+                owner = projected
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        # A failed optional projection never removes these mandatory current
+        # runtime bindings. No retired release records are read or recreated.
+        after_boot = _serving_boot_id(deadline)
+        after_started = _kernel_pid_stat(before['hostPid'], deadline)
+        after = inspector_identity(deadline, stage='recheck_container')
+        after_health = pending_tcp_health(deadline)
+        _kernel_deadline(deadline)
+        if (boot != after_boot or started != after_started or before != after
+                or health != after_health):
+            raise ScopedRefusal('serving_role', 'binding_unproved')
+        return {'schema': SERVING_ROLE_SCHEMA, 'readOnly': True, **request,
+                'inspectorOwner': owner, 'limitation': SERVING_ROLE_LIMITATION}
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        if isinstance(error, ScopedRefusal) and error.phase == 'serving_role':
+            raise
+        raise ScopedRefusal('serving_role', 'evidence_unavailable') from None
+
+
+def validate_serving_role(value, request):
+    request = selection(request)
+    if (not isinstance(value, dict)
+            or set(value) != {'schema', 'readOnly', 'mode', 'releaseSha', 'instanceId', 'inspectorOwner', 'limitation'}
+            or value['schema'] != SERVING_ROLE_SCHEMA or value['readOnly'] is not True
+            or request.get('mode') != 'current_serving_inspector_role'
+            or any(value[key] != expected for key, expected in request.items())
+            or not isinstance(value['inspectorOwner'], str)
+            or value['inspectorOwner'] not in {'main', 'other_container_process', 'unknown'}
+            or value['limitation'] != SERVING_ROLE_LIMITATION):
+        raise ValueError('Serving role export refused')
+    return value
+
+
 def remote(request):
     request = selection(request)
+    if request.get('mode') == 'current_serving_inspector_role':
+        return validate_serving_role(serving_role_remote(request), request)
     # All production paths are fixed. No environment/caller path override.
     root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -1400,6 +1477,8 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'current_serving_inspector_role':
+        return validate_serving_role(value, request)
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':

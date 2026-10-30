@@ -116,9 +116,10 @@ describe('club lobby creation controls', () => {
 
 describe('responsive tournament list redesign', () => {
   it('renders the live-board hierarchy and responsive control deck', () => {
-    expect(page).toContain('Live Club Schedule');
+    expect(page).not.toContain('Live Club Schedule');
+    expect(page).toContain('<LobbyGameSections');
     expect(page).toContain('Find Your Game');
-    expect(page).toContain('lobby-controls__total');
+    expect(page).not.toContain('lobby-controls__total');
     expect(pageCss).toContain('LIVE GAME BOARD');
     expect(css).toContain('LIVE EVENT BOARD');
   });

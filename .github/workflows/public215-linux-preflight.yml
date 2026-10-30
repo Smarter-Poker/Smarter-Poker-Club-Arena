@@ -6,6 +6,8 @@ on:
       - .github/workflows/public215-linux-preflight.yml
       - scripts/ci/public215-linux-preflight.mjs
       - scripts/ci/public215-linux-preflight.test.mjs
+      - scripts/ci/public215-source-admission.mjs
+      - scripts/ci/public215-source-admission.test.mjs
   workflow_dispatch:
     inputs:
       dataset:
@@ -27,6 +29,8 @@ on:
 permissions:
   contents: read
   actions: read
+  checks: read
+  pull-requests: read
 concurrency:
   group: public215-linux-${{ github.event.pull_request.number || inputs.dataset }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -39,7 +43,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test scripts/ci/public215-linux-preflight.test.mjs
+      - run: node --test scripts/ci/public215-linux-preflight.test.mjs scripts/ci/public215-source-admission.test.mjs
   evidence:
     needs: contract
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository_id == '1132369872'
@@ -55,7 +59,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Existing exact-head source admission
+      - name: Existing protected PR and exact candidate source admission
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
@@ -63,7 +67,7 @@ jobs:
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
-          node scripts/ci/pr-status.mjs --sha "$CANDIDATE_SHA" --json
+          node scripts/ci/public215-source-admission.mjs
       - name: Establish existing pinned SSH identity
         env:
           HOST: ${{ secrets.HETZNER_HOST }}

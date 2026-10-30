@@ -390,6 +390,7 @@ interface AdvancedFiltersProps {
   clubId: string;
   /** Tab the sheet opens on, so it matches the lobby the player came from. */
   initialType: FilterGameType;
+  allowedTypes?: FilterGameType[];
   onClose: () => void;
   onApply: (store: FilterStore) => void;
   sortKey?: string;
@@ -412,6 +413,7 @@ export default function AdvancedFilters({
   sortOptions,
   clubId,
   initialType,
+  allowedTypes,
   onClose,
   onApply,
   sortOnly = false,
@@ -656,7 +658,9 @@ export default function AdvancedFilters({
       >
         <header className="afx-head">
           <div className="afx-head__copy">
-            <span className="afx-head__eyebrow">Tournament Board</span>
+            <span className="afx-head__eyebrow">
+              {allowedTypes?.includes('HOLDEM') ? 'Cash Games' : 'Tournament Board'}
+            </span>
             <h2>{sortOnly ? 'Sort Games' : 'Game Filters'}</h2>
             <p>
               {sortOnly
@@ -676,7 +680,9 @@ export default function AdvancedFilters({
 
         {!sortOnly && (
           <div className="afx-tabs" role="group" aria-label="Game Type">
-            {TABS.filter((t) => t.key !== 'ALL').map((t) => (
+            {TABS.filter(
+              (t) => t.key !== 'ALL' && (!allowedTypes || allowedTypes.includes(t.key))
+            ).map((t) => (
               <button
                 key={t.key}
                 type="button"

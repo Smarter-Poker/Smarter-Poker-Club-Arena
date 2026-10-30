@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 /**
  * JOIN LIGHTNING FROM THE GAME LOBBY, ON THE DEPLOYED SITE (2026-10-24).
  *
@@ -67,6 +68,7 @@ for (const width of [393, 1440]) {
     // holds Join Lightning: the exact path #7879 repaired. Games named
     // "Lightning" that are not running Lightning offer Join Game instead, so
     // the first panel that offers an enabled Join Lightning is the door.
+    await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     if (await allGames.count()) await allGames.click();
     // A row is chosen by its live mode, not its name (post-deploy run

@@ -99,8 +99,9 @@ describe('responsive premium Club Arena', () => {
     const games = PAGE.indexOf('className="club-home__games club-home__games--v2"', launch);
 
     expect(PAGE).toContain('type AllStatusFilter =');
-    expect(PAGE).toContain("{ key: 'OPEN_REGISTRATION', label: 'Open Registration' }");
-    expect(PAGE).toContain("{ key: 'STARTING_SOON', label: 'Starting Soon' }");
+    expect(PAGE).not.toContain("{ key: 'OPEN_REGISTRATION', label: 'Open Registration' }");
+    expect(PAGE).not.toContain("{ key: 'STARTING_SOON', label: 'Starting Soon' }");
+    expect(PAGE).toContain("{ key: 'RUNNING', label: 'Running' }");
     expect(gameTypes).toBeGreaterThan(controls);
     expect(allStatuses).toBeGreaterThan(gameTypes);
     expect(campaign).toBeGreaterThan(allStatuses);

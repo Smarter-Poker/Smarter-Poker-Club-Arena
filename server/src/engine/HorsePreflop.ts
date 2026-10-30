@@ -212,6 +212,10 @@ export interface PreflopCtx {
   cashAggression?: boolean;
   /** Short deck keeps its own calibration; the cash pressure layer skips it. */
   isShortDeck?: boolean;
+  /** League calibration arm (2026-10-30): added to the tournament call bar
+   *  facing a single open (no callers yet), so the marginal flats become
+   *  folds while the 3-bet bar is untouched. Undefined = no change. */
+  tournamentFlatBump?: number;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
   /**
@@ -1288,6 +1292,19 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     if (isTourney && stackBB > 12 && stackBB <= 25 && !ctx.isOmaha && !headsUp) {
       threeBetThresh = Math.min(threeBetThresh, t(0.72 - anteWiden));
       callThresh += 0.05;
+    }
+    // League calibration arm (2026-10-30, tournament flats of an open measured
+    // -8.7 bb a hand on 54 human-seated hands): tighten the flat of a single
+    // open by a stated amount; the 3-bet bar does not move.
+    if (
+      isTourney &&
+      callers === 0 &&
+      !ctx.isOmaha &&
+      typeof ctx.tournamentFlatBump === 'number' &&
+      ctx.tournamentFlatBump > 0 &&
+      ctx.tournamentFlatBump <= 0.2
+    ) {
+      callThresh += ctx.tournamentFlatBump;
     }
     // V12 ANTI-EXPLOIT: this raiser is hunting the horse — their opens carry
     // less real strength than the position suggests, so re-raise more and

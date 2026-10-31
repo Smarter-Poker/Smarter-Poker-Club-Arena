@@ -1,4 +1,7 @@
-import { isReadOnlySpectatorSocketType } from './support/spectatorSocketRead';
+import {
+  isReadOnlySpectatorSocketType,
+  requestObserverForegroundProbe,
+} from './support/spectatorSocketRead';
 import { openLobbyGameSection } from './support/lobbyGameSections';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type WebSocketRoute } from '@playwright/test';
@@ -82,23 +85,6 @@ test('the published table explains controlled seat moves without moving a player
   const refusedSynthetic = { http: 0, websocket: 0 };
   let forwardedSyntheticUpstream = 0;
   const heroDiagnostics: string[] = [];
-  await context.addInitScript(() => {
-    // Retain only a native socket reference, never its URL/token/frame data.
-    // The probe below is a harmless PING, and must be refused by the proxy.
-    const send = WebSocket.prototype.send;
-    const sockets: { engine?: WebSocket } = {};
-    WebSocket.prototype.send = function (data) {
-      if (this.url.startsWith('wss://engine.smarter.poker/')) sockets.engine = this;
-      return send.call(this, data);
-    };
-    Object.defineProperty(window, '__a14ReadOnlySocketProbe', {
-      value: () => {
-        if (!sockets.engine || sockets.engine.readyState !== WebSocket.OPEN)
-          throw new Error('No live engine socket for refusal proof');
-        sockets.engine.send(JSON.stringify({ type: 'PING' }));
-      },
-    });
-  });
   page.on('console', (message) => {
     if (syntheticPhase && message.text().includes('TablePage.EngineHeroSeatNotRendered'))
       heroDiagnostics.push('TablePage.EngineHeroSeatNotRendered');
@@ -438,8 +424,8 @@ test('the published table explains controlled seat moves without moving a player
       String(seat)
     );
     expect(heroDiagnostics).toEqual([]);
+    await page.evaluate(requestObserverForegroundProbe);
     await page.evaluate(async () => {
-      (window as unknown as { __a14ReadOnlySocketProbe: () => void }).__a14ReadOnlySocketProbe();
       // A nonread against a nonexistent static path proves the HTTP guard
       // without touching any money, seat, telemetry or backend mutation API.
       await fetch('/hub/club-arena/__a14_ui_only_refusal_probe__', {

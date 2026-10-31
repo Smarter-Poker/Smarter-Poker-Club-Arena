@@ -149,6 +149,13 @@ describe('production observer socket boundary', () => {
     }
   });
 
+  it('uses the real application foreground path without retaining a native backing socket', () => {
+    const source = read('tests/e2e/production-seat-move-announcement.spec.ts');
+    expect(source).toContain('await page.evaluate(requestObserverForegroundProbe)');
+    expect(source).not.toContain('WebSocket.prototype');
+    expect(source).not.toContain('__a14ReadOnlySocketProbe');
+  });
+
   it('refuses every synthetic upstream frame before the natural observer allowlist', () => {
     const source = read('tests/e2e/production-seat-move-announcement.spec.ts');
     const handler = source.slice(source.indexOf('client.onMessage((message) => {'));

@@ -33,7 +33,7 @@ function providerCA() {
   return pem;
 }
 const safeFailures = new Set(['ISOLATED_SCHEMA_CAPTURE_REFUSED', 'ISOLATED_SCHEMA_DUMP_FAILED',
-  'SCHEMA_COMPOSITION_PREIMAGE_REQUIRED', 'SCHEMA_CATALOGUE_BYTES_REQUIRED']);
+  'ISOLATED_NATIVE_TRANSPORT_FAILED', 'SCHEMA_COMPOSITION_PREIMAGE_REQUIRED', 'SCHEMA_CATALOGUE_BYTES_REQUIRED']);
 const connectionFailures = new Set(['ENETUNREACH', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN',
   'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'CERT_HAS_EXPIRED',
   'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
@@ -56,6 +56,7 @@ export function connectionFailureCode(error) {
 }
 
 const dumpFailureKinds = new Set(['DEADLINE', 'STDOUT_LIMIT', 'STDERR_LIMIT', 'SPAWN',
+  'STDIN', 'FACTS_REFUSED',
   'TLS_VERIFICATION', 'PERMISSION_DENIED', 'LOCK_TIMEOUT', 'STATEMENT_TIMEOUT',
   'AUTHENTICATION_FAILED', 'VERSION_MISMATCH', 'CONNECTION_FAILED', 'SNAPSHOT_IMPORT',
   'INVALID_OPTION', 'QUERY_FAILED', 'CONCURRENT_CATALOG_CHANGE', 'UNKNOWN']);
@@ -68,7 +69,7 @@ export function dumpFailureKind(stderr) {
     ['STATEMENT_TIMEOUT', /statement timeout/],
     ['AUTHENTICATION_FAILED', /authentication failed/],
     ['VERSION_MISMATCH', /version mismatch/],
-    ['SNAPSHOT_IMPORT', /invalid snapshot|cannot import a snapshot|snapshot[^\n]*does not exist/],
+    ['SNAPSHOT_IMPORT', /invalid snapshot|cannot import a snapshot|could not import the requested snapshot|snapshot[^\n]*does not exist/],
     ['INVALID_OPTION', /unrecognized option|invalid option|invalid connection option/],
     ['CONNECTION_FAILED', /connection to server|server closed the connection/],
     ['CONCURRENT_CATALOG_CHANGE', /concurrently updated/],
@@ -79,8 +80,43 @@ export function safeDumpDiagnostic(value) {
   const count = (number) => Number.isSafeInteger(number) && number >= 0 && number <= 1024 * 1024 * 1024 ? number : null;
   return { kind: dumpFailureKinds.has(value?.kind) ? value.kind : 'UNKNOWN',
     exit_code: Number.isInteger(value?.exit_code) && value.exit_code >= 0 && value.exit_code <= 255 ? value.exit_code : null,
-    signal: ['SIGKILL','SIGTERM','SIGABRT','NONE'].includes(value?.signal) ? value.signal : 'UNKNOWN',
-    elapsed_ms: count(value?.elapsed_ms), stdout_bytes: count(value?.stdout_bytes), stderr_bytes: count(value?.stderr_bytes) };
+    signal: ['SIGINT','SIGKILL','SIGTERM','SIGABRT','NONE'].includes(value?.signal) ? value.signal : 'UNKNOWN',
+    elapsed_ms: count(value?.elapsed_ms), stdout_bytes: count(value?.stdout_bytes), stderr_bytes: count(value?.stderr_bytes),
+    ...(value?.cancellation ? {cancellation:safeCancellation(value.cancellation)} : {}) };
+}
+
+function safeCancellation(value) {
+  const bool = item => typeof item==='boolean' ? item : 'UNKNOWN';
+  return {sigint_attempted:bool(value?.sigint_attempted),sigint_os_accepted:bool(value?.sigint_os_accepted),
+    sigkill_attempted:bool(value?.sigkill_attempted),sigkill_os_accepted:bool(value?.sigkill_os_accepted),
+    child_close_observed:bool(value?.child_close_observed),
+    server_cancel_acknowledgement:value?.sigint_attempted===false && value?.sigkill_attempted===false ? 'NOT_REQUESTED' : 'NOT_OBSERVED'};
+}
+
+// Native PG17 clients handle SIGINT by attempting cancellation on their own
+// connection. Neither OS signal acceptance nor process exit proves server ACK.
+// The grace period is INSIDE the original hard deadline, never an extension.
+function nativeCancellation(child, deadlineMs, onAbort) {
+  const started=performance.now();let closed=false,softTimer,hardTimer,graceTimer;
+  const facts={sigint_attempted:false,sigint_os_accepted:false,sigkill_attempted:false,
+    sigkill_os_accepted:false,child_close_observed:false,server_cancel_acknowledgement:'NOT_REQUESTED'};
+  const clear=()=>{clearTimeout(softTimer);clearTimeout(hardTimer);clearTimeout(graceTimer);};
+  const hard=()=>{
+    if(closed || facts.sigkill_attempted)return;
+    facts.sigkill_attempted=true;
+    try{facts.sigkill_os_accepted=child.kill('SIGKILL')===true;}catch{}
+  };
+  const abort=kind=>{
+    onAbort(kind);
+    if(closed || facts.sigint_attempted)return;
+    facts.sigint_attempted=true;facts.server_cancel_acknowledgement='NOT_OBSERVED';
+    try{facts.sigint_os_accepted=child.kill('SIGINT')===true;}catch{}
+    if(!closed)graceTimer=setTimeout(hard,Math.max(0,Math.min(1000,deadlineMs-(performance.now()-started))));
+  };
+  child.once('close',()=>{closed=true;facts.child_close_observed=true;clear();});
+  softTimer=setTimeout(()=>abort('DEADLINE'),Math.max(0,deadlineMs-1000));
+  hardTimer=setTimeout(hard,deadlineMs);
+  return {abort,clear,facts:()=>safeCancellation(facts)};
 }
 
 export function captureContext(env) {
@@ -173,15 +209,77 @@ export async function captureRoleCatalogue(db) {
   return value;
 }
 
-export async function dumpSnapshot(config, snapshot, { spawnProcess = spawn, deadlineMs = 30000 } = {}) {
-  requireCapture(/^[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9]+$/.test(snapshot));
+function databaseChildEnvironment(config, applicationName) {
   // Construct libpq's environment explicitly; no URL, token, arbitrary
   // PGOPTIONS or inherited DATABASE_URL enters argv or the child environment.
-  const env = { PATH: process.env.PATH, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8',
+  return { PATH: process.env.PATH, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8',
     PGHOST: config.host, PGPORT: '5432', PGDATABASE: 'postgres', PGUSER: config.user,
     PGPASSWORD: config.password, PGSSLMODE: 'verify-full', PGSSLROOTCERT: PROVIDER_CA_PATH, PGCONNECT_TIMEOUT: '5',
-    PGAPPNAME: 'isolated-schema-readonly-dump',
+    PGAPPNAME: applicationName,
     PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=1000' };
+}
+
+function nativeTransportReceipt(elapsed) {
+  requireCapture(Number.isSafeInteger(elapsed) && elapsed >= 0 && elapsed <= 5000);
+  return {status:'passed',client_major:17,database_postgres:true,read_only:true,
+    repeatable_read:true,snapshot_imported:true,application_name_matches:true,
+    statement_timeout_ms:5000,lock_timeout_ms:1000,elapsed_ms:elapsed};
+}
+
+export async function verifyNativeSnapshotTransport(config, snapshot, {spawnProcess = spawn, deadlineMs = 5000} = {}) {
+  requireCapture(/^[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9]+$/.test(snapshot) &&
+    Number.isSafeInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 5000);
+  const env = databaseChildEnvironment(config, 'isolated-schema-readonly-native-transport');
+  const child = spawnProcess('/usr/lib/postgresql/17/bin/psql',
+    ['--no-psqlrc','--no-password','--quiet','--tuples-only','--no-align','--set=ON_ERROR_STOP=1'],
+    {env,stdio:['pipe','pipe','pipe']});
+  const started = performance.now(), stdout = [], stderr = [];
+  let outputBytes = 0, errorBytes = 0, kind = null;
+  const failure = (code, signal) => Object.assign(new Error('ISOLATED_NATIVE_TRANSPORT_FAILED'), {
+    nativeDiagnostic: safeDumpDiagnostic({kind:kind ?? dumpFailureKind(Buffer.concat(stderr).toString('utf8')),
+      exit_code:code,signal:signal ?? 'NONE',elapsed_ms:Math.round(performance.now()-started),
+      stdout_bytes:outputBytes,stderr_bytes:errorBytes,cancellation:cancellation.facts()})});
+  const cancellation=nativeCancellation(child,deadlineMs,reason=>{kind ??= reason;});
+  try {
+    await new Promise((resolve,reject)=>{
+      child.stdout.on('data',bytes=>{
+        outputBytes += bytes.length;
+        if(outputBytes>256)cancellation.abort('STDOUT_LIMIT');else stdout.push(bytes);
+      });
+      child.stderr.on('data',bytes=>{
+        errorBytes += bytes.length;
+        if(errorBytes>65536)cancellation.abort('STDERR_LIMIT');else stderr.push(bytes);
+      });
+      child.stdin.on('error',()=>cancellation.abort('STDIN'));
+      child.once('error',()=>{kind ??= 'SPAWN';});
+      child.once('close',(code,signal)=>{
+        if(performance.now()-started>deadlineMs)kind ??= 'DEADLINE';
+        if(code===0 && kind===null && Buffer.concat(stdout).toString('utf8').trim()==='t')resolve();
+        else {if(code===0)kind ??= 'FACTS_REFUSED';reject(failure(code,signal));}
+      });
+      // Only this validated original snapshot and constant read-only facts go
+      // to stdin. No snapshot, URL, credential or SQL text enters argv/logs.
+      child.stdin.end(`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET TRANSACTION SNAPSHOT '${snapshot}';
+SET LOCAL search_path=pg_catalog;
+SELECT current_database()='postgres'
+ AND current_setting('transaction_read_only')='on'
+ AND current_setting('transaction_isolation')='repeatable read'
+ AND current_setting('statement_timeout')='5s'
+ AND current_setting('lock_timeout')='1s'
+ AND current_setting('application_name')='isolated-schema-readonly-native-transport';
+ROLLBACK;
+`);
+    });
+    return nativeTransportReceipt(Math.round(performance.now()-started));
+  } finally {
+    cancellation.clear();delete env.PGPASSWORD;stdout.length=0;stderr.length=0;
+  }
+}
+
+export async function dumpSnapshot(config, snapshot, { spawnProcess = spawn, deadlineMs = 30000 } = {}) {
+  requireCapture(/^[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9]+$/.test(snapshot));
+  const env = databaseChildEnvironment(config, 'isolated-schema-readonly-dump');
   // Native pg_dump resets statement_timeout during startup. Its effective
   // bounds are this whole-export deadline and explicit table-lock wait below;
   // the Node catalogue connection retains its separate five-second queries.
@@ -194,30 +292,34 @@ export async function dumpSnapshot(config, snapshot, { spawnProcess = spawn, dea
   const failure = (code, signal) => Object.assign(new Error('ISOLATED_SCHEMA_DUMP_FAILED'), {
     dumpDiagnostic: safeDumpDiagnostic({kind: failureKind ?? dumpFailureKind(Buffer.concat(stderrChunks).toString('utf8')),
       exit_code: code, signal: signal ?? 'NONE', elapsed_ms: Math.round(performance.now() - started),
-      stdout_bytes: size, stderr_bytes: stderrSize}) });
-  const timer = setTimeout(() => { failed = true; failureKind ??= 'DEADLINE'; child.kill('SIGKILL'); }, deadlineMs);
+      stdout_bytes: size, stderr_bytes: stderrSize,cancellation:cancellation.facts()}) });
+  const cancellation=nativeCancellation(child,deadlineMs,reason=>{failed=true;failureKind ??= reason;});
   try {
     await new Promise((resolve, reject) => {
       child.stdout.on('data', (bytes) => {
         size += bytes.length;
-        if (size > MAX_SCHEMA_BYTES) { failed = true; failureKind ??= 'STDOUT_LIMIT'; child.kill('SIGKILL'); }
+        if (size > MAX_SCHEMA_BYTES) cancellation.abort('STDOUT_LIMIT');
         else chunks.push(bytes);
       });
       child.stderr.on('data', (bytes) => {
         stderrSize += bytes.length;
-        if (stderrSize > 65536) { failed = true; failureKind ??= 'STDERR_LIMIT'; child.kill('SIGKILL'); }
+        if (stderrSize > 65536) cancellation.abort('STDERR_LIMIT');
         else stderrChunks.push(bytes);
       });
-      child.once('error', () => { failureKind ??= 'SPAWN'; reject(failure(null, null)); });
-      child.once('close', (code, signal) => code === 0 && !failed ? resolve() : reject(failure(code, signal)));
+      child.once('error', () => { failed = true; failureKind ??= 'SPAWN'; });
+      child.once('close', (code, signal) => {
+        if(performance.now()-started>deadlineMs){failed=true;failureKind ??= 'DEADLINE';}
+        code === 0 && !failed ? resolve() : reject(failure(code, signal));
+      });
     });
     const sql = Buffer.concat(chunks).toString('utf8');
     assertSchemaOnly(sql);
     return sql;
-  } finally { clearTimeout(timer); delete env.PGPASSWORD; chunks.length = 0; stderrChunks.length = 0; }
+  } finally { cancellation.clear(); delete env.PGPASSWORD; chunks.length = 0; stderrChunks.length = 0; }
 }
 
-export async function captureSchema({ output, env = process.env, Client, dump = dumpSnapshot }) {
+export async function captureSchema({ output, env = process.env, Client, dump = dumpSnapshot,
+  nativeCheck = verifyNativeSnapshotTransport }) {
   const context = captureContext(env);
   const runner = await realpath(env.RUNNER_TEMP);
   requireCapture(path.isAbsolute(output) && path.dirname(output) === runner &&
@@ -233,6 +335,7 @@ export async function captureSchema({ output, env = process.env, Client, dump = 
   db.on('error', () => { transportFailed = true; });
   let began = false, complete = false, created = false;
   let stage = 'connection';
+  let nativeTransport = null;
   const deadlineAt = Date.now() + DEADLINE_MS;
   const timer = setTimeout(() => { transportFailed = true; void db.end().catch(() => {}); }, DEADLINE_MS);
   try {
@@ -249,6 +352,12 @@ export async function captureSchema({ output, env = process.env, Client, dump = 
     const catalogue = await schemaCataloguePayload(db);
     const catalogueDigest = catalogue.catalogue_digest;
     const roleCatalogue = await captureRoleCatalogue(db);
+    stage = 'native-snapshot-transport';
+    const nativeResult = await nativeCheck(config,snapshot,{deadlineMs:Math.min(5000,remainingDumpBudget(deadlineAt,Date.now()))});
+    requireCapture(nativeResult?.status==='passed' && nativeResult.client_major===17 &&
+      ['database_postgres','read_only','repeatable_read','snapshot_imported','application_name_matches'].every(key=>nativeResult[key]===true) &&
+      nativeResult.statement_timeout_ms===5000 && nativeResult.lock_timeout_ms===1000);
+    nativeTransport = nativeTransportReceipt(nativeResult.elapsed_ms);
     stage = 'schema-only-dump';
     const remaining = remainingDumpBudget(deadlineAt, Date.now());
     const sql = await dump(config, snapshot, { deadlineMs: remaining });
@@ -285,12 +394,14 @@ export async function captureSchema({ output, env = process.env, Client, dump = 
       files: Object.fromEntries(Object.entries(contents).map(([name, bytes]) => [name,
         { sha256: schemaHash(bytes), bytes: Buffer.byteLength(bytes) }])),
       private_same_job_only: true, public_artifact_permitted: false,
+      native_transport: nativeTransport,
       current_database_contract_ready: false, production_writes: false };
     await writeFile(path.join(output,'schema-capture-manifest.json'),JSON.stringify(manifest)+'\n',{mode:0o600,flag:'wx'});
     requireCapture(!transportFailed && Date.now() < deadlineAt);
     complete = true;
     return { scope: context.scope, source_sha: context.source_sha,
       original_schema_sha256: manifest.original_schema_sha256, private_files: CAPTURE_FILES.length,
+      native_transport: nativeTransport,
       current_database_contract_ready: false, public_artifact_permitted: false };
   } catch (error) {
     const safe = new Error(safeFailures.has(error?.message) ? error.message : 'ISOLATED_SCHEMA_CAPTURE_FAILED');
@@ -298,6 +409,8 @@ export async function captureSchema({ output, env = process.env, Client, dump = 
     safe.connectionFailure = stage === 'connection' ? connectionFailureCode(error) : 'NOT_CONNECTION';
     safe.connectionRoute = config.host === 'db.kuklfnapbkmacvwxktbh.supabase.co' ? 'direct' : 'session-pooler';
     if (stage === 'schema-only-dump') safe.dumpDiagnostic = safeDumpDiagnostic(error?.dumpDiagnostic);
+    if (nativeTransport) safe.nativeTransport = nativeTransport;
+    if (stage === 'native-snapshot-transport') safe.nativeDiagnostic = safeDumpDiagnostic(error?.nativeDiagnostic);
     throw safe;
   } finally {
     clearTimeout(timer);
@@ -312,7 +425,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   if (process.argv.length !== 3) { console.error('ISOLATED_SCHEMA_CAPTURE_REFUSED'); process.exitCode = 1; }
   else captureSchema({output:process.argv[2]}).then((receipt) => console.log(JSON.stringify(receipt)))
     .catch((error) => {
-      const stages = new Set(['connection','metadata-preflight','catalogue','schema-only-dump','private-output']);
+      const stages = new Set(['connection','metadata-preflight','catalogue','native-snapshot-transport','schema-only-dump','private-output']);
       console.error(JSON.stringify({scope:'same-job-private-schema-capture',status:'failed',
         stage:stages.has(error?.captureStage) ? error.captureStage : 'context',
         connection_failure: connectionFailures.has(error?.connectionFailure) ||
@@ -320,6 +433,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
           ? error.connectionFailure : 'UNKNOWN',
         connection_route: ['direct','session-pooler'].includes(error?.connectionRoute) ? error.connectionRoute : 'UNKNOWN',
         ...(error?.captureStage === 'schema-only-dump' ? {dump_diagnostic: safeDumpDiagnostic(error?.dumpDiagnostic)} : {}),
+        ...(error?.nativeTransport ? {native_transport: nativeTransportReceipt(error.nativeTransport.elapsed_ms)} : {}),
+        ...(error?.captureStage === 'native-snapshot-transport' ? {native_transport_failure: safeDumpDiagnostic(error?.nativeDiagnostic)} : {}),
         code:safeFailures.has(error?.message) ? error.message : 'ISOLATED_SCHEMA_CAPTURE_FAILED'}));
       process.exitCode = 1;
     });

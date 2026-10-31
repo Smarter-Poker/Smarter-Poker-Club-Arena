@@ -56,13 +56,15 @@ describe('tournament horses fight back against raises', () => {
   it('the small blind re-steals a button open with a top-20% hand', () => {
     const spot = { position: 'sb', raiserPosition: 'late', strength: 0.53 };
     expect(run(spot)).toBe('raiseTo');
-    expect(run({ ...spot, mode: 'cash' })).toBe('fold');
+    // 2026-10-29: the cash counterpart (V60, HorseCashPreflopPressure.law) re-steals
+    // too; its explicit off arm keeps the old cash fold.
+    expect(run({ ...spot, mode: 'cash', cashAggression: false })).toBe('fold');
   });
 
   it('the button 3-bets a cutoff open with a top-11% hand', () => {
     const spot = { position: 'late', raiserPosition: 'late', strength: 0.68, isButton: true };
     expect(run(spot)).toBe('raiseTo');
-    expect(run({ ...spot, mode: 'cash' })).not.toBe('raiseTo');
+    expect(run({ ...spot, mode: 'cash', cashAggression: false })).not.toBe('raiseTo');
   });
 
   it('a 20bb big blind defends a button min-raise far wider', () => {
@@ -76,7 +78,7 @@ describe('tournament horses fight back against raises', () => {
       toCall: 120,
     };
     expect(run(spot)).toBe('call');
-    expect(run({ ...spot, mode: 'cash' })).toBe('fold');
+    expect(run({ ...spot, mode: 'cash' })).toBe('fold'); // the cash layer leaves BB flats alone
   });
 });
 

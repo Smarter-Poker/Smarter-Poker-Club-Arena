@@ -200,3 +200,33 @@ it('keeps a verified figure on a failed refresh and stops retrying once unmounte
     vi.useRealTimers();
   }
 });
+
+it('keeps fees and profit/loss together when a previous period resolves late', async () => {
+  let finishWeek!: (rows: Map<string, WinLossFigure>) => void;
+  const week = { ...initial, period: 'week' as const };
+  const read = vi
+    .spyOn(ClubRosterService, 'getMembersWinLoss')
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWeek = resolve;
+        })
+    )
+    .mockResolvedValue(new Map([['a', { cash: 8, mtt: 2, net: 10, fees: 40, downline_fees: 50 }]]));
+  const { result, rerender } = renderHook(useFigures, { initialProps: week as Props });
+  await act(async () => {});
+  rerender({ ...initial, period: 'overall' });
+  expect(result.current.size).toBe(0);
+  await waitFor(() => expect(result.current.get('a')?.fees).toBe(40));
+  await act(async () =>
+    finishWeek(new Map([['a', { cash: -9, mtt: 0, net: -9, fees: 2, downline_fees: 3 }]]))
+  );
+  expect(result.current.get('a')).toEqual({
+    cash: 8,
+    mtt: 2,
+    net: 10,
+    fees: 40,
+    downline_fees: 50,
+  });
+  expect(read.mock.calls.map((call) => call[2])).toEqual(['week', 'overall']);
+});

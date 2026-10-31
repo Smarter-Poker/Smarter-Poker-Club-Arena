@@ -1,0 +1,5 @@
+# Multi-day stages read the complete field
+
+Before: multiDayStages.ts readStageEntitlements/readTableWatermarks and TournamentManagerBase.ts seatStageEntitlements used single PostgREST responses for complete inventories. With 1,001 entitled players the real resume path seated only 1,000, then its database completion predicate refused unseated_entitlements. The regression fails before the change.
+
+Correction: use the existing keyset pagination reader for entitlements, tables and occupied chairs, preserving completeness and lifecycle checks before mutations. Preserve existing oldest-table draw ordering and exact consume-once RPCs. No production financial data changes. Validation: six regressions fail against the unchanged source; all 116 connected lifecycle/launch/break tests pass with the correction. Both root and server TypeScript compilers pass. The source diff was reread. Required hosted checks, engine activation and affected live proof remain pending. This is not established as the cause of the current three stalled events.

@@ -355,11 +355,12 @@ describe('the desktop Stakes heading carries the same menu', () => {
     const th = src.slice(src.indexOf('<thead'), src.indexOf('<tbody'));
     expect(th).toMatch(/col\.key === 'stakes' && hasStakesMenu && stakesMenuOpen/);
     expect(th).toMatch(/onSort=\{\(dir\) => applySort\(COL_STAKES, dir\)\}/);
+    expect(src).toContain('setHeadingSort({ ...next, chosen: true })');
     expect(src).toMatch(/const applySort = \(col: ColumnDef, dir: SortDir\)/);
-    // Persisted with the same write, then reported so the filter sheet's chip
+    // Persisted through the shared account setter, then reported so the filter sheet's chip
     // follows the heading (lobbySortBridge, 2026-10-24).
     expect(src).toMatch(
-      /writeSort\(clubId, category, next\);\s*onHeadingSort\?\.\(next\.key, next\.dir\);\s*\};\s*\n\s*const handleHeaderClick/
+      /setSort\(next\);\s*onHeadingSort\?\.\(next\.key, next\.dir\);\s*\};\s*\n\s*const handleHeaderClick/
     );
   });
 });

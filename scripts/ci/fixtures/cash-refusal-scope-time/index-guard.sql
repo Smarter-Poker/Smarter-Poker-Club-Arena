@@ -1,0 +1,6 @@
+DO $cash_index$DECLARE i pg_index%ROWTYPE;c pg_class%ROWTYPE;BEGIN SELECT*INTO STRICT c FROM pg_class WHERE oid=to_regclass('public.accounting_cash_receipts_scope_time_keys');SELECT*INTO STRICT i FROM pg_index WHERE indexrelid=c.oid;IF pg_get_indexdef(c.oid)IS DISTINCT FROM $cash_index_def$CREATE INDEX accounting_cash_receipts_scope_time_keys ON public.accounting_cash_source_receipts USING btree ((
+CASE
+    WHEN ((scope ->> 'kind'::text) = 'unknown'::text) THEN 'unknown'::text
+    WHEN (((scope ->> 'kind'::text) = ANY (ARRAY['club'::text, 'union'::text])) AND (octet_length((scope ->> 'id'::text)) = 36)) THEN (((scope ->> 'kind'::text) || ':'::text) || (scope ->> 'id'::text))
+    ELSE NULL::text
+END), earned_at, id)$cash_index_def$ OR c.relowner<>'postgres'::regrole OR c.relnamespace<>'public'::regnamespace OR c.relam<>(SELECT oid FROM pg_am WHERE amname='btree')OR c.relkind<>'i' OR c.reloptions IS NOT NULL OR NOT i.indisvalid OR NOT i.indisready OR NOT i.indislive OR i.indisunique OR i.indisprimary OR i.indisexclusion OR NOT i.indimmediate OR i.indnkeyatts<>3 OR i.indnatts<>3 OR i.indpred IS NOT NULL OR i.indkey::text<>'0 4 1' OR i.indrelid<>'public.accounting_cash_source_receipts'::regclass THEN RAISE EXCEPTION 'cash_refusal_exact_selector_index_required';END IF;END$cash_index$;

@@ -236,9 +236,9 @@ async function synchronized() {
 
 /** Send Ticket is bought into one tournament (Dan 2026-10-15). */
 async function chooseTournament(dialog: HTMLElement) {
-  await within(dialog).findByRole('option', { name: /Test Event/ });
-  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Tournament' }), {
-    target: { value: TOURNEY_ID },
+  await within(dialog).findByRole('option', { name: /10 Ticket/ });
+  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Ticket Value' }), {
+    target: { value: '10' },
   });
 }
 
@@ -688,9 +688,7 @@ describe('P-10: the figure a user confirms is the figure that moves', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket' }));
     const ticket = await screen.findByRole('dialog', { name: /Send Ticket/ });
     // A ticket's value is the tournament's price, the same for everyone.
-    expect(
-      within(ticket).getByText('Choose A Tournament', { selector: '[role="status"]' })
-    ).toBeInTheDocument();
+    expect(within(ticket).getByText(/Total: 20/)).toBeInTheDocument();
     await chooseTournament(ticket);
     expect(within(ticket).getByText(/Total: 20/)).toBeInTheDocument();
     expect(within(ticket).getByRole('button', { name: 'Confirm' })).toBeEnabled();
@@ -1428,7 +1426,8 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   expect(within(dialog).getByRole('region', { name: 'From Your Player Wallet' })).toHaveTextContent(
     '250'
   );
-  expect(within(dialog).getByRole('combobox', { name: 'Tournament' })).toBeInTheDocument();
+  expect(within(dialog).getByRole('combobox', { name: 'Ticket Value' })).toBeInTheDocument();
+  expect(within(dialog).getByRole('option', { name: '40 Ticket', exact: true })).toHaveValue('40');
 });
 it('Phase 4: places the working roster before the read-only reconciliation report', async () => {
   mountCashier();
@@ -1590,7 +1589,7 @@ it('Phase 5: a mismatched batch acknowledgement never confirms money movement', 
   expect(readCashierTransferRecovery(USER_ID, CLUB_A)).not.toBeNull();
 });
 
-it('Phase 5: tournament ticket keys are bound to the tournament and survive a reload', async () => {
+it('Phase 5: value ticket keys include the denomination and survive a reload', async () => {
   state.roster = [player(0, 75), player(1, 50)];
   state.batch = async () => ({ data: null, error: { message: 'Connection Lost' } });
   const mounted = mountCashier();
@@ -1605,18 +1604,16 @@ it('Phase 5: tournament ticket keys are bound to the tournament and survive a re
   expect(first.args.p_items).toEqual([
     expect.objectContaining({
       user_id: PLAYER_IDS[0],
-      tournament_id: TOURNEY_ID,
       amount: 10,
-      idempotency_key: expect.stringContaining(`:tournament:${TOURNEY_ID}`),
+      idempotency_key: expect.stringContaining(':10'),
     }),
     expect.objectContaining({
       user_id: PLAYER_IDS[1],
-      tournament_id: TOURNEY_ID,
       amount: 10,
-      idempotency_key: expect.stringContaining(`:tournament:${TOURNEY_ID}`),
+      idempotency_key: expect.stringContaining(':10'),
     }),
   ]);
-  expect(readCashierTransferRecoveries(USER_ID, CLUB_A)[0].tournamentId).toBe(TOURNEY_ID);
+  expect(readCashierTransferRecoveries(USER_ID, CLUB_A)[0].tournamentId).toBeUndefined();
   mounted.unmount();
   mountCashier();
   await synchronized();
@@ -1634,9 +1631,9 @@ it('Phase 5: tournament ticket keys are bound to the tournament and survive a re
   expect(lookup[1]?.p_ticket_keys).toEqual(
     (first.args.p_items as Array<{ idempotency_key: string }>).map((item) => item.idempotency_key)
   );
-  await within(dialog).findByRole('option', { name: /Test Event/ });
+  await within(dialog).findByRole('option', { name: /10 Ticket/ });
   await waitFor(() =>
-    expect(within(dialog).getByRole('combobox', { name: 'Tournament' })).toHaveValue(TOURNEY_ID)
+    expect(within(dialog).getByRole('combobox', { name: 'Ticket Value' })).toHaveValue('10')
   );
   fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
   await waitFor(() =>
@@ -1754,7 +1751,7 @@ it('Phase 7: associates a single send amount refusal with its field', async () =
   expect(field).toHaveAccessibleDescription('');
 });
 
-it('Phase 7: a ticket is priced by its tournament and waits for one to be chosen', async () => {
+it('Phase 7: a ticket requires a valid denomination and sends no event binding', async () => {
   state.roster = [player(0, 75)];
   mountCashier();
   await synchronized();
@@ -2323,3 +2320,46 @@ describe('management claims from the selected member wallet', () => {
     expect(state.rpcCalls.some((call) => call.name === 'fn_club_wallet_claim_back')).toBe(false);
   });
 });
+
+it.each(
+  ['super_agent', 'agent', 'sub_agent'].flatMap((role) =>
+    ['agent_wallet', 'player_wallet'].map((source) => [role, source])
+  )
+)(
+  '%s can directly transfer from their %s without finding their roster row',
+  async (role, sourceWallet) => {
+    state.myRole = role;
+    state.roster = [{ ...player(0, 250, 'My Account'), user_id: USER_ID, role }];
+    mountCashier();
+    await synchronized();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Someone Else' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer Between My Wallets' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
+    const source = within(dialog).getByRole('combobox', { name: 'Send From' });
+    const destination = within(dialog).getByRole('combobox', {
+      name: 'Recipient Wallet For My Account',
+    });
+    expect(source).toHaveValue('agent_wallet');
+    expect(destination).toHaveValue('player_wallet');
+    expect(within(source).queryByRole('option', { name: /Your Promo Wallet/ })).toBeNull();
+    fireEvent.change(source, { target: { value: 'player_wallet' } });
+    expect(destination).toHaveValue('agent_wallet');
+    expect(within(destination).queryByRole('option', { name: /Player Wallet/ })).toBeNull();
+    fireEvent.change(source, { target: { value: sourceWallet } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '5' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm', exact: true }));
+    await waitFor(() =>
+      expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
+    );
+    expect(
+      state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')?.args.p_items
+    ).toEqual([
+      expect.objectContaining({
+        user_id: USER_ID,
+        source: sourceWallet,
+        destination: sourceWallet === 'agent_wallet' ? 'player_wallet' : 'agent_wallet',
+        amount: 5,
+      }),
+    ]);
+  }
+);

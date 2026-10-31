@@ -82,11 +82,12 @@ async function attemptSave(
 export async function persistAccountSettings(
   userId: string,
   settingsPatch: Record<string, unknown>,
-  interfaceTheme: InterfaceTheme
+  interfaceTheme: InterfaceTheme,
+  recoveryMutationId?: string
 ): Promise<PersistAccountSettingsResult> {
   if (!userId) return { ok: false, error: new Error('Authentication required') };
 
-  const mutationId = createMutationId();
+  const mutationId = recoveryMutationId ?? createMutationId();
   const previousTail = accountWriteTails.get(userId) ?? Promise.resolve();
   const task = previousTail.then(async (): Promise<unknown | undefined> => {
     let lastError: unknown;

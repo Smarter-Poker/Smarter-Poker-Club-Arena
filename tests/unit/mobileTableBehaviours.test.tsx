@@ -16,7 +16,9 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
-import { render, act } from '@testing-library/react';
+import { render, act, cleanup } from '@testing-library/react';
+import ts, { transpileModule } from 'typescript';
+import { ChipAnimationManager } from '../../src/components/table/ChipAnimation';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import TournamentAnnouncementOverlay from '../../src/components/table/TournamentAnnouncementOverlay';
@@ -279,14 +281,176 @@ describe('every awarded pot plays its animation', () => {
     expect(TABLE_PAGE).toContain("'TablePage.pot_win_no_award_groups'");
   });
 
-  it('dates the safety sweep from when a fan actually started', () => {
-    expect(TABLE_PAGE).toContain('chipAnimStartedAtRef');
-    const sweep = sliceEnclosingBlock(
+  it('never lets a periodic TablePage callback retire chip state', () => {
+    const source = ts.createSourceFile(
+      'TablePage.tsx',
       TABLE_PAGE,
-      '// Safety cleanup: remove chip animations older than 5 seconds'
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
     );
-    expect(sweep).toContain('chipAnimStartedAtRef.current.get(a.id)');
+    const periodicWriters: number[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        (ts.isIdentifier(node.expression)
+          ? node.expression.text === 'setInterval'
+          : ts.isPropertyAccessExpression(node.expression) &&
+            node.expression.name.text === 'setInterval')
+      ) {
+        const callback = node.arguments[0];
+        const findWriter = (child: ts.Node) => {
+          if (
+            ts.isCallExpression(child) &&
+            ts.isIdentifier(child.expression) &&
+            child.expression.text === 'setChipAnimations'
+          ) {
+            periodicWriters.push(
+              source.getLineAndCharacterOfPosition(child.getStart(source)).line + 1
+            );
+          }
+          ts.forEachChild(child, findWriter);
+        };
+        if (callback) findWriter(callback);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(
+      periodicWriters,
+      'mounted flights retire through their own completion, never an interval'
+    ).toEqual([]);
   });
+
+  it.each([0, 20_000])(
+    'finishes the actual fan after delayed frames and a queued start of %dms',
+    (delay) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_793_386_814_964);
+      const frames = new Map<number, FrameRequestCallback>();
+      let frameId = 0;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.set(++frameId, callback);
+        return frameId;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+      vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([
+        {},
+      ] as unknown as DOMRectList);
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+        return this.classList.contains('seat__info')
+          ? ({ left: 82, top: 82, width: 36, height: 36 } as DOMRect)
+          : ({ left: 0, top: 0, width: 400, height: 800 } as DOMRect);
+      });
+      // Execute the actual old TablePage effect when running this regression
+      // against that source. Its wall-age removal must not beat real completion.
+      const ageEffect = TABLE_PAGE.match(
+        /\/\/ Safety cleanup: remove chip animations older than 5 seconds[^\n]*\n([\s\S]*?)\n {2}\/\/ Load waitlist data\./
+      )?.[1];
+      const completed = vi.fn();
+      function Host({ hand }: { hand: number }) {
+        const [flights, setFlights] = React.useState(() =>
+          [0, 1, 2].map((index) => ({
+            id: `pot-to-winner-1793386814964-${index}-${index + 1}`,
+            recipientId: 'winner',
+            from: { x: 200, y: 300 },
+            to: { x: 100, y: 100 },
+            amount: 1,
+            delay: delay + index * 40,
+            type: 'to-winner' as const,
+          }))
+        );
+        React.useEffect(() => {
+          if (!ageEffect) return;
+          let stop: (() => void) | undefined;
+          const started = { current: new Map(flights.map((flight) => [flight.id, Date.now()])) };
+          new Function(
+            'useEffect',
+            'setChipAnimations',
+            'chipAnimStartedAtRef',
+            transpileModule(ageEffect, {}).outputText
+          )(
+            (effect: () => () => void) => {
+              stop = effect();
+            },
+            setFlights,
+            started
+          );
+          return () => stop?.();
+        }, []);
+        return (
+          <div className="table-page">
+            <span className="table-brand__hand">Hand #{hand}</span>
+            <div data-player-id="winner">
+              <div className="seat__info" />
+            </div>
+            <ChipAnimationManager
+              animations={flights}
+              onAnimationComplete={(id) => {
+                completed(id);
+                setFlights((current) => current.filter((flight) => flight.id !== id));
+              }}
+            />
+          </div>
+        );
+      }
+      const frame = (at: number) =>
+        act(() => {
+          const pending = [...frames.values()];
+          frames.clear();
+          pending.forEach((callback) => callback(at));
+        });
+      try {
+        const view = render(<Host hand={41} />);
+        act(() => {
+          vi.advanceTimersByTime(6_000);
+        });
+        view.rerender(<Host hand={42} />);
+        expect(
+          document.querySelectorAll('[data-chip-flight]'),
+          'a wall clock cannot retire an unpaid visual endpoint'
+        ).toHaveLength(3);
+        frame(100);
+        expect(completed).not.toHaveBeenCalled();
+        expect(document.querySelectorAll('[data-chip-phase="flying"]')).toHaveLength(3);
+        frame(100 + delay + 300);
+        view.rerender(<Host hand={43} />);
+        expect(document.querySelectorAll('[data-chip-phase="flying"]')).toHaveLength(3);
+        frame(100 + delay + 680);
+        expect(document.querySelectorAll('[data-chip-phase="landed"]')).toHaveLength(3);
+        expect(completed).not.toHaveBeenCalled();
+        act(() => {
+          vi.advanceTimersByTime(99);
+        });
+        expect(document.querySelectorAll('[data-chip-phase="landed"]')).toHaveLength(3);
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(completed).toHaveBeenCalledTimes(3);
+        expect(new Set(completed.mock.calls.map(([id]) => id)).size).toBe(3);
+        expect(document.querySelectorAll('[data-chip-flight]')).toHaveLength(0);
+        act(() => {
+          vi.advanceTimersByTime(6_000);
+        });
+        expect(completed).toHaveBeenCalledTimes(3);
+        // Explicit table navigation still owns unmount. It cancels its frames
+        // instead of reporting an unseen flight as completed on another table.
+        view.unmount();
+        const departing = render(<Host hand={44} />);
+        frame(30_000);
+        departing.unmount();
+        expect(frames.size).toBe(0);
+        act(() => {
+          vi.advanceTimersByTime(30_000);
+        });
+        expect(completed).toHaveBeenCalledTimes(3);
+      } finally {
+        cleanup();
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+      }
+    }
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

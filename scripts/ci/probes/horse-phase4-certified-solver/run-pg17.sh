@@ -21,7 +21,15 @@ else
   echo 'PostgreSQL 17 or Docker is required (or set PG17_BIN to its bin directory).' >&2
   exit 1
 fi
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/horse-phase4-pg.XXXXXX")
+# New admission wrapper only: controlled existing-helper fixtures, real SECDEF/ACLs.
+PG17_BIN="$PG_BIN" python3 -B "$HERE/test-heldout-physics-wrapper.py"
+# The hosted parity reader admits only this runner's own private fixture socket.
+# Local runs retain their explicit external-SSD TMPDIR.
+WORK_ROOT="${TMPDIR:-/tmp}"
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  WORK_ROOT="${RUNNER_TEMP:?hosted qualification requires RUNNER_TEMP}"
+fi
+WORK=$(mktemp -d "$WORK_ROOT/horse-phase4-pg.XXXXXX")
 SOCKET="$WORK/socket"
 DB=horse_phase4_probe
 mkdir -p "$SOCKET"
@@ -41,6 +49,9 @@ PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$DB")
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908181657_the_horse_reads_only_a_certified_solver_dataset.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908181714_the_solver_score_keeps_every_decision_receipt.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908181724_both_solver_hosts_and_the_compactor_leave_receipts.sql"
+"${PSQL[@]}" -f "$HERE/model-ingress-before.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261030023627_v31_model_operations_enter_the_scoped_replay_gate.sql"
+"${PSQL[@]}" -f "$HERE/model-ingress-after.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908182030_the_certified_solver_foreign_keys_have_indexes.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908185700_certified_solver_receipts_match_pio_and_require_sizing_evidence.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908190825_gto_v31_holdout_boards_are_disjoint.sql"
@@ -127,6 +138,14 @@ echo V31_V4_CONSUMER_ROLLBACK_RECOVERY_OK
 "${PSQL[@]}" -f "$HERE/seal-rpc-budget-before.sql" \
  -f "$ROOT/supabase/migrations/20261028053323_v31_seal_uses_its_bounded_rpc_budget.sql" \
  -f "$HERE/seal-rpc-budget-after.sql"
+"${PSQL[@]}" -f "$HERE/build-rpc-budget-before.sql" \
+ -f "$ROOT/supabase/migrations/20261028200033_v31_cell_build_uses_its_bounded_rpc_budget.sql" \
+ -f "$HERE/build-rpc-budget-after.sql"
+"${PSQL[@]}" -f "$HERE/feature-subsets-before.sql" \
+ -f "$ROOT/supabase/migrations/20261028223011_v31_feature_subsets_avoid_per_hand_sql.sql" \
+ -f "$HERE/feature-subsets-after.sql"
+V31_FEATURE_PRIVATE_FIXTURE_ROOT="$WORK" PG17_PSQL="$PG_BIN/psql" PGDATABASE="$DB" \
+ node "$HERE/run-board-relative-v2-parity.mjs"
 "${PSQL[@]}" -f "$HERE/dataset-scoped-certification.sql"
 awk '/  result_checksum:=public.fn_gto_v31_seal_build\(dataset\);/ { print "  PERFORM public.v31_dataset_scope_probe(dataset);"; print "  SELECT dataset_checksum INTO result_checksum FROM public.gto_v31_datasets WHERE dataset_id=dataset;"; next } {print}' \
  "$HERE/certified-v31.sql" > "$WORK/dataset-scoped-certification-fixture.sql"
@@ -158,6 +177,22 @@ STATUS=$("${PSQL[@]}" -Atc "select ca_gto_v31_certification_status(null)->>'cont
 INDEX_COUNT=$("${PSQL[@]}" -Atc "select count(*) from pg_indexes where schemaname='public' and indexname in ('gto_v31_datasets_input_bundle_id_idx','gto_v31_release_evaluations_source_result_id_idx');")
 [[ "$INDEX_COUNT" == '2' ]]
 echo PHASE4_STATUS_OK
+# Qualify the additive numeric representation in a clone of the exact current
+# schema. Keep original rollback/recovery probes on their unchanged database.
+PUBLIC215_DB=horse_phase4_public215_probe
+"$PG_BIN/createdb" -T "$DB" "$PUBLIC215_DB"
+PUBLIC215_PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$PUBLIC215_DB")
+"${PUBLIC215_PSQL[@]}" -f "$HERE/public215-install-constraints-before.sql" \
+ -f "$ROOT/supabase/migrations/20261029070812_public_hist215_models_bind_independent_exact_public_state.sql" \
+ -f "$HERE/public215-install-constraints-after.sql"
+node "$HERE/public215-declared-proofs.mjs" | "${PUBLIC215_PSQL[@]}"
+for fixture in public215-model.sql public215-physics.sql public215-metadata.sql public215-selection.sql public215-wtl-parity.sql public215-audit-cost.sql public215-admission.sql; do
+ "${PUBLIC215_PSQL[@]}" -c "SET statement_timeout='240s';SET lock_timeout='1s';" -f "$HERE/$fixture"
+done
+V31_FEATURE_PRIVATE_FIXTURE_ROOT="$WORK" PG17_PSQL="$PG_BIN/psql" PGDATABASE="$PUBLIC215_DB" \
+ node "$HERE/run-public215-feature-parity.mjs"
+"$PG_BIN/dropdb" "$PUBLIC215_DB"
+echo V31_PUBLIC215_INDEPENDENT_MODEL_SOURCE_FREEZE_PARITY_OK
 awk '/^-- EXECUTABLE VALIDATOR ROLLBACK:/{copy=1;next} /^-- END EXECUTABLE VALIDATOR ROLLBACK/{copy=0} copy {sub(/^-- ?/, "");print}' \
  "$ROOT/supabase/migrations/20261007034442_the_solver_validators_have_one_versioned_door.sql" > "$WORK/validator-rollback.sql"
 "${PSQL[@]}" -f "$WORK/validator-rollback.sql"

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { formatWalletChips } from '../../utils/format';
 /**
  * ♠ CLUB ARENA — Player Search (Admin)
@@ -44,7 +45,11 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
      platform staff's alone (ruling 25, docs/DIAMOND-RULINGS.md). `email` was
      never granted to a browser, so this search 403'd whole on every run; it
      answers by handle and player id now. */
-  const [searchType, setSearchType] = useState<'username' | 'id'>('username');
+  const [searchType, setSearchType] = usePlayerPreference<'username' | 'id'>(
+    'adminPlayerSearch.searchType',
+    'username',
+    clubId
+  );
   const [searched, setSearched] = useState(false);
   // Distinguishes "the search ran and found nobody" from "the search did not
   // run". Those were the same screen until 2026-08-26.

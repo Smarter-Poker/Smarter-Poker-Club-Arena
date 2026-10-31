@@ -494,8 +494,8 @@ describe('the row a Free Buy is created as', () => {
       lateRegLevels: 15,
     });
 
-  it('the default paid depth is explicitly retained', () => {
-    expect(rowFor(0, 8).payout_percent).toBe(10);
+  it('new Free Buy events explicitly pay the top fifteen percent', () => {
+    expect(rowFor(0, 8)).toMatchObject({ payout_percent: 15, payout_depth_percent: 15 });
   });
 
   it('is published under a board name, which is how the watch finds its rows', () => {

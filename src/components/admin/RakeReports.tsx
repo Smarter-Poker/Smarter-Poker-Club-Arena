@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -453,7 +454,7 @@ function lookupMessage(state: LookupState): string | null {
 export const RakeReports = ({ clubId, initialSnapshot }: RakeReportsProps) => {
   const toast = useToast();
   const isMounted = useIsMounted();
-  const [period, setPeriod] = useState<Period>('week');
+  const [period, setPeriod] = usePlayerPreference<Period>('rakeReports.period', 'week', clubId);
   const scope = `${clubId}:${period}`;
   const currentScopeRef = useRef(scope);
   const reportRequestRef = useRef(0);

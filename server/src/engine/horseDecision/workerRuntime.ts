@@ -1,3 +1,10 @@
+import { HorsePlanReadCapture } from '../HorsePlanReadReceipt.js';
+import { HorseRangeConsumptionCapture } from '../HorseRangeConsumptionReceipt.js';
+import { horseHistoryReadProvenanceIsValid } from './ownPublicHistoryProvenance.js';
+import {
+  isolateMemoryIsValid,
+  type IsolateMemorySample,
+} from '../../observability/isolateMemory.js';
 import {
   HORSE_FEATURE_AUTHORITY_VERSION,
   HORSE_FEATURE_FLAGS,
@@ -259,6 +266,7 @@ export type HorseDecisionWorkerAuthorityHolderFactory = (
 ) => HorseQualifiedAuthorityHolder;
 
 export interface HorseDecisionWorkerDependencies {
+  isolateMemory?(): IsolateMemorySample | null;
   admitFeatureAuthority?(): HorseAuthorityAdmission;
   /** Trusted isolated benchmark construction only; never accepted from IPC. */
   offlineFeatureFlags?: boolean;
@@ -1674,6 +1682,22 @@ export class HorseDecisionWorkerRuntime {
         !['pending', 'available', 'unavailable'].includes(request.ownPublicHistoryState)
       )
         throw Error('Invalid individual history state');
+      if (request.ownPublicHistoryProvenance !== undefined) {
+        const context = horseObserverReadContextFromRequest(request);
+        if (
+          !context ||
+          !horseHistoryReadProvenanceIsValid(
+            request.ownPublicHistoryProvenance,
+            context,
+            request.ownPublicHistoryState,
+            request.decisionTimeMs
+          ) ||
+          (request.ownPublicHistoryProvenance.reason === 'packet_ready'
+            ? request.ownPublicHistory === undefined
+            : request.ownPublicHistory !== undefined)
+        )
+          throw Error('Individual history provenance does not bind original observer and state');
+      }
       if (request.ownPublicHistory !== undefined) {
         const context = horseObserverReadContextFromRequest(request);
         if (
@@ -2530,6 +2554,16 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
+    let rangeCapture: HorseRangeConsumptionCapture | undefined;
+    let planReadCapture: HorsePlanReadCapture | undefined;
+    try {
+      if (this.deps.journalDecision && (this.deps.journalEnabled?.() ?? true)) {
+        rangeCapture = new HorseRangeConsumptionCapture(request);
+        planReadCapture = new HorsePlanReadCapture(request);
+      }
+    } catch {
+      /* diagnostic capture cannot change admission or selection */
+    }
     if (
       request.durableOpponentDonorProfiles !== undefined ||
       request.durableOpponentProfiles !== undefined
@@ -2616,23 +2650,31 @@ export class HorseDecisionWorkerRuntime {
       this.deps.noteFeature('phase5_canonical_state');
       const run = this.atGovernorScale(() =>
         this.deps.captureDecisionEffects(() =>
-          this.deps.decide(player, gameState, request.style, request.mods, {
-            ...request.opts,
-            ...features.flags,
-            multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
-            phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
-            phase8PolicyFamily: phase8Guard.selected ? 'catastrophe_guard_v1' : 'continuation_v2',
-            phase10Plo4: phase10.mode,
-            phase11Omaha: phase11.mode,
-            phase12Remaining: phase12.mode,
-            phase13Joint: phase13.mode,
-            phase14Corrective: phase14.evaluator ?? undefined,
-            decisionTimeMs: request.decisionTimeMs,
-            telemetry: true,
-            observeMind: !phase14ObservationPrepared,
-            mindObservationHand: horseMindHandFromDecision(request),
-            mindPlanContext: planContext,
-          })
+          this.deps.decide(
+            player,
+            gameState,
+            request.style,
+            request.mods,
+            {
+              ...request.opts,
+              ...features.flags,
+              multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
+              phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
+              phase8PolicyFamily: phase8Guard.selected ? 'catastrophe_guard_v1' : 'continuation_v2',
+              phase10Plo4: phase10.mode,
+              phase11Omaha: phase11.mode,
+              phase12Remaining: phase12.mode,
+              phase13Joint: phase13.mode,
+              phase14Corrective: phase14.evaluator ?? undefined,
+              decisionTimeMs: request.decisionTimeMs,
+              telemetry: true,
+              observeMind: !phase14ObservationPrepared,
+              mindObservationHand: horseMindHandFromDecision(request),
+              mindPlanContext: planContext,
+            },
+            rangeCapture,
+            planReadCapture
+          )
         )
       );
       captured = run.value;
@@ -2740,6 +2782,8 @@ export class HorseDecisionWorkerRuntime {
           snapshot: request,
           observerReads: this.observerReads.receipt(request),
           readFrame,
+          rangeConsumption: rangeCapture?.finish(readFrame?.sha256 ?? null),
+          planReads: planReadCapture?.finish(readFrame?.sha256 ?? null),
           planContext,
           planBinding,
           decision: captured.value,
@@ -2812,6 +2856,16 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeDeep(request: DeepHorseDecisionRequest): HorseLifecycleOutcome {
+    let rangeCapture: HorseRangeConsumptionCapture | undefined;
+    let planReadCapture: HorsePlanReadCapture | undefined;
+    try {
+      if (this.deps.journalDecision && (this.deps.journalEnabled?.() ?? true)) {
+        rangeCapture = new HorseRangeConsumptionCapture(request);
+        planReadCapture = new HorsePlanReadCapture(request);
+      }
+    } catch {
+      /* diagnostic capture cannot change admission or selection */
+    }
     const planContext = horsePlanContextFromDecision(request);
     if (!Number.isFinite(request.deepEquity) || request.deepEquity <= 1) {
       throw new Error('deepEquity must be finite and greater than one');
@@ -2898,25 +2952,33 @@ export class HorseDecisionWorkerRuntime {
           readView,
           () =>
             this.deps.captureDecisionEffects(() =>
-              this.deps.decide(player, gameState, request.style, request.mods, {
-                ...request.opts,
-                ...features.flags,
-                multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
-                phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
-                phase8PolicyFamily: phase8Guard.selected
-                  ? 'catastrophe_guard_v1'
-                  : 'continuation_v2',
-                phase10Plo4: phase10.mode,
-                phase11Omaha: phase11.mode,
-                phase12Remaining: phase12.mode,
-                phase13Joint: phase13.mode,
-                phase14Corrective: phase14.evaluator ?? undefined,
-                decisionTimeMs: request.decisionTimeMs,
-                telemetry: false,
-                deepEquity: request.deepEquity,
-                observeMind: false,
-                mindPlanContext: planContext,
-              })
+              this.deps.decide(
+                player,
+                gameState,
+                request.style,
+                request.mods,
+                {
+                  ...request.opts,
+                  ...features.flags,
+                  multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
+                  phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
+                  phase8PolicyFamily: phase8Guard.selected
+                    ? 'catastrophe_guard_v1'
+                    : 'continuation_v2',
+                  phase10Plo4: phase10.mode,
+                  phase11Omaha: phase11.mode,
+                  phase12Remaining: phase12.mode,
+                  phase13Joint: phase13.mode,
+                  phase14Corrective: phase14.evaluator ?? undefined,
+                  decisionTimeMs: request.decisionTimeMs,
+                  telemetry: false,
+                  deepEquity: request.deepEquity,
+                  observeMind: false,
+                  mindPlanContext: planContext,
+                },
+                rangeCapture,
+                planReadCapture
+              )
             ).value
         )
       );
@@ -2957,6 +3019,8 @@ export class HorseDecisionWorkerRuntime {
         this.deps.journalDecision?.(request, {
           snapshot: request,
           readFrame: retained.frame,
+          rangeConsumption: rangeCapture?.finish(retained.frame.sha256),
+          planReads: planReadCapture?.finish(retained.frame.sha256),
           observerReads: retained.observerReads ?? null,
           planContext,
           decision,
@@ -3373,8 +3437,17 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeStatus(request: HorseDecisionStatusRequest): void {
+    let isolateMemory: IsolateMemorySample | null = null;
+    try {
+      const sample = this.deps.isolateMemory?.();
+      if (isolateMemoryIsValid(sample)) isolateMemory = sample;
+    } catch {
+      /* diagnostic unavailable must never fail a worker */
+    }
+
     this.send({
       type: 'STATUS_RESULT',
+      isolateMemory,
       requestId: request.requestId,
       generation: request.generation,
       fence: request.fence,

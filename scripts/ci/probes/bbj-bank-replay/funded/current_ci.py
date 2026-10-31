@@ -17,6 +17,9 @@ import urllib.request
 from deadline import CaseDeadline
 
 REPOSITORY = 'Smarter-Poker/Smarter-Poker-Club-Arena'
+TRANSFERRED_REPOSITORY = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena'
+REPOSITORY_ID = '1132369872'
+APPROVED_REPOSITORIES = (REPOSITORY, TRANSFERRED_REPOSITORY)
 WORKFLOW = REPOSITORY + '/.github/workflows/ci.yml@'
 CASES = ('SEQ08_BBJ_BACKUP_POSITIVE_MAIN_TRANSFER_25',
          'SEQ08_BBJ_PROMO_POSITIVE_MAIN_TRANSFER_25')
@@ -63,10 +66,11 @@ def identity(environment, event, head, parents, workspace):
     """Validate current checkout/event association without accepting old approval JSON."""
     require(environment.get('GITHUB_ACTIONS') == 'true' and environment.get('CI') == 'true',
             'Existing GitHub accounting CI invocation required')
-    require(environment.get('GITHUB_REPOSITORY') == REPOSITORY and
+    repository = environment.get('GITHUB_REPOSITORY')
+    require(repository in APPROVED_REPOSITORIES and environment.get('GITHUB_REPOSITORY_ID') == REPOSITORY_ID and
             environment.get('GITHUB_JOB') == 'accounting_postgres', 'Wrong repository or accounting job')
     require(environment.get('GITHUB_SERVER_URL') == 'https://github.com' and
-            environment.get('GITHUB_WORKFLOW_REF') == WORKFLOW + environment.get('GITHUB_REF', ''), 'Wrong workflow origin')
+            environment.get('GITHUB_WORKFLOW_REF') == repository + '/.github/workflows/ci.yml@' + environment.get('GITHUB_REF', ''), 'Wrong workflow origin')
     require(environment.get('RUNNER_ENVIRONMENT') == 'github-hosted' and
             environment.get('RUNNER_OS') == 'Linux' and environment.get('RUNNER_ARCH') == 'X64',
             'Original GitHub-hosted Linux X64 accounting job required')
@@ -82,8 +86,8 @@ def identity(environment, event, head, parents, workspace):
     event_name = environment.get('GITHUB_EVENT_NAME')
     if event_name == 'pull_request':
         pr = event.get('pull_request', {})
-        require(pr.get('head', {}).get('repo', {}).get('full_name') == REPOSITORY and
-                pr.get('base', {}).get('repo', {}).get('full_name') == REPOSITORY and
+        require(pr.get('head', {}).get('repo', {}).get('full_name') == repository and
+                pr.get('base', {}).get('repo', {}).get('full_name') == repository and
                 pr.get('base', {}).get('ref') == 'main', 'Same-repository main-target PR required')
         source = pr.get('head', {}).get('sha')
         require(re.fullmatch('[0-9a-f]{40}', str(source)) is not None and
@@ -95,7 +99,7 @@ def identity(environment, event, head, parents, workspace):
         source = head
     else:
         raise RuntimeError('No manual, external, or historical financial admission is accepted')
-    return dict(repository=REPOSITORY, commit=head, source_commit=source,
+    return dict(repository=repository, commit=head, source_commit=source,
                 workflow_ref=environment['GITHUB_WORKFLOW_REF'], run_id=environment['GITHUB_RUN_ID'],
                 run_attempt=environment['GITHUB_RUN_ATTEMPT'], job='accounting_postgres',
                 runner=environment['RUNNER_NAME'], event=event_name, ref=environment['GITHUB_REF'])
@@ -184,7 +188,7 @@ def checkout_identity(git):
 
 
 def timing_url(current):
-    return ('https://api.github.com/repos/' + REPOSITORY + '/actions/runs/' +
+    return ('https://api.github.com/repos/' + current['repository'] + '/actions/runs/' +
             current['run_id'] + '/attempts/' + current['run_attempt'] + '/jobs?per_page=100')
 
 
@@ -205,7 +209,7 @@ def timing_observation(current, response, now):
         ('status', job.get('status') == 'in_progress'),
         ('conclusion', job.get('conclusion') is None),
         ('completed_at', job.get('completed_at') is None),
-        ('labels', job.get('labels') == ['ubuntu-latest']),
+        ('labels', job.get('labels') in ((['ubuntu-latest'], ['ca-linux-8core']) if current['repository'] == TRANSFERRED_REPOSITORY else (['ubuntu-latest'],))),
     )
     mismatches = [field for field, matches in identity_checks if not matches]
     if mismatches:

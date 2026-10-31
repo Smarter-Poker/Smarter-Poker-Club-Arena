@@ -1,0 +1,380 @@
+[
+  {
+    "relation": "public.tournament_accounting_credit_receipts",
+    "columns": [
+      {
+        "name": "transaction_id",
+        "type": "xid8",
+        "default": "pg_current_xact_id()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "observed_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "asset",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "ledger_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "wallet_transaction_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "payout_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "credited_club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "ledger_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "wallet_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "payout_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "registration_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "entry_receipt_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "tournament_accounting_credit_receipts_amount_check",
+        "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+      },
+      {
+        "name": "tournament_accounting_credit_receipts_asset_check",
+        "definition": "CHECK ((asset = 'chips'::text))"
+      },
+      {
+        "name": "tournament_accounting_credit_receipts_idempotency_key_key",
+        "definition": "UNIQUE (idempotency_key)"
+      },
+      {
+        "name": "tournament_accounting_credit_receipts_ledger_id_key",
+        "definition": "UNIQUE (ledger_id)"
+      },
+      {
+        "name": "tournament_accounting_credit_receipts_payout_id_key",
+        "definition": "UNIQUE (payout_id)"
+      },
+      {
+        "name": "tournament_accounting_credit_receipts_pkey",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "tournament_accounting_credit_receipts_wallet_transaction_id_key",
+        "definition": "UNIQUE (wallet_transaction_id)"
+      }
+    ]
+  },
+  {
+    "relation": "public.tournament_participant_funding_receipts",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "transaction_id",
+        "type": "xid8",
+        "default": "pg_current_xact_id()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "observed_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "registration_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "operation",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "purchase_key",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "asset",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "entitlement_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "ledger_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "wallet_transaction_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "funding_club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "registration_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "entitlement_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "ledger_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "wallet_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "custody_result",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "tournament_participant_funding_receip_wallet_transaction_id_key",
+        "definition": "UNIQUE (wallet_transaction_id)"
+      },
+      {
+        "name": "tournament_participant_funding_receipts_amount_check",
+        "definition": "CHECK (((amount >= (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+      },
+      {
+        "name": "tournament_participant_funding_receipts_asset_check",
+        "definition": "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text])))"
+      },
+      {
+        "name": "tournament_participant_funding_receipts_check",
+        "definition": "CHECK ((((asset = 'chips'::text) AND (amount > (0)::numeric) AND (entitlement_id IS NOT NULL) AND (ledger_id IS NOT NULL) AND (wallet_transaction_id IS NOT NULL) AND (funding_club_id IS NOT NULL)) OR ((asset = 'chips'::text) AND (amount = (0)::numeric) AND (entitlement_id IS NULL) AND (ledger_id IS NULL)) OR ((asset = 'diamonds'::text) AND (entitlement_id IS NULL) AND (ledger_id IS NULL))))"
+      },
+      {
+        "name": "tournament_participant_funding_receipts_entitlement_id_key",
+        "definition": "UNIQUE (entitlement_id)"
+      },
+      {
+        "name": "tournament_participant_funding_receipts_ledger_id_key",
+        "definition": "UNIQUE (ledger_id)"
+      },
+      {
+        "name": "tournament_participant_funding_receipts_operation_check",
+        "definition": "CHECK ((operation = ANY (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text])))"
+      },
+      {
+        "name": "tournament_participant_funding_receipts_pkey",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ]
+  }
+]

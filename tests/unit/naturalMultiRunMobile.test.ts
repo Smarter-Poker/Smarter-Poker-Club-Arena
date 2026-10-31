@@ -322,7 +322,7 @@ it('reads recent multirun history only through bounded candidate-table lookups',
       // Reproduce the production failure boundary: a global recent-history read
       // is refused; equality on the existing table/created index is required.
       expect(ids.map((id) => `eq.${id}`)).toContain(query.get('table_id'));
-      expect(query.get('created_at')).toBe('gte.2026-10-16T18:00:00.000Z');
+      expect(query.get('created_at')).toBe('gte.2026-10-16T16:30:00.000Z');
       expect(query.get('order')).toBe('created_at.desc');
       expect(query.get('limit')).toBe('500');
       expect(query.get('rit_boards')).toBe('not.is.null');
@@ -572,10 +572,11 @@ it('requires explicit landed phase before using departed geometry, never a flyin
 it.each([undefined, 'null'])('keeps default BOTH natural coverage for target %s', (target) => {
   expect(naturalMultiRunRequiredRuns(target, 'true', 'null')).toEqual([2, 3]);
 });
-it('admits only explicit numeric three for a client observation', () => {
+it('admits explicit numeric one and three for client observations', () => {
+  expect(naturalMultiRunRequiredRuns('1', 'true', 'null')).toEqual([1]);
   expect(naturalMultiRunRequiredRuns('3', 'true', 'null')).toEqual([3]);
 });
-it.each(['"3"', '2', 'true', '[]', '{}', '[3]', 'false', '""', 'invalid'])(
+it.each(['"1"', '"3"', '2', 'true', '[]', '{}', '[3]', 'false', '""', 'invalid'])(
   'refuses malformed or unsupported target %s',
   (target) => {
     expect(() => naturalMultiRunRequiredRuns(target, 'true', 'null')).toThrow(/target/);
@@ -600,9 +601,9 @@ it('targets three-run history and permits mandatory three while refusing mandato
   expect(selectNaturalMultiRunSubject(tables, rows).id).toBe('choice');
 });
 
-it('natural timing requires one 1500ms confirmation and the full 4100ms winning-card results', () => {
+it('natural timing forbids settled-choice overlays and keeps the full 4100ms winning-card results', () => {
   const w: any = {
-    confirmations: { '41': [{ shownAt: 0, hiddenAt: 1500 }] },
+    confirmations: {},
     hands: [
       {
         hand: 41,
@@ -615,13 +616,13 @@ it('natural timing requires one 1500ms confirmation and the full 4100ms winning-
   expect(naturalMultiRunTiming(packet, w)).toMatchObject({
     ready: true,
     violations: [],
-    confirmationMs: 1500,
+    confirmationMs: 0,
     resultGapsMs: [4100, 4100],
     lastResultMs: 4100,
   });
-  w.confirmations['41'][0].hiddenAt = 4500;
+  w.confirmations['41'] = [{ shownAt: 0, hiddenAt: 1500 }];
   expect(naturalMultiRunTiming(packet, w).violations).toContain(
-    'Run Confirmation Did Not Clear At 1500ms'
+    'Settled Run Choice Still Covers The Table'
   );
   w.confirmations['41'].push({ shownAt: 6000, hiddenAt: 7500 });
   expect(naturalMultiRunTiming(packet, w).violations).toContain('Run Confirmation Repeated');
@@ -637,7 +638,7 @@ it('natural timing requires one 1500ms confirmation and the full 4100ms winning-
   expect(naturalMultiRunTiming(packet, w).ready).toBe(false);
 });
 
-it('the actual passive DOM witness measures confirmation expiry and both winner windows', async () => {
+it('the actual passive DOM witness rejects a settled strip and preserves both winner windows', async () => {
   let now = 1000;
   vi.spyOn(Date, 'now').mockImplementation(() => now);
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 393, 852));
@@ -650,10 +651,9 @@ it('the actual passive DOM witness measures confirmation expiry and both winner 
   await installNaturalMultiRunWitness({
     addInitScript: async (callback: () => void) => callback(),
   } as any);
-  document.body.innerHTML = `<div class="table-page"><span class="table-brand__hand">Hand #41</span><div class="rit-felt-banner">Players Have Accepted Running It Twice.</div>${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}</div>`;
+  document.body.innerHTML = `<div class="table-page"><span class="table-brand__hand">Hand #41</span>${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}</div>`;
   tick(1);
   now = 2500;
-  document.querySelector('.rit-felt-banner')!.remove();
   tick(2);
   const lanes = document.querySelectorAll('.community-area__run');
   now = 10000;
@@ -675,7 +675,7 @@ it('the actual passive DOM witness measures confirmation expiry and both winner 
   expect(naturalMultiRunTiming({ ...packet, runs: 2 }, read())).toEqual({
     ready: true,
     violations: [],
-    confirmationMs: 1500,
+    confirmationMs: 0,
     resultGapsMs: [4100],
     lastResultMs: 4100,
   });
@@ -687,6 +687,62 @@ it('the actual passive DOM witness measures confirmation expiry and both winner 
     );
   tick(6);
   expect(naturalMultiRunTiming({ ...packet, runs: 2 }, read()).violations).toContain(
-    'Run Confirmation Repeated'
+    'Settled Run Choice Still Covers The Table'
   );
+  expect(read().violations).toContain('41: Settled Run Choice Still Covers The Table');
+});
+
+it('refuses a target-three observation without actual three-run history', () => {
+  const tables = [subject('quiet', 9), { ...subject('fixed', 6), run_it_mode: 'mandatory_three' }];
+  for (const rows of [[], history('quiet', 4, 0), history('undiscovered', 0, 3)]) {
+    expect(() => selectNaturalMultiRunSubject(tables, rows, [3])).toThrow(
+      /positive three-run history/
+    );
+  }
+});
+
+it('retains a natural three-run opportunity across provider queue time within the bounded lookback', async () => {
+  const quiet = '00000000-0000-0000-0000-000000000001';
+  const active = '00000000-0000-0000-0000-000000000002';
+  const now = Date.parse('2026-10-29T00:15:47Z');
+  const opportunityAt = Date.parse('2026-10-28T23:20:48Z');
+  const queries: URLSearchParams[] = [];
+  const rows = await readNaturalMultiRunHistory(
+    [quiet, active],
+    async (query) => {
+      queries.push(query);
+      const floor = Date.parse(query.get('created_at')!.slice(4));
+      return query.get('table_id') === `eq.${active}` && opportunityAt >= floor
+        ? history(active, 0, 1)
+        : [];
+    },
+    now
+  );
+  expect(selectNaturalMultiRunSubject([subject(quiet, 9), subject(active, 6)], rows, [3]).id).toBe(
+    active
+  );
+  expect(queries).toHaveLength(2);
+  for (const query of queries) {
+    expect(query.get('select')).toBe('table_id,rit_boards');
+    expect(query.get('limit')).toBe('500');
+    expect(query.get('created_at')).toBe('gte.2026-10-28T22:15:47.000Z');
+  }
+});
+
+it('selects once only from player-choice tables with actual recent RIT activity', () => {
+  const tables = ['mandatory_twice', 'mandatory_three', 'player_choice'].map((run_it_mode) => ({
+    ...subject(run_it_mode),
+    run_it_mode,
+  }));
+  expect(
+    selectNaturalMultiRunSubject(
+      tables,
+      tables.flatMap((t) => history(t.id, 2, 2)),
+      [1]
+    ).id
+  ).toBe('player_choice');
+  expect(() =>
+    selectNaturalMultiRunSubject(tables.slice(0, 2), history('mandatory_three', 2, 2), [1])
+  ).toThrow(/player-choice.*history/);
+  expect(() => selectNaturalMultiRunSubject([tables[2]], [], [1])).toThrow(/history/);
 });

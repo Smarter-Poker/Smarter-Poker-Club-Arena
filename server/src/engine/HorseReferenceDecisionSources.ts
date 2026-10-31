@@ -25,6 +25,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'bounded exact-context public river checkraise observations with canonical chip conservation for originally multiway hands',
     'src/engine/horseDecision/riverNodeSidecar.ts':
       'exact source and action-bound public node sidecar, preserving the original history on unavailable evidence',
+    'src/engine/horseDecision/ownPublicHistoryProvenance.ts':
+      'closed individual-history diagnostic validation bound to the original observer context, state and decision timestamp at the worker request boundary',
     'src/engine/HorseNearNutRiverValue.ts':
       'default-off small-pot near-nut value gate with physical blockers and settlement-owned unmatched contribution checks',
     'src/engine/HorseBoardContact.ts':
@@ -62,12 +64,28 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the tournament short all-in call floor (under 3BB shove, 20BB+ horse calls), the last action rule after every other layer (Dan 2026-10-26)',
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
+    'src/engine/HorseHeadsUpCommitment.ts':
+      'qualified cash NLH and pot-limit Omaha including PLO8 heads-up matchable physical exposure and bounded canonical commitment intent consumed by reference SPR and retained raise-plan pricing',
     'src/engine/HorseContinuation.ts':
       'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',
     'src/engine/GtoCharts.ts': 'the open-jam and big-blind-versus-small-blind jam charts',
     'src/engine/GtoPostflop.ts': 'the heads-up NLH postflop solver consult',
     'src/engine/GtoPostflopV31.ts': 'the V31 solver consult',
+    'src/engine/GtoPublicHist215BuildReceipt.ts':
+      'the immutable all-head Linux execution receipt required before a public215 solver program can answer',
+    'src/engine/GtoPublicHist215Features.ts':
+      'exact public ROOT range physics and chronological actor-card feature encoding consumed by the V31 model',
+    'src/engine/GtoPublicHist215FeatureSchema.ts':
+      'the frozen categorical and numeric feature ordering consumed by public215 inference',
+    'src/engine/GtoPublicHist215FeatureDescriptor.json':
+      'the full immutable public215 feature contract and predecessor graph identity',
+    'src/engine/GtoPublicHist215Model.ts':
+      'bounded numeric tree inference and whole-variant frequency/value normalization used by public215 decisions',
+    'native/public_hist215_wtl.cc':
+      'the receiving-platform exact integer ROOT opponent win/tie/loss kernel used by public215 features',
+    'scripts/build-public-hist215-native.mjs':
+      'the maintained receiving-platform native compilation flags for the public215 decision kernel',
     'src/engine/GtoDecisionContext.ts': 'the solver spot context the consults read',
     'src/engine/GtoFacingDefenseV32.ts': 'the facing-bet defense and realization factors',
     'src/engine/GtoBoardRelativeFeaturesV2.ts': 'the board features the V31 consult keys on',
@@ -97,6 +115,16 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'validates original host coordinates and accepted action provenance used by hand-scoped learning',
     'src/engine/HorseObservationWindow.ts':
       'the original public observation time windows that qualify individual read history and cutoff coverage',
+    'src/services/horseDecisionJournal/record.ts':
+      'the bounded canonical original-request encoding and digest bound into producer-time range consumption evidence',
+    'src/engine/horseDecision/protocol.ts':
+      'the canonical original-request decision-key projection checked before plan getter evidence can be credited',
+    'src/engine/HorseDecisionReadFrame.ts':
+      'the bounded original read-frame codec and plan projection used to validate producer-time getter evidence',
+    'src/engine/HorsePlanReadReceipt.ts':
+      'bounded original plan getter consultations and exact returned values bound to the original request and read frame, without policy replay or causal claims',
+    'src/engine/HorseRangeConsumptionReceipt.ts':
+      'bounded producer-time public range inputs and actual sampler consumption masks bound to the original decision and read frame',
     'src/engine/HorseMind.ts':
       'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
     'src/engine/HorseRiverPositionRead.ts':
@@ -107,6 +135,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the exact individual, variant, explicit format and dealt-size partition for public observation history',
     'src/engine/horseDecision/ownPublicHistory.ts':
       'the closed individual public-history schema, original availability cutoff, bounded cache and payload acknowledgement',
+    'src/engine/horseDecision/ownPublicHistoryBudget.ts':
+      'the shared main-isolate byte reservations and heap-headroom admission that determine individual public-history availability',
     'src/engine/horseDecision/observerParticipants.ts':
       'the original validated FAST participant registry and exact same-observer cross-shard completion admission',
     'src/engine/horseDecision/completedHandActions.ts':

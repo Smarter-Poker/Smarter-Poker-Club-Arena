@@ -1,0 +1,27 @@
+{
+  "state": "SOURCE_ONLY_NOT_VERSIONED_OR_DELIVERED",
+  "actual34_authority": "/Volumes/SmarterWork/agent-work/shared-capacity/dss-bounded-rake-record-cover-20261029/scripts/ci/fixtures/rake-record-bounded-cover/authority.json",
+  "actual34_sha256": "cd17ebf861841354d37b76c60a01f7825e5f0c33d7426e0e7b76f9ee88dd8ab4",
+  "old_full_md5": "28a130f35342357a4dfa61043f1ce2a2",
+  "candidate_full_md5": "cf775b888d6411f1f24fb09746af90ca",
+  "candidate_prosrc_md5": "85bdfca3669486bb49d56ae885c0b6bc",
+  "original995a_TEMP_business_parity_modulo_exact_removed_observation": true,
+  "removed_NOTICE_count": 1,
+  "public_ABI_security_config_ACL_all_unchanged_native": true,
+  "native_original_restored_after_rollback": true,
+  "no_public_DSS_diagnostic_GUC_dependency": true,
+  "no_business_invocation_or_capacity_claim": true,
+  "source65_direct_target_membership": false,
+  "qualified_reused_evidence": [
+    "finalP12k completebag/17FP parity",
+    "receipt16bag/error fixtures",
+    "TEMP995a exact4CREATE/metadata/sourceguard grammar"
+  ],
+  "remaining": [
+    "actualwholeDSSPASS afteractual3physicalinstalls",
+    "freshcurrentTQactivehash/watchlistreverseclosure beforeownermutation",
+    "rootchoose EXACTold8GEN72 or EXACTfuture8GEN23a binding; no ORallowlist",
+    "normalownedmigration/nativefinalinstallerchecks/protectedmerge/rootsoleinstall",
+    "originalpublicScope/livecompletepostproof"
+  ]
+}

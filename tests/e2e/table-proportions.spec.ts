@@ -843,9 +843,13 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 // 2026-10-24 they parked shown PLO5/PLO6 hands under the hero or in front of
 // another player. They are certified on the PLO5/PLO6 scenes this regime is
 // for; their seat pods keep the tablet ring (see `largePortrait` below).
-for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
-  for (const count of width === 1024 ? [6] : [6, 9])
-    test(`occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at ${width}px with ${count} seats`, async ({
+const occupiedViewports: Array<[number, number?]> = [
+  ...[320, 375, 393, 430, 480, 600, 768, 1024].map((width): [number] => [width]),
+  [600, 852],
+];
+for (const [width, heightOverride] of occupiedViewports)
+  for (const count of heightOverride || width === 1024 ? [6] : [6, 9])
+    test(`occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at ${width}px with ${count} seats${heightOverride ? ' (short portrait)' : ''}`, async ({
       page,
     }, testInfo) => {
       // Keep each ring independently bounded on hosted runners while retaining
@@ -1016,6 +1020,7 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
                       ? 2048
                       : 852,
         });
+        if (heightOverride) await page.setViewportSize({ width, height: heightOverride });
         await page.route('https://smarter.poker/hub/club-arena/__isolated_rail_fixture', (route) =>
           route.fulfill({
             contentType: 'text/html',
@@ -1177,7 +1182,9 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
           // Preserve breathing, tense and celebration poses around the
           // two-pixel resting crop; only the crown may cross the bar.
           expect(crown.gap).toBeGreaterThan(-12 * crown.scale);
-          expect(crown.gap).toBeLessThan(2 * crown.scale);
+          // A mobile revealed hand now owns a full card-height lane above
+          // its plate. Only face-down and desktop crowns retain the crop.
+          if (!revealed || width > 768) expect(crown.gap).toBeLessThan(2 * crown.scale);
           if (state === 'normal' && revealed && villainCards === 6 && jackpot === 'mini') {
             // A reload/new hand used to cache the image box mid-gesture. When
             // the avatar later folded it left a permanent gap under the bar.
@@ -1233,8 +1240,22 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
               return { raisedShift, restingShift, foldedShift, gap };
             }, AVATAR_CROWN_TOP);
             expect(anchoring.restingShift).toBeCloseTo(anchoring.raisedShift, 1);
-            expect(anchoring.foldedShift).toBeLessThan(anchoring.restingShift);
-            expect(anchoring.gap).toBeLessThan(0);
+            if (width > 768) {
+              expect(anchoring.foldedShift).toBeLessThan(anchoring.restingShift);
+              expect(anchoring.gap).toBeLessThan(0);
+            } else {
+              // Folding may reclaim crown space, but cannot consume the
+              // newly reserved revealed-hand lane.
+              expect(anchoring.foldedShift).toBeLessThanOrEqual(anchoring.restingShift + 0.05);
+              const shownTop = await page
+                .locator('.seat-wrapper--top .seat__cards--revealed')
+                .evaluate(
+                  (el) =>
+                    el.getBoundingClientRect().top -
+                    document.querySelector('.table-page')!.getBoundingClientRect().top
+                );
+              expect(shownTop).toBeGreaterThanOrEqual(7.5);
+            }
             expect(anchoring.gap).toBeGreaterThan(-12 * crown.scale);
           }
         }
@@ -1253,6 +1274,14 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
             a.bottom > b.top + 0.5;
           const board = box(document.querySelector('.community-area')!);
           const violations: string[] = [];
+          // Top all-in hands must stay below the visible mobile clipping edge.
+          const pageTop = box(document.querySelector('.table-page')!).top;
+          for (const row of document.querySelectorAll(
+            '.seat-wrapper--cap .seat__cards--revealed'
+          )) {
+            if (box(row).top < pageTop + 7.5)
+              violations.push('Top Revealed Hand Clips Mobile Header');
+          }
           // Above 480px the seat pods keep their tablet sizes and ring: the
           // phone-only pod rules (compact 7-9 max top pod, outboard lanes off
           // the painted felt, dense-ring pods clear of the board) are not
@@ -2171,20 +2200,17 @@ for (const [paneWidth, paneHeight] of [
   });
 }
 
-test('full player style, run-it-twice and jackpot names wrap on a narrow phone', async ({
-  page,
-}) => {
+test('full run-it-twice and jackpot names wrap on a narrow phone', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 667 });
-  const css = ['SeatSlot', 'RunItTwice', 'BBJCelebration']
+  const css = ['RunItTwice', 'BBJCelebration']
     .map((file) =>
       readFileSync(`src/components/table/${file}.css`, 'utf8').replace(/@import\s+[^;]+;/g, '')
     )
     .join('\n');
   await page.setContent(`<style>body{font-family:Inter,sans-serif}${css}</style>
-    <div style="width:70px"><div class="seat__style-badge">Loose Aggressive</div></div>
     <div style="width:110px;display:flex"><span style="width:20px;flex-shrink:0">A</span><span class="rit-panel__player-name">Alexandria Championship</span><span style="width:20px;flex-shrink:0">50%</span></div>
     <div style="width:70px"><div class="bbj-breakdown-name">Alexandria Championship</div></div>`);
-  for (const selector of ['.seat__style-badge', '.rit-panel__player-name', '.bbj-breakdown-name']) {
+  for (const selector of ['.rit-panel__player-name', '.bbj-breakdown-name']) {
     await expect(page.locator(selector)).toBeVisible();
     const result = await page.locator(selector).evaluate((el) => {
       const range = document.createRange();

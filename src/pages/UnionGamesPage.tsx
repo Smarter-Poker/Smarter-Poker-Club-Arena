@@ -1,3 +1,5 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
+import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { getTournamentEntryCapacity } from '../utils/tournamentPresentation';
 /**
@@ -121,9 +123,9 @@ export default function UnionGamesPage() {
 
   // Tournaments
   const [tournaments, setTournaments] = useState<UnionTournament[]>([]);
-  const [tournFilter, setTournFilter] = useState<'all' | 'registering' | 'running' | 'completed'>(
-    'all'
-  );
+  const [tournFilter, setTournFilter] = usePlayerPreference<
+    'all' | 'registering' | 'running' | 'completed'
+  >('UnionGamesPage:tournFilter', 'all');
 
   // Tables
   const [tables, setTables] = useState<UnionTable[]>([]);
@@ -138,7 +140,6 @@ export default function UnionGamesPage() {
   // ── CRITICAL: Reset per-union state when navigating between unions ──
   useEffect(() => {
     setTab('tournaments');
-    setTournFilter('all');
     setCanManageGames(false);
     setAuthorityError(null);
     setLoadError(null);
@@ -192,7 +193,7 @@ export default function UnionGamesPage() {
                 supabase
                   .from('tournaments')
                   .select(
-                    'id, name, status, format_contract, tournament_type, variant, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, is_pko, is_mystery_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
+                    'id, name, status, format_contract, tournament_type, variant, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, is_pko, is_mystery_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
                   )
                   .eq('union_id', targetUnion)
                   .not('status', 'in', '(COMPLETED,CANCELLED,CANCELED,FAILED)')
@@ -204,7 +205,7 @@ export default function UnionGamesPage() {
             supabase
               .from('tournaments')
               .select(
-                'id, name, status, format_contract, tournament_type, variant, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, is_pko, is_mystery_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
+                'id, name, status, format_contract, tournament_type, variant, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, is_pko, is_mystery_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
               )
               .eq('union_id', targetUnion)
               .in('status', ['COMPLETED', 'CANCELLED', 'CANCELED', 'FAILED'])
@@ -407,6 +408,7 @@ export default function UnionGamesPage() {
         buy_in_amount: Number((t as any).buy_in_amount ?? (t as any).buy_in ?? 0),
         buy_in_fee: Number((t as any).buy_in_fee ?? 0),
         start_time: (t as any).start_time ?? null,
+        startsWhenFull: satelliteStartsWhenFull(t),
         /* Deliberately NOT `t.club_id`. A union-owned tournament carries the
            UNION container in that column, and a union id handed to
            `fn_player_spendable_balance` resolves to no wallet at all. Null lets

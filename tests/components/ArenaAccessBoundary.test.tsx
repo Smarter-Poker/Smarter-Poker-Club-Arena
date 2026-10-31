@@ -101,6 +101,7 @@ describe('Arena entry before cached club content mounts', () => {
     [{ code: '57014', message: 'canceling statement due to statement timeout' }, 'Delayed'],
     [{ code: '28000', message: 'Authentication Required' }, 'Sign In'],
     [new TypeError('Failed to fetch'), 'Connection'],
+    [new Error('AbortError: signal is aborted without reason'), 'Delayed'],
     [new Error('Unexpected database failure'), 'Unavailable'],
   ])('reports an unreadable access result honestly: %s', async (error, pill) => {
     mocks.access.mockRejectedValue(error);
@@ -221,6 +222,7 @@ describe('a slow or dropped re-check keeps the verified page (2026-10-24)', () =
   it.each([
     [{ code: '57014', message: 'canceling statement due to statement timeout' }],
     [new TypeError('Failed to fetch')],
+    [new Error('AbortError: signal is aborted without reason')],
   ])('keeps the cashier draft through a transient re-check failure: %s', async (error) => {
     mocks.access.mockResolvedValueOnce(chip).mockRejectedValueOnce(error);
     render(draftView());

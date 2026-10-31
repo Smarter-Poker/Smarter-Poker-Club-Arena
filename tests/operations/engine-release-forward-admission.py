@@ -23,6 +23,7 @@ if len(sys.argv) > 2 and sys.argv[1] == '--source-root':
     ROOT = Path(sys.argv[2]).resolve()
     del sys.argv[1:3]
 SOURCE = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
+ENTRY_READ = SOURCE[SOURCE.index('legacy_entry_read() {'):SOURCE.index('legacy_entry_trace() {')]
 WORKFLOW = (ROOT / '.github/workflows/auto-deploy-hetzner.yml').read_text()
 CERTIFICATION_WORKFLOW = (ROOT / '.github/workflows/post-deploy-e2e.yml').read_text()
 HOST_GATE = SOURCE[SOURCE.index('source_target_is_current() {'):
@@ -39,7 +40,7 @@ def step_code(name, following):
 PREFLIGHT = step_code('Prove the request is current protected-main engine code',
                       'Use the production Node major')
 QUEUED = step_code('Recheck freshness after the FIFO wait',
-                   'Establish pinned ephemeral SSH transport')
+                   "Admit only the immutable target's preparation window")
 stage = WORKFLOW[WORKFLOW.index('name: Stage exact control bytes'):
                  WORKFLOW.index('name: Dispatch the staged SHA through the durable Hetzner intake')]
 # Execute the existing host fetch/object/ancestry/admission block. Prerequisite
@@ -175,6 +176,7 @@ curl() {{ printf '%s\\n' "$ENGINE_HEALTH_JSON"; }}
 flock() {{ :; }}
 sleep() {{ :; }}
 die() {{ printf 'REFUSED:%s\\n' "$*" >&2; exit 1; }}
+{ENTRY_READ}
 {code}
 {tail}
 printf 'ADMITTED:%s\\n' "$SHA"

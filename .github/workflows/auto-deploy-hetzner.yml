@@ -37,6 +37,7 @@ jobs:
       FLEET_SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
       FLEET_FROM_UTC: ${{ github.event.client_payload.from_utc }}
       FLEET_TO_UTC: ${{ github.event.client_payload.to_utc }}
+      FLEET_TURN_CENSUS_JSON: ${{ toJSON(github.event.client_payload.turn_census) }}
     steps:
       - name: Checkout protected observer control
         uses: actions/checkout@v4
@@ -47,12 +48,19 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /scripts/ci/horse-fleet-packet.py
+            /scripts/ci/horse-turn-census-packet.py
+            /scripts/ci/horse-turn-census-proof.mjs
+            /server/scripts/phase6d-turn-census.mjs
             /scripts/ci/horse-public-bootstrap-witness.py
             /server/scripts/phase6d-population.mjs
           persist-credentials: false
       - name: Refuse unprotected source and unavailable local clients
         run: |
           set -euo pipefail
+          case "$FLEET_TURN_CENSUS_JSON" in
+            true|false|null) ;;
+            *) echo 'Private census mode must be a JSON boolean or absent'; exit 2 ;;
+          esac
           [[ "$FLEET_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           git merge-base --is-ancestor "$FLEET_SOURCE_SHA" origin/main
           git ls-tree "$FLEET_SOURCE_SHA" -- server/src/services/horseDecisionJournal/fleet.ts \
@@ -67,8 +75,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=2s 20s python3 -B scripts/ci/horse-fleet-packet.py \
-            "$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json"
+          packet_args=("$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json")
+          if [ "$FLEET_TURN_CENSUS_JSON" = true ]; then packet_args=(--turn-census "${packet_args[@]}"); fi
+          timeout --signal=TERM --kill-after=2s 20s python3 -B scripts/ci/horse-fleet-packet.py "${packet_args[@]}"
       - name: Establish existing pinned SSH service identity
         env:
           SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
@@ -97,7 +106,9 @@ jobs:
       - name: Observe the installed CLI without release or maintenance actions
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=5s 1900s python3 -B scripts/ci/horse-fleet-packet.py --observe-bounded \
+          observer_mode=--observe-bounded
+          if [ "$FLEET_TURN_CENSUS_JSON" = true ]; then observer_mode=--observe-turn-census; fi
+          timeout --signal=TERM --kill-after=5s 1900s python3 -B scripts/ci/horse-fleet-packet.py "$observer_mode" \
             "$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json" "$HSSH" "$PRIVATE_DIR/result.json"
       - name: Remove private packet and exact ephemeral transport
         if: always()
@@ -161,13 +172,8 @@ jobs:
         with:
           ref: ${{ github.event.client_payload.ref_sha }}
           fetch-depth: 0
-          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
-          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
-          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
-          # reads a historical file version - they ask merge-base, rev-list, log and
-          # cat-file -e, which are all commit-graph work - so those blobs were paid
-          # for on every run and never read.
-          filter: blob:none
+          # Exact historical runtime qualification reads old source blobs too.
+          # Keep those immutable inputs present before its bounded native run.
 
       - name: Prove the request is current protected-main engine code
         id: target
@@ -334,6 +340,14 @@ jobs:
             echo "::notice::Exact target $SHA is behind protected-main engine $LATEST_REQUIRED; host forward-only admission is still required."
           fi
 
+      - name: Admit only the immutable target's preparation window
+        run: |
+          set -euo pipefail
+          python3 server/scripts/engine-release-activation-floor.py prepare \
+            --repo . --target "$SHA" --control "$CONTROL_SHA" \
+            --deadline "$RELEASE_DISPATCH_DEADLINE_EPOCH" \
+            > "$RUNNER_TEMP/engine-activation-floor-$RUN_KEY.json"
+
       - name: Establish pinned ephemeral SSH transport
         id: ssh
         env:
@@ -449,6 +463,57 @@ jobs:
           PY
           REMOTE
 
+      - name: Prepare the scheduled immutable image without entering release intake
+        run: |
+          set -euo pipefail
+          if python3 - "$RUNNER_TEMP/engine-activation-floor-$RUN_KEY.json" <<'PYTHON'
+          import json, sys
+          raise SystemExit(0 if json.load(open(sys.argv[1])).get('schema') in ('engine-release-activation-floor/v1', 'engine-release-activation-floor/v2-owner-window') else 1)
+          PYTHON
+          then
+            REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s) - 15))
+            [ "$REMAINING" -gt 0 ]
+            [ "$REMAINING" -le 3450 ] || REMAINING=3450
+            timeout --signal=TERM --kill-after=5s "${REMAINING}s" \
+              "$HSSH" "TARGET_SHA='$SHA' CONTROL_SHA='$CONTROL_SHA' RUN_KEY='$RUN_KEY' NOT_AFTER_EPOCH='$RELEASE_DISPATCH_DEADLINE_EPOCH' REPO_DIR='$REPO_DIR' bash -se" \
+              <<'REMOTE' | tee "$RUNNER_TEMP/engine-prepared-image-$RUN_KEY.log"
+          set -euo pipefail
+          STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
+          python3 "$STAGE/server/scripts/engine-release-activation-floor.py" prepare \
+            --repo "$REPO_DIR" --target "$TARGET_SHA" --control "$CONTROL_SHA" --deadline "$NOT_AFTER_EPOCH"
+          # Reuse the existing bounded immutable builder. No installer, release
+          # unit, engine lock, maintenance request or runtime operation exists yet.
+          GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" show "$CONTROL_SHA:server/scripts/build-engine-image.sh" \
+            | cmp -s - "$STAGE/server/scripts/build-engine-image.sh"
+          "$STAGE/server/scripts/build-engine-image.sh" "$REPO_DIR" "$TARGET_SHA" "club-arena-engine:$TARGET_SHA"
+          IMAGE_JSON="$(docker image inspect "club-arena-engine:$TARGET_SHA")"
+          EXPECTED_TREE="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-parse "$TARGET_SHA:server")"
+          IMAGE_JSON="$IMAGE_JSON" EXPECTED_TREE="$EXPECTED_TREE" python3 - <<'PYTHON'
+          import json, os, re
+          image = json.loads(os.environ['IMAGE_JSON'])
+          assert len(image) == 1
+          image = image[0]
+          labels = image['Config']['Labels']
+          assert re.fullmatch(r'sha256:[0-9a-f]{64}', image['Id'])
+          assert labels['org.opencontainers.image.revision'] == os.environ['TARGET_SHA']
+          assert labels['com.smarterpoker.engine.source-tree'] == os.environ['EXPECTED_TREE']
+          assert labels['com.smarterpoker.engine.build-contract'] == 'clean-server-archive-v1'
+          print('ENGINE_PREPARED_IMAGE=' + json.dumps({'targetSha': os.environ['TARGET_SHA'], 'controlSha': os.environ['CONTROL_SHA'], 'imageId': image['Id'], 'serverTree': os.environ['EXPECTED_TREE'], 'activated': False}, sort_keys=True))
+          PYTHON
+          IMAGE_ID="$(printf '%s' "$IMAGE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["Id"])')"
+          GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" show "$CONTROL_SHA:server/scripts/prewarm-engine-image.sh" \
+            | cmp -s - "$STAGE/server/scripts/prewarm-engine-image.sh"
+          "$STAGE/server/scripts/prewarm-engine-image.sh" "$IMAGE_ID" "$RUN_KEY" "$NOT_AFTER_EPOCH"
+          REMOTE
+          fi
+
+      - name: Wait for the immutable activation floor before creating any intake
+        run: |
+          set -euo pipefail
+          python3 server/scripts/engine-release-activation-floor.py wait \
+            --repo . --target "$SHA" --control "$CONTROL_SHA" \
+            --deadline "$RELEASE_DISPATCH_DEADLINE_EPOCH"
+
       - name: Dispatch the staged SHA through the durable Hetzner intake
         id: release
         run: |
@@ -494,6 +559,8 @@ jobs:
           STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
           ACTOR="$(printf '%s' "$ACTOR_B64" | base64 -d)"
           [[ "$NOT_AFTER_EPOCH" =~ ^[1-9][0-9]*$ ]]
+          python3 "$STAGE/server/scripts/engine-release-activation-floor.py" admit \
+            --repo /opt/club-arena --target "$TARGET_SHA" --control "$CONTROL_SHA" --deadline "$NOT_AFTER_EPOCH"
           "$STAGE/server/scripts/install-engine-intake.sh" \
             --target-sha "$TARGET_SHA" --control-sha "$CONTROL_SHA" \
             --run-id "$RUN_KEY" --actor "$ACTOR" \
@@ -719,7 +786,7 @@ jobs:
 
   record-receipt:
     name: Record The Append-Only Engine Release Receipt
-    needs: [preflight, deploy]
+    needs: [preflight, engine-doors, deploy]
     if: always() && needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 4
@@ -746,10 +813,10 @@ jobs:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           RUN_ACTOR: ${{ github.actor }}
           STRICT_RECEIPT: '1'
-          # Four outcomes, four reasons. This used to collapse every non-shipping
-          # path into one sentence about a production proof, which named the
-          # wrong half of the pipeline on every stand-down.
-          REASON: ${{ needs.deploy.outputs.release_result == 'already-released' && 'production already proved this exact release' || needs.deploy.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || needs.deploy.outputs.release_result == 'superseded' && format('stood down before cutover; protected main had moved to {0}', needs.deploy.outputs.superseded_by) || needs.deploy.outputs.release_result == 'not completed' && 'the durable Hetzner release transaction did not complete; production still runs the previously sealed release' || 'the release sealed but production identity could not be independently proved' }}
+          # Prerequisite refusal, skipped/cancelled deployment and sealed-release
+          # proof are distinct outcomes. A job that never reached host intake
+          # cannot claim the transaction sealed or describe production identity.
+          REASON: ${{ needs['engine-doors'].result != 'success' && format('release refused before host intake; production database prerequisite job ended {0}', needs['engine-doors'].result) || needs.deploy.outputs.release_result == 'already-released' && needs.deploy.outputs.verified == 'true' && 'production already proved this exact release' || needs.deploy.outputs.release_result == 'sealed' && needs.deploy.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || needs.deploy.outputs.release_result == 'superseded' && format('stood down before cutover; protected main had moved to {0}', needs.deploy.outputs.superseded_by) || needs.deploy.result == 'cancelled' && 'deployment job cancelled before a sealed release was independently proved' || needs.deploy.result == 'skipped' && 'deployment job did not run; no host intake or production identity was proved' || needs.deploy.outputs.release_result == 'not completed' && 'this attempt did not prove a completed durable Hetzner release transaction; read its owning state and current production identity before retrying' || (needs.deploy.outputs.release_result == 'sealed' || needs.deploy.outputs.release_result == 'already-released') && 'the release sealed but production identity could not be independently proved' || 'release outcome unknown; no sealed production identity was established' }}
         run: |
           set -euo pipefail
           RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
@@ -809,13 +876,17 @@ jobs:
           if [ -n "$SUPERSEDED_BY" ]; then
             DETAIL="stood down before cutover; protected main had moved to $SUPERSEDED_BY"
           fi
-          echo "::warning title=NOT DEPLOYED::$TARGET_SHA did not reach production ($DETAIL). The engine still runs the previously sealed release."
+          if [ "$RELEASE_RESULT" = sealed ] || [ "$RELEASE_RESULT" = already-released ]; then
+            echo "::warning title=NOT VERIFIED::$TARGET_SHA has a sealed release outcome but no independent production proof ($DETAIL). Activation may have occurred; read current production identity before any retry."
+          else
+            echo "::warning title=NOT DEPLOYED::$TARGET_SHA was not proved shipped by this attempt ($DETAIL)."
+          fi
           {
             echo
-            echo '### NOT DEPLOYED'
-            echo "\`$TARGET_SHA\` did not reach production."
+            echo '### RELEASE NOT VERIFIED'
+            echo "\`$TARGET_SHA\` was not independently proved live by this attempt."
             echo "- Why: $DETAIL"
-            echo '- The engine still runs the previously sealed release.'
+            echo '- Read current production identity and the durable owning operation before any retry.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   certify-production:

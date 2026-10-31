@@ -289,6 +289,7 @@ import {
 afterEach(() => cleanup());
 
 beforeEach(() => {
+  localStorage.clear();
   authState.current = { user: { id: 'owner-1' }, isHydrating: false };
   routeState.clubId = CLUB_ID;
   rpcMock.mockReset();

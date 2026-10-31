@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ♠ CLUB ARENA — Audit Log
  * Track all admin actions in the club
@@ -60,8 +61,8 @@ interface AuditLogProps {
 
 export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [filter, setFilter] = useState<ActionType>('all');
-  const [search, setSearch] = useState('');
+  const [filter, setFilter] = usePlayerPreference<ActionType>('auditLog.filter', 'all', clubId);
+  const [search, setSearch] = usePlayerPreference('auditLog.search', '', clubId);
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const [hasMore, setHasMore] = useState(false);

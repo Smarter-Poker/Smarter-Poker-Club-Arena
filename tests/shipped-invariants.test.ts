@@ -212,7 +212,11 @@ describe('shipped functionality is still here', () => {
      three are the ones that answer "did it ship", and each pins a setting whose
      removal is invisible until production has been stale for hours. */
   describe('the publish path cannot be quietly disarmed', () => {
-    const publisher = () => readFileSync(root('.github/workflows/publish-club-arena.yml'), 'utf8');
+    const publisher = () =>
+      readFileSync(root('.github/workflows/publish-club-arena.yml'), 'utf8') +
+      readFileSync(root('.github/workflows/publish-club-arena-client.yml'), 'utf8') +
+      '\n' +
+      readFileSync(root('.github/workflows/publish-club-arena-transaction.yml'), 'utf8');
 
     it('the publisher does not cancel a run that is already publishing', () => {
       /* cancel-in-progress: true killed every build before its sync step. With
@@ -232,7 +236,11 @@ describe('shipped functionality is still here', () => {
       // ci.yml's unit job never completes on main - pushes land faster than CI
       // and cancel it - so the suite runs HERE, inside the workflow that
       // publishes. Losing this line means a red suite ships to users.
-      expect(publisher().includes('npx vitest run tests/')).toBe(true);
+      expect(publisher()).toContain('node scripts/ci/ui-test-selection.mjs unit --shard=');
+      const selector = readFileSync(root('scripts/ci/ui-test-selection.mjs'), 'utf8');
+      expect(selector).toContain(
+        "if (!proof.focused) return invoke('vitest', ['run', 'tests/', ...args])"
+      );
     });
 
     it('an older build cannot overwrite a newer one — ancestry, not wall clock', () => {

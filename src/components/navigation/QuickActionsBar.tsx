@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  QUICK ACTIONS BAR — Fast Access Actions
@@ -5,7 +6,6 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { withClubContext } from '../../utils/clubScopedPath';
 import styles from './QuickActionsBar.module.css';
@@ -37,7 +37,7 @@ export default function QuickActionsBar({
   onMessageClick,
 }: QuickActionsBarProps) {
   const navigate = useNavigate();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = usePlayerPreference('quickActions.expanded', false, clubId);
 
   /* Dan 2026-09-02: a shortcut opened from inside a club stays inside that
      club. Messages, Wallet and Leaderboard used to navigate to bare global
@@ -120,7 +120,6 @@ export default function QuickActionsBar({
               }
               onClick={() => {
                 action.action();
-                setExpanded(false);
               }}
             >
               <span className={styles.icon}>{action.icon}</span>

@@ -1,0 +1,11 @@
+# Observe three independent natural horse subjects within one bounded window
+
+Runs 40807922803, 40811613966 and 40817545239 collected natural, delayed chat but no reaction or throw frames. Public participant-only hand metadata and the unchanged deterministic participation choices established that every eligible posthand gesture roll failed in those single-table windows. The failed verdicts remain retained; no renderer or transport failure was demonstrated.
+
+The existing explicit observer now watches at most three recently active healthy cash tables at once, preferring the strongest actual showdown activity in each of NLH, PLO and LIMIT. It uses the same isolated spectator account, the original page plus at most two extra pages, and one shared twenty-minute wall-clock bound. No future gesture hash, player participation, production frequency, engine or UI behavior changes.
+
+Each page keeps its own table-bound socket frames, DOM witness, public seat lookup, throw receipt, chat claims and evidence. All five-second, forbidden-language, shared-payout, own-seat reaction, occupied-opponent throw and receipt assertions remain. The final verdict still requires actual text, reaction and throw proof; each proof identifies its own table. Setup failures retain their table and error, abort other observations and close only pages this observer created.
+
+Paint evidence refuses hidden documents or a stale animation-frame clock. Each subject records its initial visibility and frame progression, while each accepted DOM record retains its visibility and paint timestamp. The actual maintained witness was extracted and exercised in three local headless WebKit pages: all remained visible, advanced animation frames and captured visible reactions; a hidden-document reaction was rejected. Hosted runtime assertions independently enforce those boundaries.
+
+Validation: the actual single-subject wiring regression failed before the change (1 failed, 13 passed). All 65 focused evidence, queue and delivery tests and strict compilation of the actual realtime observer spec pass afterward. Both private root and server locked dependency probes pass. Fresh production observation remains required after protected merge; local fixture results do not certify natural live gestures.

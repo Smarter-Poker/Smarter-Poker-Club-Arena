@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THROWABLE SELECTOR — Pick from the 48 Dynamic 3D Throwables (2026-08-20)
@@ -65,7 +66,11 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
     cheers: [],
     premium: [],
   });
-  const [activeCategory, setActiveCategory] = useState<ThrowableCategory>('premium');
+  const [activeCategory, setActiveCategory] = usePlayerPreference<ThrowableCategory>(
+    'throwableSelector.category',
+    'premium',
+    'global'
+  );
   const [allowance, setAllowance] = useState<ThrowAllowance | null>(null);
   const [allowanceUserId, setAllowanceUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

@@ -31,7 +31,8 @@
  * intake. The build is not safe to ship until its migration is applied; it
  * can be dispatched again after the database has caught up.
  *
- * Deliberately NOT a blocker:
+ * For targets without the continuation prerequisites below, deliberately
+ * NOT a blocker:
  *   - an unreadable database (no DATABASE_URL, pg missing, network): a
  *     warning. This guard exists for one class of defect; it must never be
  *     the reason an urgent fix cannot ship because a connection blinked.
@@ -39,10 +40,17 @@
  *     build production already ran, and an emergency must not wait on this.
  *   - a name in scripts/ci/engine-doors.allowlist.json, each with a reason.
  *
+ * A target calling a continuation RPC must additionally prove all exact
+ * installed migration histories. Its new changed-function prerequisite cannot
+ * be inferred from pg_proc name presence, and unknown history is a refusal.
+ * This is a read-only gate in this existing job, before durable host intake.
+ *
  * Usage:  node scripts/ci/check-engine-doors-exist.mjs
- * Exit:   0 all present / unreadable / rollback,  1 a door is missing
+ * Exit:   0 proved / generic unreadable / generic rollback;
+ *         1 missing door or unproved continuation prerequisite
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, relative } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -140,11 +148,78 @@ export function engineDoors(root = SCAN_ROOT) {
   return doors;
 }
 
-async function liveFunctions(names) {
+// The original-controller runtime also depends on a changed EXISTING clock
+// function. Name presence cannot prove that installation. Read the exact
+// target files, then require all ordinary applier history rows byte-for-byte
+// by their single-statement text digest. No body pin forbids a later compatible
+// owner from legitimately extending the installed abort function.
+const CONTINUATION_DOORS = new Set([
+  'fn_f06_retain_hand_continuation',
+  'fn_f06_claim_hand_continuation',
+  'fn_f06_claim_legacy_river_continuation',
+]);
+const CONTINUATION_MIGRATIONS = [
+  '20261028233353_durable_private_hand_continuation.sql',
+  '20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql',
+  '20261029170914_original_claim_attests_exact_authorized_chairs.sql',
+];
+const MTT_DEPTH_MIGRATIONS = [
+  '20261029202310_all_new_mtt_tournaments_pay_the_top_fifteen_percent.sql',
+  '20261029202847_unfinalized_mtt_fields_adopt_fifteen_percent_payout_depth.sql',
+];
+let mttDepthTarget = false;
+let continuationTarget = false;
+let retainedCheckpointTarget = false;
+const RETAINED_CHECKPOINT_GUARD = 'server/scripts/retained-original-checkpoint-guard.mjs';
+const FROZEN_ATTESTATION_MIGRATION =
+  '20261029093051_attest_frozen_original_hand_continuation_custody.sql';
+const FROZEN_ATTESTATION_CONTRACTS = [
+  {
+    schema_name: 'public',
+    proname: 'fn_f06_attest_frozen_hand_continuation',
+    body_md5: 'd47f131bbecd7fd7aaba9873af68285e',
+    acl: '{postgres=X/postgres,service_role=X/postgres}',
+    service_execute: true,
+  },
+  {
+    schema_name: 'smarter_private',
+    proname: 'attest_frozen_hand_continuation',
+    body_md5: '7e5ebd0b8f622ba6daa596c2d2e45db0',
+    acl: '{postgres=X/postgres}',
+    service_execute: false,
+  },
+];
+
+function continuationRequirements() {
+  const files = [
+    ...(continuationTarget ? CONTINUATION_MIGRATIONS : []),
+    ...(mttDepthTarget ? MTT_DEPTH_MIGRATIONS : []),
+    ...(retainedCheckpointTarget ? [FROZEN_ATTESTATION_MIGRATION] : []),
+  ];
+  return files.map((file) => ({
+    version: file.slice(0, 14),
+    name: file.slice(15, -4),
+    sql_md5: createHash('md5')
+      .update(readFileSync(join(ROOT, 'supabase', 'migrations', file)))
+      .digest('hex'),
+  }));
+}
+
+async function liveFunctions(names, requirements) {
   // Test seam: a JSON array of the function names "production" has, so the
   // law test can run the real script end to end without a database.
   const fixture = process.env.ENGINE_DOORS_LIVE_FIXTURE;
-  if (fixture) return { found: new Set(JSON.parse(readFileSync(fixture, 'utf8'))) };
+  if (fixture) {
+    const migrationFixture = process.env.ENGINE_DOORS_MIGRATIONS_FIXTURE;
+    const checkpointFixture = process.env.ENGINE_DOORS_CHECKPOINT_FIXTURE;
+    return {
+      found: new Set(JSON.parse(readFileSync(fixture, 'utf8'))),
+      migrations: migrationFixture ? JSON.parse(readFileSync(migrationFixture, 'utf8')) : [],
+      checkpointFunctions: checkpointFixture
+        ? JSON.parse(readFileSync(checkpointFixture, 'utf8'))
+        : [],
+    };
+  }
   const url = process.env.DATABASE_URL;
   if (!url) return { unreadable: 'DATABASE_URL is not set' };
   let Client;
@@ -167,7 +242,38 @@ async function liveFunctions(names) {
         WHERE n.nspname = 'public' AND p.proname = ANY($1::text[])`,
       [names]
     );
-    return { found: new Set(rows.map((r) => r.proname)) };
+    let migrations = [];
+    if (requirements.length) {
+      ({ rows: migrations } = await client.query(
+        `SELECT version, name, cardinality(statements)::integer AS statement_count,
+                md5(statements[1]) AS sql_md5
+           FROM supabase_migrations.schema_migrations
+          WHERE version = ANY($1::text[])`,
+        [requirements.map((r) => r.version)]
+      ));
+    }
+    let checkpointFunctions = [];
+    if (retainedCheckpointTarget) {
+      ({ rows: checkpointFunctions } = await client.query(
+        `SELECT n.nspname AS schema_name, p.proname,
+                oidvectortypes(p.proargtypes) AS argument_types,
+                md5(p.prosrc) AS body_md5, pg_get_userbyid(p.proowner) AS owner,
+                p.prosecdef AS security_definer, p.provolatile AS volatility,
+                p.prorettype::regtype::text AS return_type,
+                p.proacl::text AS acl, p.proconfig AS config,
+                has_function_privilege('anon',p.oid,'execute') AS anon_execute,
+                has_function_privilege('authenticated',p.oid,'execute') AS authenticated_execute,
+                has_function_privilege('service_role',p.oid,'execute') AS service_execute,
+                has_table_privilege('service_role','smarter_private.hand_continuations','SELECT') AS service_private_read
+           FROM pg_catalog.pg_proc p
+           JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+          WHERE p.oid IN (to_regprocedure($1),to_regprocedure($2))`,
+        FROZEN_ATTESTATION_CONTRACTS.map(
+          (r) => `${r.schema_name}.${r.proname}(uuid,uuid,uuid,bigint,bigint,text)`
+        )
+      ));
+    }
+    return { found: new Set(rows.map((r) => r.proname)), migrations, checkpointFunctions };
   } catch (err) {
     return { unreadable: `production could not be asked: ${err?.message || err}` };
   } finally {
@@ -176,11 +282,33 @@ async function liveFunctions(names) {
 }
 
 async function main() {
+  // One closed serialized guard is an engine caller too. Do not scan arbitrary
+  // control scripts or make old targets depend on a newly installed contract.
+  const guardPath = join(ROOT, RETAINED_CHECKPOINT_GUARD);
+  retainedCheckpointTarget = existsSync(guardPath);
+  // Only a target containing this policy has its installation dependency.
+  // Existing targets/rollbacks do not acquire a future migration requirement.
+  mttDepthTarget = existsSync(join(ROOT, 'supabase', 'migrations', MTT_DEPTH_MIGRATIONS[0]));
   const doors = engineDoors();
+  if (retainedCheckpointTarget) {
+    for (const name of doorsIn(readFileSync(guardPath, 'utf8'))) {
+      const files = doors.get(name) ?? [];
+      files.push(RETAINED_CHECKPOINT_GUARD);
+      doors.set(name, files);
+    }
+  }
   const names = [...doors.keys()].sort();
+  continuationTarget = names.some((name) => CONTINUATION_DOORS.has(name));
+  const requirements = continuationRequirements();
   const allow = existsSync(ALLOWLIST) ? JSON.parse(readFileSync(ALLOWLIST, 'utf8')) : {};
   const rollback = process.env.ROLLBACK_REQUESTED === 'true';
-  const live = await liveFunctions(names);
+  const live = await liveFunctions(names, requirements);
+  if (live.unreadable && (continuationTarget || retainedCheckpointTarget || mttDepthTarget)) {
+    console.log(
+      `::error title=CONTINUATION PREREQUISITES UNCHECKED::${live.unreadable}. Exact target migration histories and any selected frozen-checkpoint custody contract must be proved before this target enters Hetzner.`
+    );
+    return 1;
+  }
   if (live.unreadable) {
     console.log(
       `::warning title=DATABASE DOORS UNCHECKED::${live.unreadable}. The ${names.length} functions this build calls were not verified against production.`
@@ -188,8 +316,64 @@ async function main() {
     return 0;
   }
   const missing = names.filter((n) => !live.found.has(n) && !allow[n]);
+  let prerequisitesProved = true;
+  for (const expected of requirements) {
+    const rows = live.migrations.filter((row) => row.version === expected.version);
+    const row = rows[0];
+    if (
+      rows.length !== 1 ||
+      row.name !== expected.name ||
+      row.statement_count !== 1 ||
+      row.sql_md5 !== expected.sql_md5
+    ) {
+      prerequisitesProved = false;
+      console.log(
+        `::error title=CONTINUATION MIGRATION UNPROVED::${expected.version} must have exactly the target migration name and single-statement SQL MD5 ${expected.sql_md5}. Apply and verify the protected migration before this target enters Hetzner.`
+      );
+    }
+  }
+  if (!prerequisitesProved) return 1;
+  if (continuationTarget)
+    console.log('OK - all exact continuation migration histories are installed.');
+  if (mttDepthTarget)
+    console.log('OK - both exact fifteen-percent MTT policy migrations are installed.');
+  if (retainedCheckpointTarget) {
+    for (const expected of FROZEN_ATTESTATION_CONTRACTS) {
+      const rows = live.checkpointFunctions?.filter(
+        (row) => row.schema_name === expected.schema_name && row.proname === expected.proname
+      );
+      const row = rows?.[0];
+      if (
+        !Array.isArray(rows) ||
+        rows.length !== 1 ||
+        row.argument_types !== 'uuid, uuid, uuid, bigint, bigint, text' ||
+        row.body_md5 !== expected.body_md5 ||
+        row.owner !== 'postgres' ||
+        row.security_definer !== true ||
+        row.volatility !== 's' ||
+        row.return_type !== 'jsonb' ||
+        row.acl !== expected.acl ||
+        JSON.stringify(row.config) !==
+          JSON.stringify(['search_path=pg_catalog, public, smarter_private']) ||
+        row.anon_execute !== false ||
+        row.authenticated_execute !== false ||
+        row.service_execute !== expected.service_execute ||
+        row.service_private_read !== false
+      ) {
+        console.log(
+          `::error title=FROZEN ORIGINAL ATTESTATION UNPROVED::${expected.schema_name}.${expected.proname} must match the qualified body, read-only owner/configuration, service/browser grants and private-table denial before the retained-original checkpoint enters Hetzner.`
+        );
+        return 1;
+      }
+    }
+    console.log(
+      'OK - frozen original attestation history and both exact read-only custody doors are installed.'
+    );
+  }
   if (missing.length === 0) {
-    console.log(`OK - all ${names.length} database functions this build calls exist in production.`);
+    console.log(
+      `OK - all ${names.length} database functions this build calls exist in production.`
+    );
     return 0;
   }
   const level = rollback ? 'warning' : 'error';
@@ -199,7 +383,9 @@ async function main() {
     );
   }
   if (rollback) {
-    console.log('Rollback: reported, not blocked. A rollback restores a build production already ran.');
+    console.log(
+      'Rollback: reported, not blocked. A rollback restores a build production already ran.'
+    );
     return 0;
   }
   console.log(
@@ -212,6 +398,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   main().then(
     (code) => process.exit(code),
     (err) => {
+      if (continuationTarget || retainedCheckpointTarget) {
+        console.log(`::error title=CONTINUATION PREREQUISITES UNCHECKED::${err?.message || err}`);
+        process.exit(1);
+      }
       console.log(`::warning title=DATABASE DOORS UNCHECKED::${err?.message || err}`);
       process.exit(0);
     }

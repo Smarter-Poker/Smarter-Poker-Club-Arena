@@ -314,6 +314,65 @@ class DeadlineHeap {
 
 export class DeadlineScheduler {
   private heap = new DeadlineHeap();
+  private weeklyScopes = new Map<string, Map<string, { owner: string; prefix: string }>>();
+  private weeklyParked = new Map<string, { deadline: Deadline; pausedAt: number }>();
+
+  private weeklyKey(tableId: string, eventId: string): string {
+    return JSON.stringify([tableId, eventId]);
+  }
+
+  private weeklyHeld(tableId: string, eventId: string): boolean {
+    const scopes = this.weeklyScopes.get(tableId);
+    if (!scopes) return false;
+    for (const scope of scopes.values()) {
+      if (eventId.startsWith(scope.prefix)) return true;
+    }
+    return false;
+  }
+
+  /** Retain the original callback and residual clock under exact pause ownership. */
+  pauseForWeeklyPayout(tableId: string, owner: string, prefix: string): void {
+    this.holdDecisionClocks(tableId, owner, prefix);
+  }
+
+  holdDecisionClocks(tableId: string, owner: string, prefix: string): void {
+    if (!owner) throw new Error('Weekly payout pause requires an owner');
+    const key = JSON.stringify([owner, prefix]);
+    let scopes = this.weeklyScopes.get(tableId);
+    if (!scopes) {
+      scopes = new Map();
+      this.weeklyScopes.set(tableId, scopes);
+    }
+    if (scopes.has(key)) return;
+    scopes.set(key, { owner, prefix });
+    const pausedAt = this.now();
+    for (const deadline of this.heap.listTable(tableId)) {
+      if (!deadline.eventId.startsWith(prefix)) continue;
+      this.heap.remove(tableId, deadline.eventId);
+      this.weeklyParked.set(this.weeklyKey(tableId, deadline.eventId), { deadline, pausedAt });
+    }
+  }
+
+  resumeFromWeeklyPayout(tableId: string, owner: string, prefix: string): void {
+    this.releaseDecisionClocks(tableId, owner, prefix);
+  }
+
+  releaseDecisionClocks(tableId: string, owner: string, prefix: string): void {
+    const scopes = this.weeklyScopes.get(tableId);
+    if (!scopes?.delete(JSON.stringify([owner, prefix]))) return;
+    if (scopes.size === 0) this.weeklyScopes.delete(tableId);
+    const now = this.now();
+    for (const [key, parked] of this.weeklyParked) {
+      const d = parked.deadline;
+      if (d.tableId !== tableId || this.weeklyHeld(tableId, d.eventId)) continue;
+      this.weeklyParked.delete(key);
+      this.heap.push({ ...d, deadlineMs: d.deadlineMs + Math.max(0, now - parked.pausedAt) });
+    }
+  }
+
+  isParkedForWeeklyPayout(tableId: string, owner: string, prefix: string): boolean {
+    return this.weeklyScopes.get(tableId)?.has(JSON.stringify([owner, prefix])) === true;
+  }
   private tickHandle: ReturnType<typeof setInterval> | null = null;
   private readonly tickMs: number;
   private readonly maxFirePerTick: number;
@@ -369,6 +428,8 @@ export class DeadlineScheduler {
       this.tickHandle = null;
     }
     this.heap.clear();
+    this.weeklyScopes.clear();
+    this.weeklyParked.clear();
     this.running = false;
   }
 
@@ -386,17 +447,30 @@ export class DeadlineScheduler {
     if (!this.running) this.start();
     // Idempotent: purge any prior entry with the same key
     this.heap.remove(d.tableId, d.eventId);
-    this.heap.push(d);
+    const key = this.weeklyKey(d.tableId, d.eventId);
+    this.weeklyParked.delete(key);
+    if (this.weeklyHeld(d.tableId, d.eventId)) {
+      this.weeklyParked.set(key, { deadline: d, pausedAt: this.now() });
+    } else {
+      this.heap.push(d);
+    }
   }
 
   /** Cancel one. Safe on unknown keys. */
   cancel(tableId: string, eventId: string): void {
     this.heap.remove(tableId, eventId);
+    this.weeklyParked.delete(this.weeklyKey(tableId, eventId));
   }
 
   /** Cancel every deadline for a tableId. */
   cancelAll(tableId: string): number {
-    return this.heap.removeTable(tableId);
+    let removed = this.heap.removeTable(tableId);
+    for (const [key, parked] of this.weeklyParked) {
+      if (parked.deadline.tableId !== tableId) continue;
+      this.weeklyParked.delete(key);
+      removed++;
+    }
+    return removed;
   }
 
   /**
@@ -406,9 +480,18 @@ export class DeadlineScheduler {
    * ServerTableEngine.saveSnapshot().
    */
   persistPending(tableId: string): PersistedDeadline[] {
-    return this.heap
+    const active = this.heap
       .listTable(tableId)
       .map((d) => ({ eventId: d.eventId, deadlineMs: d.deadlineMs }));
+    const now = this.now();
+    for (const parked of this.weeklyParked.values()) {
+      if (parked.deadline.tableId !== tableId) continue;
+      active.push({
+        eventId: parked.deadline.eventId,
+        deadlineMs: parked.deadline.deadlineMs + Math.max(0, now - parked.pausedAt),
+      });
+    }
+    return active;
   }
 
   /**
@@ -424,7 +507,7 @@ export class DeadlineScheduler {
     for (const e of entries) {
       const cb = lookupCallback(e.eventId);
       if (!cb) continue; // unknown event — caller chose not to resurrect
-      this.heap.push({
+      this.schedule({
         tableId,
         eventId: e.eventId,
         deadlineMs: e.deadlineMs,

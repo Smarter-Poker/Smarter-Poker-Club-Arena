@@ -53,7 +53,9 @@ describe('Player Identity Vault information architecture', () => {
 
 describe('Player Identity Vault interaction semantics', () => {
   it('uses native notification controls without nested interactive elements', () => {
-    expect(NOTIFICATIONS).toContain("useState<'all' | 'unread'>('all')");
+    expect(NOTIFICATIONS).toMatch(
+      /usePlayerPreference<'all' \| 'unread'>\(\s*'NotificationsPage:filter',\s*'all'\s*\)/
+    );
     expect(NOTIFICATIONS).toContain("aria-pressed={filter === 'unread'}");
     expect(NOTIFICATIONS).toContain('className="ca-notif__delete"');
     expect(NOTIFICATIONS).not.toContain("role={clickable ? 'button'");

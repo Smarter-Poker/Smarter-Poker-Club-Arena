@@ -153,7 +153,9 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
   it('the break waits for its hands while this server owns the drain', () => {
     const start = GAME_SERVER.indexOf('private async waitForAllTablesParked');
     const waiter = GAME_SERVER.slice(start, GAME_SERVER.indexOf('\n  }\n', start) + 5);
-    expect(waiter).toContain('while (this.running && this.directAdmissionIsCurrent(generation))');
+    expect(waiter).toMatch(
+      /while\s*\(\s*this\.running\s*&&\s*this\.directAdmissionIsCurrent\(generation\)\s*&&\s*this\.synchronizedBreakGeneration === breakGeneration\s*\)/
+    );
     expect(waiter).toContain('return false;');
     expect(waiter).not.toMatch(/Date\.now\(\)\s*</);
   });
@@ -667,11 +669,18 @@ describe('a paused table parks whatever it was doing', () => {
     const resume = blankNonCode(sliceMethod(ENGINE_BASE, 'resumeDealing(): void'));
     const resumeGate = /if\s*\(([\s\S]*?)\)\s*\{\s*this\.pausedSinceMs/.exec(resume)?.[1];
     expect(resumeGate).toBeDefined();
-    expect(resumeGate).toContain('this.tournamentMovePauseOwners.size > 0');
-    expect(resumeGate).toContain('this.maintenancePaused');
-    expect(resumeGate).toContain('this.finalTableDealPaused');
-    expect(resumeGate).toContain('this.terminalCloseoutPaused');
-    expect(resumeGate).not.toMatch(/&&/);
+    expect(resumeGate?.trim()).toBe('this.isHandForHandReleaseBlocked()');
+    // The exact same predicate owns the manager barrier and local release.
+    // Follow that maintained owner rather than duplicating its flag list.
+    const independent = blankNonCode(
+      sliceMethod(ENGINE_BASE, 'isHandForHandReleaseBlocked(): boolean')
+    );
+    expect(independent).toContain('this.tournamentMovePauseOwners.size > 0');
+    expect(independent).toContain('this.weeklyPayoutPauseOwners.size > 0');
+    expect(independent).toContain('this.maintenancePaused');
+    expect(independent).toContain('this.finalTableDealPaused');
+    expect(independent).toContain('this.terminalCloseoutPaused');
+    expect(independent).not.toMatch(/&&/);
     // The maintenance resume is the mirror image: it must not lift a
     // hand-for-hand or tournament-move pause it did not set.
     const maint = blankNonCode(sliceMethod(ENGINE_BASE, 'resumeFromMaintenance(): void'));

@@ -42,6 +42,9 @@ type Query = {
   op: 'select' | 'insert' | 'update';
   filters: Record<string, unknown>;
   payload?: unknown;
+  after?: string;
+  limit?: number;
+  order?: string;
 };
 type Handlers = {
   tables?: Record<string, (q: Query) => unknown>;
@@ -55,8 +58,14 @@ function fakeDb(handlers: Handlers) {
   vi.spyOn(supabase, 'from').mockImplementation(((name: string) => {
     const q: Query = { table: name, op: 'select', filters: {} };
     from.push(q);
-    const answer = () =>
-      Promise.resolve(handlers.tables?.[name]?.(q) ?? { data: null, error: null });
+    const answer = async () => {
+      const result: any = (await handlers.tables?.[name]?.(q)) ?? { data: null, error: null };
+      if (!Array.isArray(result.data)) return result;
+      let rows = [...result.data];
+      if (q.order === 'id') rows.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      if (q.after) rows = rows.filter((row) => row.id > q.after!);
+      return { ...result, data: rows.slice(0, Math.min(q.limit ?? 1000, 1000)) };
+    };
     const chain: any = new Proxy(
       {},
       {
@@ -70,6 +79,12 @@ function fakeDb(handlers: Handlers) {
             if (prop === 'insert' || prop === 'update') {
               q.op = prop;
               q.payload = args[0];
+            } else if (prop === 'order') {
+              q.order = String(args[0]);
+            } else if (prop === 'limit') {
+              q.limit = Number(args[0]);
+            } else if (prop === 'gt' && args[0] === 'id') {
+              q.after = String(args[1]);
             } else if (['eq', 'in', 'gt', 'is', 'lt'].includes(prop)) {
               q.filters[String(args[0])] = args[1];
             }
@@ -821,6 +836,71 @@ describe('the next stage resumes (resumeStageLifecycle)', () => {
     return { db, state };
   }
 
+  it.each([1000, 1001])(
+    'resumes every one of %i entitlements across the response cap',
+    async (count) => {
+      const rows = Array.from({ length: count }, (_, i) => ({
+        id: `entitlement-${String(i).padStart(5, '0')}`,
+        user_id: `player-${i}`,
+        stack: 10000,
+        state: 'active',
+      }));
+      const consumed = new Set<string>();
+      const { db, state } = resume({
+        row: { ...baggedRow, table_size: 9 },
+        entitlements: rows,
+        seat: (args) => {
+          expect(consumed.has(args.p_entitlement_id)).toBe(false);
+          consumed.add(args.p_entitlement_id);
+          rows.find((row) => row.id === args.p_entitlement_id)!.state = 'consumed';
+          return { data: { ok: true }, error: null };
+        },
+        complete: () => ({
+          data:
+            consumed.size === count
+              ? { ok: true, players: count }
+              : { ok: false, reason: 'unseated_entitlements' },
+          error: null,
+        }),
+      });
+      await state.resumeStage();
+      expect(consumed.size).toBe(count);
+      expect(db.rpc.filter(([name]) => name === 'fn_complete_stage_resume')).toHaveLength(1);
+      expect(state.resumeLifecycle).toHaveBeenCalledOnce();
+    }
+  );
+
+  it('adopts all predecessor tables and occupied chairs beyond the response cap', async () => {
+    const tables = Array.from({ length: 1002 }, (_, i) => ({
+      id: `table-${String(i).padStart(5, '0')}`,
+      max_players: 1,
+    }));
+    const liveSeats = tables.slice(0, 1001).map((table, i) => ({
+      id: `seat-${String(i).padStart(5, '0')}`,
+      user_id: `player-${i}`,
+      table_id: table.id,
+      seat_number: 1,
+    }));
+    const rows = liveSeats.map((seat, i) => ({
+      id: `e-${String(i).padStart(5, '0')}`,
+      user_id: seat.user_id,
+      stack: 10000,
+      state: 'consumed',
+    }));
+    rows.push({ id: 'e-99999', user_id: 'last-player', stack: 10000, state: 'active' });
+    const { db, state } = resume({ tables, liveSeats, entitlements: rows });
+    await state.resumeStage();
+    const seats = db.rpc.filter(([name]) => name === 'fn_seat_stage_entitlement');
+    expect(seats).toHaveLength(1);
+    expect(seats[0][1]).toMatchObject({
+      p_entitlement_id: 'e-99999',
+      p_table_id: tables[1001].id,
+      p_seat_number: 1,
+    });
+    expect(db.from.filter((q) => q.table === 'tables' && q.op === 'insert')).toHaveLength(0);
+    expect(state.resumeLifecycle).toHaveBeenCalledOnce();
+  });
+
   it('begins with the engine own first level, seats every entitlement once, completes, runs on', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-09-25T17:00:05.000Z'));
@@ -1006,5 +1086,66 @@ describe('the next stage resumes (resumeStageLifecycle)', () => {
     await state.resumeStage();
     expect(db.rpcNames()).not.toContain('fn_seat_stage_entitlement');
     expect(state.running).toBe(false);
+  });
+});
+
+describe('complete multi-day inventories', () => {
+  it('reads every table watermark beyond the response cap', async () => {
+    const { readTableWatermarks } = await import('./multiDayStages.js');
+    const tables = Array.from({ length: 1001 }, (_, i) => ({
+      id: `table-${String(i).padStart(5, '0')}`,
+      status: 'running',
+    }));
+    const db = fakeDb({
+      tables: {
+        tables: () => ({ data: tables, error: null }),
+        hand_atomic_commits: () => ({ data: { hand_number: 7 }, error: null }),
+      },
+    });
+    expect(await readTableWatermarks(T)).toEqual(
+      tables.map((table) => ({ table_id: table.id, last_hand_number: 7 }))
+    );
+    expect(db.from.filter((q) => q.table === 'hand_atomic_commits')).toHaveLength(1001);
+  });
+
+  it.each(['tables', 'tournament_qualification_entitlements'])(
+    'refuses a failed later %s page',
+    async (table) => {
+      const { readTableWatermarks, readStageEntitlements } = await import('./multiDayStages.js');
+      const rows = Array.from({ length: 1001 }, (_, i) => ({
+        id: `row-${String(i).padStart(5, '0')}`,
+        user_id: `user-${i}`,
+        stack: 10000,
+        state: 'active',
+        status: 'running',
+      }));
+      const db = fakeDb({
+        tables: {
+          [table]: (q) =>
+            q.after ? { data: null, error: { code: '08006' } } : { data: rows, error: null },
+        },
+      });
+      const result =
+        table === 'tables' ? await readTableWatermarks(T) : await readStageEntitlements(T, 2);
+      expect(result).toBeNull();
+      expect(db.rpc).toHaveLength(0);
+      expect(db.from.some((q) => q.table === 'hand_atomic_commits')).toBe(false);
+    }
+  );
+
+  it('stops watermark reads when the owning lifecycle is withdrawn', async () => {
+    const { readTableWatermarks } = await import('./multiDayStages.js');
+    let current = true;
+    const db = fakeDb({
+      tables: {
+        tables: () => ({ data: [{ id: 'a' }, { id: 'b' }], error: null }),
+        hand_atomic_commits: () => {
+          current = false;
+          return { data: { hand_number: 7 }, error: null };
+        },
+      },
+    });
+    expect(await readTableWatermarks(T, () => current)).toBeNull();
+    expect(db.from.filter((q) => q.table === 'hand_atomic_commits')).toHaveLength(1);
   });
 });

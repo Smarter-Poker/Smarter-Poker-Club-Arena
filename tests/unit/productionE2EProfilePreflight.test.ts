@@ -63,11 +63,21 @@ function playablePage(
 }
 
 function termsPage(statuses: Array<'accepted' | 'not_accepted' | 'unknown'>, responseStatus = 200) {
-  const remainingStatuses = [...statuses];
+  const [initialStatus, persistedStatus] = statuses;
   const decision = {
     waitFor: vi.fn().mockResolvedValue(undefined),
-    getAttribute: vi.fn().mockImplementation(async () => remainingStatuses.shift() ?? null),
+    getAttribute: vi.fn().mockResolvedValue(initialStatus ?? null),
   };
+  const persistedDecision = {
+    waitFor: vi.fn().mockResolvedValue(undefined),
+    getAttribute: vi.fn().mockResolvedValue(persistedStatus ?? null),
+  };
+  const verification = {
+    goto: vi.fn().mockResolvedValue(undefined),
+    locator: vi.fn(() => persistedDecision),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  const context = { newPage: vi.fn().mockResolvedValue(verification) };
   const acceptedMarker = { waitFor: vi.fn().mockResolvedValue(undefined) };
   const heading = { waitFor: vi.fn().mockResolvedValue(undefined) };
   const agreement = { check: vi.fn().mockResolvedValue(undefined) };
@@ -92,8 +102,20 @@ function termsPage(statuses: Array<'accepted' | 'not_accepted' | 'unknown'>, res
       return response;
     }),
     reload: vi.fn().mockResolvedValue(undefined),
+    context: () => context,
+    url: () => 'https://smarter.poker/hub/club-arena/settings',
   };
-  return { page, decision, acceptedMarker, heading, agreement, accept };
+  return {
+    page,
+    decision,
+    persistedDecision,
+    verification,
+    context,
+    acceptedMarker,
+    heading,
+    agreement,
+    accept,
+  };
 }
 
 describe('authenticated production account preflight', () => {
@@ -117,6 +139,20 @@ describe('authenticated production account preflight', () => {
     expect(fixture.page.reload).not.toHaveBeenCalled();
   });
 
+  it('proves acceptance in a fresh document without depending on a same-tab reload', async () => {
+    const fixture = termsPage(['not_accepted', 'accepted']);
+    fixture.page.reload.mockRejectedValue(new Error('Original document reload did not commit'));
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).resolves.toBe(true);
+    expect(fixture.page.reload).not.toHaveBeenCalled();
+    expect(fixture.context.newPage).toHaveBeenCalledOnce();
+    expect(fixture.verification.goto).toHaveBeenCalledWith(fixture.page.url(), {
+      waitUntil: 'commit',
+      timeout: expect.any(Number),
+    });
+    expect(fixture.persistedDecision.getAttribute).toHaveBeenCalledOnce();
+    expect(fixture.verification.close).toHaveBeenCalledOnce();
+  });
+
   it('accepts Terms through the public endpoint before proving the canonical read persists', async () => {
     const fixture = termsPage(['not_accepted', 'accepted']);
 
@@ -132,14 +168,70 @@ describe('authenticated production account preflight', () => {
       state: 'attached',
       timeout: 30_000,
     });
-    expect(fixture.page.reload).toHaveBeenCalledWith({
-      waitUntil: 'domcontentloaded',
+    expect(fixture.verification.goto).toHaveBeenCalledWith(fixture.page.url(), {
+      waitUntil: 'commit',
+      timeout: expect.any(Number),
+    });
+    expect(fixture.decision.getAttribute).toHaveBeenCalledOnce();
+    expect(fixture.persistedDecision.getAttribute).toHaveBeenCalledOnce();
+    expect(fixture.verification.close).toHaveBeenCalledOnce();
+    expect(fixture.acceptedMarker.waitFor.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.verification.goto.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('uses the fresh gate after commit even when document readiness would never finish', async () => {
+    const fixture = termsPage(['not_accepted', 'accepted']);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    fixture.verification.goto.mockImplementation(
+      async (_url: string, options: { waitUntil: string }) => {
+        if (options.waitUntil !== 'commit')
+          throw new Error('Unrelated asset blocks DOMContentLoaded');
+        clock.mockReturnValue(11_000);
+      }
+    );
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).resolves.toBe(true);
+    expect(fixture.verification.goto).toHaveBeenCalledWith(fixture.page.url(), {
+      waitUntil: 'commit',
       timeout: 60_000,
     });
-    expect(fixture.decision.getAttribute).toHaveBeenCalledTimes(2);
-    expect(fixture.acceptedMarker.waitFor.mock.invocationCallOrder[0]).toBeLessThan(
-      fixture.page.reload.mock.invocationCallOrder[0]
+    expect(fixture.persistedDecision.waitFor).toHaveBeenLastCalledWith({
+      state: 'attached',
+      timeout: 50_000,
+    });
+    expect(fixture.persistedDecision.getAttribute.mock.invocationCallOrder[0]).toBeGreaterThan(
+      fixture.verification.goto.mock.invocationCallOrder[0]
     );
+  });
+
+  it('refuses an accepted old document when the fresh canonical gate is not accepted', async () => {
+    const fixture = termsPage(['not_accepted', 'not_accepted']);
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).rejects.toThrow(
+      'Terms Of Service acceptance appeared to succeed but did not persist.'
+    );
+    expect(fixture.acceptedMarker.waitFor).toHaveBeenCalledOnce();
+    expect(fixture.decision.getAttribute).toHaveBeenCalledOnce();
+    expect(fixture.persistedDecision.getAttribute).toHaveBeenCalledOnce();
+    expect(fixture.verification.close).toHaveBeenCalledOnce();
+  });
+
+  it('does not accept the old marker when the fresh document read is unavailable', async () => {
+    const fixture = termsPage(['not_accepted', 'unknown']);
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).rejects.toThrow(
+      'acceptance is unknown'
+    );
+    expect(fixture.verification.close).toHaveBeenCalledOnce();
+    expect(fixture.page.reload).not.toHaveBeenCalled();
+  });
+
+  it('closes the fresh document and preserves a navigation failure', async () => {
+    const fixture = termsPage(['not_accepted', 'accepted']);
+    fixture.verification.goto.mockRejectedValue(new Error('Fresh document did not commit'));
+    await expect(ensureAcceptedTerms(fixture.page as unknown as Page)).rejects.toThrow(
+      'Fresh document did not commit'
+    );
+    expect(fixture.persistedDecision.getAttribute).not.toHaveBeenCalled();
+    expect(fixture.verification.close).toHaveBeenCalledOnce();
   });
 
   it('does not call a failed Terms write accepted or persist a client-only decision', async () => {
@@ -483,7 +575,7 @@ describe('authenticated production account preflight', () => {
       "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
     );
     expect(liveMobileLobby).toMatch(
-      /async function openLobby\(page: Page\)[\s\S]*await prepareCashLobbyActions\(page\);[\s\S]*lobby-wallets-trigger/
+      /async function openLobby\(page: Page, openSection = true\)[\s\S]*await prepareCashLobbyActions\(page\);[\s\S]*Cash Games/
     );
 
     const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');

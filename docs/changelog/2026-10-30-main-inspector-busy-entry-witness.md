@@ -1,0 +1,7 @@
+# Witness target busy entry before the native timeout fixture closes
+
+Release preflight 41136579768 failed its real Node 22.23.2 timeout qualification: the fixed native close completed successfully before the target started the scheduled busy callback. The HTTP response only proved the callback had been scheduled.
+
+The isolated fixture now publishes a unique nonce, PID, witness and busy interval inside the same synchronous callback that blocks the target. Before forwarding the unchanged fixed close exactly once, the client requires a bounded, nofollow regular-file observation of that marker. The target does not yield between publication and its loop. Separate observation evidence binds both the direct native timeout and the actual Python-host timeout to that entered callback; the server wrapper requires both proofs and more than the original 20-second budget remaining in the busy interval.
+
+Production source, native and host deadlines, the five-second close reserve, original ACK and UNKNOWN assertions, ownership and cleanup, activation floor and maintenance windows are unchanged. The retained failed native job is the original RED evidence. Local macOS cannot execute Docker/Linux qualification; current-head pinned production-container execution remains required before protected merge. This fixture repair does not prove the previously unknown production retirement cause or any live horse recovery.

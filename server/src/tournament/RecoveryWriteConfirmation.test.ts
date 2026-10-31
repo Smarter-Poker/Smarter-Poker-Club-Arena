@@ -16,7 +16,7 @@ const satelliteRpc = readFileSync('src/tournament/satelliteSettlementRpc.ts', 'u
 describe('recovery proves every read that can authorize a receipt request', () => {
   it('fails closed on the candidate scan and player-field read', () => {
     expect(recovery).toMatch(
-      /const \{ data: stuck, error: stuckError \}[\s\S]*?stuckError \|\| !Array\.isArray\(stuck\)[\s\S]*?return;/
+      /const stuck = await readCompletingBoard<RecoveryTournament>\([\s\S]*?if \(!stuck\)[\s\S]*?return;/
     );
     expect(recovery).toMatch(
       /const field = await readRecoveryField\(tournament\.id\)[\s\S]*?!field\.rows \|\| field\.rows\.length < 1[\s\S]*?continue;/

@@ -60,7 +60,9 @@ const BEGINS = definitions('fn_f06_begin_hand');
 const PARK = body(PARKS[PARKS.length - 1].sql, 'fn_park_stopped_time_bank_custody');
 const BEGIN = body(BEGINS[BEGINS.length - 1].sql, 'fn_f06_begin_hand');
 const OWN_FILE = '20260928001128_a_permit_that_never_reached_the_database_does_not_hold_the_b.sql';
-const BEGIN_PRIOR = body(BEGINS[BEGINS.length - 2].sql, 'fn_f06_begin_hand');
+const OWN_BEGIN_INDEX = BEGINS.findIndex(({ file }) => file === OWN_FILE);
+const OWN_BEGIN = body(BEGINS[OWN_BEGIN_INDEX].sql, 'fn_f06_begin_hand');
+const BEGIN_PRIOR = body(BEGINS[OWN_BEGIN_INDEX - 1].sql, 'fn_f06_begin_hand');
 
 /** The branch the park takes when no permit row carries the attested id. */
 function absentBranch(): string {
@@ -165,9 +167,11 @@ describe('a permit that never reached the database does not hold the bank', () =
       expect(PARK).toContain(kept);
   });
 
-  it('fn_f06_begin_hand refuses a released permit, after f06_prefix and before it can insert one', () => {
+  it('the latest fn_f06_begin_hand refuses a released permit after its shared table lane and before insert', () => {
+    // The October 3 migration replaced the exclusive tournament prefix with
+    // the shared tournament/table lane. Keep testing the latest live body.
     const prefix = BEGIN.indexOf(
-      "PERFORM smarter_private.f06_prefix(p_tournament_id,p_lease_generation,'{}',ARRAY[p_table_id]);"
+      'PERFORM public.fn_ca_f06_share_table_lane(p_tournament_id,p_lease_generation,p_table_id);'
     );
     const refuse = BEGIN.indexOf(
       "IF EXISTS(SELECT 1 FROM smarter_private.f06_absent_permit_releases WHERE permit_id=p_permit_id) THEN\n RETURN jsonb_build_object('ok',false,'reason','permit_released_absent'); END IF;"
@@ -176,8 +180,11 @@ describe('a permit that never reached the database does not hold the bank', () =
     expect(prefix).toBeGreaterThan(0);
     expect(refuse).toBeGreaterThan(prefix);
     expect(insert).toBeGreaterThan(refuse);
-    // The only change to the begin is that refusal.
-    const without = BEGIN.replace(
+  });
+
+  it('the original absent-permit migration changes only its declared refusal', () => {
+    expect(OWN_BEGIN_INDEX).toBeGreaterThan(0);
+    const without = OWN_BEGIN.replace(
       " -- A permit its engine attested absent (fn_park_stopped_time_bank_custody, 2026-09-27)\n -- can never be begun afterwards: the absence was recorded under this same lane.\n IF EXISTS(SELECT 1 FROM smarter_private.f06_absent_permit_releases WHERE permit_id=p_permit_id) THEN\n RETURN jsonb_build_object('ok',false,'reason','permit_released_absent'); END IF;\n",
       ''
     );
@@ -193,7 +200,7 @@ describe('a permit that never reached the database does not hold the bank', () =
     const file = PARKS[at];
     const ownPark = body(file.sql, 'fn_park_stopped_time_bank_custody');
     const ownPrior = body(PARKS[at - 1].sql, 'fn_park_stopped_time_bank_custody');
-    expect(BEGINS[BEGINS.length - 1].file).toBe(file.file);
+    expect(BEGINS[OWN_BEGIN_INDEX].file).toBe(file.file);
     const sql = file.sql;
     expect(sql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(sql.match(/^COMMIT;$/gm)).toHaveLength(1);
@@ -202,7 +209,7 @@ describe('a permit that never reached the database does not hold the bank', () =
     expect(pre).toContain(`'${md5(ownPrior)}'`);
     expect(pre).toContain(`'${md5(BEGIN_PRIOR)}'`);
     expect(post).toContain(`'${md5(ownPark)}'`);
-    expect(post).toContain(`'${md5(BEGIN)}'`);
+    expect(post).toContain(`'${md5(OWN_BEGIN)}'`);
     for (const g of [pre, post]) {
       expect(g).toContain("ARRAY['postgres=X/postgres', 'service_role=X/postgres']");
       expect(g).toContain("ARRAY['search_path=pg_catalog, pg_temp']");

@@ -191,7 +191,10 @@ describe('paid leaderboard funding waterfall', () => {
   it('settles only through the server role and has a scheduled boundary sweep', () => {
     expect(sweepSql).toContain('CREATE OR REPLACE FUNCTION public.fn_settle_due_leaderboards()');
     expect(sweepScheduleSql).toContain("'leaderboard-payout-waterfall-daily'");
-    expect(sweepScheduleSql).toContain("'20 0 * * *'");
+    expect(sweepScheduleSql).toContain("'0 7,8 * * 1'");
+    expect(sweepScheduleSql).toContain(
+      "extract(hour FROM now() AT TIME ZONE 'America/Chicago') = 2"
+    );
     const permissionSql = read(
       'supabase/migrations/20261009112249_leaderboard_ranking_preserved_access_declaration.sql'
     );
@@ -200,8 +203,12 @@ describe('paid leaderboard funding waterfall', () => {
     );
     expect(permissionSql).toContain("'postgres:EXECUTE,service_role:EXECUTE'");
     expect(permissionSql).toContain('after_image IS DISTINCT FROM before_image');
+    expect(payoutFile).toMatch(/CREATE OR REPLACE FUNCTION public\.fn_payout_leaderboard\(/);
+    expect(payoutFile).not.toMatch(
+      /DROP\s+FUNCTION(?:\s+IF\s+EXISTS)?\s+public\.fn_payout_leaderboard\(/i
+    );
     expect(payoutFile).toContain(
-      '-- CREATE OR REPLACE retains existing ownership and execute ACL.'
+      'GRANT EXECUTE ON FUNCTION public.fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz) TO service_role;'
     );
   });
 });

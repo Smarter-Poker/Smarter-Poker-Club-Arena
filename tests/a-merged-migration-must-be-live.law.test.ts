@@ -63,6 +63,7 @@ import {
   declaredObjects,
   declaredProofs,
   externalDeclaredProofs,
+  resolveDeclaredProofs,
   errorSqlState,
   matchedByName,
   matchedByOwnBytes,
@@ -163,6 +164,67 @@ describe('a merged migration must be live', () => {
     }
     expect(() => externalDeclaredProofs(sql, { schema: 1 }, MIGRATIONS)).toThrow();
   });
+  it('replaces only the named proof and retains every other inline assertion', () => {
+    const base = path.join(ROOT, 'node_modules/.cache');
+    fs.mkdirSync(base, { recursive: true });
+    const dir = fs.mkdtempSync(path.join(base, 'proof-repair-'));
+    const name = '20990101000000_immutable_proof.sql';
+    const sql = '-- @live-proof: English prose is not SQL\n-- @live-proof: (SELECT 2)=2\nSELECT 1;';
+    fs.writeFileSync(path.join(dir, name), sql);
+    const registry = {
+      schema: 1,
+      entries: [
+        {
+          file: name,
+          sha256: createHash('sha256').update(sql).digest('hex'),
+          replaces: ['English prose is not SQL'],
+          proofs: ['(SELECT 3)=3'],
+        },
+      ],
+    };
+    try {
+      expect(resolveDeclaredProofs(sql, registry, dir)).toEqual(['(SELECT 2)=2', '(SELECT 3)=3']);
+      expect(externalDeclaredProofs(sql, registry, dir)).toEqual(['(SELECT 3)=3']);
+      expect(resolveDeclaredProofs(sql, { schema: 1, entries: [] }, dir)).toEqual([
+        'English prose is not SQL',
+        '(SELECT 2)=2',
+      ]);
+      fs.writeFileSync(path.join(dir, name), sql + '\n-- changed');
+      expect(() => resolveDeclaredProofs(sql, registry, dir)).toThrow('bytes changed');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('repairs the installed V31 prose proof through an exact-byte external declaration', () => {
+    const name = '20261028200033_v31_cell_build_uses_its_bounded_rpc_budget.sql';
+    const sql = fs.readFileSync(path.join(MIGRATIONS, name), 'utf8');
+    expect(sql).toContain(
+      '-- @live-proof: fn_gto_v31_build_cell(uuid,jsonb) retains its exact source body,'
+    );
+    const registry = JSON.parse(read('scripts/ci/migration-live-proofs.json'));
+    const entry = registry.entries.find((e: any) => e.file === name);
+    expect(entry.replaces).toEqual([
+      'fn_gto_v31_build_cell(uuid,jsonb) retains its exact source body,',
+    ]);
+    expect(declaredProofs(sql)).toEqual(entry.proofs);
+    expect(entry.proofs[0]).toContain(
+      "md5(pg_get_functiondef(p.oid))='11ffdbe0a66d2fa02df78111c971f834'"
+    );
+    expect(entry.proofs[0]).toContain(
+      "p.proacl::text='{postgres=X/postgres,service_role=X/postgres}'"
+    );
+    for (const replaces of [
+      [],
+      ['a different inline declaration'],
+      [entry.replaces[0], entry.replaces[0]],
+    ]) {
+      const copy = structuredClone(registry);
+      copy.entries.find((e: any) => e.file === name).replaces = replaces;
+      expect(() => externalDeclaredProofs(sql, copy, MIGRATIONS)).toThrow();
+    }
+  });
+
   it('decides by name, then by live objects, then by a declared proof', () => {
     expect(SRC).toContain('supabase_migrations.schema_migrations');
     // Step 2 reads the LIVE catalogue. A snapshot is what let the existing

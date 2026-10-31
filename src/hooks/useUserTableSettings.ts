@@ -15,6 +15,14 @@
  *   - Hamburger menu → Settings section
  */
 
+import {
+  awaitPreferenceSave,
+  beginTableSettingIntent,
+  confirmTableSettingIntent,
+  readTableSettingIntent,
+  tableSettingRevision,
+  orderTableSettingWrite,
+} from '../lib/tableSettingIntents';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -365,6 +373,7 @@ const settingsRowQuery = (userId: string) =>
 
 type SettingsRowResult = Awaited<ReturnType<typeof settingsRowQuery>>;
 
+const settingsReadRevisions = new WeakMap<Promise<SettingsRowResult>, number>();
 const inFlightSettingsReads = new Map<string, Promise<SettingsRowResult>>();
 export const SETTINGS_READ_TIMEOUT_MS = 8_000;
 
@@ -398,6 +407,7 @@ export function fetchUserTableSettingsRow(userId: string): Promise<SettingsRowRe
     }
   );
 
+  settingsReadRevisions.set(p, tableSettingRevision(userId));
   inFlightSettingsReads.set(userId, p);
   return p;
 }
@@ -467,9 +477,11 @@ async function upsertSettingColumn(
   value: unknown
 ): Promise<unknown | undefined> {
   try {
-    const { error } = await supabase
-      .from('user_table_settings')
-      .upsert({ user_id: userId, [column]: value }, { onConflict: 'user_id' });
+    const { error } = await awaitPreferenceSave(
+      supabase
+        .from('user_table_settings')
+        .upsert({ user_id: userId, [column]: value }, { onConflict: 'user_id' })
+    );
     return error ?? undefined;
   } catch (error) {
     return error;
@@ -487,11 +499,14 @@ async function persistSettingColumn(
   userId: string,
   column: string,
   value: unknown,
-  stillCurrent: () => boolean
+  stillCurrent: () => boolean,
+  intentId?: string
 ): Promise<PersistOutcome> {
   let error = await upsertSettingColumn(userId, column, value);
   if (!error) {
-    await markSettingsTouched(userId, [column]);
+    if (await markSettingsTouched(userId, [column])) {
+      if (intentId) confirmTableSettingIntent(userId, column, intentId);
+    }
     return { status: 'saved' };
   }
 
@@ -500,7 +515,9 @@ async function persistSettingColumn(
     if (!stillCurrent()) return { status: 'superseded' };
     error = await upsertSettingColumn(userId, column, value);
     if (!error) {
-      await markSettingsTouched(userId, [column]);
+      if (await markSettingsTouched(userId, [column])) {
+        if (intentId) confirmTableSettingIntent(userId, column, intentId);
+      }
       return { status: 'saved' };
     }
   }
@@ -571,7 +588,9 @@ export function useUserTableSettings(userId: string | null | undefined) {
     let mounted = true;
     const load = async () => {
       try {
-        const { data, error } = await fetchUserTableSettingsRow(userId);
+        const request = fetchUserTableSettingsRow(userId);
+        const revisionAtRead = settingsReadRevisions.get(request) ?? tableSettingRevision(userId);
+        const { data, error } = await request;
 
         if (error) {
           /* Reported, not just console-warned. A settings read that fails for
@@ -583,38 +602,46 @@ export function useUserTableSettings(userId: string | null | undefined) {
           return;
         }
 
-        if (data && mounted && activeUserIdRef.current === userId) {
+        if (
+          (data ||
+            Object.keys(DEFAULT_USER_TABLE_SETTINGS).some((key) =>
+              readTableSettingIntent(userId, key)
+            )) &&
+          mounted &&
+          activeUserIdRef.current === userId
+        ) {
+          const row = data ?? {};
           const loaded: UserTableSettings = {
             highlight_active_players:
-              data.highlight_active_players ?? DEFAULT_USER_TABLE_SETTINGS.highlight_active_players,
-            show_avatars: data.show_avatars ?? DEFAULT_USER_TABLE_SETTINGS.show_avatars,
-            show_badges: data.show_badges ?? DEFAULT_USER_TABLE_SETTINGS.show_badges,
-            cards_pre_sort: data.cards_pre_sort ?? DEFAULT_USER_TABLE_SETTINGS.cards_pre_sort,
-            gestures_enabled: data.gestures_enabled ?? DEFAULT_USER_TABLE_SETTINGS.gestures_enabled,
-            card_slide: data.card_slide ?? DEFAULT_USER_TABLE_SETTINGS.card_slide,
-            card_squeeze: data.card_squeeze ?? DEFAULT_USER_TABLE_SETTINGS.card_squeeze,
-            show_stack_in_bb: data.show_stack_in_bb ?? DEFAULT_USER_TABLE_SETTINGS.show_stack_in_bb,
-            auto_time_bank: data.auto_time_bank ?? DEFAULT_USER_TABLE_SETTINGS.auto_time_bank,
-            enhanced_view: data.enhanced_view ?? DEFAULT_USER_TABLE_SETTINGS.enhanced_view,
-            voice_message: data.voice_message ?? DEFAULT_USER_TABLE_SETTINGS.voice_message,
-            text_message: data.text_message ?? DEFAULT_USER_TABLE_SETTINGS.text_message,
-            emoji_enabled: data.emoji_enabled ?? DEFAULT_USER_TABLE_SETTINGS.emoji_enabled,
+              row.highlight_active_players ?? DEFAULT_USER_TABLE_SETTINGS.highlight_active_players,
+            show_avatars: row.show_avatars ?? DEFAULT_USER_TABLE_SETTINGS.show_avatars,
+            show_badges: row.show_badges ?? DEFAULT_USER_TABLE_SETTINGS.show_badges,
+            cards_pre_sort: row.cards_pre_sort ?? DEFAULT_USER_TABLE_SETTINGS.cards_pre_sort,
+            gestures_enabled: row.gestures_enabled ?? DEFAULT_USER_TABLE_SETTINGS.gestures_enabled,
+            card_slide: row.card_slide ?? DEFAULT_USER_TABLE_SETTINGS.card_slide,
+            card_squeeze: row.card_squeeze ?? DEFAULT_USER_TABLE_SETTINGS.card_squeeze,
+            show_stack_in_bb: row.show_stack_in_bb ?? DEFAULT_USER_TABLE_SETTINGS.show_stack_in_bb,
+            auto_time_bank: row.auto_time_bank ?? DEFAULT_USER_TABLE_SETTINGS.auto_time_bank,
+            enhanced_view: row.enhanced_view ?? DEFAULT_USER_TABLE_SETTINGS.enhanced_view,
+            voice_message: row.voice_message ?? DEFAULT_USER_TABLE_SETTINGS.voice_message,
+            text_message: row.text_message ?? DEFAULT_USER_TABLE_SETTINGS.text_message,
+            emoji_enabled: row.emoji_enabled ?? DEFAULT_USER_TABLE_SETTINGS.emoji_enabled,
             blue_buttons_enabled:
-              data.blue_buttons_enabled ?? DEFAULT_USER_TABLE_SETTINGS.blue_buttons_enabled,
-            skip_animations: data.skip_animations ?? DEFAULT_USER_TABLE_SETTINGS.skip_animations,
-            use_alias: data.use_alias ?? DEFAULT_USER_TABLE_SETTINGS.use_alias,
-            table_alias: data.table_alias ?? DEFAULT_USER_TABLE_SETTINGS.table_alias,
+              row.blue_buttons_enabled ?? DEFAULT_USER_TABLE_SETTINGS.blue_buttons_enabled,
+            skip_animations: row.skip_animations ?? DEFAULT_USER_TABLE_SETTINGS.skip_animations,
+            use_alias: row.use_alias ?? DEFAULT_USER_TABLE_SETTINGS.use_alias,
+            table_alias: row.table_alias ?? DEFAULT_USER_TABLE_SETTINGS.table_alias,
             multi_auto_switch:
-              data.multi_auto_switch ?? DEFAULT_USER_TABLE_SETTINGS.multi_auto_switch,
+              row.multi_auto_switch ?? DEFAULT_USER_TABLE_SETTINGS.multi_auto_switch,
             multi_action_queue:
-              data.multi_action_queue ?? DEFAULT_USER_TABLE_SETTINGS.multi_action_queue,
+              row.multi_action_queue ?? DEFAULT_USER_TABLE_SETTINGS.multi_action_queue,
             multi_desktop_alerts:
-              data.multi_desktop_alerts ?? DEFAULT_USER_TABLE_SETTINGS.multi_desktop_alerts,
+              row.multi_desktop_alerts ?? DEFAULT_USER_TABLE_SETTINGS.multi_desktop_alerts,
             multi_shared_socket:
-              data.multi_shared_socket ?? DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket,
+              row.multi_shared_socket ?? DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket,
             rabbit_hunt_button:
-              data.rabbit_hunt_button ?? DEFAULT_USER_TABLE_SETTINGS.rabbit_hunt_button,
-            all_in_squeeze: data.all_in_squeeze ?? DEFAULT_USER_TABLE_SETTINGS.all_in_squeeze,
+              row.rabbit_hunt_button ?? DEFAULT_USER_TABLE_SETTINGS.rabbit_hunt_button,
+            all_in_squeeze: row.all_in_squeeze ?? DEFAULT_USER_TABLE_SETTINGS.all_in_squeeze,
           };
           /* A LIVE EDIT OUTRANKS A STALE READ. Anything the user changed while
              this row was in flight keeps the value they chose — see the note on
@@ -623,6 +650,25 @@ export function useUserTableSettings(userId: string | null | undefined) {
           const reconciled = { ...loaded };
           for (const key of locallyTouchedRef.current) {
             (reconciled as Record<string, unknown>)[key] = settingsRef.current[key];
+          }
+          for (const key of Object.keys(DEFAULT_USER_TABLE_SETTINGS) as Array<
+            keyof UserTableSettings
+          >) {
+            const pending = readTableSettingIntent(userId, key);
+            if (pending) {
+              (reconciled as Record<string, unknown>)[key] = pending.value;
+              void orderTableSettingWrite(userId, key, () =>
+                persistSettingColumn(
+                  userId,
+                  key,
+                  pending.value,
+                  () => activeUserIdRef.current === userId,
+                  pending.id
+                )
+              );
+            } else if (tableSettingRevision(userId) !== revisionAtRead) {
+              (reconciled as Record<string, unknown>)[key] = readCachedSettings(userId)[key];
+            }
           }
           settingsRef.current = reconciled;
           setSettings(reconciled);
@@ -703,6 +749,12 @@ export function useUserTableSettings(userId: string | null | undefined) {
            user's next tap writes `false` — the switch does not move, and the
            default is persisted again. Tap it ten times and it never moves. That
            is the report, exactly. */
+        if (
+          event.payload?.origin?.startsWith('postgres-sync:') &&
+          userId &&
+          readTableSettingIntent(userId, setting)
+        )
+          return;
         if (locallyTouchedRef.current.has(setting as keyof UserTableSettings)) return;
         /* Derived from the ref and assigned OUTSIDE the updater. React may run
            an updater in a render it then discards (concurrent interruption,
@@ -802,15 +854,23 @@ export function useUserTableSettings(userId: string | null | undefined) {
 
       // Persist in tap order. A slower first request must not finish after the
       // second and become the durable value.
+      const intentId = beginTableSettingIntent(
+        userId,
+        mutationScope.slice(userId.length + 1),
+        optimistic[mutationScope.slice(userId.length + 1) as keyof UserTableSettings]
+      );
       const previousTail = writeTailsRef.current.get(mutationScope) ?? Promise.resolve();
       const task = previousTail.then(() =>
-        persistSettingColumn(
-          userId,
-          String(key),
-          newValue,
-          () =>
-            activeUserIdRef.current === userId &&
-            mutationRevisionRef.current.get(mutationScope) === revision
+        orderTableSettingWrite(userId, mutationScope.slice(userId.length + 1), () =>
+          persistSettingColumn(
+            userId,
+            String(key),
+            newValue,
+            () =>
+              activeUserIdRef.current === userId &&
+              mutationRevisionRef.current.get(mutationScope) === revision,
+            intentId
+          )
         )
       );
       const tail = task.then(() => undefined);
@@ -884,15 +944,23 @@ export function useUserTableSettings(userId: string | null | undefined) {
         origin: originIdRef.current,
       });
 
+      const intentId = beginTableSettingIntent(
+        userId,
+        mutationScope.slice(userId.length + 1),
+        optimistic[mutationScope.slice(userId.length + 1) as keyof UserTableSettings]
+      );
       const previousTail = writeTailsRef.current.get(mutationScope) ?? Promise.resolve();
       const task = previousTail.then(() =>
-        persistSettingColumn(
-          userId,
-          'table_alias',
-          alias,
-          () =>
-            activeUserIdRef.current === userId &&
-            mutationRevisionRef.current.get(mutationScope) === revision
+        orderTableSettingWrite(userId, mutationScope.slice(userId.length + 1), () =>
+          persistSettingColumn(
+            userId,
+            'table_alias',
+            alias,
+            () =>
+              activeUserIdRef.current === userId &&
+              mutationRevisionRef.current.get(mutationScope) === revision,
+            intentId
+          )
         )
       );
       const tail = task.then(() => undefined);

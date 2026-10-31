@@ -1,0 +1,70 @@
+{
+  "project": "kuklfnapbkmacvwxktbh",
+  "captured": "2026-10-28",
+  "functions": [
+    {
+      "signature": "fn_ca_assert_satellite_cohort_standings(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_assert_satellite_cohort_standings(p_tournament_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE h public.tournament_satellite_settlements%ROWTYPE; n integer;\nBEGIN\n SELECT * INTO STRICT h FROM public.tournament_satellite_settlements WHERE tournament_id=p_tournament_id;\n n:=cardinality(h.qualifier_ids);\n IF h.receipt_version<>3 OR h.winner_id IS NOT NULL OR n IS NULL OR n<1\n    OR n>h.ticket_award_count OR h.qualifier_ids IS DISTINCT FROM\n       (SELECT array_agg(DISTINCT u ORDER BY u) FROM unnest(h.qualifier_ids) u)\n    OR (SELECT to_jsonb(t)->>'format_contract' FROM public.tournaments t WHERE id=p_tournament_id)\n       IS DISTINCT FROM 'mtt-v2'\n    OR (SELECT count(*) FROM public.tournament_players WHERE tournament_id=p_tournament_id)<>h.field_size\n    OR EXISTS(SELECT 1 FROM unnest(h.qualifier_ids) u WHERE NOT EXISTS(\n       SELECT 1 FROM public.tournament_players tp WHERE tp.tournament_id=p_tournament_id\n        AND tp.user_id=u AND tp.status='winner' AND tp.position IS NULL\n        AND tp.elimination_sequence IS NULL AND tp.eliminated_at IS NULL AND tp.chips>0))\n    OR EXISTS(SELECT 1 FROM public.tournament_players tp WHERE tp.tournament_id=p_tournament_id\n      AND NOT(tp.user_id=ANY(h.qualifier_ids))\n      AND (tp.status IS DISTINCT FROM 'eliminated' OR tp.elimination_sequence IS NULL\n           OR tp.position IS NULL OR tp.position<=n OR tp.position>h.field_size))\n    OR (SELECT count(DISTINCT position) FROM public.tournament_players WHERE tournament_id=p_tournament_id)<>h.field_size-n\n    OR (SELECT count(DISTINCT elimination_sequence) FROM public.tournament_players WHERE tournament_id=p_tournament_id)<>h.field_size-n\n    OR EXISTS(SELECT 1 FROM (SELECT position,n+row_number() OVER(ORDER BY COALESCE(public.fn_ca_tournament_bust_at(tournament_id, user_id), eliminated_at) DESC NULLS LAST, elimination_sequence DESC) expected\n        FROM public.tournament_players WHERE tournament_id=p_tournament_id AND status='eliminated') r\n       WHERE r.position<>r.expected) THEN\n  RAISE EXCEPTION 'satellite cohort has no exact unranked survivors and causal eliminated standings' USING ERRCODE='P0404';\n END IF;\nEND $function$\n",
+      "source_md5": "5c883464a5d0c61e32259a8764f08db0",
+      "definition_md5": "12b83a02a4057025e153f07bad9d8919",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "signature": "fn_get_satellite_qualifier_state(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_get_satellite_qualifier_state(p_tournament_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE t public.tournaments%ROWTYPE; h public.tournament_satellite_settlements%ROWTYPE;\n e jsonb; n integer; ids uuid[]; unresolved boolean; target_id uuid;\nBEGIN\n IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'service_role required' USING ERRCODE='42501'; END IF;\n IF public.fn_ca_lock_mtt_admission_contract() IS DISTINCT FROM 'unlimited-mtt-v2' THEN\n  RAISE EXCEPTION 'satellite qualifier admission is not activated' USING ERRCODE='55000';\n END IF;\n -- The same lane serializes this answer with an unknown prior finish, so a\n -- lost response cannot release a replacement dealer while its payer runs.\n -- Answer-only (2026-10-03): F shared, both T keys exclusive. The payer\n -- (F exclusive, both T keys) is still waited for; unrelated finishes are not.\n PERFORM public.fn_ca_lock_satellite_answer_lane(p_tournament_id);\n -- Retain the existing target-before-source row order, including the lazy\n -- entitlement materializer. A source-first read lock could invert its order.\n SELECT * INTO t FROM public.tournaments WHERE id=p_tournament_id;\n target_id:=coalesce(t.satellite_target_id,t.satellite_target);\n PERFORM 1 FROM public.tournaments x WHERE x.id IN (p_tournament_id,target_id)\n   ORDER BY CASE WHEN x.id=p_tournament_id THEN 1 ELSE 0 END,x.id FOR UPDATE;\n SELECT * INTO t FROM public.tournaments WHERE id=p_tournament_id;\n IF NOT FOUND OR to_jsonb(t)->>'format_contract' IS DISTINCT FROM 'mtt-v2'\n   OR target_id IS NULL OR target_id=p_tournament_id\n   OR coalesce(t.satellite_target_id,t.satellite_target) IS DISTINCT FROM target_id\n   OR (t.satellite_target_id IS NOT NULL AND t.satellite_target IS NOT NULL\n       AND t.satellite_target_id<>t.satellite_target) THEN\n  RAISE EXCEPTION 'satellite qualifier source format unproven' USING ERRCODE='55000';\n END IF;\n SELECT * INTO h FROM public.tournament_satellite_settlements WHERE tournament_id=p_tournament_id FOR UPDATE;\n IF FOUND THEN\n  IF h.receipt_version=2 THEN\n   RETURN jsonb_build_object('ok',true,'state','completed_single_winner','tournament_id',p_tournament_id,\n     'receipt',public.fn_ca_satellite_settlement_receipt(p_tournament_id,h.winner_id));\n  END IF;\n  RETURN jsonb_build_object('ok',true,'state','completed','tournament_id',p_tournament_id,\n    'receipt',public.fn_ca_satellite_cohort_receipt(p_tournament_id,h.qualifier_ids));\n END IF;\n IF t.status<>'RUNNING' THEN RAISE EXCEPTION 'satellite qualifier source is not RUNNING' USING ERRCODE='55000'; END IF;\n IF NOT coalesce(t.prize_pool_finalized,false) THEN\n  RETURN jsonb_build_object('ok',true,'state','entry_open','tournament_id',p_tournament_id);\n END IF;\n e:=public.fn_materialize_satellite_entitlements_locked(p_tournament_id);\n IF (e->>'ok')::boolean IS DISTINCT FROM true OR (e->>'ready')::boolean IS DISTINCT FROM true THEN\n  RAISE EXCEPTION 'satellite qualifier entitlements unproven: %',e USING ERRCODE='P0404';\n END IF;\n SELECT count(*) INTO n FROM public.tournament_satellite_entitlements\n  WHERE tournament_id=p_tournament_id AND award_kind='seat_or_cash';\n SELECT array_agg(user_id ORDER BY user_id) INTO ids FROM public.tournament_players\n  WHERE tournament_id=p_tournament_id AND status='playing' AND chips>0;\n unresolved:=coalesce(cardinality(ids),0)=0 OR EXISTS(SELECT 1 FROM public.tournament_players WHERE tournament_id=p_tournament_id\n       AND (status NOT IN ('playing','eliminated') OR (status='playing' AND (chips IS NULL OR chips<=0))))\n   OR EXISTS(SELECT 1 FROM public.tournament_knockout_candidates WHERE tournament_id=p_tournament_id AND state='pending')\n   OR EXISTS(SELECT 1 FROM public.hand_atomic_commits c JOIN public.tables tb ON tb.id=c.table_id\n       WHERE tb.tournament_id=p_tournament_id AND c.post_commit_completed_at IS NULL);\n RETURN jsonb_build_object('ok',true,'tournament_id',p_tournament_id,'full_ticket_count',n,\n   'qualifier_ids',coalesce(ids,ARRAY[]::uuid[]),'state',CASE WHEN unresolved THEN 'unresolved'\n       WHEN n>=2 AND cardinality(ids)>0 AND cardinality(ids)<=n THEN 'qualifying' ELSE 'continuing' END);\nEND $function$\n",
+      "source_md5": "08db3d2a8d33c2d9eebaf0fa20be4b65",
+      "definition_md5": "b575b445b8de280e59bf78661fbea1b1",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "signature": "fn_resolve_satellite_qualifier_outcome(uuid,uuid[])",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_resolve_satellite_qualifier_outcome(p_tournament_id uuid, p_observed_qualifier_ids uuid[])\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE h public.tournament_satellite_settlements%ROWTYPE; t public.tournaments%ROWTYPE; receipt jsonb;\nBEGIN\n IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'service_role required' USING ERRCODE='42501'; END IF;\n IF p_tournament_id IS NULL OR p_observed_qualifier_ids IS NULL\n    OR cardinality(p_observed_qualifier_ids)<1 OR array_ndims(p_observed_qualifier_ids)<>1\n    OR array_position(p_observed_qualifier_ids,NULL::uuid) IS NOT NULL\n    OR p_observed_qualifier_ids IS DISTINCT FROM\n       (SELECT array_agg(DISTINCT u ORDER BY u) FROM unnest(p_observed_qualifier_ids) u) THEN\n  RAISE EXCEPTION 'satellite qualifier outcome requires exact canonical identity' USING ERRCODE='22023';\n END IF;\n PERFORM public.fn_ca_lock_mtt_admission_contract();\n PERFORM public.fn_ca_lock_settlement_lane_for_satellite_finish(p_tournament_id);\n SELECT * INTO h FROM public.tournament_satellite_settlements WHERE tournament_id=p_tournament_id FOR UPDATE;\n IF FOUND THEN\n  receipt:=public.fn_ca_satellite_cohort_receipt(p_tournament_id,p_observed_qualifier_ids);\n  RETURN jsonb_build_object('ok',true,'satellite_committed',true,'definitively_not_committed',false,\n   'status','COMPLETED',\n   'tournament_id',p_tournament_id,'qualifier_ids',p_observed_qualifier_ids,'receipt',receipt);\n END IF;\n SELECT * INTO t FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;\n IF NOT FOUND OR t.status NOT IN ('RUNNING','COMPLETING')\n    OR t.format_contract IS DISTINCT FROM 'mtt-v2'\n    OR coalesce(t.satellite_target_id,t.satellite_target) IS NULL THEN\n  RAISE EXCEPTION 'satellite qualifier outcome lacks a proven running source' USING ERRCODE='P0404';\n END IF;\n RETURN jsonb_build_object('ok',true,'satellite_committed',false,'definitively_not_committed',true,\n   'status',t.status,\n   'tournament_id',p_tournament_id,'qualifier_ids',p_observed_qualifier_ids,'receipt',NULL);\nEND $function$\n",
+      "source_md5": "e9584dc02fed91f2c252e8996bcce3b6",
+      "definition_md5": "670f4ddc09578988747ce0b7ee73d596",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ]
+    }
+  ],
+  "chip_retirement_registry": {
+    "notes": "retirement holding",
+    "store": "chip_retirement",
+    "added_at": "2026-09-11T16:10:27.128168+00:00",
+    "treatment": "noncirculating",
+    "counted_by": null
+  }
+}

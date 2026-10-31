@@ -1,0 +1,158 @@
+{
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "default": "gen_random_uuid()",
+      "not_null": true
+    },
+    {
+      "name": "hand_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "rake_amount",
+      "type": "numeric",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "agent_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "default": "now()",
+      "not_null": true
+    },
+    {
+      "name": "rake_record_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "gross_contribution",
+      "type": "numeric",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "returned_uncalled",
+      "type": "numeric",
+      "default": "0",
+      "not_null": true
+    },
+    {
+      "name": "eligible_contribution",
+      "type": "numeric",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "contribution_weight",
+      "type": "numeric",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "weighted_rake_credit",
+      "type": "numeric",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "bbj_attributed_contribution",
+      "type": "numeric",
+      "default": "0",
+      "not_null": true
+    },
+    {
+      "name": "rake_method",
+      "type": "text",
+      "default": null,
+      "not_null": false
+    }
+  ],
+  "indexes": [
+    "CREATE INDEX idx_rake_attributions_agent_id_fk ON public.rake_attributions USING btree (agent_id) WHERE (agent_id IS NOT NULL)",
+    "CREATE INDEX idx_rake_attributions_club_created ON public.rake_attributions USING btree (club_id, created_at) INCLUDE (player_id, rake_amount)",
+    "CREATE INDEX idx_rake_attributions_hand_id ON public.rake_attributions USING btree (hand_id)",
+    "CREATE INDEX idx_rake_attributions_player_id ON public.rake_attributions USING btree (player_id, created_at DESC)",
+    "CREATE INDEX idx_rake_attributions_rake_record_id ON public.rake_attributions USING btree (rake_record_id)",
+    "CREATE INDEX idx_rake_attributions_union_gap_record_player ON public.rake_attributions USING btree (rake_record_id, player_id) INCLUDE (eligible_contribution) WHERE (eligible_contribution > (0)::numeric)",
+    "CREATE INDEX rake_attributions_club_record ON public.rake_attributions USING btree (club_id, rake_record_id) INCLUDE (player_id, weighted_rake_credit, hand_id)",
+    "CREATE INDEX rake_attributions_whole_hand_cover ON public.rake_attributions USING btree (rake_record_id) INCLUDE (id, hand_id, player_id, club_id, weighted_rake_credit)",
+    "CREATE UNIQUE INDEX rake_attributions_pkey ON public.rake_attributions USING btree (id)",
+    "CREATE UNIQUE INDEX uq_rake_attributions_hand_player ON public.rake_attributions USING btree (hand_id, player_id)"
+  ],
+  "relation": {
+    "acl": "{postgres=arwdDxtm/postgres,anon=r/postgres,authenticated=r/postgres,service_role=arwdDxtm/postgres}",
+    "rls": true,
+    "kind": "r",
+    "force": false,
+    "owner": "postgres",
+    "persistence": "p"
+  },
+  "triggers": [
+    "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_16239019\" AFTER INSERT ON public.rake_attributions FROM profiles NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+    "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_16239020\" AFTER UPDATE ON public.rake_attributions FROM profiles NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+    "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5206762\" AFTER INSERT ON public.rake_attributions FROM agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+    "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5206763\" AFTER UPDATE ON public.rake_attributions FROM agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+    "CREATE TRIGGER aa_poker_arena_no_chip_money BEFORE INSERT OR UPDATE OF club_id, table_id ON public.rake_attributions FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_chip_money()",
+    "CREATE TRIGGER accounting_cash_source_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_attributions FOR EACH ROW EXECUTE FUNCTION fn_accounting_cash_source_immutable()",
+    "CREATE TRIGGER poker_arena_no_chip_rake BEFORE INSERT OR UPDATE ON public.rake_attributions FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_diamond_chip_rake_row()",
+    "CREATE TRIGGER trg_ca_club_rake_daily_user_del AFTER DELETE ON public.rake_attributions REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_user_delete()",
+    "CREATE TRIGGER trg_ca_club_rake_daily_user_ins AFTER INSERT ON public.rake_attributions REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_user_insert()",
+    "CREATE TRIGGER trg_ca_club_rake_daily_user_upd AFTER UPDATE ON public.rake_attributions REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_user_change()"
+  ],
+  "constraints": [
+    {
+      "name": "chk_rake_amount_is_two_decimal_places",
+      "definition": "CHECK (rake_amount IS NULL OR rake_amount = round(rake_amount, 2))"
+    },
+    {
+      "name": "ck_whole_cents",
+      "definition": "CHECK (created_at < '2026-09-07 22:00:00+00'::timestamp with time zone OR rake_amount = round(rake_amount, 2) AND weighted_rake_credit = round(weighted_rake_credit, 2)) NOT VALID"
+    },
+    {
+      "name": "rake_attributions_agent_id_fkey",
+      "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL"
+    },
+    {
+      "name": "rake_attributions_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "rake_attributions_player_id_fkey",
+      "definition": "FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "name": "rake_attributions_rake_amount_check",
+      "definition": "CHECK (rake_amount >= 0::numeric)"
+    }
+  ]
+}

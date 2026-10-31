@@ -49,10 +49,26 @@ def signal_child(driver_path, output, pg):
     class FakeExecution:
         def __init__(self, _root, result_dir, _pg, _work_parent, _deadline):
             self.output = result_dir
+            self.root = _root
+            self.pg = _pg
+            self.work_parent = _work_parent
+            self.preflight_calls = 0
             self.report = {
                 "native": [], "races": [], "close_calls": 0,
                 "cleanup": {"stopped": False, "removed": False},
             }
+
+        def run(self, label, argv, *, seconds):
+            # This is the explicit fake database execution seam. Verify the real
+            # main invokes its bounded paid-depth proof before the signal target;
+            # never execute a PostgreSQL fixture in this cancellation unit test.
+            expected = [sys.executable, "-B",
+                        self.root / "scripts/ci/test-mtt-fifteen-percent.py",
+                        "--pg-bin", self.pg, "--work-root", self.work_parent]
+            if label != "mtt-fifteen-percent" or argv != expected or seconds != 60:
+                raise AssertionError("unexpected native preflight invocation")
+            self.preflight_calls += 1
+            self.report["fake_preflight_calls"] = self.preflight_calls
 
         def close(self):
             self.report["close_calls"] += 1
@@ -64,6 +80,8 @@ def signal_child(driver_path, output, pg):
             self.report["cleanup"] = {"stopped": True, "removed": True}
 
     def fake_run_cases(_execution):
+        if _execution.preflight_calls != 1:
+            raise AssertionError("paid-depth preflight must precede active execution exactly once")
         print("READY", flush=True)
         sys.stdin.readline()
         raise AssertionError("expected a signal to interrupt active execution")
@@ -205,6 +223,7 @@ class RunnerCancellationTest(unittest.TestCase):
                 self.assertEqual(receipt["status"], "failed")
                 self.assertEqual(receipt["failure"],
                                  f"InterruptedError: R46 execution cancelled by signal {first_signal}")
+                self.assertEqual(receipt["fake_preflight_calls"], 1)
                 self.assertEqual(receipt["close_calls"], 1)
                 self.assertEqual(receipt["cleanup"], {"stopped": True, "removed": True})
                 self.assertEqual(receipt["native"], [])

@@ -31,7 +31,12 @@ describe('the reopen rule the engine enforces', () => {
 
   it('a full raise over the hero bet reopens it', () => {
     expect(
-      heroMayReopenBetting({ ...base, heroLastAction: 'bet', currentBet: 107, raiseIncrement: 53.5 })
+      heroMayReopenBetting({
+        ...base,
+        heroLastAction: 'bet',
+        currentBet: 107,
+        raiseIncrement: 53.5,
+      })
     ).toBe(true);
   });
 
@@ -41,18 +46,67 @@ describe('the reopen rule the engine enforces', () => {
 
   it('a checker facing a full bet may raise; facing a short all-in under the blind may not', () => {
     expect(
-      heroMayReopenBetting({ ...base, heroLastAction: 'check', heroBet: 0, currentBet: 10, raiseIncrement: 10 })
+      heroMayReopenBetting({
+        ...base,
+        heroLastAction: 'check',
+        heroBet: 0,
+        currentBet: 10,
+        raiseIncrement: 10,
+      })
     ).toBe(true);
     expect(
-      heroMayReopenBetting({ ...base, heroLastAction: 'check', heroBet: 0, currentBet: 0.5, raiseIncrement: 1 })
+      heroMayReopenBetting({
+        ...base,
+        heroLastAction: 'check',
+        heroBet: 0,
+        currentBet: 0.5,
+        raiseIncrement: 1,
+      })
     ).toBe(false);
   });
 
   it('fixed limit reopens on half the street bet', () => {
-    const fl = { ...base, isFixedLimit: true, fixedBetSize: 10, heroLastAction: 'bet', heroBet: 10 };
+    const fl = {
+      ...base,
+      isFixedLimit: true,
+      fixedBetSize: 10,
+      heroLastAction: 'bet',
+      heroBet: 10,
+    };
     expect(heroMayReopenBetting({ ...fl, currentBet: 14 })).toBe(false);
     expect(heroMayReopenBetting({ ...fl, currentBet: 15 })).toBe(true);
   });
+
+  it('keeps the dealt hand minimum when the next tournament level is announced', () => {
+    const hand = {
+      heroLastAction: 'check',
+      heroBet: 0,
+      currentBet: 1000,
+      raiseIncrement: 1000,
+      bigBlind: 1200,
+      isFixedLimit: false,
+    };
+    expect(heroMayReopenBetting(hand)).toBe(true);
+    expect(heroMayReopenBetting({ ...hand, currentBet: 999 })).toBe(false);
+    // A stale lower metadata blind cannot weaken a full-raise requirement.
+    expect(heroMayReopenBetting({ ...hand, bigBlind: 800, currentBet: 999 })).toBe(false);
+  });
+
+  it.each([undefined, 0, -1, Number.NaN, Infinity, -Infinity])(
+    'uses the legacy blind only when the published increment is unavailable or invalid (%s)',
+    (raiseIncrement) => {
+      const hand = {
+        heroLastAction: 'check',
+        heroBet: 0,
+        currentBet: 1000,
+        raiseIncrement: raiseIncrement as number,
+        bigBlind: 1000,
+        isFixedLimit: false,
+      };
+      expect(heroMayReopenBetting(hand)).toBe(true);
+      expect(heroMayReopenBetting({ ...hand, currentBet: 999 })).toBe(false);
+    }
+  );
 });
 
 describe('the bar offers Fold and Call only', () => {

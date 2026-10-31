@@ -1,3 +1,4 @@
+import { watchlistDefinitions as readWatchlistDefinitions } from './helpers/watchlistDefinitions';
 /**
  * A DECLARED GUARD CHANGE IS RECORDED, NOT RAISED (2026-09-10).
  *
@@ -31,7 +32,6 @@ import { createHash } from 'node:crypto';
 import {
   isVerifiedRecording,
   migrationCorpus,
-  migrationsMentioning,
   type MigrationFile,
 } from './helpers/migrationCorpus';
 
@@ -129,14 +129,9 @@ const hasExactInstalledDeclaration = (
  * automatically extends this law rather than quietly leaving the new guard out.
  */
 const watchlistDefinitions = () =>
-  migrationsMentioning('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist')
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((m) => {
-      const start = m.sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist');
-      const body = m.sql.slice(start, m.sql.indexOf('$function$;', start));
-      const names = [...body.matchAll(/'(fn_[a-z0-9_]+)'/g)].map((x) => x[1]);
-      return { name: m.name, guards: [...new Set(names)] };
-    });
+  migrationCorpus()
+    .flatMap((m) => readWatchlistDefinitions(m.sql).map((guards) => ({ name: m.name, guards })))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
 const watchlist = (): string[] => {
   const defs = watchlistDefinitions();
@@ -194,6 +189,35 @@ const declarationTargets = (sql: string): string[] => {
 };
 
 describe('a declared guard change is recorded, not raised', () => {
+  it('reads actual watchlist declarations without adopting quoted catalog definitions', () => {
+    const definition = `CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist()
+      RETURNS text[] LANGUAGE sql AS $function$ SELECT ARRAY['fn_real_guard']; $function$;`;
+    const snapshot = `DO $body$ DECLARE expected jsonb := $catalog$
+      [{"definition":"${definition}"}] $catalog$::jsonb; BEGIN NULL; END $body$;`;
+    expect(readWatchlistDefinitions(snapshot)).toEqual([]);
+    expect(readWatchlistDefinitions(snapshot + definition)).toEqual([['fn_real_guard']]);
+    expect(() =>
+      readWatchlistDefinitions(`DO $body$ BEGIN EXECUTE $ddl$${definition}$ddl$; END $body$;`)
+    ).toThrow('Dynamic watchlist DDL');
+    expect(() =>
+      readWatchlistDefinitions(
+        snapshot.replace('BEGIN NULL;', "BEGIN EXECUTE expected->0->>'definition';")
+      )
+    ).toThrow('Dynamic watchlist DDL');
+    expect(
+      redefines(
+        'CREATE OR REPLACE FUNCTION public.fn_real_guard() RETURNS void AS $$ BEGIN NULL; END $$ LANGUAGE plpgsql;',
+        'fn_real_guard'
+      )
+    ).toBe(true);
+    expect(
+      redefines(
+        "DO $$ BEGIN SELECT pg_get_functiondef(p.oid) FROM pg_proc p WHERE p.proname = 'fn_real_guard'; EXECUTE definition; END $$;",
+        'fn_real_guard'
+      )
+    ).toBe(true);
+  });
+
   it('only a same-name watchlist condition qualifies a conditional declaration', () => {
     const guarded = `IF 'fn_example' = ANY (public.fn_ca_guard_watchlist()) THEN
       PERFORM public.fn_ca_declare_guard_redefinition('fn_example', 'migration example');

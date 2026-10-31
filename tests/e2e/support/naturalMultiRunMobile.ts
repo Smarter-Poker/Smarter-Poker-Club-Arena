@@ -88,8 +88,10 @@ export interface NaturalMultiRunHistoryRow {
 export function naturalMultiRunRequiredRuns(
   targetJSON?: string,
   mobileJSON?: string,
-  engineJSON?: string
-): Array<2 | 3> {
+  engineJSON?: string,
+  horseJSON = 'null',
+  navigationJSON = 'null'
+): Array<1 | 2 | 3> {
   let target: unknown;
   try {
     target = targetJSON === undefined ? null : JSON.parse(targetJSON);
@@ -97,18 +99,27 @@ export function naturalMultiRunRequiredRuns(
     throw new Error('Invalid natural multirun target JSON');
   }
   if (target === null) return [2, 3];
-  if (target !== 3 || mobileJSON !== 'true' || engineJSON !== 'null')
-    throw new Error('Natural multirun target requires numeric 3, mobile true and no engine pin');
-  return [3];
+  if (
+    (target !== 1 && target !== 3) ||
+    mobileJSON !== 'true' ||
+    engineJSON !== 'null' ||
+    horseJSON !== 'null' ||
+    navigationJSON !== 'null'
+  )
+    throw new Error(
+      'Natural multirun target requires numeric 1 or 3, mobile true, no engine pin and no mixed mode'
+    );
+  return [target];
 }
 
 /** Bounded recent history predicts opportunity; actual live evidence certifies both run counts. */
 export function selectNaturalMultiRunSubject(
   tables: NaturalMultiRunCandidate[],
   recent: NaturalMultiRunHistoryRow[],
-  requiredRuns: Array<2 | 3> = [2, 3]
+  requiredRuns: Array<1 | 2 | 3> = [2, 3]
 ): NaturalMultiRunCandidate {
   const targetThree = requiredRuns.length === 1 && requiredRuns[0] === 3;
+  const targetOnce = requiredRuns.length === 1 && requiredRuns[0] === 1;
   const counts = new Map<string, [number, number]>();
   for (const row of recent) {
     if (!Array.isArray(row.rit_boards) || ![1, 2].includes(row.rit_boards.length)) continue;
@@ -123,7 +134,10 @@ export function selectNaturalMultiRunSubject(
       return (
         eligibleNaturalMultiRunTable(table) &&
         mode !== 'mandatory_twice' &&
-        (targetThree || mode !== 'mandatory_three')
+        (targetThree || mode !== 'mandatory_three') &&
+        (!targetThree || (counts.get(table.id)?.[1] ?? 0) > 0) &&
+        (!targetOnce ||
+          (mode === 'player_choice' && (counts.get(table.id) ?? [0, 0]).some((n) => n > 0)))
       );
     })
     .map((table) => {
@@ -133,17 +147,25 @@ export function selectNaturalMultiRunSubject(
   ranked.sort(
     (a, b) =>
       (targetThree ? (counts.get(b.table.id)?.[1] ?? 0) - (counts.get(a.table.id)?.[1] ?? 0) : 0) ||
+      (targetOnce ? b.total - a.total : 0) ||
       b.balanced - a.balanced ||
       b.total - a.total ||
       b.table.current_players - a.table.current_players ||
       (a.table.id < b.table.id ? -1 : a.table.id > b.table.id ? 1 : 0)
   );
   const selected = ranked[0]?.table;
-  if (!selected) throw new Error('Natural multirun observation requires one eligible cash table');
+  if (!selected)
+    throw new Error(
+      targetOnce
+        ? 'Natural once observation requires one player-choice cash table with actual RIT history'
+        : targetThree
+          ? 'Natural multirun observation requires one eligible cash table with positive three-run history'
+          : 'Natural multirun observation requires one eligible cash table'
+    );
   return selected;
 }
 
-/** Use the existing (table_id, created_at, id) index, never global history. */
+/** Keep natural opportunities through provider queue time using the existing table/created index. */
 export async function readNaturalMultiRunHistory(
   tableIds: string[],
   readRows: (query: URLSearchParams) => Promise<NaturalMultiRunHistoryRow[]>,
@@ -164,7 +186,7 @@ export async function readNaturalMultiRunHistory(
           new URLSearchParams({
             select: 'table_id,rit_boards',
             table_id: `eq.${id}`,
-            created_at: `gte.${new Date(now - 30 * 60_000).toISOString()}`,
+            created_at: `gte.${new Date(now - 2 * 60 * 60_000).toISOString()}`,
             rit_boards: 'not.is.null',
             order: 'created_at.desc',
             limit: '500',
@@ -195,6 +217,7 @@ export async function installNaturalMultiRunWitness(page: Page) {
   await page.addInitScript(() => {
     const hands: Record<string, any> = {};
     const confirmations: Record<string, any[]> = {};
+    const singleRuns: Record<string, any> = {};
     let finalBanner: { node: Element; text: string; hand: number; entry: any } | null = null;
     let activeResultKey: string | null = null;
     const flights = new Map<string, any>();
@@ -271,12 +294,39 @@ export async function installNaturalMultiRunWitness(page: Page) {
       );
       const lanes = Array.from(table?.querySelectorAll('.community-area__run') ?? []);
       const now = Date.now();
-      // Measure the actual rendered confirmation, including removal and any
-      // repeat. The observer never drives a consent response or a hand.
+      // October 28: any settled-choice strip is a regression. The observer
+      // never drives consent or a hand; it measures the real pending strip.
       const banner = table?.querySelector('.rit-felt-banner') ?? null;
       const bannerText = banner?.textContent?.trim() ?? '';
       const isFinal =
-        /^(?:Players Have Accepted Running It|Mandatory Run It) (?:Twice|3 Times)/.test(bannerText);
+        /^(?:(?:Players Have Accepted Running It|Mandatory Run It) (?:Twice|3 Times)|Running It Once\.)/.test(
+          bannerText
+        );
+      if (banner && (isFinal || lanes.length >= 2))
+        violations.add(`${hand}: Settled Run Choice Still Covers The Table`);
+      if (banner) {
+        const strip = banner.getBoundingClientRect();
+        const board = table?.querySelector('.community-area')?.getBoundingClientRect();
+        const pot = table?.querySelector('.pot-display')?.getBoundingClientRect();
+        if (strip.width > 0 && strip.height > 0) {
+          if (board?.height && strip.bottom > board.top + 0.5)
+            violations.add(`${hand}: Run Choice Covers Board Cards`);
+          if (pot?.height && strip.top < pot.bottom - 0.5)
+            violations.add(`${hand}: Run Choice Is Not Below Pot`);
+          for (const card of table?.querySelectorAll('.seat__cards img') ?? []) {
+            const box = card.getBoundingClientRect();
+            if (
+              box.width > 0 &&
+              box.height > 0 &&
+              strip.left < box.right &&
+              strip.right > box.left &&
+              strip.top < box.bottom &&
+              strip.bottom > box.top
+            )
+              violations.add(`${hand}: Run Choice Covers Player Cards`);
+          }
+        }
+      }
       if (
         finalBanner &&
         (finalBanner.node !== banner ||
@@ -290,6 +340,31 @@ export async function installNaturalMultiRunWitness(page: Page) {
         const entry = { text: bannerText, shownAt: now, hiddenAt: null };
         (confirmations[String(hand)] ??= []).push(entry);
         finalBanner = { node: banner, text: bannerText, hand, entry };
+      }
+      for (const decision of Object.values(singleRuns)) {
+        if (decision.expired) continue;
+        if (hand !== decision.hand) {
+          decision.expired = true;
+          continue;
+        }
+        const cards = Array.from(
+          table?.querySelectorAll('.community-area .community-cards__card') ?? []
+        ).filter((card) => {
+          const box = card.getBoundingClientRect();
+          return box.width > 0 && box.height > 0;
+        }).length;
+        if (banner) {
+          if (decision.statusClearAt !== null || now - decision.markedAt > 1_000)
+            violations.add(`${hand}: Run Choice Remains After Single Decision`);
+          continue;
+        }
+        decision.statusClearAt ??= now;
+        if (lanes.length || cards < 3 || cards > 5 || document.visibilityState !== 'visible')
+          continue;
+        decision.firstClearAt ??= now;
+        decision.lastClearAt = now;
+        decision.clearSamples++;
+        decision.boardCards = cards;
       }
       const key =
         hand > 0 && (lanes.length === 2 || lanes.length === 3) ? `${hand}:${lanes.length}` : null;
@@ -381,8 +456,31 @@ export async function installNaturalMultiRunWitness(page: Page) {
       attributeFilter: ['class', 'style', 'data-chip-phase', 'data-rs-animating'],
     });
     (window as any).__naturalMultiRunWitness = {
+      // Called by the Node observer only after validating an actual received wire event.
+      markSingleRunDecision: (packet: { hand: number; at: number; reason: string }) => {
+        const visibleTable = Array.from(document.querySelectorAll('.table-page')).find((node) => {
+          const box = node.getBoundingClientRect();
+          return box.width > 0 && box.height > 0;
+        });
+        const shown = Number(
+          visibleTable?.querySelector('.table-brand__hand')?.textContent?.match(/\d+/)?.[0]
+        );
+        if (shown !== packet.hand || singleRuns[String(packet.hand)]) return;
+        singleRuns[String(packet.hand)] = {
+          ...packet,
+          markedAt: Date.now(),
+          statusClearAt: null,
+          firstClearAt: null,
+          lastClearAt: null,
+          clearSamples: 0,
+          boardCards: 0,
+          expired: false,
+        };
+        sample();
+      },
       read: () => ({
         hands: Object.values(hands),
+        singleRuns: Object.values(singleRuns),
         confirmations,
         flights: Array.from(flights.values()).filter((f) => f.landedAt),
         unlandedFlights: Array.from(flights.values()).filter((f) => !f.landedAt),
@@ -435,20 +533,21 @@ export function completedNaturalRuns(packets: NaturalRunPacket[], witness: any) 
   });
 }
 
-/** Foreground, default-speed natural proof of the two requested timing changes. */
+/** No settled-choice overlay; retain the full default-speed winning-card reads. */
 export function naturalMultiRunTiming(packet: NaturalRunPacket, witness: any) {
   const hand = witness.hands.find(
     (item: any) => item.hand === packet.hand && item.runs === packet.runs
   );
   const confirmations = witness.confirmations?.[String(packet.hand)] ?? [];
   const violations: string[] = [];
+  if (confirmations.length) violations.push('Settled Run Choice Still Covers The Table');
   if (confirmations.length > 1) violations.push('Run Confirmation Repeated');
   const confirmation = confirmations[0];
-  const confirmationMs =
-    confirmation?.hiddenAt == null ? null : confirmation.hiddenAt - confirmation.shownAt;
-  if (confirmationMs !== null && (confirmationMs < 1400 || confirmationMs > 1900)) {
-    violations.push('Run Confirmation Did Not Clear At 1500ms');
-  }
+  const confirmationMs = !confirmation
+    ? 0
+    : confirmation.hiddenAt == null
+      ? null
+      : confirmation.hiddenAt - confirmation.shownAt;
   const winnerAt = (hand?.lanes ?? []).map((lane: any) => lane.winnerAt);
   const complete =
     winnerAt.length === packet.runs && winnerAt.every((at: any) => typeof at === 'number');
@@ -465,8 +564,7 @@ export function naturalMultiRunTiming(packet: NaturalRunPacket, witness: any) {
   if (lastResultMs !== null && lastResultMs < 4000)
     violations.push('Final Winning Cards Cleared Early');
   return {
-    ready:
-      confirmations.length === 1 && confirmationMs !== null && complete && lastResultMs !== null,
+    ready: confirmations.length === 0 && complete && lastResultMs !== null,
     violations,
     confirmationMs,
     resultGapsMs,
@@ -488,4 +586,92 @@ export function naturalMultiRunEngineIdentity(
     throw new Error('Natural multirun proof requires the exact serving engine releaseSha');
   }
   return observed;
+}
+
+export interface NaturalSingleRunPacket {
+  hand: number;
+  runs: 1;
+  at: number;
+  reason: string;
+}
+
+/** An ordinary one-board hand, replay or malformed decision is never once evidence. */
+export function naturalSingleRunPackets(
+  frames: Array<any>,
+  tableId: string,
+  since: number
+): NaturalSingleRunPacket[] {
+  const reasons = [
+    'chooser_chose_one',
+    'player_declined',
+    'no_agreement',
+    'no_consent_recorded',
+    'deck_too_short',
+  ];
+  return frames.flatMap((frame) => {
+    const p = frame.message?.payload;
+    if (
+      frame.direction !== 'received' ||
+      frame.message?.type !== 'EVENT' ||
+      !Number.isFinite(frame.at) ||
+      frame.at < since ||
+      p?.table_id !== tableId ||
+      p?.type !== 'rit_single_run' ||
+      p.replayed === true ||
+      frame.message.replayed === true ||
+      !Number.isInteger(p.hand_number) ||
+      p.hand_number <= 0 ||
+      p.runs_dealt !== 1 ||
+      !reasons.includes(p.reason)
+    )
+      return [];
+    return [{ hand: p.hand_number, runs: 1 as const, at: frame.at, reason: p.reason }];
+  });
+}
+
+/** Same visible hand, actual cards and two clear samples after the real decision mark. */
+export function completedNaturalSingleRuns(
+  packets: NaturalSingleRunPacket[],
+  witness: any,
+  clock: { nodeBefore: number; browserNow: number; nodeAfter: number }
+) {
+  if (!naturalSingleRunClockAligned(clock)) return [];
+  // The lower possible browser-minus-Node offset gives a conservative elapsed upper bound.
+  const offsetLower = clock.browserNow - clock.nodeAfter;
+  return packets.filter((packet) =>
+    (witness.singleRuns ?? []).some(
+      (decision: any) =>
+        decision.hand === packet.hand &&
+        decision.at === packet.at &&
+        decision.reason === packet.reason &&
+        !decision.expired &&
+        decision.markedAt - packet.at >= -100 &&
+        decision.markedAt - packet.at - offsetLower <= 500 &&
+        decision.statusClearAt - packet.at - offsetLower <= 1_000 &&
+        decision.firstClearAt !== null &&
+        decision.firstClearAt >= decision.markedAt &&
+        decision.statusClearAt !== null &&
+        decision.statusClearAt >= decision.markedAt &&
+        decision.statusClearAt - decision.markedAt <= 1_000 &&
+        decision.clearSamples >= 2 &&
+        decision.lastClearAt - decision.firstClearAt >= 250 &&
+        decision.boardCards >= 3 &&
+        decision.boardCards <= 5
+    )
+  );
+}
+
+/** Calibrate the Node wire callback clock against the browser's clock before observing. */
+export function naturalSingleRunClockAligned(clock: {
+  nodeBefore: number;
+  browserNow: number;
+  nodeAfter: number;
+}) {
+  return (
+    [clock.nodeBefore, clock.browserNow, clock.nodeAfter].every(Number.isFinite) &&
+    clock.nodeAfter >= clock.nodeBefore &&
+    clock.nodeAfter - clock.nodeBefore <= 250 &&
+    clock.browserNow >= clock.nodeBefore - 50 &&
+    clock.browserNow <= clock.nodeAfter + 50
+  );
 }

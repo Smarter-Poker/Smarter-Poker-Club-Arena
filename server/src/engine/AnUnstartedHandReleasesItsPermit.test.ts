@@ -95,6 +95,9 @@ function fixture(opts: { loseBeginReply?: number; loseCancelReply?: number } = {
   engine.eventShadowEnabled = false;
   engine.hub = { emitEvent: vi.fn() };
   engine.refreshRakeConfig = async () => {};
+  // The private writer is qualified separately by OriginalControllerRuntime
+  // and native PostgreSQL; this fixture isolates permit cancellation.
+  engine.retainOriginalBatch = vi.fn(async () => {});
   engine.saveSnapshot = vi.fn(async () => {});
   engine.persistPresenceForRestart = vi.fn(async () => {});
   const started = vi.fn();
@@ -190,6 +193,7 @@ describe('a deal attempt that ends without a hand releases its F06 permit', () =
     f.allowStart.value = false;
     await f.engine.dealHand(f.seats);
     expect(f.started).not.toHaveBeenCalled();
+    expect(f.engine.handCount).toBe(0); // An ordinary unretained attempt still rewinds.
     // The reservation did not outlive the attempt that took it.
     expect(f.reserved()).toEqual([]);
     expect([...f.db.values()].map((row) => [row.hand_number, row.state])).toEqual([

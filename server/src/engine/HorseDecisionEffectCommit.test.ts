@@ -219,6 +219,7 @@ import {
 import { qualifiedTestAdmission } from './HorseQualifiedAuthority.test-support.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { CooperativeHandPause } from './CooperativeHandPause.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 import { HorseDecisionAbortedError, HorseDecisionExpiredError } from './horseDecision/index.js';
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
@@ -284,12 +285,16 @@ function harness(intendedActionAccepted: boolean) {
   };
   const performAction = vi.fn().mockReturnValueOnce(intendedActionAccepted).mockReturnValue(true);
   const engine = new ServerTableEngine(TABLE) as any;
+  const controllerPause = new CooperativeHandPause();
   engine.running = true;
   engine.isCurrentEngine = () => true;
   engine.handCount = 12;
   engine.tableInfo = { action_time_seconds: 15, big_blind: 2, game_variant: 'nlh' };
   engine.seatedPlayers = [player];
   engine.handController = {
+    pauseForWeeklyPayout: (owner: string) => controllerPause.hold(owner),
+    resumeFromWeeklyPayout: (owner: string) => controllerPause.release(owner),
+    isParkedForWeeklyPayout: (owner: string) => controllerPause.stable(owner),
     getState: () => state,
     getAuthoritativeActionState: () => ({
       schemaVersion: 1,
@@ -330,12 +335,12 @@ function harness(intendedActionAccepted: boolean) {
       return applied;
     },
   };
-  engine.disconnectEngine = { isSittingOut: () => false, recordPlayerActed: vi.fn() };
-  engine.timeBankEngine = {
+  Object.assign(engine.disconnectEngine, { isSittingOut: () => false, recordPlayerActed: vi.fn() });
+  Object.assign(engine.timeBankEngine, {
     isAutoActivateEnabled: () => true,
     isArmed: () => false,
     getPlayerBank: () => null,
-  };
+  });
   engine.getEngineLeaseAuthority = () => ({ verified: true, generation: 'lease-9' });
   engine.humansSeated = () => 0;
   engine.tableFormat = () => 'cash';
@@ -367,6 +372,100 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it.each(['dispatch', 'accepted-effects'] as const)(
+    'finalizes a returned witness when the authoritative timer executor throws at %s',
+    async (failureAt) => {
+      const { createHorseExecutionWitness, onHorseExecutionFinalized } =
+        await import('./HorseExecutionWitness.js');
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const finalized = vi.fn();
+      let witness!: import('./HorseExecutionWitness.js').HorseExecutionWitness;
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot) => {
+        const result = await decisionWorker.defaultDecideFast(snapshot);
+        witness = createHorseExecutionWitness(snapshot, result.decision, {
+          requestId: result.requestId,
+          lane: 'fast',
+          computeMs: 1,
+          governorScale: 1,
+        });
+        result.decision.executionWitness = witness;
+        onHorseExecutionFinalized(witness, finalized);
+        return result;
+      });
+      const failure = Error('injected synchronous dispatch admission failure');
+      if (failureAt === 'dispatch')
+        decisionWorker.worker.runWithDispatchBarrier.mockImplementationOnce(() => {
+          throw failure;
+        });
+      else
+        decisionWorker.commitDecisionEffects.mockImplementationOnce(() => {
+          throw failure;
+        });
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await expect(vi.advanceTimersByTimeAsync(2000)).rejects.toBe(failure);
+      if (failureAt === 'dispatch') {
+        expect(performAction).not.toHaveBeenCalled();
+        expect(witness.executionStatus).toBe('not_executed');
+      } else {
+        expect(performAction).toHaveBeenCalledTimes(1);
+        expect(witness.executionStatus).toBe('intended');
+        expect(witness.acceptedActions).toHaveLength(1);
+        expect(witness.executedAction).toBe('bet');
+      }
+      expect(finalized).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('defers a client-to-horse handoff until the retained clock resumes', async () => {
+    vi.setSystemTime(100000);
+    const { engine, player, performAction } = harness(true);
+    engine.playerTurnStartTime = Date.now();
+    engine.playerTurnDuration = 15;
+    engine.broadcastCurrentState = vi.fn(async () => {});
+    engine.ownClientClaims.add(player.user_id);
+    engine.ownClientSockets.add(player.user_id);
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    await vi.advanceTimersByTimeAsync(60000);
+    engine.releaseOwnClientControl(player.user_id);
+    await vi.advanceTimersByTimeAsync(180000);
+    expect(decisionWorker.decideFast).not.toHaveBeenCalled();
+    expect(performAction).not.toHaveBeenCalled();
+    engine.resumeFromWeeklyPayout('weekly');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(decisionWorker.decideFast).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(performAction).toHaveBeenCalledTimes(1);
+  });
+  it('retains a worker reply across the weekly pause without expiring its protected clock or think beat', async () => {
+    vi.setSystemTime(100000);
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    engine.playerTurnStartTime = Date.now();
+    engine.broadcastCurrentState = vi.fn(async () => {});
+    let reply!: (result: FastHorseDecisionResult) => void;
+    let request!: Parameters<typeof decisionWorker.defaultDecideFast>[0];
+    decisionWorker.decideFast.mockImplementationOnce((snapshot) => {
+      request = snapshot;
+      return new Promise((resolve) => {
+        reply = resolve;
+      });
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state, Date.now() + 15000);
+    await vi.advanceTimersByTimeAsync(300);
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    await vi.advanceTimersByTimeAsync(240000);
+    const result = await decisionWorker.defaultDecideFast(request);
+    reply({ ...result, decision: { ...result.decision, thinkTime: 1000 } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(performAction).not.toHaveBeenCalled();
+    engine.resumeFromWeeklyPayout('weekly');
+    await vi.advanceTimersByTimeAsync(699);
+    expect(performAction).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(performAction).toHaveBeenCalledTimes(1);
+    expect(decisionWorker.decideFast).toHaveBeenCalledTimes(1);
+  });
   it.each([
     { capped: false, discarded: false },
     { capped: true, discarded: false },

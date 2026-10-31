@@ -91,6 +91,16 @@ describe('every control that changes the view goes through the one door', () => 
     expect(SRC).toMatch(/onSortChange=\{selectSortKey\}/);
     expect(SRC).toMatch(/selectFavoritesOnly\(!favoritesOnly\)/);
     // Clearing is a choice too, so it persists like the rest.
-    expect(SRC).toMatch(/selectFavoritesOnly\(false\);\s*\n\s*selectGameType\('ALL'\)/);
+    expect(SRC).toMatch(
+      /selectFavoritesOnly\(false\);\s*\n\s*selectGameType\(gameSection === 'tournaments' \? 'MTT' : 'ALL'\)/
+    );
+  });
+});
+
+describe('returning to the lobby restores the visible game family', () => {
+  it('opens Cash Games or Tournaments from the saved tab during hydration', () => {
+    expect(HYDRATOR).toContain(
+      "setGameSection(TOURNAMENT_TYPES.includes(shown) ? 'tournaments' : 'cash')"
+    );
   });
 });

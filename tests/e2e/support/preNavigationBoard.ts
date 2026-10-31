@@ -43,22 +43,26 @@ export async function refreshPreNavigationSelection<T extends ProgressBaseline>(
   state: PreNavigationSelection<T>,
   reader:
     | {
-        boardFacts(ids: string[]): Promise<Map<string, TournamentBoardFacts>>;
+        boardFacts(ids: string[], deadline?: number): Promise<Map<string, TournamentBoardFacts>>;
         accountClosedBoard(
           start: TournamentBoardFacts,
-          end: TournamentBoardFacts
+          end: TournamentBoardFacts,
+          deadline?: number
         ): Promise<TournamentBoardFacts>;
       }
     | undefined,
   discover: (deadline: number) => Promise<T[]>
 ): Promise<boolean> {
   if (reader && state.baselines.length) {
-    const latest = await reader.boardFacts(state.baselines.map((table) => table.tableId));
+    const latest = await reader.boardFacts(
+      state.baselines.map((table) => table.tableId),
+      state.deadline
+    );
     for (const baseline of state.baselines) {
       const start = state.facts.get(baseline.tableId);
       let end = latest.get(baseline.tableId);
       if (start && end?.tableStatus === 'closed' && end.tournamentStatus === 'RUNNING')
-        end = await reader.accountClosedBoard(start, end);
+        end = await reader.accountClosedBoard(start, end, state.deadline);
       if (!state.failed.has(baseline.tableId) && endedBeforeNextHand(start, end))
         state.excluded.add(baseline.tableId);
     }
@@ -67,7 +71,10 @@ export async function refreshPreNavigationSelection<T extends ProgressBaseline>(
   if (state.baselines.length) return false;
   state.baselines = await discover(state.deadline);
   state.facts = reader
-    ? await reader.boardFacts(state.baselines.map((table) => table.tableId))
+    ? await reader.boardFacts(
+        state.baselines.map((table) => table.tableId),
+        state.deadline
+      )
     : new Map();
   return true; // Readmission is never next-hand proof.
 }

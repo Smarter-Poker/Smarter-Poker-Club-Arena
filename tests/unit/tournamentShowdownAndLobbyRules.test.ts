@@ -79,15 +79,13 @@ describe('the lobby has no hover effects', () => {
   });
 });
 
-describe('a saved filter cannot leave the lobby empty', () => {
-  it('ClubHomePage clears filters that hide every game and says so', () => {
+describe('only the player clears a saved filter', () => {
+  it('keeps zero-match filters until Show All Games is selected', () => {
     const club = readSrc('pages/ClubHomePage.tsx');
-    expect(club).toContain('autoUnfilteredRef');
-    expect(club).toContain('Filters Cleared, They Were Hiding Every Game');
-    // It must only fire when the FILTERS are what emptied it, and only while
-    // the club genuinely has games — never on a quiet club.
-    expect(club).toContain('if (!narrowing.filtered || !narrowing.fSpec) return;');
-    expect(club).toContain('if (tables.length + tournaments.length <= 0) return;');
+    expect(club).not.toContain('autoUnfilteredRef');
+    expect(club).not.toContain('Filters Cleared, They Were Hiding Every Game');
+    expect(club).toContain('const clearAllNarrowing');
+    expect(club).toContain('onClick={clearAllNarrowing}');
   });
 });
 

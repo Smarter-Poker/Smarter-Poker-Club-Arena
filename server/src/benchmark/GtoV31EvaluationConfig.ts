@@ -1,9 +1,10 @@
 import type { GtoV31EvaluationFamily, GtoV31EvaluationKind } from './GtoV31CandidateEvaluation.js';
 import { gtoV31PolicyContractIdentity } from '../engine/GtoPostflopV31.js';
+import type { GtoV31SourceSeal } from '../engine/GtoPostflopV31.js';
 
 /** Pure configuration identity shared by the evaluator and its boundary tests. */
 export function evaluationConfig(args: {
-  feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
+  feature_contract_version?: GtoV31SourceSeal['feature_contract_version'];
   policy_export_schema?: 'smarter-poker.pio-policy.v4';
   datasetChecksum: string;
   kind: GtoV31EvaluationKind;

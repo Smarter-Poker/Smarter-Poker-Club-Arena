@@ -291,3 +291,53 @@ describe('the shell does not show a finished event its old tables', () => {
     expect(PAGE).toContain('const NO_TABLES: TournamentTable[] = [];');
   });
 });
+
+describe('every completed satellite result consumer names the actual award', () => {
+  const awarded = [
+    entry(0, 'Ticket Holder', 'winner', 0, 1, 35),
+    entry(1, 'Cash Bubble', 'eliminated', 0, 2, 3),
+    entry(2, 'Unpaid Finisher', 'eliminated', 0, 3, 0),
+  ];
+  const delivered = {
+    ready: true,
+    failed: false,
+    kindFor: (userId: string) => (userId === 'u0' ? ('ticket' as const) : ('cash' as const)),
+  };
+  it('prints tickets and bubble cash in the Details podium', () => {
+    const props = { ...finishedSatellite(awarded), satelliteAwards: delivered };
+    const { container } = render(
+      <MemoryRouter>
+        <DetailOverviewTab {...props} />
+      </MemoryRouter>
+    );
+    expect([...container.querySelectorAll('.dov-podium__prize')].map((e) => e.textContent)).toEqual(
+      ['1 Ticket (35)', 'Cash 3', '-']
+    );
+    expect(container.textContent).not.toContain('35 Chips');
+  });
+  it('prints the same award units in Ranking', () => {
+    const props = { ...finishedSatellite(awarded), satelliteAwards: delivered };
+    const { container } = render(
+      <MemoryRouter>
+        <RankingTab {...props} />
+      </MemoryRouter>
+    );
+    expect(container.textContent).toContain('1 Ticket (35)');
+    expect(container.textContent).toContain('Cash 3');
+  });
+  it('does not call an unknown podium value chips or a ticket', () => {
+    const props = {
+      ...finishedSatellite(awarded),
+      satelliteAwards: { ready: true, failed: true, kindFor: () => 'unknown' as const },
+    };
+    const { container } = render(
+      <MemoryRouter>
+        <DetailOverviewTab {...props} />
+      </MemoryRouter>
+    );
+    expect(container.textContent).toContain('Value 35');
+    expect(container.textContent).toContain('Details Are Unavailable');
+    expect(container.textContent).not.toContain('35 Chips');
+    expect(container.textContent).not.toContain('1 Ticket');
+  });
+});

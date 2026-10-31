@@ -58,6 +58,7 @@ describe('which replayed hands are still worth offering', () => {
   });
 
   it('a re-run or a bomb pot is never offered - the engine does not sell them', () => {
+    expect(replayRabbitOffer({ ...base, boards: [[], []] }, now).show).toBe(false);
     expect(replayRabbitOffer({ ...base, boards: [board(3), board(3)] }, now).show).toBe(false);
     expect(replayRabbitOffer({ ...base, boards: [board(4), board(4), board(4)] }, now).show).toBe(
       false

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { harness, request, run } from './phase14Worker.test-support.js';
@@ -187,12 +187,15 @@ describe('qualified Phase14 replay authority and versioned state', () => {
       retiredDecisions: 1,
       requestLifecycleVerified: true,
     });
-    const directory = mkdtempSync(
-      join(
-        process.platform === 'darwin' ? resolve(process.cwd(), '../../tmp') : tmpdir(),
-        'phase14-native-fleet-'
-      )
-    );
+    // os.tmpdir honors the task's TMPDIR instead of assuming worktree depth.
+    const temporaryRoot = resolve(tmpdir());
+    if (
+      process.platform === 'darwin' &&
+      !temporaryRoot.startsWith('/Volumes/SmarterWork/agent-work/')
+    )
+      throw new Error('Phase14 fleet test requires a task-owned external SSD TMPDIR on macOS');
+    mkdirSync(temporaryRoot, { recursive: true });
+    const directory = mkdtempSync(join(temporaryRoot, 'phase14-native-fleet-'));
     try {
       const store = new HorseDecisionJournalStore(directory, {
         archive: runtimeHorseJournalArchiveOptions(directory, {}, { index: 0 }),

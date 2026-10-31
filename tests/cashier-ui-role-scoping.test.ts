@@ -223,8 +223,8 @@ describe('clause 5 — sends and claim backs move the AGENT wallet', () => {
   });
 
   it('the pre-flight check quotes the account the send actually spends', () => {
-    // The float plus the credit line the server allows a credit agent.
-    expect(CLASSIC).toContain('myAgentWallet !== null && myAgentWallet + myAgentCredit < value');
+    // Credit tracks advances; a send spends the funded wallet only.
+    expect(CLASSIC).toContain('myAgentWallet !== null && myAgentWallet < value');
     expect(CLASSIC).toContain('Insufficient chips in your agent wallet');
   });
 

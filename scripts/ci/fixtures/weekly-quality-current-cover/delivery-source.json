@@ -1,0 +1,9 @@
+{
+  "allocated": true,
+  "version": "20261030064511",
+  "name": "weekly_tournament_quality_uses_bounded_source_and_fee_cover_",
+  "protected_source_sha256": "fcad5568e849ad9f502c37bc0ec78c93313f584e0faa0c0ec0b3bf74a0f9cc22",
+  "tq_source_sha256": "da74fded1cdd6f260110a925e2cb3b4cbe7499897c84e9fb8f27d79bc911545a",
+  "fee_source_sha256": "39d4503ef2f25008e5c9096bbf0ac957338a97ce99e10fe74f9ebba325b80298",
+  "public_install_HOLD_until_changed_whole180_PASS": true
+}

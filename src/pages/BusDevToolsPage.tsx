@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  BUS DEV TOOLS — Live MasterBus Diagnostics Dashboard
@@ -72,7 +73,7 @@ export default function BusDevToolsPage() {
   const [eventLog, setEventLog] = useState<EventLogItem[]>([]);
   const [offlineCount, setOfflineCount] = useState(0);
   const [loggerBatchSize, setLoggerBatchSize] = useState(0);
-  const [filter, setFilter] = useState<string>('all');
+  const [filter, setFilter] = usePlayerPreference<string>('busDevTools.filter', 'all', 'global');
   const [isPaused, setIsPaused] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 

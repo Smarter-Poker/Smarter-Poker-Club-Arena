@@ -152,7 +152,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/ThrowableService.ts', 0],
   ['src/services/ReferralService.ts', 1],
   ['src/services/NotificationService.ts', 2],
-  ['src/services/MembershipService.ts', 2],
+  ['src/services/MembershipService.ts', 1],
   ['src/services/LeaderboardService.ts', 2],
   // 2 -> 0 in chip-std cash (2026-09-02, C2): both discarded reads lived in
   // seatHorse, the browser-side seat creator that minted a stack; it is gone

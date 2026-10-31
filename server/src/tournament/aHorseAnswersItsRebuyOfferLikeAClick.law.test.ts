@@ -40,13 +40,22 @@ const declining = ids.filter((id) => !willing.includes(id));
 type Purchase = 'ok' | 'transport';
 
 function setup(
-  opts: { horses?: string[]; offers?: string[]; purchase?: Purchase; freeBuyUsed?: number } = {}
+  opts: {
+    horses?: string[];
+    offers?: string[];
+    purchase?: Purchase;
+    freeBuyUsed?: number;
+    profileFailure?: 'error' | 'throw' | 'null';
+    offerPageFailure?: boolean;
+    afterOfferRead?: () => void;
+  } = {}
 ) {
   const horses = opts.horses ?? ids;
   const offers = opts.offers ?? ids;
   const purchase = opts.purchase ?? 'ok';
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
     tournamentId: event,
+    lifecycleJobs: new Set(),
     tournamentCache: { is_rebuy: true, is_reentry: true, free_buy: opts.freeBuyUsed !== undefined },
     currentLevel: 3,
     running: true,
@@ -69,18 +78,38 @@ function setup(
     }
     if (table === 'tournament_knockout_candidates') {
       const q: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'gt', 'order']) q[m] = vi.fn(() => q);
-      q.limit = vi.fn(async () => ({
-        data: offers.map((id) => ({
-          eliminated_user_id: id,
-          hand_number: HAND,
-          // Busted 20 s ago in a 30 s offer: every willing horse's human think
-          // time (2026-10-24, aHorseTakesAHumanMomentToRebuy) has passed.
-          created_at: new Date(Date.now() - 20_000).toISOString(),
-          rebuy_prompt_until: new Date(Date.now() + 10_000).toISOString(),
-        })),
-        error: null,
-      }));
+      let cursor = '';
+      let limit = 1000;
+      for (const m of ['select', 'eq', 'order']) q[m] = vi.fn(() => q);
+      q.gt = vi.fn((column: string, value: string) => {
+        if (column === 'id') cursor = value;
+        return q;
+      });
+      q.limit = vi.fn((value: number) => {
+        limit = Math.min(value, 1000);
+        return q;
+      });
+      q.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({
+          data:
+            cursor && opts.offerPageFailure
+              ? null
+              : offers
+                  .map((userId, index) => ({
+                    id: `eeeeeeee-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+                    eliminated_user_id: userId,
+                    hand_number: HAND,
+                    created_at: new Date(Date.now() - 20_000).toISOString(),
+                    rebuy_prompt_until: new Date(Date.now() + 10_000).toISOString(),
+                  }))
+                  .filter((row) => row.id > cursor)
+                  .slice(0, limit),
+          error:
+            cursor && opts.offerPageFailure ? { message: 'later offer page unavailable' } : null,
+        }).then((value) => {
+          opts.afterOfferRead?.();
+          return resolve(value);
+        });
       return q;
     }
     if (table === 'profiles') {
@@ -91,10 +120,18 @@ function setup(
         asked = list;
         return q;
       });
-      q.eq = vi.fn(async () => ({
-        data: asked.filter((id) => horses.includes(id)).map((id) => ({ id })),
-        error: null,
-      }));
+      q.eq = vi.fn(async () => {
+        if (opts.profileFailure === 'throw') throw new Error('profile transport lost');
+        if (opts.profileFailure)
+          return {
+            data: null,
+            error: opts.profileFailure === 'error' ? { message: 'profile unavailable' } : null,
+          };
+        return {
+          data: asked.filter((id) => horses.includes(id)).map((id) => ({ id })),
+          error: null,
+        };
+      });
       return q;
     }
     throw new Error(`unexpected table ${table}`);
@@ -142,6 +179,47 @@ describe('a horse answers its rebuy offer like a click', () => {
     expect(again).toBe(false);
   });
 
+  it.each([81, 1001])('answers the willing horse behind %s open offers', async (count) => {
+    const humans = Array.from(
+      { length: count - 1 },
+      (_, i) => `dddddddd-0000-4000-8000-${String(i + 1).padStart(12, '0')}`
+    );
+    const manager = setup({ offers: [...humans, willing[0]!], horses: [willing[0]!] });
+    expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
+    expect(purchases()).toEqual([willing[0]!]);
+    expect(declines()).toEqual([]);
+  });
+
+  it('keeps an incomplete offer inventory pending without acting on its prefix', async () => {
+    const humans = Array.from(
+      { length: 1000 },
+      (_, i) => `dddddddd-0000-4000-8000-${String(i + 1).padStart(12, '0')}`
+    );
+    const manager = setup({
+      offers: [willing[0]!, ...humans],
+      horses: [willing[0]!],
+      offerPageFailure: true,
+    });
+    expect(await manager.answerOpenHorseRebuyOffers()).toBe(true);
+    expect(purchases()).toEqual([]);
+    expect(declines()).toEqual([]);
+  });
+
+  it.each(['stop', 'freeze'])(
+    'does not decide after %s wins during the offer read',
+    async (mode) => {
+      const options: { afterOfferRead?: () => void } = {};
+      const manager = setup(options);
+      options.afterOfferRead = () => {
+        if (mode === 'stop') manager.running = false;
+        else fixture.frozen = true;
+      };
+      expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
+      expect(purchases()).toEqual([]);
+      expect(declines()).toEqual([]);
+    }
+  );
+
   it('sends nothing for a declining horse and nothing on behalf of a human', async () => {
     const human = willing[0];
     const manager = setup({ horses: ids.filter((id) => id !== human) });
@@ -177,6 +255,171 @@ describe('a horse answers its rebuy offer like a click', () => {
     });
     expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
     expect(purchases().sort()).toEqual([...willing].sort());
+  });
+
+  it('does not let one slow purchase response consume another ready offer deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const users = willing.slice(0, 2);
+      const manager = setup({ offers: users });
+      const deadline = Date.now() + 10_000;
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const completed: string[] = [];
+      fixture.rpc.mockImplementation(async (name: string, args: { p_user_id: string }) => {
+        if (name === 'fn_ca_tournament_rebuy_window') return { data: { open: true }, error: null };
+        if (name === 'process_tournament_rebuy') {
+          if (args.p_user_id === users[0]) await held;
+          if (Date.now() >= deadline)
+            return {
+              data: null,
+              error: { code: '55000', message: 'Rebuy or re-entry decision window has closed' },
+            };
+          completed.push(args.p_user_id);
+          return { data: { success: true }, error: null };
+        }
+        throw new Error(`unexpected rpc ${name}`);
+      });
+      const pass = manager.answerOpenHorseRebuyOffers();
+      await vi.advanceTimersByTimeAsync(10_001);
+      release();
+      await pass;
+      expect(completed).toContain(users[1]);
+      expect(completed).not.toContain(users[0]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['null', 'false', 'throw'])(
+    'retains an unproven %s purchase for the original bounded input',
+    async (kind) => {
+      const user = willing[0];
+      const manager = setup({ offers: [user] });
+      const normal = fixture.rpc.getMockImplementation()!;
+      fixture.rpc.mockImplementation(async (name: string, args: unknown) => {
+        if (name !== 'process_tournament_rebuy') return normal(name, args);
+        if (kind === 'throw') throw new Error('network response lost');
+        return { data: kind === 'null' ? null : { success: false }, error: null };
+      });
+      expect(await manager.answerOpenHorseRebuyOffers()).toBe(true);
+      expect(declines()).toEqual([]);
+      fixture.rpc.mockImplementation(normal);
+      expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
+    }
+  );
+
+  it('bounds independent purchase inputs to four without losing the rest of the batch', async () => {
+    const manager = setup({ offers: willing });
+    const normal = fixture.rpc.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let active = 0,
+      peak = 0;
+    fixture.rpc.mockImplementation(async (name: string, args: unknown) => {
+      if (name !== 'process_tournament_rebuy') return normal(name, args);
+      active++;
+      peak = Math.max(peak, active);
+      await held;
+      active--;
+      return { data: { success: true }, error: null };
+    });
+    const pass = manager.answerOpenHorseRebuyOffers();
+    try {
+      await vi.waitFor(() => expect(active).toBe(4));
+      expect(peak).toBe(4);
+    } finally {
+      release();
+      await pass;
+    }
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(purchases().sort()).toEqual([...willing].sort());
+  });
+
+  it('submits an already-due answer just before cutoff, never a new input at or after cutoff', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const user = willing[0];
+    const manager = setup({ offers: [user] });
+    const now = Date.now();
+    const hands = new Map([[user, HAND]]);
+    const timing = (until: number) =>
+      new Map([[user, { handNumber: HAND, bustAtMs: now - 29_900, promptUntilMs: until }]]);
+    const before = await manager.tryTournamentRebuys([user], hands, timing(now + 100), () => true);
+    expect(before.rebought.has(user)).toBe(true);
+    const count = purchases().length;
+    for (const until of [now - 1, now]) {
+      const expired = await manager.tryTournamentRebuys([user], hands, timing(until), () => true);
+      expect(expired.rebought.size).toBe(0);
+    }
+    expect(purchases()).toHaveLength(count);
+  });
+
+  it.each(['stop', 'freeze', 'cutoff'])(
+    'rechecks %s after reserving a queued input and releases the reservation',
+    async (change) => {
+      vi.useFakeTimers();
+      try {
+        const user = willing[0];
+        const manager = setup({ offers: [user] });
+        const pending = new Map<string, Promise<void>>();
+        manager.horseRebuyPending = pending;
+        manager.running = true;
+        const now = Date.now();
+        vi.spyOn(pending, 'set').mockImplementation((key, promise) => {
+          Map.prototype.set.call(pending, key, promise);
+          if (change === 'stop') manager.running = false;
+          if (change === 'freeze') fixture.frozen = true;
+          if (change === 'cutoff') vi.setSystemTime(now + 10_000);
+          return pending;
+        });
+        const result = await manager.tryTournamentRebuys(
+          [user],
+          new Map([[user, HAND]]),
+          new Map([
+            [user, { handNumber: HAND, bustAtMs: now - 20_000, promptUntilMs: now + 10_000 }],
+          ]),
+          () => manager.running
+        );
+        expect(purchases()).toEqual([]);
+        expect(result.rebought.size).toBe(0);
+        expect(pending.size).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('the existing lifecycle drain waits for the retained physical purchase response', async () => {
+    const user = willing[0];
+    const manager = setup({ offers: [user] });
+    const normal = fixture.rpc.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fixture.rpc.mockImplementation(async (name: string, args: unknown) => {
+      if (name === 'process_tournament_rebuy') await held;
+      return normal(name, args);
+    });
+    await manager.answerOpenHorseRebuyOffers(false);
+    expect(manager.lifecycleJobs.size).toBe(1);
+    expect(manager.horseRebuyPending.size).toBe(1);
+    let drained = false;
+    const drain = manager.drainLifecycleJobs().then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    manager.running = false; // stop fences fresh input; it still owes the original response
+    release();
+    await drain;
+    expect(manager.lifecycleJobs.size).toBe(0);
+    expect(manager.horseRebuyPending.size).toBe(0);
+    expect(purchases()).toEqual([user]);
   });
 
   it('closes a spent free-buy offer without submitting a new purchase', async () => {
@@ -255,6 +498,46 @@ describe('a horse answers its rebuy offer like a click', () => {
     const humansOnly = setup({ horses: [], purchase: 'transport' });
     expect(await humansOnly.answerOpenHorseRebuyOffers()).toBe(false);
     expect(purchases()).toEqual([]);
+  });
+
+  it.each(['error', 'throw', 'null'] as const)(
+    'keeps the existing bounded input continuation when profile identification returns %s',
+    async (profileFailure) => {
+      vi.useFakeTimers();
+      try {
+        const options = {
+          offers: [willing[0]!],
+          profileFailure: profileFailure as typeof profileFailure | undefined,
+        };
+        const manager = setup(options);
+        manager.horseRebuyOfferMayHaveOpened();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(purchases()).toEqual([]);
+        expect(declines()).toEqual([]);
+        options.profileFailure = undefined;
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(purchases()).toEqual([willing[0]!]);
+        expect(manager.horseRebuyInputTimer).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('bounds persistent profile failures without purchasing or declining', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = setup({ profileFailure: 'error' });
+      manager.horseRebuyOfferMayHaveOpened();
+      await vi.advanceTimersByTimeAsync(40_000);
+      const reads = fixture.from.mock.calls.filter(([table]) => table === 'profiles');
+      expect(reads).toHaveLength(TournamentManagerEliminations.HORSE_REBUY_INPUT_MAX_PASSES);
+      expect(manager.horseRebuyInputTimer).toBeNull();
+      expect(purchases()).toEqual([]);
+      expect(declines()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('answers to the maintenance freeze and to manager stop', async () => {

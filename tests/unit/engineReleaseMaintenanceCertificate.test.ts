@@ -7,6 +7,10 @@ const transaction = readFileSync(
   resolve(process.cwd(), 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 const helperStart = transaction.indexOf('maintenance_certificate() {');
 const helperEnd = transaction.indexOf('\npersist_break_deadline() {', helperStart);
 const helper = transaction.slice(helperStart, helperEnd);
@@ -27,6 +31,7 @@ const sourceIdentity = transaction.slice(sourceIdentityStart, sourceIdentityEnd)
 
 const validCertificate = {
   running: true,
+  weeklyPayout: null,
   maintenance: {
     reason: 'Deployment Recovery',
     active: true,
@@ -54,6 +59,9 @@ function runCertificate({
     [
       '-c',
       `set -u
+${entryRead}
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000
 curl() {
   printf '%s\\n%s' "$MOCK_BODY" "$MOCK_HTTP_CODE"
@@ -77,6 +85,7 @@ maintenance_certificate${minimum === undefined ? '' : ` ${minimum}`}`,
 const sourceSha = 'a'.repeat(40);
 const validSourceIdentity = {
   running: true,
+  weeklyPayout: null,
   releaseSha: sourceSha,
   liveness: 'ok',
   instanceId: '12345-deadbeef',
@@ -96,6 +105,7 @@ function runSourceIdentity({
     [
       '-c',
       `set -u
+${entryRead}
 BREAK_END_EPOCH=0
 curl() {
   printf '%s\\n%s' "$MOCK_BODY" "$MOCK_HTTP_CODE"
@@ -125,6 +135,7 @@ function runStrictIdentity(httpCode: string, body = JSON.stringify(validSourceId
     [
       '-c',
       `set -u
+${entryRead}
 BREAK_END_EPOCH=0
 curl() {
   printf '%s\\n%s' "$MOCK_BODY" "$MOCK_HTTP_CODE"
@@ -222,6 +233,7 @@ describe('the release transaction can read only an explicit maintenance health r
 describe('the already-sealed source remains replaceable when routing readiness is degraded', () => {
   const legacy = {
     running: true,
+    weeklyPayout: null,
     version: sourceSha.slice(0, 8),
     liveness: 'ok',
     instanceId: '12345-deadbeef',

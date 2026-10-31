@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ACHIEVEMENTS PAGE — Player Achievements & Badges with Real-Time Unlocks
@@ -385,7 +386,11 @@ export default function AchievementsPage() {
   }, []);
   const { user } = useAuthUser();
   const toast = useToast();
-  const [category, setCategory] = useState<AchievementCategory>('all');
+  const [category, setCategory] = usePlayerPreference<AchievementCategory>(
+    'achievements:category',
+    'all',
+    'global'
+  );
   const [storedAchievements, setAchievements] = useState<Achievement[]>([]);
   const [isLoading, setLoading] = useState(true);
   const [storedError, setLoadError] = useState<string | null>(null);
@@ -558,7 +563,10 @@ export default function AchievementsPage() {
     [loadAchievements]
   );
 
-  const [sortMode, setSortMode] = useState<SortMode>('default');
+  const [sortMode, setSortMode] = usePlayerPreference<SortMode>(
+    'AchievementsPage:sortMode',
+    'default'
+  );
 
   const filteredAchievements = useMemo(() => {
     const list =

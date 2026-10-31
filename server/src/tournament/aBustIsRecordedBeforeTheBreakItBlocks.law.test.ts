@@ -245,6 +245,7 @@ describe('the continuation cursor gives an earlier stage its turn back, never tw
 
 function balanceStageManager() {
   const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+  manager.recoveredOriginalAdmissions = new Map();
   Object.assign(manager, {
     tournamentId: 'aaaaaaaa-0000-4000-8000-000000000001',
     running: true,
@@ -272,21 +273,35 @@ function balanceStageManager() {
 /** A bust read the test can see; answering an error ends the pass there. */
 function watchBustReads() {
   const bustRead = vi.fn().mockResolvedValue({ data: null, error: { message: 'bust stage' } });
-  const query: any = { select: vi.fn(() => query), eq: vi.fn(() => query), lte: bustRead };
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    lte: vi.fn((...args: unknown[]) => {
+      query.answer = bustRead(...args);
+      return query;
+    }),
+    order: () => query,
+    limit: () => query,
+    gt: () => query,
+    then: (resolve: any, reject: any) => query.answer.then(resolve, reject),
+  };
   vi.spyOn(supabase, 'from').mockReturnValue(query as never);
   return bustRead;
 }
 
 describe('a bust is not held behind a balance stage that spends every budget', () => {
-  it('without a bust, the balance stage keeps its continuation (unchanged)', async () => {
+  it('without a reported bust, slow balancing still yields to a fresh bust read', async () => {
     vi.useFakeTimers();
     const manager = balanceStageManager();
     const bustRead = watchBustReads();
     await manager.runEliminationSweep(new AbortController().signal);
     await manager.runEliminationSweep(new AbortController().signal);
-    expect(manager.checkTableBalance).toHaveBeenCalledTimes(2);
+    expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
     expect(bustRead).not.toHaveBeenCalled();
-    expect(manager.eliminationSweepCursor.nextStage).toBe(5);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(0);
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(bustRead).toHaveBeenCalledWith('chips', 0);
+    expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
   });
 
   it('a bust observed while balance holds the cursor is read on the very next admission', async () => {
@@ -307,11 +322,22 @@ describe('a bust is not held behind a balance stage that spends every budget', (
     vi.useFakeTimers();
     const manager = balanceStageManager();
     // The bust stage now completes and the pass yields on the budget before balance.
-    const bustRead = vi.fn(async () => {
+    const bustRead = vi.fn(async (..._args: unknown[]) => {
       vi.setSystemTime(Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS + 1);
       return { data: [], error: null };
     });
-    const query: any = { select: vi.fn(() => query), eq: vi.fn(() => query), lte: bustRead };
+    const query: any = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      lte: vi.fn((...args: unknown[]) => {
+        query.answer = bustRead(...args);
+        return query;
+      }),
+      order: () => query,
+      limit: () => query,
+      gt: () => query,
+      then: (resolve: any, reject: any) => query.answer.then(resolve, reject),
+    };
     vi.spyOn(supabase, 'from').mockReturnValue(query as never);
     const order: string[] = [];
     manager.checkTableBalance.mockImplementation(async () => {
@@ -593,14 +619,16 @@ describe('every table records busts behind a blocked later-stage rewind', () => 
           is: () => q,
           not: () => q,
           order: () => q,
+          limit: () => q,
+          gt: () => q,
           then: (resolve: (answer: unknown) => unknown, reject: (error: unknown) => unknown) => {
             let data: unknown = null;
             let count: number | null = null;
             if (table === 'tournament_players') {
               if (head) count = 100 - placed.size;
-              else if (columns === 'user_id, chips')
+              else if (columns === 'id, user_id, chips')
                 data = [...pending].map((user_id) => ({ user_id, chips: 0 }));
-              else if (columns === 'position')
+              else if (columns === 'id, position')
                 data = [...placed.values()].map((position) => ({ position }));
               else throw new Error(`Unexpected player read: ${columns}`);
             } else if (table === 'tournament_knockout_candidates') {

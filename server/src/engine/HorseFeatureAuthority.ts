@@ -253,7 +253,8 @@ export function admitHorseFeatureAuthority(
       return refuse('policy_digest_mismatch');
     for (const [p, h] of Object.entries(files)) {
       if (
-        !/^src\/[A-Za-z0-9_./-]+\.(ts|json)$/.test(p) ||
+        (!/^src\/[A-Za-z0-9_./-]+\.(ts|json)$/.test(p) &&
+          !HORSE_REFERENCE_DECISION_SOURCE_FILES.includes(p)) ||
         p.includes('..') ||
         !hex(h, 64) ||
         bytesHash(readSource(p)) !== h

@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 // One explicit offline operation. The existing evaluator owns every receipt/gate.
+import {isClubArenaRepository} from './repository-identity.mjs';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-const REPOSITORY = 'Smarter-Poker/Smarter-Poker-Club-Arena';
 const HEALTH = 'https://engine.smarter.poker/health';
 const DATABASE = 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const SHA = /^[0-9a-f]{40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-export function invocation({ eventName, ref, repository, inputs }) {
-  if (eventName !== 'workflow_dispatch' || ref !== 'refs/heads/main' || repository !== REPOSITORY)
+export function invocation({ eventName, ref, repository, repositoryId, inputs }) {
+  if (eventName !== 'workflow_dispatch' || ref !== 'refs/heads/main' || !isClubArenaRepository(repository, repositoryId))
     throw new Error('Only an explicit dispatch on this repository protected main is admitted');
   if (!inputs || Object.keys(inputs).sort().join(',') !== 'dataset,operation' ||
       typeof inputs.dataset !== 'string' || !UUID.test(inputs.dataset) || !['evaluate', 'promote'].includes(inputs.operation))
@@ -51,7 +51,7 @@ export function receiptSourceMatches(dataset, sourceSha) {
 
 export function evaluatorArguments(dataset, operation) {
   if (!UUID.test(dataset) || !['evaluate', 'promote'].includes(operation)) throw new Error('Invalid evaluator invocation');
-  return ['node_modules/tsx/dist/cli.mjs', 'src/scripts/gtoV31Evaluate.ts', `--dataset=${dataset}`,
+  return ['scripts/gto-v31-evaluate-worker.mjs', `--dataset=${dataset}`,
     ...(operation === 'promote' ? ['--promote'] : [])];
 }
 
@@ -86,7 +86,7 @@ async function status(id) {
 async function main() {
   const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   const selected = invocation({ eventName: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF,
-    repository: process.env.GITHUB_REPOSITORY, inputs: event.inputs });
+    repository: process.env.GITHUB_REPOSITORY, repositoryId: process.env.GITHUB_REPOSITORY_ID, inputs: event.inputs });
   if (!/^\d+$/.test(process.env.GITHUB_RUN_ID ?? '') || !/^\d+$/.test(process.env.GITHUB_RUN_ATTEMPT ?? ''))
     throw new Error('Provider operation identity is unavailable');
   const directory = join(process.env.RUNNER_TEMP, `gto-v31-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`);

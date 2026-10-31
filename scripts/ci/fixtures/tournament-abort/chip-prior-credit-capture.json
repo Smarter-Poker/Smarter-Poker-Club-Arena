@@ -1,0 +1,16 @@
+{
+  "triggers": [
+    {
+      "name": "zz_tournament_accounting_credit_ledger",
+      "relation": "chip_ledger",
+      "definition": "CREATE TRIGGER zz_tournament_accounting_credit_ledger AFTER INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_tournament_credit_ledger()"
+    }
+  ],
+  "functions": [
+    {
+      "signature": "fn_ca_capture_tournament_credit_ledger()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_capture_tournament_credit_ledger()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n IF NEW.tournament_id IS NOT NULL AND NEW.from_type='prize_liability'\n    AND NEW.from_entity_id=NEW.tournament_id AND NEW.to_type='player_wallet'\n    AND NEW.category IN ('tournament_prize','bounty','refund','tournament_refund') THEN\n   PERFORM set_config('app.pnl_tournament_credit_ledger',NEW.id::text,true);\n END IF;\n RETURN NULL;\nEND $function$\n",
+      "definition_md5": "81b1abbedb544e2fca0f8edec7d27cae"
+    }
+  ]
+}

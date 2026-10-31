@@ -58,6 +58,40 @@ describe('every forward-facing RIT display is Title Case', () => {
     expect(container.textContent).toContain('CataliNO Requests To Run It Twice.');
   });
 
+  it.each([
+    [0, false, null],
+    [100, false, null],
+    [NaN, false, null],
+    [82.3, false, '82.3%'],
+    [0.001, true, '<0.1%'],
+    [100, true, '100%'],
+  ])('prints only an available clean equity label for %s', (percent, exact, label) => {
+    const { container } = render(
+      <RunItTwicePrompt
+        isOpen
+        onAccept={() => {}}
+        onDecline={() => {}}
+        timeRemaining={20}
+        chosenRuns={2}
+        opponentName="Other"
+        players={[
+          {
+            id: 'a',
+            name: 'Other',
+            cards: [],
+            accepted: false,
+            equityPct: percent as number,
+            equityExact: exact as boolean,
+          },
+        ]}
+      />
+    );
+    const value = container.querySelector('.rit-panel__player-equity');
+    expect(value?.textContent ?? null).toBe(label);
+    expect(container.textContent).not.toContain('Unknown');
+    expect(value?.textContent ?? '').not.toContain('~');
+  });
+
   it('the felt status strip routes through the central transform', () => {
     // The strip bypasses the Toast layer; the choke point every banner text
     // flows through must apply formatPopupText itself.

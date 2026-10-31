@@ -1,4 +1,5 @@
 /** One explicitly invoked provider owner. No automatic continuation or write retry. */
+import {isClubArenaRepository} from '../ci/repository-identity.mjs';
 import { pathToFileURL } from 'node:url';
 const WORKFLOW = '.github/workflows/lightning-pilot-assignment.yml';
 const PHASES = ['prepare', 'assign', 'withdraw', 'release', 'report'];
@@ -34,7 +35,7 @@ export function assertAssignmentRun({ phase, operationId, current, baseline, run
 }
 export async function guardAssignmentRun(env = process.env, fetcher = fetch) {
   if (
-    env.GITHUB_REPOSITORY !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    !isClubArenaRepository(env.GITHUB_REPOSITORY, env.GITHUB_REPOSITORY_ID) ||
     !env.GITHUB_TOKEN ||
     !/^\d+$/.test(env.GITHUB_RUN_ID || '')
   )

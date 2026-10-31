@@ -38,3 +38,21 @@ prospective real-owner payout, underfunding refusal, replay no-op and frozen
 roster behavior. The existing directly triggered financial workflow runs it.
 Native fixtures rebind only the three production-data hash assertions to
 synthetic inputs; actual production hashes are checked by the rollback probe.
+
+## October31 recovery
+
+Chat01a190a6 recovered existing unmerged PR8452 in an isolated SSD worktree.
+Readback06:44:12Z preserves original empty batch0b5cebb0, programcf1e2a57
+version1/hash6cccd5b70afc93983c8419ec15c2f707, no original per-player credit
+keys, no correction table, and Midway Promo208241.57. The three exact function
+preimages remain unchanged. No payment, DDL probe or financial replay occurred.
+Native PostgreSQL17 reproduced the zero-winner bug and passed original-record
+preservation, partial-credit rollback, actual ranking/payer/funding owners,
+500-Chip correction/prospective payout, replay, frozen roster and ACL metadata.
+All17 affected source contracts pass after replacing an obsolete comment-only
+assertion with executable CREATE OR REPLACE, no DROP and explicit service-role
+permissions. Both original Monday and union native steps and all newer weekly
+quality commands are preserved; reviewed workflow binding keeps historical
+qualification status unchanged. Policy2.9 manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b
+loaded under overall chat audit. Protected checks, merge, exact installation
+and receipt readback remain outstanding; the correction is still unpaid.

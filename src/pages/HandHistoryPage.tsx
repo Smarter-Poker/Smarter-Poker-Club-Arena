@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  HAND ARCHIVE — every hand you played, across every table  #SMARTERCASINOREALISM
@@ -177,16 +178,16 @@ export default function HandHistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [firstReading, setFirstReading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [filter, setFilter] = useState<HistoryFilter>('all');
+  const [filter, setFilter] = usePlayerPreference<HistoryFilter>('HandHistoryPage:filter', 'all');
   /* Phase 5: the free-text term, and the caller's own notes keyed by hand id. */
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('HandHistoryPage:search', '');
   /* Phase 5 promised a variant and a date range beside the free text. The
      predicate has always understood all three; until the deep dive nothing
      rendered a control for the last two, so two of its terms could not be
      reached by a player at all. */
-  const [variant, setVariant] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [variant, setVariant] = usePlayerPreference('HandHistoryPage:variant', '');
+  const [from, setFrom] = usePlayerPreference('HandHistoryPage:from', '');
+  const [to, setTo] = usePlayerPreference('HandHistoryPage:to', '');
   const [notes, setNotes] = useState<Map<string, HandNote>>(new Map());
   const [notesKnown, setNotesKnown] = useState(false);
   /* Phase 6: the caller's own flags on these hands, so a hand already sent to

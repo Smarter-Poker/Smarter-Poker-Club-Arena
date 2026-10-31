@@ -43,6 +43,7 @@ import {
   persistFilters,
   pushRemoteFilters,
   saveFilters,
+  stageFilters,
 } from '../../src/components/lobby/AdvancedFilters';
 import { FILTER_SPECS, emptyFilterValue } from '../../src/components/lobby/advancedFilterSpec';
 
@@ -103,7 +104,9 @@ describe('an unconfirmed tab/sort choice is never overwritten by the older row',
       page.indexOf('if (hasUnsyncedViewPrefs(resolvedClubId'),
       page.indexOf('void fetchRemoteViewPrefs(resolvedClubId')
     );
-    expect(hydrate).toMatch(/pushRemoteViewPrefs\(resolvedClubId, saved, currentUser\?\.id\);\s*return;/);
+    expect(hydrate).toMatch(
+      /pushRemoteViewPrefs\(resolvedClubId, saved, currentUser\?\.id\);\s*return;/
+    );
   });
 });
 
@@ -184,14 +187,34 @@ describe('every lobby filter change reaches the row, in order', () => {
   it('the lobby writes no filter change to the cache alone, and reads the row on open', () => {
     const page = readFileSync(join(__dirname, '..', '..', 'src/pages/ClubHomePage.tsx'), 'utf8');
     expect(page).not.toMatch(/if \(resolvedClubId\) saveFilters\(resolvedClubId, next\)/);
-    expect(page.match(/persistAdvFilters\(resolvedClubId, next\)/g)?.length ?? 0).toBeGreaterThanOrEqual(6);
+    expect(
+      page.match(/persistAdvFilters\(resolvedClubId, next\)/g)?.length ?? 0
+    ).toBeGreaterThanOrEqual(5);
     const hydrate = page.slice(
       page.indexOf('const cached = loadFilters(resolvedClubId'),
-      page.indexOf('}, [resolvedClubId, currentUser?.id]);', page.indexOf('const cached = loadFilters(resolvedClubId'))
+      page.indexOf(
+        '}, [resolvedClubId, currentUser?.id]);',
+        page.indexOf('const cached = loadFilters(resolvedClubId')
+      )
     );
     expect(hydrate).toMatch(/hasUnsyncedFilters\(resolvedClubId/);
     expect(hydrate).toMatch(/pushRemoteFilters\(resolvedClubId, cached\)/);
     expect(hydrate).toMatch(/void fetchRemoteFilters\(resolvedClubId\)/);
     expect(hydrate).toMatch(/advFiltersTouched\.current/);
   });
+});
+
+it('a newly staged slider choice remains pending when an older save finishes during debounce', async () => {
+  const first = { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: [GAME_A] } };
+  const newer = { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: [GAME_B] } };
+  persistFilters(club, first);
+  stageFilters(club, newer, 'account-a');
+  state.writes[0].resolve({ error: null });
+  await settle();
+  expect(hasUnsyncedFilters(club, 'account-a')).toBe(true);
+  expect(loadFilters(club, 'account-a').HOLDEM?.games).toEqual([GAME_B]);
+  pushRemoteFilters(club, newer);
+  state.writes[1].resolve({ error: null });
+  await settle();
+  expect(hasUnsyncedFilters(club, 'account-a')).toBe(false);
 });

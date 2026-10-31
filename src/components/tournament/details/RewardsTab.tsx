@@ -81,8 +81,9 @@
  * ── ONE QUERY, AND ONLY WHEN IT IS NEEDED ──────────────────────────────────
  *
  * types.ts asks tabs to prefer props. The props carry the tournament row, so
- * the entire payout side of this tab is computed with no query at all. The two
- * bounty queries fire ONLY for a bounty event, are cancelled on unmount, and
+ * ordinary payout side is computed with no query. Completed satellites read
+ * existing RLS-protected payout receipts to distinguish tickets from cash.
+ * Missing evidence never becomes a ticket claim. The two bounty queries fire ONLY for a bounty event, are cancelled on unmount, and
  * tolerate an empty result: a bounty panel that never resolves is worse than
  * one that says the pool has not been funded yet.
  */
@@ -90,8 +91,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
+import { subscribeTournamentStandings } from '../../../services/tournamentStandingsUpdates';
 import type { TournamentTabProps, PayoutPlace, TournamentEntry } from './types';
 import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
+import { useSatelliteAwards, satelliteAwardLabel } from './useSatelliteAwards';
 import {
   chips,
   effectivePlaceLadderPool,
@@ -170,6 +173,7 @@ function pct(n: number): string {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 interface BountyLedger {
+  tournamentId?: string;
   /** Heads still sitting on live players, i.e. prizes nobody has pulled. */
   liveHeads: number[];
   /** Every head already claimed, from the tournament_bounties ledger. */
@@ -219,18 +223,28 @@ const MAX_PAGES = 100;
  * a caller that destructures only `.data` turns every failure into an empty
  * result. See the catch in the loader.
  */
-async function fetchAllRows<T>(
-  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>
+async function fetchAllRows<T extends { id: string }>(
+  page: (cursor: string | null) => PromiseLike<{ data: unknown; error: unknown }>,
+  isCurrent: () => boolean
 ): Promise<T[]> {
   const out: T[] = [];
+  let cursor: string | null = null;
   for (let i = 0; i < MAX_PAGES; i++) {
-    const { data, error } = await page(i * PAGE, (i + 1) * PAGE - 1);
+    if (!isCurrent()) throw new Error('Bounty ledger read retired');
+    const { data, error } = await page(cursor);
+    if (!isCurrent()) throw new Error('Bounty ledger read retired');
     if (error) throw error;
-    const rows = (data || []) as T[];
+    if (!Array.isArray(data)) throw new Error('Bounty ledger response is not an array');
+    const rows = data as T[];
+    for (const row of rows) {
+      if (typeof row.id !== 'string' || !row.id || (cursor !== null && row.id <= cursor))
+        throw new Error('Bounty ledger cursor did not advance');
+      cursor = row.id;
+    }
     out.push(...rows);
     if (rows.length < PAGE) return out;
   }
-  return out;
+  throw new Error('Bounty ledger exceeded the complete-read limit');
 }
 
 /**
@@ -274,7 +288,12 @@ interface RewardColumns {
    (2026-08-26 audit). */
 const isStillIn = isPlayerLive;
 
-export default function RewardsTab({ tournament, entries, currentUserId }: TournamentTabProps) {
+export default function RewardsTab({
+  tournament,
+  entries,
+  currentUserId,
+  satelliteAwards: providedAwards,
+}: TournamentTabProps) {
   const t = (tournament || {}) as unknown as RewardColumns;
   const tournamentId = tournament?.id;
 
@@ -302,48 +321,62 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     [unitCents]
   );
 
-  const [ledger, setLedger] = useState<BountyLedger>(EMPTY_LEDGER);
+  const [ownedLedger, setLedger] = useState<BountyLedger>(EMPTY_LEDGER);
+  const ledger = ownedLedger.tournamentId === tournamentId ? ownedLedger : EMPTY_LEDGER;
 
-  /* A KNOCKOUT MOVES THE POOL (2026-10-04 review pass). The two bounty reads
-     ran once, when the tab opened, so "Claimed", the knockout count and - on
-     an event whose pool is the heads themselves - "Still Available" sat at
-     their opening values for as long as the tab stayed on screen while the
-     field busted around them. Every bounty is paid on an elimination, and the
-     page already streams those into `entries`, so the count of players out is
-     the signal: the same two reads run again when it changes, and never on a
-     timer. The figures on screen are kept until the new ones land. */
-  const playersOut = useMemo(() => entries.filter(isPlayerOut).length, [entries]);
-
-  /* Two queries, bounty events only, cancelled on unmount. */
+  /* Committed standings/lifecycle events invalidate the ledger even when the
+     number of eliminated players stays unchanged (rebuy, bounty settlement,
+     or reconnect). One in-flight read plus one trailing invalidation prevents
+     concurrent responses from overwriting newer data. */
   useEffect(() => {
     if (!tournamentId || !isBountyEvent) {
       setLedger(EMPTY_LEDGER);
       return;
     }
     let cancelled = false;
-
-    (async () => {
+    let inFlight = false;
+    let requested = false;
+    const load = async () => {
+      if (cancelled) return;
+      if (inFlight) {
+        requested = true;
+        return;
+      }
+      inFlight = true;
       try {
         const [live, claimed] = await Promise.all([
-          fetchAllRows<{ current_bounty: unknown; status: string | null }>((from, to) =>
-            supabase
-              .from('tournament_players')
-              .select('current_bounty, status')
-              .eq('tournament_id', tournamentId)
-              .gt('current_bounty', 0)
-              .range(from, to)
+          fetchAllRows<{ id: string; current_bounty: unknown; status: string | null }>(
+            (cursor) => {
+              let query = supabase
+                .from('tournament_players')
+                .select('id, current_bounty, status')
+                .eq('tournament_id', tournamentId)
+                .gt('current_bounty', 0)
+                .order('id', { ascending: true })
+                .limit(PAGE);
+              if (cursor !== null) query = query.gt('id', cursor);
+              return query;
+            },
+            () => !cancelled
           ),
-          fetchAllRows<{ bounty_amount: unknown }>((from, to) =>
-            supabase
-              .from('tournament_bounties')
-              .select('bounty_amount')
-              .eq('tournament_id', tournamentId)
-              .range(from, to)
+          fetchAllRows<{ id: string; bounty_amount: unknown }>(
+            (cursor) => {
+              let query = supabase
+                .from('tournament_bounties')
+                .select('id, bounty_amount')
+                .eq('tournament_id', tournamentId)
+                .order('id', { ascending: true })
+                .limit(PAGE);
+              if (cursor !== null) query = query.gt('id', cursor);
+              return query;
+            },
+            () => !cancelled
           ),
         ]);
         if (cancelled) return;
 
         setLedger({
+          tournamentId,
           /* A head belongs to a player still in (2026-10-26 audit). Before the
              money a mystery bust pays nothing and leaves its head on the row,
              so counting every row put 162 knocked-out players' heads back
@@ -369,19 +402,27 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
              network wobble during a knockout must not swap real figures for
              "Could Not Be Read". Only a first read that fails says so. */
           setLedger((prev) =>
-            prev.loaded && !prev.failed
+            prev.tournamentId === tournamentId && prev.loaded && !prev.failed
               ? prev
-              : { liveHeads: [], claimedHeads: [], loaded: true, failed: true }
+              : { tournamentId, liveHeads: [], claimedHeads: [], loaded: true, failed: true }
           );
           reportError(e, 'RewardsTab.bounty_ledger_load_failed');
         }
+      } finally {
+        inFlight = false;
+        if (!cancelled && requested) {
+          requested = false;
+          void load();
+        }
       }
-    })();
-
+    };
+    const unsubscribe = subscribeTournamentStandings(tournamentId, () => void load());
+    void load();
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, [tournamentId, isBountyEvent, playersOut]);
+  }, [tournamentId, isBountyEvent]);
 
   /* ── FIELD STATE ──────────────────────────────────────────────────────── */
 
@@ -435,6 +476,25 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     return byPlace;
   }, [entries]);
 
+  // A bounty can be earned while still playing or outside the place ladder.
+  // The settled counter also includes PKO champion/residual awards, which a
+  // knockout-only ledger would omit. Never count current_bounty as received.
+  const bountyOnlyRecipients = useMemo(
+    () =>
+      entries
+        .filter(
+          (e) =>
+            num(e.bounty_winnings) > 0 &&
+            !parsedPlaces?.some((p) => finisherByPlace.get(p.place)?.id === e.id)
+        )
+        .sort(
+          (a, b) =>
+            (a.position || Infinity) - (b.position || Infinity) ||
+            a.username.localeCompare(b.username)
+        ),
+    [entries, parsedPlaces, finisherByPlace]
+  );
+
   /* A band of places sharing one percentage reads as "4-6" until somebody in
      it finishes; then it opens into its single places so every name sits on
      its own prize. */
@@ -472,6 +532,9 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     String(t.variant ?? '').toLowerCase() === 'satellite' ||
     String(t.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
     Boolean(t.satellite_target_id || t.satellite_target);
+
+  const awardEvidence = useSatelliteAwards(tournament, entries, providedAwards, currentUserId);
+  const awardTypesReady = awardEvidence.ready;
 
   /**
    * A SATELLITE PAYS SEATS, NOT THE PERCENTAGE LADDER (2026-10-04).
@@ -751,7 +814,7 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
 
           {satelliteAwards && satelliteAwards.seatWinners.length > 0 && (
             <div className="tl-stat">
-              <span className="tl-stat__label">Seat Winners</span>
+              <span className="tl-stat__label">Qualified Players</span>
               <span className="tl-stat__value">{chips(satelliteAwards.seatWinners.length)}</span>
               <span className="tl-stat__sub">Qualified For The Target Event</span>
             </div>
@@ -881,10 +944,10 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
         {provisionalReason && <p className="rw-provisional">{provisionalReason}</p>}
       </section>
 
-      {/* ── THE PAYOUTS, IN FINISHING ORDER, AND NOTHING ELSE ─────────────── */}
+      {/* Place prizes and every recorded bounty award. */}
       <section className="tl-panel rw-payouts">
         <div className="tl-section-head">
-          <h3>{isSatellite ? 'Seat Awards' : 'Payouts'}</h3>
+          <h3>{isSatellite ? 'Satellite Awards' : 'Payouts'}</h3>
           {/* ONLY ONCE THE FIELD IS AT LEAST AS BIG AS THE LADDER (2026-10-04
               review pass). The share is paid places over entries, and while an
               event is still filling the ladder is longer than the field: nine
@@ -909,12 +972,25 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
             )}
         </div>
 
+        {isSatellite && isComplete && satelliteAwards && (
+          <p className="tl-empty__hint" role="status">
+            {!awardTypesReady
+              ? 'Reading Recorded Award Types'
+              : awardEvidence.failed ||
+                  [...satelliteAwards.seatWinners, ...satelliteAwards.finishers].some(
+                    (e) => awardEvidence.kindFor(e.user_id, e.prize) === 'unknown'
+                  )
+                ? 'Ticket Or Cash Details Are Unavailable In This View. Recorded Values Are Shown.'
+                : null}
+          </p>
+        )}
         {isSatellite ? (
           satelliteAwards ? (
             <ul className="tl-list rw-list">
               {[...satelliteAwards.seatWinners, ...satelliteAwards.finishers].map((e, i) => {
                 const wonSeat = i < satelliteAwards.seatWinners.length;
                 const isHeroRow = !!currentUserId && e.user_id === currentUserId;
+                const awardKind = awardEvidence.kindFor(e.user_id, e.prize);
                 return (
                   <li
                     key={e.id}
@@ -923,23 +999,33 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
                       .join(' ')}
                   >
                     <span className="tl-rank rw-rank">
-                      {wonSeat ? 'Seat' : ordinal(e.position)}
+                      {wonSeat ? (awardKind === 'ticket' ? 'Seat' : 'Win') : ordinal(e.position)}
                     </span>
                     <span className="rw-row__mid">
                       <span className="tl-name">{e.username}</span>
-                      {wonSeat && <span className="tl-badge rw-tag">Seat Winner</span>}
+                      {(wonSeat || awardKind === 'ticket') && (
+                        <span className="tl-badge rw-tag">
+                          {awardKind === 'ticket'
+                            ? 'Ticket Winner'
+                            : awardKind === 'cash'
+                              ? 'Cash Award'
+                              : 'Qualified'}
+                        </span>
+                      )}
                       {isHeroRow && (
                         <span className="tl-badge tl-badge--action rw-tag">Your Finish</span>
                       )}
                     </span>
-                    <span className="tl-num tl-num--accent rw-prize">{unitMoney(e.prize)}</span>
+                    <span className="tl-num tl-num--accent rw-prize">
+                      {satelliteAwardLabel(awardKind, unitMoney(e.prize))}
+                    </span>
                   </li>
                 );
               })}
             </ul>
           ) : (
             <div className="tl-empty">
-              This Satellite Awards Seats Into The Target Event
+              This Satellite Awards Tickets Into The Target Event
               <span className="tl-empty__hint">
                 {isComplete
                   ? 'No Award Was Recorded Per Player For This Event.'
@@ -1016,13 +1102,55 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
                     )}
                   </span>
 
-                  <span className="tl-num tl-num--accent rw-prize">
-                    {recordedPrize > 0 ? unitMoney(recordedPrize) : prize > 0 ? chips(prize) : '-'}
-                  </span>
+                  {finisher && isBountyEvent ? (
+                    <span className="rw-award" aria-label="Winnings Breakdown">
+                      <span className="rw-pct">Place Prize {unitMoney(recordedPrize)}</span>
+                      <span className="rw-pct">
+                        Bounties {unitMoney(num(finisher.bounty_winnings))}
+                      </span>
+                      <span className="tl-num tl-num--accent rw-prize">
+                        Total {unitMoney(cents(recordedPrize + num(finisher.bounty_winnings)))}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="tl-num tl-num--accent rw-prize">
+                      {recordedPrize > 0
+                        ? unitMoney(recordedPrize)
+                        : prize > 0
+                          ? chips(prize)
+                          : '-'}
+                    </span>
+                  )}
                 </li>
               );
             })}
           </ul>
+        )}
+        {isBountyEvent && bountyOnlyRecipients.length > 0 && (
+          <>
+            <p className="rw-rule">Bounty Winnings Outside The Place Payouts</p>
+            <ul className="tl-list rw-list">
+              {bountyOnlyRecipients.map((e) => (
+                <li
+                  key={e.id}
+                  className={`tl-row rw-row ${e.user_id === currentUserId ? 'tl-row--hero' : ''}`}
+                >
+                  <span className="tl-rank rw-rank">
+                    {e.position ? ordinal(e.position) : 'In Play'}
+                  </span>
+                  <span className="rw-row__mid">
+                    <span className="tl-name rw-who__name">{e.username}</span>
+                  </span>
+                  <span className="rw-award" aria-label="Winnings Breakdown">
+                    <span className="rw-pct">Bounties {unitMoney(e.bounty_winnings)}</span>
+                    <span className="tl-num tl-num--accent rw-prize">
+                      Total {unitMoney(e.bounty_winnings)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 

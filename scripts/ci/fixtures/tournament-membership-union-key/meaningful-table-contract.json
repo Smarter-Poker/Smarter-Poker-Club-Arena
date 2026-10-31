@@ -1,0 +1,122 @@
+{
+  "name": "union_pnl_inventory_touches",
+  "owner": "postgres",
+  "acl": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+  "rls": true,
+  "force_rls": false,
+  "kind": "r",
+  "persistence": "p",
+  "columns": [
+    {
+      "name": "event_id",
+      "type": "bigint",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "source_name",
+      "type": "text",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "row_id",
+      "type": "uuid",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "observed_at",
+      "type": "timestamp with time zone",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "transaction_id",
+      "type": "xid8",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "frame_observed_at",
+      "type": "timestamp with time zone",
+      "notnull": false,
+      "default": null
+    },
+    {
+      "name": "operation",
+      "type": "text",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "tournament_id",
+      "type": "text",
+      "notnull": false,
+      "default": null
+    },
+    {
+      "name": "union_id",
+      "type": "text",
+      "notnull": false,
+      "default": null
+    }
+  ],
+  "constraints": [
+    {
+      "name": "union_pnl_inventory_touches_pkey",
+      "definition": "PRIMARY KEY (event_id)",
+      "validated": true
+    },
+    {
+      "name": "union_pnl_inventory_touches_source_name_check",
+      "definition": "CHECK ((source_name = ANY (ARRAY['tournament_players'::text, 'tournaments'::text])))",
+      "validated": true
+    }
+  ],
+  "indexes": [
+    {
+      "definition": "CREATE INDEX union_pnl_inventory_touches_identity ON public.union_pnl_inventory_touches USING btree (source_name, row_id, event_id) INCLUDE (operation, union_id)",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    },
+    {
+      "definition": "CREATE INDEX union_pnl_inventory_touches_week ON public.union_pnl_inventory_touches USING btree (source_name, observed_at)",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX union_pnl_inventory_touches_pkey ON public.union_pnl_inventory_touches USING btree (event_id)",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    }
+  ],
+  "policies": null,
+  "triggers": [
+    {
+      "name": "original_pnl_immutable",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 58,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": false,
+        "tginitdeferred": false
+      },
+      "function": "fn_union_pnl_inventory_immutable()",
+      "constraint_definition": null,
+      "definition": "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_inventory_touches FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()"
+    }
+  ]
+}

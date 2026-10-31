@@ -1,3 +1,9 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
+import {
+  pendingAppearancePatch,
+  pendingAppearanceIntents,
+} from '../../lib/appearanceIntentJournal';
+import { resumePendingAppearance } from '../../lib/applyTableAppearance';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THEME SETTINGS MODAL — Bible V8 §11.2
@@ -14,7 +20,7 @@
  *           cards_id, face_deck_id
  */
 
-import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TABLE_SKINS,
   TABLE_BACKGROUNDS,
@@ -39,7 +45,6 @@ import {
   isCardBackUnlocked,
 } from './CardImage';
 import { supabase } from '../../lib/supabase';
-import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import { useToast } from '../common/Toast';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './ControlThemeTokens.css';
@@ -707,39 +712,35 @@ export function ThemeSettingsModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const vipPromptRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<ThemeTab>('themes');
-  const [backgroundGroup, setBackgroundGroup] = useState<BackgroundGroup>('places-rooms');
-  const scopeKey = `ca_table_studio_scope:${userId || 'guest'}`;
-  const readScope = () => {
-    const saved = getLocalStorage<string>(scopeKey, 'ALL');
-    return (GAME_TYPES as readonly string[]).includes(saved) ? saved : 'ALL';
-  };
-  const [gameType, setGameType] = useState<string>(readScope);
-  useLayoutEffect(() => {
-    /* Read on account handoff AND each time the Studio opens. Settings, the
-       hamburger menu and the table panel each keep a closed instance mounted,
-       so reading only at mount let one instance save to the scope another had
-       already moved off (2026-10-16). A choice made while open is written to
-       storage before setGameType, so reopening returns that same choice. */
-    if (isOpen) setGameType(readScope());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, isOpen]);
-  useEffect(() => {
-    // Another browser tab moved the scope: follow it while this one is open.
-    if (!isOpen) return;
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === scopeKey) setGameType(readScope());
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, isOpen]);
+  const [activeTab, setActiveTab] = usePlayerPreference<ThemeTab>(
+    'tableStudio.tab',
+    'themes',
+    'global'
+  );
+  const [backgroundGroup, setBackgroundGroup] = usePlayerPreference<BackgroundGroup>(
+    'tableStudio.backgroundGroup',
+    'places-rooms',
+    'global'
+  );
+  const [gameType, setGameType] = usePlayerPreference<string>(
+    'tableStudio.gameType',
+    'ALL',
+    'global'
+  );
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
   const [previewFinalTable, setPreviewFinalTable] = useState(false);
   const [previewAvatars, setPreviewAvatars] = useState<string[]>([]);
-  const [assetFilter, setAssetFilter] = useState<AssetFilter>('all');
-  const [assetSearch, setAssetSearch] = useState('');
+  const [assetFilter, setAssetFilter] = usePlayerPreference<AssetFilter>(
+    'tableStudio.assetFilter',
+    'all',
+    'global'
+  );
+  const [assetSearch, setAssetSearch] = usePlayerPreference(
+    'tableStudio.assetSearch',
+    '',
+    'global'
+  );
   const collections = useTableStudioCollections(isOpen, userId);
   const appearanceRealtime = useUserThemeRealtime(userId, isOpen);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
@@ -1277,7 +1278,6 @@ export function ThemeSettingsModal({
     }
 
     setActiveTab(intent.tab);
-    setAssetSearch('');
     if (intent.tab === 'background') {
       setBackgroundGroup(BACKGROUND_SKIN_IDS.has(intent.assetId) ? 'skins' : 'places-rooms');
     }
@@ -1459,6 +1459,7 @@ export function ThemeSettingsModal({
             // tile at all and the tab looks like it forgot the user's choice.
             cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
             faceDeckId: normalizeFaceDeckId(row?.face_deck_id),
+            ...pendingAppearancePatch(userId, gameType),
           });
           themeLoadReadyScopeRef.current = requestedScope;
           setThemeLoadState('ready');
@@ -1524,10 +1525,24 @@ export function ThemeSettingsModal({
     };
   }, [appearanceRealtime.state, isOpen, userId]);
 
+  // Resume an interrupted choice once on this explicit editor opening. The
+  // existing observation cadence below/above never retries a save.
+  useEffect(() => {
+    if (!isOpen || !userId || !pendingAppearanceIntents(userId).length) return;
+    let current = true;
+    void resumePendingAppearance(userId).then(() => {
+      if (!current) return;
+      themeReadRef.current = null;
+      setThemeLoadRevision((revision) => revision + 1);
+    });
+    return () => {
+      current = false;
+    };
+  }, [isOpen, userId]);
+
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {
       if (mode === uiPreference) return;
-      const previous = uiPreference;
       const revision = ++modeRevisionRef.current;
       setUiMode(mode, userId || undefined);
 
@@ -1536,8 +1551,7 @@ export function ThemeSettingsModal({
       setModeSaving(true);
       const result = await persistInterfaceTheme(userId, mode);
       if (!result.ok && modeRevisionRef.current === revision) {
-        setUiMode(previous, userId);
-        toast.error('Could Not Save Interface Mode. Please Try Again.');
+        toast.error('Interface Mode Saved On This Device Only. Could Not Sync To Your Account.');
         reportError(result.error, 'ThemeSettingsModal.Interface_mode_save_failed');
       }
       if (modeRevisionRef.current === revision) setModeSaving(false);
@@ -1546,7 +1560,7 @@ export function ThemeSettingsModal({
   );
 
   /**
-   * APPLY NOW, PERSIST, AND UNDO IF THE PERSIST FAILED.
+   * APPLY NOW AND PERSIST. INTERRUPTED SAVES KEEP THE CHOSEN VALUE.
    *
    * Dan 2026-08-25: a selection must "actually change and update in real time
    * when selected" AND "need a success toast or save feature". Both, and they
@@ -1555,8 +1569,8 @@ export function ThemeSettingsModal({
    *   1. the new selection is broadcast on the bus IMMEDIATELY, so the felt
    *      under the modal repaints on the tap rather than after a round trip;
    *   2. it is written to user_theme_settings;
-   *   3. if that write fails the UI is put BACK — state, bus and all — and the
-   *      failure is reported. It previously toasted the error while leaving the
+   *   3. a definitive refusal restores the prior value; a network interruption
+   *      keeps the choice and original request pending, and reports the failure. It previously toasted the error while leaving the
    *      tile ticked and the table repainted, so the next time the player
    *      opened the modal their choice had silently reverted.
    */
@@ -1644,7 +1658,8 @@ export function ThemeSettingsModal({
       /* Optimistic, then honest: if the save could not happen at all (no
          signed-in user), put the tick back where it was rather than leaving
          the player looking at a selection the server never received. A
-         FAILED write already restores `previous` inside handleSave. */
+         definitive refusal restores `previous` inside handleSave; interrupted
+         writes retain the selected value and original mutation identity. */
       const before = selectionRef.current;
       const next = { ...before, ...newSel };
       replaceSelection(next);
@@ -2058,7 +2073,6 @@ export function ThemeSettingsModal({
 
   const activateTab = (tab: ThemeTab) => {
     setActiveTab(tab);
-    setAssetSearch('');
   };
 
   const gameTypeLabel = GAME_TYPE_LABELS[gameType] ?? gameType;
@@ -2183,7 +2197,6 @@ export function ThemeSettingsModal({
                   value={gameType}
                   onChange={(e) => {
                     gameTypeRef.current = e.target.value;
-                    setLocalStorage(scopeKey, e.target.value);
                     setGameType(e.target.value);
                   }}
                 >

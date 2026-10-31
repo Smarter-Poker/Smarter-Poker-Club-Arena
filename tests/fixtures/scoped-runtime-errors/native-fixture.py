@@ -22,6 +22,162 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_rebuy_diagnostic_keeps_selected_generation_and_outcome_only(self):
+        value = {'schema': 'horse-rebuy-decision/v1', 'tournamentId': EVENT, 'userId': TABLE,
+                 'handNumber': 777, 'choice': True, 'phase': 'purchase_unproven',
+                 'bustAtMs': 1000, 'promptUntilMs': 31000, 'observedAtMs': 31001,
+                 'remainingMs': -1, 'elapsedMs': 500, 'sqlstate': '55000', 'failureClass': 'cutoff',
+                 'secret': 'PRIVATE', 'message': 'PRIVATE arbitrary error'}
+        raw = (STAMP+'[Tournament.horse_rebuy_decision] '+json.dumps(value)+'\n').encode()
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 1)
+        decision = result['records'][0]['rebuyDecision']
+        self.assertEqual(decision['handNumber'], 777)
+        self.assertEqual(decision['remainingMs'], -1)
+        self.assertEqual(decision['failureClass'], 'cutoff')
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        for key, invalid in [('phase', 'PRIVATE'), ('phase', []), ('tournamentId', []), ('handNumber', True), ('choice', 1),
+                             ('elapsedMs', 'PRIVATE'), ('tournamentId', TABLE)]:
+            changed = {**value, key: invalid}
+            self.assertIsNone(reader.rebuy_decision(['[Tournament.horse_rebuy_decision] '+json.dumps(changed)], {EVENT}))
+
+    def test_continuation_failure_retains_only_fixed_category_and_phase(self):
+        cases = [
+            ('Error: Hand Continuation Write Is Unproven',
+             '    at retainHandContinuation (/app/dist/services/supabase/handContinuation.js:41:15)',
+             'write_unproven', 'retain'),
+            ('Error: Hand Recovery Requires The External Runout Original',
+             '    at HandController.serializeRecoveryState (/app/dist/engine/HandController.js:12:3)',
+             'external_runout_original_required', 'capture'),
+            ('Error: PRIVATE player cards deck arbitrary error',
+             '    at ServerTableEngine.handleHandEvent (/app/dist/engine/ServerTableEngine.js:42:6)',
+             'unknown', 'dispatch'),
+        ]
+        for message, frame, category, phase in cases:
+            raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '+message+'\n'
+                   +STAMP+frame+'\n'+STAMP+'  PRIVATE credentials cards deck\n').encode()
+            result = reader.extract(raw, SCOPES)
+            self.assertEqual(result['matchingRecords'], 1)
+            record = result['records'][0]
+            self.assertEqual(record['context'], 'ServerTableEngine.hand_continuation_unproven')
+            self.assertEqual(record['continuationFailure'], {'category': category, 'phase': phase})
+            self.assertEqual(record['scopeIds'], [TABLE])
+            self.assertNotIn('PRIVATE', json.dumps(result))
+            self.assertNotIn('/app/', json.dumps(result))
+
+    def test_continuation_failure_requires_exact_selected_context_and_whole_message(self):
+        for context in [f'ServerTableEngine.{EVENT}.hand_continuation_unproven',
+                        f'ServerTableEngine.{TABLE}.hand_continuation_unproven_extra']:
+            raw = (STAMP+'['+context+'] Error: Hand Continuation Write Is Unproven\n').encode()
+            self.assertEqual(reader.extract(raw, SCOPES)['matchingRecords'], 0)
+        raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '
+               +'Error: Hand Continuation Write Is Unproven PRIVATE\n').encode()
+        record = reader.extract(raw, SCOPES)['records'][0]
+        self.assertEqual(record['continuationFailure'], {'category': 'unknown', 'phase': 'unknown'})
+        self.assertNotIn('PRIVATE', json.dumps(record))
+
+    def test_continuation_failure_does_not_infer_timeout_from_generic_refusal(self):
+        raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '
+               +'Error: Hand Continuation Write Is Unproven\n'
+               +STAMP+'    at arbitraryTimeout (/PRIVATE/path:1:2)\n').encode()
+        record = reader.extract(raw, SCOPES)['records'][0]
+        self.assertEqual(record['continuationFailure'], {'category': 'write_unproven', 'phase': 'unknown'})
+
+    def test_restart_read_requires_opt_in_and_original_window(self):
+        self.assertFalse(reader.restart_incident_requested(None, None))
+        window = {'since': '2026-10-28T23:00:00Z', 'until': '2026-10-28T23:15:00Z'}
+        self.assertTrue(reader.restart_incident_requested(True, window))
+        for value, selected in [(True, None), (False, window), (1, window), ('true', window)]:
+            with self.assertRaises(ValueError):
+                reader.restart_incident_requested(value, selected)
+
+    def test_restart_signs_do_not_export_arbitrary_fatal_payloads(self):
+        raw = (STAMP+'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory PRIVATE\n'
+               +STAMP+'unrelated PRIVATE text\n'
+               +'FATAL ERROR: Reached heap limit Allocation failed undated PRIVATE\n').encode()
+        result = reader.restart_log_signs(raw)
+        self.assertEqual(result['matchingRecords'], 2)
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        self.assertTrue(all(set(r) == {'timestamp', 'kind'} for r in result['records']))
+
+    def test_restart_sources_are_fixed_bounded_read_only_and_sanitized(self):
+        window = {'since': '2026-10-28T23:00:00Z', 'until': '2026-10-28T23:15:00Z'}
+        events = [{'Action': 'die', 'timeNano': 1793228940000000000,
+                   'Actor': {'Attributes': {'name': 'club-arena-engine', 'exitCode': '137', 'PRIVATE': 'SECRET'}}},
+                  {'Action': 'die', 'timeNano': 1, 'Actor': {'Attributes': {'name': 'other'}}}]
+        sources = [json.dumps({'Running': True, 'OOMKilled': False, 'ExitCode': 0,
+                               'StartedAt': '2026-10-28T23:09:14Z', 'Error': 'SECRET'}).encode(),
+                   ('\n'.join(json.dumps(e) for e in events)).encode(),
+                   (STAMP+'Container /club-arena-engine unhealthy - Restarting PRIVATE\n').encode(),
+                   json.dumps({'MESSAGE': 'Out of memory: Killed process PRIVATE',
+                               '__REALTIME_TIMESTAMP': '1793228940000000'}).encode()]
+        with patch.object(reader, 'capture', side_effect=sources) as capture:
+            result = reader.read_restart_incident(window, b'')
+        self.assertEqual(len(capture.call_args_list), 4)
+        for call in capture.call_args_list:
+            command = call.args[0]
+            self.assertNotIn('restart', command)
+            self.assertNotIn('exec', command)
+            self.assertEqual(call.kwargs, {'seconds': 4})
+        self.assertEqual(result['sources']['events']['records'], [
+            {'action': 'die', 'timeNano': 1793228940000000000, 'exitCode': 137}])
+        self.assertEqual(result['sources']['kernel']['records'][0]['engineAttribution'], 'unproven')
+        self.assertNotIn('SECRET', json.dumps(result))
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        with patch.object(reader, 'capture', side_effect=OSError('SECRET')):
+            failed = reader.read_restart_incident(window, b'')
+        self.assertTrue(all(s == {'status': 'unavailable'} for s in failed['sources'].values()))
+
+    def test_failure_diagnostics_never_export_exception_or_transport_text(self):
+        cases = [(RuntimeError('PRIVATE host token query'), 'refused'),
+                 (ValueError('PRIVATE payload'), 'refused'),
+                 (OSError('PRIVATE path'), 'io_unavailable'),
+                 (subprocess.TimeoutExpired(['PRIVATE command'], 1, stderr=b'PRIVATE key'), 'timeout'),
+                 (RuntimeError('Log read exceeded bounded input'), 'input_bound'),
+                 (RuntimeError('Log read timed out'), 'timeout'),
+                 (RuntimeError('Public and host engine identity changed or differ'), 'identity_mismatch'),
+                 (Exception('PRIVATE unexpected'), 'unexpected')]
+        with patch.object(reader, 'FAILURE_STAGE', 'current_logs'):
+            for error, expected in cases:
+                result = reader.failure_diagnostic(error)
+                self.assertEqual(result, {'schema': 'scoped-runtime-failure/v1',
+                    'stage': 'current_logs', 'category': expected, 'readOnly': True})
+                self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_remote_failure_only_admits_exact_bounded_fixed_diagnostic(self):
+        valid = {'schema': 'scoped-runtime-failure/v1', 'stage': 'current_logs',
+                 'category': 'input_bound', 'readOnly': True}
+        variants = [valid, {**valid, 'payload': 'PRIVATE'}, {**valid, 'stage': 'PRIVATE'},
+                    {**valid, 'category': 'PRIVATE'}, {**valid, 'readOnly': False},
+                    {**valid, 'stage': []}, {**valid, 'category': {}},
+                    {**valid, 'schema': 'other'}]
+        for i, value in enumerate(variants):
+            reply = subprocess.CompletedProcess(['ssh'], 1, b'', json.dumps(value).encode())
+            result = reader.failure_diagnostic(reader.remote_failure(reply))
+            self.assertEqual(result['category'], 'input_bound' if i == 0 else 'transport_exit')
+            self.assertEqual(result['stage'], 'current_logs' if i == 0 else 'remote_transport')
+            self.assertNotIn('PRIVATE', json.dumps(result))
+        for code, stderr in [(255, b'PRIVATE auth host'), (1, b'x'*4097)]:
+            reply = subprocess.CompletedProcess(['ssh'], code, b'', stderr)
+            result = reader.failure_diagnostic(reader.remote_failure(reply))
+            self.assertEqual(result['category'], 'ssh_exit_255' if code == 255 else 'transport_exit')
+            self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_actual_failed_entry_emits_only_fixed_category_and_stage(self):
+        import base64
+        encoded = base64.b64encode(json.dumps({'scopes': 'PRIVATE_REQUEST',
+                                              'windowStart': None}).encode()).decode()
+        result = subprocess.run([sys.executable, str(ROOT/'scripts/ci/read-scoped-runtime-errors.py'),
+                                 '--remote', encoded], capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, '')
+        lines = result.stderr.splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(json.loads(lines[0]), {'schema': 'scoped-runtime-failure/v1',
+                         'stage': 'remote_admission', 'category': 'refused', 'readOnly': True})
+        self.assertNotIn('PRIVATE', result.stderr)
+        self.assertNotIn(encoded, result.stderr)
+
     def test_lease_metrics_accepts_and_strips_deployed_target_labels(self):
         config = (ROOT/'infra/monitoring/prometheus.yml').read_text()
         job = config.split('  - job_name: engine_game_server\n', 1)[1].split('    scrape_interval:', 1)[0]
@@ -202,6 +358,37 @@ class NativeLogReader(unittest.TestCase):
             self.assertFalse(result['archiveRead']['truncated'])
             self.assertFalse(result['archiveRead']['fullWindowCoverageProven'])
             self.assertNotIn('PRIVATE_SECRET', output.getvalue())
+
+    def test_archive_owner_admits_yesterday_and_exact_shared_age_boundary(self):
+        now = datetime.datetime(2026, 10, 28, 21, tzinfo=datetime.timezone.utc)
+        class FixedDateTime(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+        with patch.object(reader.datetime, 'datetime', FixedDateTime):
+            for hours in [36, 48]:
+                start = now-datetime.timedelta(hours=hours)
+                window = reader.log_window(start.strftime('%Y-%m-%dT%H:%M:%SZ'), now)
+                ended = start+datetime.timedelta(minutes=15)
+                with tempfile.TemporaryDirectory() as name:
+                    directory = Path(name)
+                    filename = ('engine-'+ended.strftime('%Y%m%dT%H%M%SZ')+'-started'+
+                        (start-datetime.timedelta(hours=1)).strftime('%Y%m%dT%H%M%S')+
+                        '-abcdef123456-c3ed8648.log.gz')
+                    line = start.strftime('%Y-%m-%dT%H:%M:%SZ')+' [Tournament.read] F06_ORIGINAL_CHANGED '+EVENT+' PRIVATE_SECRET\n'
+                    with gzip.open(directory/filename, 'wb') as out:
+                        out.write(line.encode())
+                    with patch.object(reader, 'ARCHIVE_DIRECTORY', directory):
+                        sources, metadata = reader.archived_window(window, b'', scopes=SCOPES)
+                    self.assertEqual(len(sources), 1)
+                    self.assertEqual(sources[0][0], line.encode())
+                    self.assertFalse(metadata['fullWindowCoverageProven'])
+                    self.assertNotIn('PRIVATE_SECRET', json.dumps(reader.extract_sources(b'', sources, SCOPES)))
+            old = {'since': '2026-10-26T20:59:59Z', 'until': '2026-10-26T21:14:59Z'}
+            with patch.object(reader.os, 'open') as opened:
+                with self.assertRaises(ValueError):
+                    reader.archived_window(old, b'')
+                opened.assert_not_called()
 
     def test_archive_fallback_recovers_original_window_without_current_identity(self):
         now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
@@ -481,6 +668,17 @@ class NativeLogReader(unittest.TestCase):
         self.assertEqual(result['records'][0]['attempt'], 4)
         self.assertEqual(reader.extract_mux_timings(b'')['records'], [])
 
+    def test_yesterdays_morning_and_exact_48_hour_boundary_remain_readable(self):
+        now = datetime.datetime(2026, 10, 28, 16, tzinfo=datetime.timezone.utc)
+        for value in ['2026-10-27T09:05:00Z', '2026-10-26T16:00:00Z']:
+            result = reader.log_window(value, now)
+            self.assertEqual(result['since'], value)
+            end = datetime.datetime.fromisoformat(result['until'].replace('Z', '+00:00'))
+            start = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+            self.assertEqual(end-start, datetime.timedelta(minutes=15))
+        with self.assertRaises(ValueError):
+            reader.log_window('2026-10-26T15:59:59Z', now)
+
     def test_historical_window_is_exactly_fifteen_minutes_and_recent(self):
         now = datetime.datetime(2026, 9, 27, 16, tzinfo=datetime.timezone.utc)
         start = '2026-09-27T14:25:00Z'
@@ -488,7 +686,7 @@ class NativeLogReader(unittest.TestCase):
             'since': start, 'until': '2026-09-27T14:40:00Z'})
         self.assertEqual(reader.log_window(None, now), None)
         for value in ['', {}, '2026-09-27T14:25:00Z; reboot', '2026-09-27T14:25:00+00:00',
-                      '2026-09-27T15:46:00Z', '2026-09-26T15:59:59Z', '2026-02-30T01:00:00Z']:
+                      '2026-09-27T15:46:00Z', '2026-09-25T15:59:59Z', '2026-02-30T01:00:00Z']:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 reader.log_window(value, now)
         command = reader.log_command(reader.log_window(start, now))

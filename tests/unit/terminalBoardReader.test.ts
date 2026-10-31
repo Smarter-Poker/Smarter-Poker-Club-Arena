@@ -17,7 +17,7 @@ vi.mock('@supabase/supabase-js', () => ({
       const query: any = {
         then: (resolve: any) => Promise.resolve(mock.rows[table]).then(resolve),
       };
-      for (const method of ['select', 'eq', 'in', 'is'])
+      for (const method of ['select', 'eq', 'in', 'is', 'abortSignal'])
         query[method] = (...args: unknown[]) => {
           mock.calls.push([method, ...args]);
           return query;
@@ -73,6 +73,14 @@ describe('closed board reader qualifies actual returned rows', () => {
     expect(mock.calls).toContainEqual(['eq', 'tournament_id', 'tournament']);
     expect(mock.calls).toContainEqual(['in', 'user_id', ['one', 'two']]);
     expect(mock.calls).toContainEqual(['is', 'left_at', null]);
+    const signals = (mock.calls as unknown[][])
+      .filter(([method]) => method === 'abortSignal')
+      .map(([, signal]) => signal as AbortSignal);
+    expect(signals).toHaveLength(3);
+    for (const signal of signals) {
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(signal.aborted).toBe(false);
+    }
   });
   it.each(['partial', 'duplicate', 'wrong-tournament', 'missing-seat', 'nonplaying'])(
     'refuses incomplete custody: %s',

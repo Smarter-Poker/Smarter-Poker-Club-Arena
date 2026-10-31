@@ -14,12 +14,19 @@ import { describe, expect, it, vi } from 'vitest';
 // File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
 vi.setConfig({ testTimeout: 90_000 });
 import { sliceBetween } from './helpers/sourceWindow';
+import { parse } from 'yaml';
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 const installer = read('server/scripts/install-engine-supervisor.sh');
 const checkpointShell = read('server/scripts/legacy-engine-checkpoint.sh');
 const checkpointTransport = read('server/scripts/legacy-engine-checkpoint.mjs');
+const predecessorEed = 'eed06fe51dea622069c661a6213d5b031ff3a9e3';
+const imageEed = 'sha256:2eb1c5a7279032240c5fff8a6b3ecf5dc6af735cc1227a51430d50dcae1b065b';
 const predecessor758 = '758610f3f844406bbbaee2f5100ced36d84fb943';
 const predecessorA0 = 'a0ab287d902879280f0c915e44f5222c5db4d7df';
 const predecessor8825 = '8825af51817f379c4261658ca29ecc9d8d81932d';
@@ -47,6 +54,9 @@ function probe(patch: Record<string, unknown> = {}, httpStatus = 200) {
     [
       '-c',
       `set -euo pipefail
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
+${entryRead}
 MIN_BREAK_REMAINING_MS=285000
 curl() { printf '%s\\n%s' "$CHECKPOINT_TEST_BODY" "$CHECKPOINT_TEST_HTTP"; }
 ${countdown}
@@ -58,7 +68,7 @@ legacy_checkpoint_countdown
       timeout: 3_000,
       env: {
         ...process.env,
-        CHECKPOINT_TEST_BODY: JSON.stringify({ running: true, maintenance }),
+        CHECKPOINT_TEST_BODY: JSON.stringify({ running: true, weeklyPayout: null, maintenance }),
         CHECKPOINT_TEST_HTTP: String(httpStatus),
       },
     }
@@ -66,10 +76,79 @@ legacy_checkpoint_countdown
 }
 
 describe('the exact legacy checkpoint enters the existing release transaction', () => {
+  it.each([
+    [4000, 75],
+    [-1, 75],
+    [41000, 1],
+    [15000, 0],
+  ])('bounds the absolute entry deadline offset %s before intent', (offset, status) => {
+    // This case judges an offset at one instant. A second Node startup under
+    // load consumed >1s and turned the deliberately invalid 41s input into
+    // an allowed remaining 40s. Keep the clock and deadline on the same instant.
+    const now = Date.now();
+    const block = checkpointShell.slice(
+      checkpointShell.indexOf('RUN_ID="$1"'),
+      checkpointShell.indexOf('# /var/lock')
+    );
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail
+ die() { exit 1; }
+ defer() { exit 75; }
+ date() { printf '%s\\n' "$CHECKPOINT_TEST_NOW_MS"; }
+ ${block}
+ printf bounded
+ `,
+        'fixture',
+        '40948063249-1',
+        String(now + offset),
+        String(Math.floor(now / 1000) + 299),
+      ],
+      {
+        encoding: 'utf8',
+        timeout: 3000,
+        env: { ...process.env, CHECKPOINT_TEST_NOW_MS: String(now) },
+      }
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(status);
+    expect(result.stdout).toBe(status === 0 ? 'bounded' : '');
+  });
+
+  it('propagates one forty-second deadline from before countdown through native cleanup', () => {
+    const entry = transaction.indexOf('ENTRY_STARTED_MS="$(date +%s%3N)"');
+    const countdown = transaction.indexOf('if ! LEGACY_COUNTDOWN_END=', entry);
+    const invoke = transaction.indexOf(
+      '"$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))"',
+      entry
+    );
+    expect(entry).toBeGreaterThan(0);
+    expect(countdown).toBeGreaterThan(entry);
+    expect(invoke).toBeGreaterThan(countdown);
+    expect(checkpointShell).toContain('"$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"');
+    expect(checkpointTransport).toContain('checkpointDeadlineMs: Number(process.argv[5])');
+    expect(checkpointTransport).toContain('checkpointDeadlineMs - cleanupBudgetMs');
+    expect(checkpointTransport).toContain(
+      'checkpointDeadlineMs - cleanupBudgetMs - receiptReserveMs'
+    );
+    expect(checkpointTransport).toContain('checkpointDeadlineMs - receiptReserveMs');
+    expect(checkpointTransport).toContain(
+      'checkpointDeadlineMs <= startedAt + cleanupBudgetMs + receiptReserveMs'
+    );
+    expect(checkpointTransport).toMatch(
+      /const receiptPublished = await publishLegacyCheckpointReceipt\(/
+    );
+    expect(checkpointTransport).toContain('if (!receiptPublished) process.exit(1)');
+    expect(checkpointTransport).toContain('stream.write(JSON.stringify(result)');
+    expect(checkpointTransport).toContain('Math.min(deadlineMs - 100, Date.now() + 900)');
+  });
+
   it('checks the installed custody contract before saving intent or opening inspector access', () => {
     const prerequisite = checkpointShell.indexOf('--mixed-custody-contract');
-    const intent = checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3');
-    const inspector = checkpointShell.indexOf('node --input-type=module');
+    const intent = checkpointShell.indexOf('CHECKPOINT_INTENT="$(checkpoint_entry_read python3');
+    const inspector = checkpointShell.indexOf('node --no-inspect --input-type=module');
     expect(prerequisite).toBeGreaterThan(0);
     expect(prerequisite).toBeLessThan(intent);
     expect(intent).toBeLessThan(inspector);
@@ -102,12 +181,16 @@ die() { echo "$*" >&2; exit 1; }
 # defer is declared outside the window this test cuts, so the harness
 # supplies it.
 defer() { echo "$*" >&2; exit 75; }
+checkpoint_entry_read() { "$@"; }
 timeout() { printf '%s\\n' "$*"; return "$PREREQUISITE_STATUS"; }
 curl() { printf '%s' "$PREREQUISITE_HEALTH"; }
 CONTROL_DIR=/immutable-reviewed-control
 LEGACY_SHA=${predecessor8825}
 REQUEST_ROOT="$PREREQUISITE_ROOT"
 RUN_ID=35405450271-1
+date() { if [ "$1" = +%s%3N ]; then "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; else command date "$@"; fi; }
+CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
+CHECKPOINT_BREAK_END_EPOCH="$CHECKPOINT_TEST_BREAK_END"
 REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
 CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
 STARTED_AT=2026-09-18T21:55:50.88305198Z
@@ -121,10 +204,13 @@ printf '%s' inspector-boundary-reached
             timeout: 3000,
             env: {
               ...process.env,
+              CHECKPOINT_TEST_NODE: process.execPath,
+              CHECKPOINT_TEST_BREAK_END: String(Math.floor(Date.now() / 1000) + 299),
               PREREQUISITE_STATUS: String(status),
               PREREQUISITE_ROOT: requestRoot,
               PREREQUISITE_HEALTH: JSON.stringify({
                 running: true,
+                weeklyPayout: null,
                 version: predecessor8825.slice(0, 8),
                 releaseSha: predecessor8825,
                 instanceId: '1-3846b8bb',
@@ -134,6 +220,7 @@ printf '%s' inspector-boundary-reached
                   phase: 'counting_down',
                   durableConfirmed: true,
                   remainingMs: 299000,
+                  breakEndsAt: Math.floor(Date.now() / 1000) * 1000 + 299000,
                 },
               }),
             },
@@ -159,6 +246,8 @@ printf '%s' inspector-boundary-reached
   );
 
   it.each([
+    [predecessorEed, imageEed, 0],
+    [predecessorEed, image8825, 1],
     [predecessor8825, image8825, 0],
     [predecessor8825, image758, 1],
     [predecessor758, image758, 0],
@@ -174,7 +263,7 @@ printf '%s' inspector-boundary-reached
     ['a'.repeat(40), image758, 1],
   ])('binds sealed predecessor %s to its exact immutable image', (sha, image, status) => {
     const selection = checkpointShell.slice(
-      checkpointShell.indexOf('LEGACY_SHA="$(timeout'),
+      checkpointShell.indexOf('LEGACY_SHA="$(checkpoint_entry_read timeout'),
       checkpointShell.indexOf('\nIDENTITY=')
     );
     const result = spawnSync(
@@ -184,6 +273,7 @@ printf '%s' inspector-boundary-reached
         `set -euo pipefail
 CONTROL_DIR=/unexecuted-fixture
 die() { exit 1; }
+checkpoint_entry_read() { "$@"; }
 timeout() { case "\${*: -1}" in desired-sha) printf '%s' "$PROFILE_SHA";; desired-image-id) printf '%s' "$PROFILE_IMAGE";; *) exit 2;; esac; }
 ${selection}
 printf '%s' "$LEGACY_IMAGE"
@@ -201,6 +291,7 @@ printf '%s' "$LEGACY_IMAGE"
   });
 
   it.each([
+    predecessorEed,
     predecessor8825,
     predecessor758,
     predecessorA0,
@@ -220,6 +311,7 @@ CHECKPOINT_PREDECESSOR_SHA="$PROFILE_SHA"
 CHECKPOINT_758_SHA=${predecessor758}
 CHECKPOINT_A0_SHA=${predecessorA0}
 CHECKPOINT_8825_SHA=${predecessor8825}
+CHECKPOINT_EED_SHA=${predecessorEed}
 CERTIFICATE_RC=2
 RECOVERY_ADMISSION_MISSED=0
 legacy_checkpoint_countdown() { return 1; }
@@ -232,17 +324,25 @@ fi
     );
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe(
-      [predecessor8825, predecessor758, predecessorA0].includes(sha) ? 'existing-event:1' : ''
+      [predecessorEed, predecessor8825, predecessor758, predecessorA0].includes(sha)
+        ? 'existing-event:1'
+        : ''
     );
   });
 
   it('passes only the seal-selected closed profile into the native transport', () => {
-    expect(checkpointShell).toContain('node --input-type=module - "$INSTANCE" "$LEGACY_SHA"');
+    expect(checkpointShell).toContain(
+      'node --no-inspect --input-type=module - "$INSTANCE" "$LEGACY_SHA"'
+    );
     const production = checkpointTransport.slice(
       checkpointTransport.indexOf("if (process.argv[1] === '-'")
     );
     expect(production).toContain('const checkpointRelease = process.argv[3]');
     expect(production).toContain('].includes(checkpointRelease)');
+    expect(production).toContain(predecessorEed);
+    expect(production).toContain('discoverEngines: retainedEed');
+    expect(production).toContain('retainedOriginalCheckpointGuard');
+    expect(installer).toContain('retained-original-checkpoint-guard.mjs');
     expect(production).toContain(predecessor758);
     expect(production).toContain(predecessorA0);
     expect(production).toContain('releaseSha: checkpointRelease');
@@ -304,7 +404,7 @@ fi
     // still pay before the guard reads the same reserve - see
     // tests/the-release-enters-the-break-with-time-to-finish.law.test.ts.
     const entry = transaction.indexOf(
-      'legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")',
+      'legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS" "$LEGACY_ENTRY_BREAK_END_EPOCH" locked)',
       freshness
     );
     const noReplay = transaction.indexOf('[ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ]', entry);
@@ -375,11 +475,9 @@ fi
       'LEGACY_MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS - LEGACY_CHECKPOINT_BUDGET_SECONDS) * 1000))'
     );
     expect((150 + 135 + 0 - 40) * 1000).toBe(245_000);
-    // The helper's own entry pre-check demands the guard's reserve plus the
-    // whole budget (245000 + 40000 = 285000, the same entry figure the
-    // transaction admitted on), and its hand-off comment names the legacy
-    // figure the caller reads next.
-    expect(checkpointShell).toContain('reserve=245000+40000');
+    // Initial admission remains 285000. The physical helper debits only time
+    // spent inside that same entry and retains the 245000 guard reserve.
+    expect(checkpointShell).toContain('reserve=245000+remaining_entry');
     expect(245_000 + 40_000).toBe(285_000);
     expect(checkpointShell).toContain('m.get("remainingMs",0)>=reserve');
     expect(checkpointShell).toContain('the 245000ms legacy reserve');
@@ -567,5 +665,26 @@ describe('installed mixed custody contract prerequisite', () => {
     const outcome = run(qualified, '', predecessor758);
     expect(outcome.exit).toBe(1);
     expect(outcome.requests).toEqual([]);
+  });
+});
+
+describe('historical checkpoint qualification inputs', () => {
+  it('supplies historical source objects and blobs before both existing hosted server gates', () => {
+    const ci = parse(read('.github/workflows/ci.yml'));
+    const release = parse(read('.github/workflows/auto-deploy-hetzner.yml'));
+    const ciCheckout = ci.jobs.server_shards.steps.find(
+      (step: { name?: string }) => step.name === 'Checkout'
+    );
+    const releaseCheckout = release.jobs.preflight.steps.find(
+      (step: { name?: string }) => step.name === 'Checkout the requested immutable commit'
+    );
+    for (const checkout of [ciCheckout, releaseCheckout]) {
+      expect(checkout.with['fetch-depth']).toBe(0);
+      expect(checkout.with.filter).toBeUndefined();
+    }
+    const driver = read('server/scripts/qualification/retained-original-checkpoint/qualify.mjs');
+    expect(driver).toContain("GIT_NO_LAZY_FETCH: '1'");
+    expect(driver).toContain("name.startsWith('GIT_')");
+    expect(driver).not.toContain("realpathSync(join(ROOT, 'node_modules'))");
   });
 });

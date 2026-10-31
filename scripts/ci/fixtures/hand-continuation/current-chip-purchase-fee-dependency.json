@@ -1,0 +1,6 @@
+{
+  "signature": "fn_ca_tournament_purchase_fee_ratio(numeric,numeric,integer)",
+  "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_purchase_fee_ratio(p_buy_in numeric, p_buy_in_fee numeric, p_unit_cents integer)\n RETURNS numeric\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT CASE WHEN p_unit_cents=100 AND p_buy_in=0 AND p_buy_in_fee=0 THEN 0\n ELSE public.fn_ca_tournament_fee_ratio(p_buy_in,p_buy_in_fee) END;\n$function$\n",
+  "definition_md5": "df828634be00eac4e90cdee78dd826c9",
+  "acl": "{postgres=X/postgres}"
+}

@@ -1,3 +1,18 @@
+# Credential-bearing WebSocket subprotocols must be removed from all request/error logs.
+{
+	log {
+		format filter {
+			wrap json
+			fields {
+				request>headers>Sec-WebSocket-Protocol delete
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				resp_headers>Sec-WebSocket-Protocol delete
+			}
+		}
+	}
+}
+
 # Club Arena static origin (2026-09-03).
 #
 # Vercel's World Hub rewrites /hub/club-arena/* to this host. The browser never
@@ -19,6 +34,14 @@ ca-static.smarter.poker {
 	encode zstd gzip
 	header X-Robots-Tag "noindex, nofollow"
 	header -Server
+
+	# Separate read-only process on the static-origin host; no engine upstream.
+	handle_path /private-record/* {
+		header Cache-Control "no-store"
+		reverse_proxy unix//run/ca-private-record-gateway/active.sock {
+			stream_close_delay 5m
+		}
+	}
 
 	@pooled path /assets/* /fonts/*
 	handle @pooled {

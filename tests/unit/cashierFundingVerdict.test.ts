@@ -11,7 +11,7 @@ import {
 describe('the production cashier canary derives the batch verdict from the printed funding wallet', () => {
   it('reads the maintained unfunded identity as short of a 10.20 batch', () => {
     expect(fundingCoverage('0', 10.2)).toBe('short');
-    expect(batchVerdictFor('short', 2)).toBe('Insufficient Chips In The Funding Wallet');
+    expect(batchVerdictFor('short')).toBe('Insufficient Chips In The Funding Wallet');
   });
 
   it.each([
@@ -36,19 +36,19 @@ describe('the production cashier canary derives the batch verdict from the print
     expect(fundingCoverage('10.20', Number.POSITIVE_INFINITY)).toBe('unknown');
   });
 
-  it('reads a funded wallet as covering, and counts the recipients in the verdict', () => {
+  it('reads a funded wallet as covering without inventing a success status', () => {
     expect(fundingCoverage('11', 10.2)).toBe('covers');
     expect(fundingCoverage('1.2K', 10.2)).toBe('covers');
     expect(fundingCoverage('3.2M', 10.2)).toBe('covers');
-    expect(batchVerdictFor('covers', 2)).toBe('2 Recipients Ready For Server Verification');
+    expect(batchVerdictFor('covers')).toBe('');
   });
 
   it('names an unreadable agent wallet and refuses to guess on a straddling figure', () => {
     expect(fundingCoverage('--', 10.2)).toBe('unreadable');
-    expect(batchVerdictFor('unreadable', 2)).toBe('Agent Wallet Could Not Be Verified');
+    expect(batchVerdictFor('unreadable')).toBe('Selected Wallet Could Not Be Verified');
     // "10" is anything in [10, 11): it may or may not cover 10.20.
     expect(fundingCoverage('10', 10.2)).toBe('unknown');
-    expect(batchVerdictFor('unknown', 2)).toBeNull();
+    expect(batchVerdictFor('unknown')).toBeNull();
     expect(fundingCoverage('ten', 10.2)).toBe('unknown');
   });
 
@@ -85,6 +85,9 @@ describe('the production cashier canary derives the batch verdict from the print
     );
     expect(verdictReader).toContain("getByRole('region', { name: fundingLabel, exact: true })");
     expect(verdictReader).not.toMatch(/innerText\(\)/);
+    expect(verdictReader).toContain("dialog.locator('#cashier-amount-validation')");
+    expect(verdictReader).toContain("toHaveAttribute('role', 'status')");
+    expect(verdictReader).toContain("getByRole('button', { name: 'Confirm', exact: true })");
     const page = readFileSync(resolve(root, 'src/pages/CashierTradePage.tsx'), 'utf8');
     const row = page.slice(
       page.indexOf('function CashierWalletRow('),

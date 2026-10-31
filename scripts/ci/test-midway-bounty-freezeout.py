@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='bounty-', dir=parent) as folder:
           rebuy_cost numeric default 0,rebuy_chips integer default 0,rebuy_levels integer default 0,
           max_rebuys integer default 0,max_reentries integer default 0,
           addon_cost numeric default 0,addon_chips integer default 0,addon_levels integer default 0,
-          late_reg_levels integer default 0,late_reg_mins integer default 0);''')
+          late_reg_levels integer default 0,late_reg_mins integer default 0,blind_structure text,addon_from_start boolean,addon_break_minutes integer);''')
         old=(root/'supabase/migrations/20261022044423_bounty_mtts_rebuy_until_registration_closes.sql').read_text()
         fn=old[old.index('CREATE OR REPLACE FUNCTION'):old.index('COMMENT ON FUNCTION')]
         sql(fn+'''CREATE TRIGGER normalize BEFORE INSERT OR UPDATE ON tournaments
@@ -57,6 +57,21 @@ with tempfile.TemporaryDirectory(prefix='bounty-', dir=parent) as folder:
         assert event(future,schedule,bounty_amount='11').startswith('true,true,')
         assert event(future,schedule,is_mystery_bounty='true').startswith('true,true,')
         assert event(future,schedule,status="'RUNNING'",is_rebuy='true',is_reentry='true',max_rebuys='5')=='true,true,5'
+        sql("CREATE TABLE tournament_schedules(id uuid,config jsonb); CREATE FUNCTION fn_ca_mtt_blind_contract(text,integer) RETURNS jsonb LANGUAGE sql AS $$SELECT '{}'::jsonb$$;")
+        sched='a70c1028-1800-2500-9000-000000000001'
+        sql("INSERT INTO tournament_schedules VALUES ('"+sched+"','{\"blindStructure\":[{\"level\":1,\"smallBlind\":25,\"bigBlind\":50,\"durationMinutes\":8},{\"level\":2,\"smallBlind\":30,\"bigBlind\":60,\"durationMinutes\":8}]}');")
+        event(future,sched,is_bounty='false',buy_in_amount='22.5',buy_in_fee='2.5',add_on_available='true')
+        assert sql('SELECT add_on_available FROM tournaments;')=='t', 'baseline reproduces add-on override'
+        sql((root/'supabase/migrations/20261028162424_daily_6pm_rebuy_terms.sql').read_text())
+        event(future,sched,is_bounty='false',buy_in_amount='22.5',buy_in_fee='2.5',add_on_available='true')
+        assert sql("SELECT concat_ws(',',starting_chips,max_rebuys,rebuy_cost,rebuy_chips,is_reentry,add_on_available,blind_structure::jsonb->0->>'bigBlind') FROM tournaments;")=='15000,1,25,15000,f,f,50'
+        event(future,is_bounty='false',buy_in_amount='22.5',buy_in_fee='2.5',add_on_available='true')
+        assert sql('SELECT add_on_available FROM tournaments;')=='t', 'unrelated event preserved'
+        event(future,sched,is_bounty='false',status="'RUNNING'",buy_in_amount='22.5',buy_in_fee='2.5',add_on_available='true')
+        assert sql('SELECT add_on_available FROM tournaments;')=='t', 'running contract preserved'
         print('PASS: reproduced default override; exact event and future series stay freezeout; unrelated clubs, prices, mystery and running contracts preserved')
     finally:
         run('pg_ctl','-D',str(scratch/'data'),'-m','immediate','stop')
+
+# The existing native CI step also exercises the new fixed-field satellite creator.
+subprocess.run([os.environ.get('PYTHON', 'python3'), '-B', str(root/'scripts/ci/test-fixed-sng-satellites.py')], check=True)

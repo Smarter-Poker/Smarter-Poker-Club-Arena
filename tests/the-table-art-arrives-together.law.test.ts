@@ -76,7 +76,7 @@ describe('TablePage paints the art the loader decoded, and waits for it', () => 
 });
 
 describe('the loader retries a failed or empty image', () => {
-  type Behaviour = 'error' | 'empty' | 'ok';
+  type Behaviour = 'error' | 'empty' | 'decode-error' | 'ok';
   let plan: Behaviour[] = [];
   const srcs: string[] = [];
 
@@ -91,16 +91,20 @@ describe('the loader retries a failed or empty image', () => {
       naturalWidth = 0;
       naturalHeight = 0;
       decoding = 'auto';
+      behaviour: Behaviour = 'ok';
       decode() {
-        return Promise.resolve();
+        return this.behaviour === 'decode-error'
+          ? Promise.reject(new DOMException('Invalid Image Data', 'EncodingError'))
+          : Promise.resolve();
       }
       set src(v: string) {
         srcs.push(v);
         const b = plan.shift() ?? 'ok';
+        this.behaviour = b;
         setTimeout(() => {
           if (b === 'error') this.onerror?.();
           else {
-            if (b === 'ok') {
+            if (b !== 'empty') {
               this.naturalWidth = 10;
               this.naturalHeight = 10;
             }
@@ -124,6 +128,21 @@ describe('the loader retries a failed or empty image', () => {
     await vi.runAllTimersAsync();
     await expect(done).resolves.toBe('/assets/felt.png?r=2');
     expect(srcs).toEqual(['/assets/felt.png', '/assets/felt.png?r=1', '/assets/felt.png?r=2']);
+    expect(isTableImageDecoded('/assets/felt.png')).toBe(true);
+  });
+
+  it('does not certify or cache a loaded image whose decode failed', async () => {
+    const { loadTableImage, isTableImageDecoded, decodedTableImageUrl } =
+      await import('../src/hooks/useTableArt');
+    plan = ['decode-error', 'ok'];
+    const done = loadTableImage('/assets/felt.png');
+    expect(loadTableImage('/assets/felt.png')).toBe(done);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(isTableImageDecoded('/assets/felt.png')).toBe(false);
+    await vi.runAllTimersAsync();
+    await expect(done).resolves.toBe('/assets/felt.png?r=1');
+    expect(decodedTableImageUrl('/assets/felt.png')).toBe('/assets/felt.png?r=1');
+    expect(srcs).toEqual(['/assets/felt.png', '/assets/felt.png?r=1']);
     expect(isTableImageDecoded('/assets/felt.png')).toBe(true);
   });
 

@@ -6,12 +6,139 @@ import { timeoutBudgetMinutes } from '../productionJobBudget';
 import { describe, expect, it } from 'vitest';
 import {
   horseSocialFrames,
+  rankHorseSocialCohorts,
+  selectHorseSocialSubjects,
   horseSocialTableEligible,
   postHandChatDelay,
   sharedPayout,
 } from '../e2e/support/horseSocialEvidence';
 
 describe('natural horse social evidence', () => {
+  const cohort = (id: string, tabName: string, showdownCount = 2, horseCount = 6) => ({
+    candidate: { id },
+    tabName,
+    showdownCount,
+    horseCount,
+  });
+
+  it('observes the strongest actual activity in each of three variants within a fixed bound', () => {
+    const ranked = [
+      cohort('plo-a', 'PLO', 9),
+      cohort('plo-b', 'PLO', 8),
+      cohort('limit', 'LIMIT', 7),
+      cohort('nlh', 'NLH', 4),
+      cohort('fourth', 'NLH', 3),
+    ];
+    expect(selectHorseSocialSubjects(ranked).map((entry) => entry.candidate.id)).toEqual([
+      'plo-a',
+      'limit',
+      'nlh',
+    ]);
+    expect(ranked.map((entry) => entry.candidate.id)).toEqual([
+      'plo-a',
+      'plo-b',
+      'limit',
+      'nlh',
+      'fourth',
+    ]);
+  });
+
+  it('fills missing variants using ranked activity without duplicating a table or exceeding three', () => {
+    expect(
+      selectHorseSocialSubjects([
+        cohort('a', 'PLO'),
+        cohort('a', 'LIMIT'),
+        cohort('b', 'PLO'),
+        cohort('c', 'PLO'),
+        cohort('d', 'PLO'),
+      ]).map((entry) => entry.candidate.id)
+    ).toEqual(['a', 'b', 'c']);
+  });
+
+  it('refuses quiet or unoccupied fallback subjects and handles fewer eligible variants', () => {
+    expect(
+      selectHorseSocialSubjects([cohort('quiet', 'NLH', 0), cohort('empty', 'PLO', 3, 0)])
+    ).toEqual([]);
+    expect(
+      selectHorseSocialSubjects([cohort('one', 'LIMIT')]).map((entry) => entry.candidate.id)
+    ).toEqual(['one']);
+  });
+
+  it('wires bounded simultaneous subjects instead of starving all other discovered variants', () => {
+    const spec = readFileSync('tests/e2e/production-live-table-realtime.spec.ts', 'utf8');
+    const social = spec.split("test('natural horse social behavior")[1];
+    expect(social).toContain('selectHorseSocialSubjects(cohorts)');
+    expect(social).toContain('page.context().newPage()');
+    expect(social).toContain('tableId: candidate.id');
+    expect(social).toContain('await Promise.all');
+    expect(social).toContain("document.visibilityState !== 'visible'");
+    expect(social).toContain('paintAt: paint.at');
+    expect(social).toContain('paintFrames: paint.frames');
+    expect(social).toContain('presentation.push({ before: beforePaint, after: afterPaint })');
+    expect(social).toContain('error: observerError');
+    expect(social.indexOf('try {')).toBeLessThan(social.indexOf('await page.context().newPage()'));
+    expect(social).toContain('extraPage.close()');
+    expect(social).not.toContain('const candidate = cohorts[0].candidate');
+  });
+
+  it('does not let a crowded dry NLH table starve a naturally active PLO cohort', () => {
+    const cohorts = [
+      { candidate: { id: 'dry-nlh' }, horseCount: 9 },
+      { candidate: { id: 'active-plo' }, horseCount: 6 },
+    ];
+    const since = '2026-10-28T17:46:00Z';
+    const rows = [
+      { table_id: 'active-plo', ended_at: '2026-10-28T17:47:00Z' },
+      { table_id: 'active-plo', ended_at: '2026-10-28T17:48:00Z' },
+      { table_id: 'dry-nlh', ended_at: '2026-10-28T17:45:59Z' },
+      { table_id: 'unselected', ended_at: '2026-10-28T17:48:00Z' },
+    ];
+    const ranked = rankHorseSocialCohorts(cohorts, rows, since);
+    expect(ranked.map((entry) => entry.candidate.id)).toEqual(['active-plo', 'dry-nlh']);
+    expect(ranked.map((entry) => entry.showdownCount)).toEqual([2, 0]);
+    expect(cohorts.map((entry) => entry.candidate.id)).toEqual(['dry-nlh', 'active-plo']);
+  });
+
+  it('retains stable horse-count ties and excludes unreadable activity timestamps', () => {
+    const cohorts = [
+      { candidate: { id: 'six' }, horseCount: 6 },
+      { candidate: { id: 'nine' }, horseCount: 9 },
+    ];
+    expect(
+      rankHorseSocialCohorts(
+        cohorts,
+        [{ table_id: 'six', ended_at: 'unreadable' }],
+        '2026-10-28T17:46:00Z'
+      ).map((entry) => entry.candidate.id)
+    ).toEqual(['nine', 'six']);
+  });
+
+  it('bounds diverse discovery and reads activity metadata without mutating games', () => {
+    const spec = readFileSync('tests/e2e/production-live-table-realtime.spec.ts', 'utf8');
+    const social = spec.split("test('natural horse social behavior")[1];
+    expect(social).toContain(
+      'selectOccupiedRunningCashTables(page, request, { perVariantLimit: 3 })'
+    );
+    expect(spec).toContain('variantCount < options.perVariantLimit');
+    expect(spec).toContain('variantCount >= options.perVariantLimit');
+    const activity = social
+      .split('const showdowns = await db')[1]
+      .split('expect(showdowns.error)')[0];
+    expect(activity).toContain(".select('table_id,ended_at')");
+    // The production table index starts with (table_id, created_at). A limit
+    // after filtering/sorting only ended_at still scans the table's retained
+    // history and timed out before any natural observation in run40762123113.
+    expect(activity).toContain(".gte('created_at', activitySince)");
+    expect(activity).toContain(".gte('ended_at', activitySince)");
+    expect(activity).toContain(".order('created_at', { ascending: false })");
+    expect(activity).not.toContain(".order('ended_at'");
+    expect(activity).toContain(".not('showdown', 'is', null)");
+    expect(activity).toContain(".neq('showdown', '[]')");
+    expect(activity).toContain('.limit(180)');
+    expect(activity).not.toMatch(/cards|winners|actions/);
+    expect(social).not.toMatch(/\.(?:insert|upsert|update|delete|rpc)\(/);
+  });
+
   it('observes only the ordinary chips cash cohort that can actually emit chat', () => {
     const cash = { max_players: 6, ban_chat: false, tournament_id: null, game_type: 'cash' };
     expect(horseSocialTableEligible(cash, 'chips')).toBe(true);

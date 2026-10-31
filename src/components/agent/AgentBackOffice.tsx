@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * AGENT BACK OFFICE
  *
@@ -43,7 +44,11 @@ export default function AgentBackOffice({ agentUserId, clubId, title }: Props) {
   const [loading, setLoading] = useState(true);
   const [roster, setRoster] = useState<AgentRosterRow[]>([]);
   const [statement, setStatement] = useState<AgentStatement | null>(null);
-  const [sort, setSort] = useState<keyof AgentRosterRow>('rake_generated');
+  const [sort, setSort] = usePlayerPreference<keyof AgentRosterRow>(
+    'agentBackOffice.sort',
+    'rake_generated',
+    `${clubId ?? 'global'}:${agentUserId ?? 'self'}`
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {

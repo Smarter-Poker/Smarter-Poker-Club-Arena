@@ -1,0 +1,5 @@
+# Independent started-abort engine boundary
+
+Deliver the engine producer for the explicit started-tournament abort authority separately from its database migration. The service-authenticated boundary route fences each target manager, preserves accepted original hand custody, drains the original physical and manager writers, and records the generation-bound positive acknowledgment. Refunds remain in the database transaction and require that acknowledgment.
+
+The exact started-abort migration must be installed and its 20 postimages, strict receipt constraint, ACLs and RLS verified before activation or operational use. The existing required cancellation financial entrypoint already enforces all 42 native cases; this companion does not alter it, any workflow, current CI qualification pin or runner fingerprint. Engine source is integrated onto current protected source, preserving newer checkpoint and runtime changes. The separately recorded fixed owner window remains the activation authority; no direct restart or second publisher is introduced.

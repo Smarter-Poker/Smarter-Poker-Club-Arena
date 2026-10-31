@@ -39,6 +39,10 @@ const TRANSACTION = readFileSync(
   join(ROOT, 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
+const entryRead = TRANSACTION.slice(
+  TRANSACTION.indexOf('legacy_entry_read() {'),
+  TRANSACTION.indexOf('legacy_entry_trace() {')
+);
 const BREAK = readFileSync(join(ROOT, 'server/src/maintenance/MaintenanceBreak.ts'), 'utf8');
 
 const CERTIFICATE = TRANSACTION.slice(
@@ -80,7 +84,7 @@ function inflightHelper(rc: number): string {
   const path = join(dir, 'engine-release-inflight-hands.py');
   writeFileSync(
     path,
-    `#!/bin/sh\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
+    `#!/bin/sh\nif [ "\${3:-}" = --weekly-payout-only ]; then echo database-proves-no-weekly-owner; exit 0; fi\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
   );
   chmodSync(path, 0o755);
   return path;
@@ -90,6 +94,7 @@ function run(certificateSource: string, reasons: Record<string, number>, release
   const unparked = Object.values(reasons).reduce((a, b) => a + b, 0);
   const body = JSON.stringify({
     running: true,
+    weeklyPayout: null,
     ...(releaseSha === undefined ? {} : { releaseSha }),
     handsInFlightTotal: 0,
     maintenance: {
@@ -111,6 +116,7 @@ function run(certificateSource: string, reasons: Record<string, number>, release
 MIN_BREAK_REMAINING_MS=285000
 ENV_FILE=/dev/null
 INFLIGHT_HANDS="$MOCK_INFLIGHT"
+${entryRead}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateSource}
 maintenance_certificate`,
@@ -176,9 +182,10 @@ describe('2. every bank or custody reason refuses, whoever is serving', () => {
     );
   });
 
-  // Isolated SSD runs on 2026-10-12 took 5.3-7.4 seconds. Keep all assertions
-  // and allow bounded headroom for Git/filesystem work, rather than timing out
-  // after the check already completed its synchronous work.
+  // Isolated SSD runs took 5.3-7.4 seconds; the complete pre-push suite on
+  // 2026-10-28 took 33.8 seconds under process contention, and the two-file
+  // rerun took 59.3 seconds. Keep every refusal and each child's 10-second
+  // limit, with the same bounded 90-second headroom as the transaction suite.
   it('refuses each one alone and beside a preparation reason, with the database proof saying no hand', () => {
     for (const reason of CUSTODY_REASONS) {
       for (const releaseSha of SERVING) {
@@ -192,7 +199,7 @@ describe('2. every bank or custody reason refuses, whoever is serving', () => {
         }
       }
     }
-  }, 30_000);
+  }, 90_000);
   it('still admits the preparation reasons alone, so the refusals above are not a broken harness', () => {
     const result = run(CERTIFICATE, { f06_preparation_stuck: 13 }, RETIRED);
     expect(result.status, result.stderr).toBe(0);

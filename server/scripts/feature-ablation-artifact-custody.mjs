@@ -69,7 +69,8 @@ export async function authenticateFeatureArtifacts(runs, target, runId) {
     token = process.env.GITHUB_TOKEN,
     scratch = process.env.RUNNER_TEMP;
   if (
-    repo !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    repo !== 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' ||
+    process.env.GITHUB_REPOSITORY_ID !== '1132369872' ||
     !token ||
     !scratch ||
     !/^\d+$/.test(String(runId))

@@ -160,6 +160,7 @@ const poll = () => settle(POLL_MS);
 const positionsAsked = () => lobby.getPositions.mock.calls.flatMap((c) => c[0] as string[]);
 
 beforeEach(() => {
+  localStorage.clear();
   vi.useFakeTimers();
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });

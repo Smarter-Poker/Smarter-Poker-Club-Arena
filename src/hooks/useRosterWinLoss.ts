@@ -33,8 +33,8 @@ export const WIN_LOSS_RETRY_MAX_MS = 60_000;
 /**
  * Win / loss for the roster rows that are loaded (Dan 2026-10-16).
  *
- * The roster arrives a page at a time, so this asks ca_club_members_win_loss
- * only for members it has not asked about yet in the chosen window, in batches
+ * The roster arrives a page at a time, so this asks ca_club_members_period_summary
+ * including matching period fees, only for members it has not asked about yet in the chosen window, in batches
  * of up to 100, and keeps every window it has already loaded so flipping
  * between Today / This Week / This Month / Overall does not refetch. Only rows
  * the roster itself marks can_view_financials are asked for; the RPC applies

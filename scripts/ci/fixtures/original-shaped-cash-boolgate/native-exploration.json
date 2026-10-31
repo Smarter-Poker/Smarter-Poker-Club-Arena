@@ -1,0 +1,737 @@
+{
+  "passed": true,
+  "rows_per_case": 20000,
+  "cases": [
+    {
+      "case": "dense95week1",
+      "bag_diff": 0,
+      "before_count": 2,
+      "original_function_count": 2
+    },
+    {
+      "case": "dense95week20",
+      "bag_diff": 0,
+      "before_count": 33,
+      "original_function_count": 33
+    },
+    {
+      "case": "dense100week1",
+      "bag_diff": 0,
+      "before_count": 2,
+      "original_function_count": 2
+    },
+    {
+      "case": "dense100week20",
+      "bag_diff": 0,
+      "before_count": 33,
+      "original_function_count": 33
+    },
+    {
+      "case": "actual_correlation70_27_985",
+      "bag_diff": 0,
+      "before_count": 14,
+      "original_function_count": 14
+    }
+  ],
+  "plans": [
+    {
+      "case": "dense95week1",
+      "predicate": "bare",
+      "execution_ms": 0.034,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 95,
+          "Actual Rows": 2,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 190,
+          "Actual Rows": 2,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week1",
+      "predicate": "is_true",
+      "execution_ms": 0.012,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 1,
+          "Actual Rows": 2,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 2,
+          "Actual Rows": 2,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week1",
+      "predicate": "auto",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 95
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 190
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week1",
+      "predicate": "force_custom_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 95
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 190
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week1",
+      "predicate": "force_generic_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 25
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= $2) AND (q.recognized_at < $3))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = ($1)::text)",
+          "Plan Rows": 50
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week20",
+      "predicate": "bare",
+      "execution_ms": 0.107,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 1900,
+          "Actual Rows": 33,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 3800,
+          "Actual Rows": 33,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week20",
+      "predicate": "is_true",
+      "execution_ms": 0.05,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 19,
+          "Actual Rows": 33,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 38,
+          "Actual Rows": 33,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week20",
+      "predicate": "auto",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 1900
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 3800
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week20",
+      "predicate": "force_custom_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 1900
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 3800
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense95week20",
+      "predicate": "force_generic_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 25
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= $2) AND (q.recognized_at < $3))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = ($1)::text)",
+          "Plan Rows": 50
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week1",
+      "predicate": "bare",
+      "execution_ms": 0.037,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 100,
+          "Actual Rows": 2,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 200,
+          "Actual Rows": 2,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week1",
+      "predicate": "is_true",
+      "execution_ms": 0.025,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 1,
+          "Actual Rows": 2,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 2,
+          "Actual Rows": 2,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week1",
+      "predicate": "auto",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 100
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 200
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week1",
+      "predicate": "force_custom_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 100
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 200
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week1",
+      "predicate": "force_generic_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 50
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= $2) AND (q.recognized_at < $3))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = ($1)::text)",
+          "Plan Rows": 100
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week20",
+      "predicate": "bare",
+      "execution_ms": 0.168,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 2000,
+          "Actual Rows": 33,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 4000,
+          "Actual Rows": 33,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week20",
+      "predicate": "is_true",
+      "execution_ms": 0.104,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 20,
+          "Actual Rows": 33,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 40,
+          "Actual Rows": 33,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week20",
+      "predicate": "auto",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 2000
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 4000
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week20",
+      "predicate": "force_custom_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 2000
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+          "Plan Rows": 4000
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "dense100week20",
+      "predicate": "force_generic_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 50
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= $2) AND (q.recognized_at < $3))",
+          "Filter": "((q.game_scope ->> 'game_union_id'::text) = ($1)::text)",
+          "Plan Rows": 100
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "actual_correlation70_27_985",
+      "predicate": "bare",
+      "execution_ms": 3.631,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 1400,
+          "Actual Rows": 14,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Bitmap Heap Scan",
+          "Filter": "(((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text) AND (((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)))",
+          "Plan Rows": 2800,
+          "Actual Rows": 14,
+          "Rows Removed by Filter": 1066,
+          "Recheck Cond": "((q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))"
+        },
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Plan Rows": 1080,
+          "Actual Rows": 1080
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "actual_correlation70_27_985",
+      "predicate": "is_true",
+      "execution_ms": 0.325,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 378,
+          "Actual Rows": 14,
+          "Rows Removed by Filter": 0
+        },
+        {
+          "Node Type": "Bitmap Heap Scan",
+          "Filter": "(((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text) AND ((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) IS TRUE))",
+          "Plan Rows": 756,
+          "Actual Rows": 14,
+          "Rows Removed by Filter": 1066,
+          "Recheck Cond": "((q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))"
+        },
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Plan Rows": 1080,
+          "Actual Rows": 1080
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1,
+          "Actual Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "actual_correlation70_27_985",
+      "predicate": "auto",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 1400
+        },
+        {
+          "Node Type": "Bitmap Heap Scan",
+          "Filter": "(((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text) AND (((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)))",
+          "Plan Rows": 2800,
+          "Recheck Cond": "((q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))"
+        },
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Plan Rows": 1080
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "actual_correlation70_27_985",
+      "predicate": "force_custom_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 1400
+        },
+        {
+          "Node Type": "Bitmap Heap Scan",
+          "Filter": "(((q.game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text) AND (((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)))",
+          "Plan Rows": 2800,
+          "Recheck Cond": "((q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))"
+        },
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Index Name": "boolgate_cover",
+          "Index Cond": "(((((q.evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((q.evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((q.evidence -> 'game_scope'::text) IS DISTINCT FROM q.game_scope)) = true) AND (q.recognized_at >= '2026-10-19 02:00:00-05'::timestamp with time zone) AND (q.recognized_at < '2026-10-26 02:00:00-05'::timestamp with time zone))",
+          "Plan Rows": 1080
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    },
+    {
+      "case": "actual_correlation70_27_985",
+      "predicate": "force_generic_plan",
+      "execution_ms": null,
+      "scans": [
+        {
+          "Node Type": "CTE Scan",
+          "Filter": "((SubPlan 2) IS TRUE)",
+          "Plan Rows": 18
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "unaccepted",
+          "Index Cond": "(((q.game_scope ->> 'game_union_id'::text) = ($1)::text) AND (q.recognized_at >= $2) AND (q.recognized_at < $3))",
+          "Plan Rows": 37
+        },
+        {
+          "Node Type": "Index Scan",
+          "Index Name": "union_pnl_cash_outcome_touches_pkey",
+          "Index Cond": "((h.table_id = o.table_id) AND (h.hand_number = o.hand_number))",
+          "Plan Rows": 1
+        }
+      ]
+    }
+  ],
+  "private_fixture_analyze_only": true,
+  "no_production_execution": true,
+  "capacity_claimed": false
+}

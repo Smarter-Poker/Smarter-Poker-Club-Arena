@@ -7,24 +7,27 @@ const retiredProvider = ['sen', 'try'].join('');
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const publisher = read('.github/workflows/publish-club-arena.yml');
+const transaction = read('.github/workflows/publish-club-arena-transaction.yml');
 const engineDeploy = read('.github/workflows/auto-deploy-hetzner.yml');
 const monitoringDeploy = read('.github/workflows/deploy-monitoring.yml');
 
 describe('Club Arena owns every Club Arena release path', () => {
   it('publishes the frontend directly to the Club Arena Hetzner origin', () => {
-    expect(publisher).toContain('publish-to-origin:');
-    expect(publisher).toContain('CA_ORIGIN_HOST');
-    expect(publisher).toContain('CA_ORIGIN_SSH_KEY');
-    expect(publisher).toContain('CA_ORIGIN_HOST_KEY');
-    expect(publisher).toContain('ORIGIN_ROOT: /srv/club-arena');
-    expect(publisher).toContain('ORIGIN_URL: https://ca-static.smarter.poker');
+    expect(transaction).toContain('publish-to-origin:');
+    expect(transaction).toContain('CA_ORIGIN_HOST');
+    expect(transaction).toContain('CA_ORIGIN_SSH_KEY');
+    expect(transaction).toContain('CA_ORIGIN_HOST_KEY');
+    expect(transaction).toContain('ORIGIN_ROOT: /srv/club-arena');
+    expect(transaction).toContain('ORIGIN_URL: https://ca-static.smarter.poker');
 
-    const runnable = publisher
-      .split('\n')
-      .filter((line) => !/^\s*#/.test(line))
-      .join('\n');
-    expect(runnable).not.toMatch(/Smarter-Poker-World-Hub|WORLD_HUB_SYNC_TOKEN/);
-    expect(runnable).not.toMatch(/vercel\s+(?:--prod|deploy)/i);
+    for (const source of [publisher, transaction]) {
+      const runnable = source
+        .split('\n')
+        .filter((line) => !/^\s*#/.test(line))
+        .join('\n');
+      expect(runnable).not.toMatch(/Smarter-Poker-World-Hub|WORLD_HUB_SYNC_TOKEN/);
+      expect(runnable).not.toMatch(/vercel\s+(?:--prod|deploy)/i);
+    }
   });
 
   it('uses one Club Arena-owned engine credential name with no legacy fallback', () => {

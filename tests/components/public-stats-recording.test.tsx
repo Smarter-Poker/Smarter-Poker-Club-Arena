@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { publicHandStatsFrame } from '../../server/src/engine/presentation/publicHandStats';
 import { usePlayerStats, __resetPlayerStatsForTests } from '../../src/hooks/usePlayerStats';
@@ -16,8 +16,8 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('committed server summary through the live browser store', () => {
-  it('renders measured HUD rates and persists counters with the same replay receipt', () => {
-    render(<Harness />);
+  it('persists measured counters without exposing an opponent HUD', () => {
+    const { container } = render(<Harness />);
     act(() => {
       capture('table', 'hand_complete', { hand_id: 'uncommitted', winner_ids: ['opponent'] });
       for (let i = 1; i <= 5; i++) {
@@ -44,7 +44,7 @@ describe('committed server summary through the live browser store', () => {
         capture('proxy-room', String(frame.type), frame);
       }
     });
-    expect(screen.getByText('100')).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.PLAYER_STATS_SWR)!);
     expect(stored.version).toBe(2);
     expect(stored.receipts).toHaveLength(5);

@@ -144,7 +144,13 @@ function blindsText(level: NormalisedBlindLevel | null | undefined): string {
   return `${chips(level.smallBlind)} / ${chips(level.bigBlind)}`;
 }
 
-export default function BlindsTab({ tournament, blindLevels }: TournamentTabProps) {
+export default function BlindsTab(props: TournamentTabProps) {
+  return <EventBlindsTab key={props.tournament.id} {...props} />;
+}
+
+// Broadcast-derived clocks belong to one event, including when the next
+// event happens to have the same persisted level and break columns.
+function EventBlindsTab({ tournament, blindLevels }: TournamentTabProps) {
   const row = tournament as Tournament & ClockColumns;
 
   /* The ONLY ticking state. Everything visible is derived from it by

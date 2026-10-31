@@ -1,4 +1,57 @@
 BEGIN;
+DO $$ DECLARE s text; v jsonb; BEGIN
+ FOREACH s IN ARRAY ARRAY['pineapple_discard','flop','turn','river'] LOOP
+  v:=public.ca_fact_aggression_counts(jsonb_build_array(
+   jsonb_build_object('userId','20000000-0000-0000-0000-000000000001','action','call','stage','flop','amount',2),
+   jsonb_build_object('userId','20000000-0000-0000-0000-000000000001','action','discard','stage',s,'amount',0)),
+   '20000000-0000-0000-0000-000000000001');
+  IF v IS DISTINCT FROM jsonb_build_object('bets_raises',0,'calls',1)
+  THEN RAISE EXCEPTION 'Valid Pineapple discard invalidated AF at %: %',s,v; END IF;
+ END LOOP;
+ IF public.ca_fact_aggression_counts('[{"userId":"20000000-0000-0000-0000-000000000001","action":"discard","stage":"pineapple_discard","amount":1}]','20000000-0000-0000-0000-000000000001') IS NOT NULL
+ OR public.ca_fact_aggression_counts('[{"userId":"20000000-0000-0000-0000-000000000001","action":"discard","stage":"preflop","amount":0}]','20000000-0000-0000-0000-000000000001') IS NOT NULL
+ THEN RAISE EXCEPTION 'Malformed Pineapple discard certified AF'; END IF;
+END $$;
+DO $$ DECLARE v jsonb; a jsonb; BEGIN
+ FOR a IN SELECT value FROM jsonb_array_elements('[
+ {"userId":"system","seat":0,"action":"rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts","stage":"river","timestamp":123},
+ {"userId":"system","seat":0,"action":"rit_board_3:Ahearts,8spades,8hearts,8clubs,3spades","stage":"river","timestamp":124},
+ {"userId":"20000000-0000-0000-0000-000000000001","seat":3,"action":"bomb_ante","stage":"preflop","amount":2,"origin":"forced","dead":true}
+ ]'::jsonb) LOOP
+  v:=public.ca_fact_aggression_counts('[{"userId":"20000000-0000-0000-0000-000000000001","action":"bet","stage":"flop","amount":5}]'::jsonb||jsonb_build_array(a),'20000000-0000-0000-0000-000000000001');
+  IF v IS DISTINCT FROM jsonb_build_object('bets_raises',1,'calls',0)
+  THEN RAISE EXCEPTION 'Valid RIT/bomb bookkeeping invalidated aggression: %, %',a,v; END IF;
+ END LOOP;
+ FOR a IN SELECT value FROM jsonb_array_elements('[
+ {"userId":"system","action":"rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts","stage":"river","timestamp":123},
+ {"userId":"system","seat":0,"action":"rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts","stage":"river"},
+ {"userId":"system","seat":0,"action":"rit_board_4:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts","stage":"river","timestamp":123},
+ {"userId":"system","seat":0,"action":"rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,Jhearts","stage":"river","timestamp":123},
+ {"userId":"system","seat":0,"action":"rit_board_2:Jh,9c,Qd,7d,9h","stage":"river","timestamp":123},
+ {"userId":"20000000-0000-0000-0000-000000000001","seat":0,"action":"rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts","stage":"river","timestamp":123},
+ {"userId":"20000000-0000-0000-0000-000000000001","action":"bomb_ante","stage":"preflop","amount":2},
+ {"userId":"20000000-0000-0000-0000-000000000001","action":"bomb_ante","stage":"preflop","amount":-2,"origin":"forced","dead":true}
+ ]'::jsonb) LOOP
+  IF public.ca_fact_aggression_counts(jsonb_build_array(a),'20000000-0000-0000-0000-000000000001') IS NOT NULL
+  THEN RAISE EXCEPTION 'Malformed bookkeeping certified measured: %',a; END IF;
+ END LOOP;
+END $$;
+DO $$ DECLARE v jsonb; BEGIN
+ v:=public.ca_fact_aggression_counts('[
+ {"userId":"20000000-0000-0000-0000-000000000001","action":"raise","amount":6,"stage":"preflop"},
+ {"userId":"20000000-0000-0000-0000-000000000002","action":"fold","amount":0,"stage":"preflop"},
+ {"userId":"20000000-0000-0000-0000-000000000001","action":"return","amount":4,"stage":"preflop"}
+ ]'::jsonb,'20000000-0000-0000-0000-000000000001',2);
+ IF v IS DISTINCT FROM jsonb_build_object('bets_raises',1,'calls',0)
+ THEN RAISE EXCEPTION 'Uncalled return discarded measured aggression: %',v; END IF;
+ v:=public.ca_fact_aggression_counts('[
+ {"userId":"20000000-0000-0000-0000-000000000002","action":"raise","amount":2,"stage":"preflop"},
+ {"userId":"20000000-0000-0000-0000-000000000001","action":"fold","amount":0,"stage":"preflop"},
+ {"userId":"20000000-0000-0000-0000-000000000002","action":"return","amount":1,"stage":"preflop"}
+ ]'::jsonb,'20000000-0000-0000-0000-000000000001',1);
+ IF v IS DISTINCT FROM jsonb_build_object('bets_raises',0,'calls',0)
+ THEN RAISE EXCEPTION 'Opponent return made a folded hand unmeasured: %',v; END IF;
+END $$;
 DO $$ DECLARE v jsonb; BEGIN
  v:=public.ca_fact_aggression_counts('[
  {"userId":"20000000-0000-0000-0000-000000000002","action":"bb","origin":"forced","amount":2,"stage":"preflop"},

@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import PositionalRadar from '../../src/components/stats/PositionalRadar';
 import PositionWinRates from '../../src/components/stats/PositionWinRates';
+beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 const rows = ['BTN', 'SB', 'BB'].map((position) => ({
   position,

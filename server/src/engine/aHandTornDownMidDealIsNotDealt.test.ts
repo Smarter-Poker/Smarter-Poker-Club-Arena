@@ -18,6 +18,7 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { CooperativeHandPause } from './CooperativeHandPause.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(join(here, 'ServerTableEngineDealing.ts'), 'utf8');
@@ -87,11 +88,22 @@ describe('dealHand re-reads the controller after every preparation await', () =>
 const tree = ts.createSourceFile('dealing.ts', SRC, ts.ScriptTarget.Latest, true);
 const begin = SRC.indexOf('const preparedController = this.handController;');
 const finish = SRC.indexOf('const controllerForHand = preparedController;', begin);
+const runnerCall = SRC.indexOf('await this.runOriginalController(', begin);
+const runner = SRC.indexOf('protected async runOriginalController(', runnerCall);
+const preparationEnd = SRC.lastIndexOf('const attempt =', runnerCall);
 const awaits: ts.AwaitExpression[] = [];
 const guards: ts.IfStatement[] = [];
+const calls: ts.CallExpression[] = [];
 function visit(node: ts.Node): void {
-  if (node.getStart(tree) >= begin && node.getEnd() <= finish) {
+  // The original wait/start owner is shared with recovery. Follow its actual
+  // call rather than treating dealHand's subsequent cancellation/finally as
+  // preparation just because it is lexically before the extracted method.
+  if (
+    (node.getStart(tree) >= begin && node.getEnd() <= preparationEnd) ||
+    (node.getStart(tree) >= runner && node.getEnd() <= finish)
+  ) {
     if (ts.isAwaitExpression(node)) awaits.push(node);
+    if (ts.isCallExpression(node)) calls.push(node);
     if (
       ts.isIfStatement(node) &&
       node.expression.getText(tree).includes('this.handController !== preparedController')
@@ -101,18 +113,38 @@ function visit(node: ts.Node): void {
   ts.forEachChild(node, visit);
 }
 visit(tree);
+it('the normal deal invokes the same exact controller runner after preparation', () => {
+  expect(preparationEnd).toBeGreaterThan(begin);
+  expect(runnerCall).toBeGreaterThan(preparationEnd);
+  expect(runner).toBeGreaterThan(runnerCall);
+  expect(SRC.slice(runnerCall, SRC.indexOf(');', runnerCall))).toContain('preparedController');
+});
 for (const boundary of awaits) {
   const guard = guards.find((g) => g.getStart(tree) > boundary.getEnd());
   it('executes exact-owner refusal after ' + boundary.expression.getText(tree), async () => {
     expect(guard, 'every await needs its own revalidation').toBeDefined();
-    const nextAwait = awaits.find((a) => a.getStart(tree) > boundary.getEnd());
-    if (nextAwait) expect(guard!.getStart(tree)).toBeLessThan(nextAwait.getStart(tree));
+    // A cooperative wait may precede the final publication guard, but no
+    // public actuation or replacement-controller mutation may pass it.
+    for (const wait of awaits.filter(
+      (a) => a.getStart(tree) > boundary.getEnd() && a.getStart(tree) < guard!.getStart(tree)
+    ))
+      expect([
+        'this.weeklyHandPause.checkpoint()',
+        'this.acquireFinancialControllerStart()',
+        'this.awaitPauseGate()',
+      ]).toContain(wait.expression.getText(tree));
+    for (const call of calls.filter(
+      (c) => c.getStart(tree) >= boundary.getEnd() && c.getEnd() <= guard!.getStart(tree)
+    ))
+      expect(call.expression.getText(tree)).not.toMatch(
+        /(?:\.start|\.onEvent|this\.discardPreparedHandForPause|this\.markRetainedPreparedOriginal)$/
+      );
     async function run(
       change: string,
       omitGuard = false,
       nullBoundary = false
     ): Promise<boolean | undefined> {
-      const controller = {};
+      const controller = { serializeRecoveryState: () => 'retained' };
       const replacement = {};
       let discarded = 0,
         released = 0;
@@ -174,6 +206,10 @@ for (const boundary of awaits) {
           },
         };
       };
+      engine.retainOriginalBatch = settle;
+      engine.awaitPauseGate = settle;
+      engine.weeklyHandPause = { checkpoint: settle };
+      engine.captureContinuationEngine = () => ({});
       engine.fetchTimeBankExtras = settle;
       engine.acquireFinancialControllerStart = settle;
       if (nullBoundary) {
@@ -200,16 +236,14 @@ for (const boundary of awaits) {
       const isPublication = boundary.expression
         .getText(tree)
         .includes('acquireFinancialControllerStart');
-      const pauseAt = SRC.indexOf(
-        'if (this.discardPreparedHandForPause()) return;',
-        guard!.getEnd()
-      );
+      const pauseText =
+        boundary.getStart(tree) >= runner
+          ? 'if (!original && this.discardPreparedHandForPause()) return;'
+          : 'if (this.discardPreparedHandForPause()) return;';
+      const pauseAt = SRC.indexOf(pauseText, guard!.getEnd());
       expect(pauseAt).toBeGreaterThan(guard!.getEnd() - 1);
-      const pause = SRC.slice(
-        pauseAt,
-        pauseAt + 'if (this.discardPreparedHandForPause()) return;'.length
-      );
-      const code = `(async function() { const preparedController = this.handController; const publicationStart = ${boundary.getText(tree)}; try { ${omitGuard ? '' : guard!.getText(tree)} ${pause} return true; } finally { ${isPublication ? 'publicationStart?.release();' : ''} } })`;
+      const pause = SRC.slice(pauseAt, pauseAt + pauseText.length);
+      const code = `(async function() { const original = false; const seats=[]; const preparedController = this.handController; const publicationStart = ${boundary.getText(tree)}; try { ${omitGuard ? '' : guard!.getText(tree)} ${pause} return true; } finally { ${isPublication ? 'publicationStart?.release();' : ''} } })`;
       const js = ts.transpileModule(code, {
         compilerOptions: { target: ts.ScriptTarget.ES2022 },
       }).outputText;
@@ -217,6 +251,7 @@ for (const boundary of awaits) {
         hcPlayers: [],
         tbNewPlayers: [],
         preferenceIds: [],
+        preparedBatch: { controller: 'retained' },
         readAutoTimeBankPreferences: async () => {
           await settle();
           return new Map();
@@ -255,5 +290,120 @@ for (const boundary of awaits) {
         expect(await run(change, true, true)).toBe(true);
       }
     }
+  });
+}
+
+// Run the actual original wait loop, not a linear approximation of its awaits.
+const publicationAt = SRC.indexOf(
+  'const publicationStart = await this.acquireFinancialControllerStart();',
+  runner
+);
+const originalWaitAt = SRC.lastIndexOf('    if (original) {', publicationAt);
+const finalGuard = guards.find((g) => g.getStart(tree) > publicationAt)!;
+const originalWait = SRC.slice(originalWaitAt, finalGuard.getEnd());
+for (const owner of ['weekly', 'physical'] as const) {
+  it(`the actual original ${owner} wait retains exact ownership through release and stop`, async () => {
+    expect(originalWaitAt).toBeGreaterThan(runner);
+    expect(originalWait).toContain('for (;;)');
+    expect(originalWait).toContain('continue;');
+    expect(finalGuard.getStart(tree)).toBeLessThan(finish);
+    async function run(change: string, omitGuard = false) {
+      const weekly = new CooperativeHandPause();
+      if (owner === 'weekly') weekly.hold('weekly-owner');
+      let physicalHeld = owner === 'physical';
+      let wakePhysical: (() => void) | undefined;
+      let publications = 0,
+        released = 0,
+        settled = false;
+      const preparedController = { pauseForWeeklyPayout() {} };
+      const replacement = {};
+      const engine = {
+        handController: preparedController as object | null,
+        running: true,
+        current: true,
+        lease: true,
+        terminal: false,
+        weeklyHandPause: weekly,
+        weeklyPayoutPauseOwners: new Set(['weekly-owner']),
+        handForHandPaused: false,
+        isCurrentEngine() {
+          return this.current;
+        },
+        lifecycleCanMutate() {
+          return this.running && this.current && this.lease && !this.terminal;
+        },
+        isHandForHandReleaseBlocked() {
+          return physicalHeld;
+        },
+        awaitPauseGate() {
+          return new Promise<void>((resolve) => {
+            wakePhysical = resolve;
+          });
+        },
+        async acquireFinancialControllerStart() {
+          return {
+            release() {
+              released++;
+            },
+          };
+        },
+      };
+      const block = omitGuard ? originalWait.replace(finalGuard.getText(tree), '') : originalWait;
+      const js = ts.transpileModule(
+        `(async function() {
+        // This extracted ownership test exercises the retained PREPARED path.
+        // Already-started recovery is covered with real controllers/managers.
+        const original = true, recovered = undefined, resumesStartedOriginal = false;
+        ${block}
+        publish(); return true;
+        } finally { publicationStart?.release(); }
+      })`,
+        { compilerOptions: { target: ts.ScriptTarget.ES2022 } }
+      ).outputText;
+      const fn = vm.runInNewContext(js, {
+        preparedController,
+        publish() {
+          publications++;
+        },
+      });
+      const result = fn.call(engine).then((value: boolean | undefined) => {
+        settled = true;
+        return value;
+      });
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(publications).toBe(0);
+      if (owner === 'physical') expect(wakePhysical).toBeTypeOf('function');
+      if (change === 'null') engine.handController = null;
+      if (change === 'replacement') engine.handController = replacement;
+      if (change === 'stopped') {
+        engine.running = false;
+        weekly.stop();
+      }
+      if (change === 'superseded') engine.current = false;
+      if (change === 'lease') engine.lease = false;
+      if (change === 'terminal') engine.terminal = true;
+      if (owner === 'weekly') weekly.release('weekly-owner');
+      else {
+        physicalHeld = false;
+        wakePhysical!();
+      }
+      const actual = await result;
+      expect(actual).toBe(change === 'current' || omitGuard ? true : undefined);
+      expect(publications).toBe(change === 'current' || omitGuard ? 1 : 0);
+      expect(released).toBe(owner === 'weekly' && change === 'stopped' ? 0 : 1);
+      if (change === 'replacement') expect(engine.handController).toBe(replacement);
+    }
+    for (const change of [
+      'current',
+      'null',
+      'replacement',
+      'stopped',
+      'superseded',
+      'lease',
+      'terminal',
+    ])
+      await run(change);
+    await run('replacement', true);
   });
 }

@@ -1,0 +1,7 @@
+# Swarmed continuation of the urgent overnight closeout
+
+The owner directly resumed the unresolved stop/refund and normal-MTT restoration incident at19:27UTC after the original carrier. New protected checkpoint, financial-qualification and client changes then required a fresh normal integration. This new one-activation carrier gives effect to the later incident resumption. Its reason is the explicit urgent incident order, not a deadline or missed maintenance window.
+
+The new floor binds20:05-23:05UTC on October30, with only the existing minute53 notice and minute55 certified activation. Every original own, foreign and historical window retains its order, source witness and bounds. Actual service of this distinct floor witness consumes the new authorization once; expiry never extends it. Source/engine ownership, all original hands and prizes, the native reservation/freeze, full285-second proof/rollback reserve and own-window v3 thaw remain required.
+
+The selected protected immutable target must contain the qualified abort producer. Its exact merged original-charge refund migration must be installed and read back for history, twenty function postimages, strict receipt constraint and access before activation or use. Financial and runtime retirement receipts and board cleanup precede releasing the exact start hold. Natural new scheduled MTT starts and Running behavior must then be verified before completion. This entry installs no SQL, moves no money and creates no new publisher or retry mechanism.

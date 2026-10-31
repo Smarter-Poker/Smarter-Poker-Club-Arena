@@ -8,6 +8,10 @@ on:
       - .github/workflows/gto-v31-qualification.yml
       - scripts/ci/gto-v31-qualification.mjs
       - scripts/ci/gto-v31-qualification.test.mjs
+      - server/scripts/*evaluation-worker*.mjs
+      - server/scripts/gto-v31-evaluate-worker.mjs
+      - server/scripts/build-public-hist215-native.mjs
+      - server/native/**
   workflow_dispatch:
     inputs:
       dataset:
@@ -41,7 +45,7 @@ jobs:
       - run: node --test scripts/ci/gto-v31-qualification.test.mjs
   qualify:
     needs: contract
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'Smarter-Poker/Smarter-Poker-Club-Arena'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository_id == '1132369872' && (github.repository == 'Smarter-Poker/Smarter-Poker-Club-Arena' || github.repository == 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena')
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
@@ -65,6 +69,9 @@ jobs:
       - name: Install only the locked evaluator dependencies
         working-directory: runtime/server
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build the receiving-platform exact public-state kernel
+        working-directory: runtime/server
+        run: node scripts/build-public-hist215-native.mjs
       - name: Run the existing source-pinned evaluator once
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

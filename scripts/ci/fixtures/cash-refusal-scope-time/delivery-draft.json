@@ -1,0 +1,9 @@
+{
+  "status": "DRAFT_CANONICAL_INDEX_AND_NATIVE_GUARDS_PENDING",
+  "index": "20261029211338_cash_refusal_scope_and_time_have_a_bounded_index.sql",
+  "index_sha256": "92f52f59c490143c36d9382ba66caad92165b560a3ec82196a4623c8f264101c",
+  "function": "20261029230421_cash_refusal_queries_scope_before_walking_blocked_receipts.sql",
+  "function_sha256": "387cdaef1b96a5626e103327e6646b2dbd55343cbba308eb998c2a76fbc06bc4",
+  "TQ": "HOLD_PRODUCTION_UNTIL_CAUSAL_ACCESS_INSTALL_AND_WHOLE225_PASS",
+  "original_source65_GEN72": "unchanged"
+}

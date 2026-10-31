@@ -1,0 +1,9 @@
+{
+  "candidate_sha256": "ad5a0bd4a2dc7cc66597840ac68fd8cf6534ab1c35f6dcf7b4ce07d61e320a38",
+  "exact_inverse_to_b5ed": true,
+  "original_finite_query_unchanged_except_snapshot_presence_one_time_filter": true,
+  "presence_predicate_byteidentical": true,
+  "same_statement_snapshot": true,
+  "infinity_and_final_aggregation_unchanged": true,
+  "no_club_union_special_case_or_index_GUC_change": true
+}

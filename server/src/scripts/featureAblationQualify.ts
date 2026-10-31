@@ -26,6 +26,7 @@ if (planOnly && args.has('cell')) throw Error('Plan mode never selects or deals 
 const {
   assertIncrementalWorkerFlags,
   authenticateIncrementalPlan,
+  authenticateFeatureAblationProviderAttempt,
   incrementalQualificationRules,
   isIncrementalQualificationTarget,
 } = await import('../benchmark/IncrementalPressureQualification.js');
@@ -163,60 +164,16 @@ try {
       featureQualificationCanonical(attempt.identity) !== featureQualificationCanonical(expected)
     )
       throw Error('Original pre-deal attempt binding refused');
-    async function verifyProvider() {
-      const op = attempt.operation,
-        repo = process.env.GITHUB_REPOSITORY,
-        run = process.env.GITHUB_RUN_ID,
-        runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT),
-        token = process.env.GITHUB_TOKEN;
-      if (
-        repo !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
-        String(op.providerRunId) !== run ||
-        op.runAttempt !== runAttempt ||
-        !/^\d+$/.test(String(op.jobId)) ||
-        !token ||
-        runAttempt > plan.maxAttempts
-      )
-        throw Error('Actual provider attempt unavailable');
-      const get = async (suffix: string) => {
-        const r = await fetch(`https://api.github.com/repos/${repo}${suffix}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/vnd.github+json',
-          },
-          signal: AbortSignal.timeout(20000),
-        });
-        if (!r.ok) throw Error('Provider identity read refused');
-        const body: unknown = await r.json();
-        if (!body || typeof body !== 'object' || Array.isArray(body))
-          throw Error('Provider identity shape refused');
-        return body as Record<string, unknown>;
-      };
-      const [j, r] = await Promise.all([
-        get(`/actions/jobs/${op.jobId}`),
-        get(`/actions/runs/${run}`),
-      ]);
-      const createdAt = j.created_at ?? r.created_at,
-        createdAtSource = j.created_at ? 'job.created_at' : 'run.created_at';
-      if (
-        String(j.id) !== String(op.jobId) ||
-        String(j.run_id) !== run ||
-        j.run_attempt !== runAttempt ||
-        j.name !== `Cell ${cell!.key}` ||
-        r.path !== '.github/workflows/horse-feature-ablation-qualification.yml' ||
-        r.event !== 'workflow_dispatch' ||
-        r.head_branch !== 'main' ||
-        op.createdAt !== createdAt ||
-        op.createdAtSource !== createdAtSource
-      )
-        throw Error('Original provider job identity mismatch');
-    }
     let authorized: Promise<void> | undefined;
     const authorizedGuard = () =>
       (authorized ??= (async () => {
         assertProtectedFeatureAblationSource(plan, sourceSha);
         verifyAdmissions();
-        await verifyProvider();
+        await authenticateFeatureAblationProviderAttempt(
+          attempt.operation,
+          cell.key,
+          plan.maxAttempts
+        );
       })());
     await authorizedGuard(); // The mandatory private-core wrapper repeats this guard before dealing.
     const physicalRake = getFullRakeConfig(1, 2, profile.variant);

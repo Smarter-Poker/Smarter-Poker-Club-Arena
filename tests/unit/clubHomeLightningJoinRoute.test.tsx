@@ -216,7 +216,7 @@ function SearchProbe() {
   return <output data-testid="search">{useLocation().search}</output>;
 }
 
-async function mountLobby(deepLink: boolean | string = true) {
+async function mountLobby(deepLink: boolean | string = true, openCash = true) {
   const read = h.clubReads.length;
   const game = deepLink === true ? 'anchor' : deepLink || null;
   render(
@@ -238,6 +238,10 @@ async function mountLobby(deepLink: boolean | string = true) {
   await flush();
   await act(async () => h.clubReads[read].resolve({ data: newClub(), error: null }));
   await settle();
+  if (!deepLink && openCash) {
+    fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
+    await settle();
+  }
 }
 
 it('keeps Join Lightning navigation after selected-panel URL effects settle, without a purchase', async () => {
@@ -340,7 +344,11 @@ it('applies saved view held for an open card when it closes, and a later tap sav
   ];
   const late = deferred<any>();
   h.remoteView.mockReturnValue(late.promise);
-  await mountLobby(false);
+  localStorage.setItem(
+    'ca_lobby_view_viewer:club-a',
+    JSON.stringify({ tab: 'HOLDEM', sortByTab: {}, favoritesOnly: false })
+  );
+  await mountLobby(false, false);
   fireEvent.click(document.querySelector('.lt-row[data-id="anchor"]')!);
   await flush();
   expect(screen.getByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeTruthy();
@@ -448,7 +456,10 @@ describe('a shared game link', () => {
     await mountLobby('gone');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(search().has('game')).toBe(false);
-    expect(tab('NLH')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
     expect(h.pushView).not.toHaveBeenCalled();
     expect(h.pushFilters).not.toHaveBeenCalled();
     // Dropped, not lying in wait: a game later appearing under that id on a
@@ -482,8 +493,8 @@ describe('a shared game link', () => {
     const gate = deferred<void>();
     h.tournamentGate = gate.promise;
     await mountLobby('event');
-    // Tables are on screen; the tournaments have not answered yet.
-    expect(document.querySelector('.lt-row[data-id="holdem"]')).toBeTruthy();
+    // No family opens until the requested tournament has answered.
+    expect(document.querySelector('.lt-row[data-id="holdem"]')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     await act(async () => gate.resolve());
     await settle();
@@ -492,4 +503,52 @@ describe('a shared game link', () => {
     expect(h.pushView).not.toHaveBeenCalled();
     expect(h.pushFilters).not.toHaveBeenCalled();
   });
+});
+
+it('keeps an explicitly opened cash section when a late preference names a tournament', async () => {
+  h.setupReads = [DONE];
+  h.tables = [ordinaryTable('anchor', 'nlh', 'Cash Family')];
+  const late = deferred<any>();
+  h.remoteView.mockReturnValue(late.promise);
+  await mountLobby(false);
+  h.pushView.mockClear();
+  await act(async () => late.resolve({ tab: 'MTT', sortByTab: {}, favoritesOnly: false }));
+  await settle();
+  expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  expect(screen.getByRole('tab', { name: 'ALL', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  expect(screen.queryByRole('tab', { name: "MTT'S", exact: true })).toBeNull();
+  expect(document.querySelector('.lt-row[data-id="anchor"]')).not.toBeNull();
+  expect(h.pushView).not.toHaveBeenCalled();
+});
+
+it('restores the remote tournament family over an older cached cash preference before interaction', async () => {
+  h.setupReads = [DONE];
+  localStorage.setItem(
+    'ca_lobby_view_viewer:club-a',
+    JSON.stringify({ tab: 'HOLDEM', sortByTab: {}, favoritesOnly: false })
+  );
+  const late = deferred<any>();
+  h.remoteView.mockReturnValue(late.promise);
+  await mountLobby(false, false);
+  expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  await act(async () => late.resolve({ tab: 'MTT', sortByTab: {}, favoritesOnly: false }));
+  await settle();
+  expect(screen.getByRole('button', { name: 'Tournaments', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  expect(screen.getByRole('tab', { name: "MTT'S", exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  expect(h.pushView).not.toHaveBeenCalled();
 });

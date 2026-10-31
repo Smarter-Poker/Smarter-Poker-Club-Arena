@@ -52,6 +52,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('global balance read ownership', () => {
+  it('does not read or replace a guest balance, then reads normally after sign-in', async () => {
+    mocks.state.user = { id: 'guest' };
+    mocks.read.mockResolvedValue({ balance: 80 });
+    const hook = renderHook(() => useGlobalBalanceSync());
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.walletRead).not.toHaveBeenCalled();
+    expect(mocks.state.updateTotalChips).not.toHaveBeenCalled();
+    mocks.state.user = { id: 'player-a' };
+    await act(async () => hook.rerender());
+    expect(mocks.read).toHaveBeenCalledWith('player-a');
+    expect(mocks.state.updateTotalChips).toHaveBeenCalledWith(80);
+  });
+
   it('exports the headless component', () => {
     expect(typeof GlobalBalanceSync).toBe('function');
   });

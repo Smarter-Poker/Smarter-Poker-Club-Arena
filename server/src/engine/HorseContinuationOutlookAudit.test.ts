@@ -2,7 +2,8 @@ import { acceptedContinuationOutlook } from '../benchmark/FeatureAblationWorker.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HorseLogic, type HorseDecideOpts } from './HorseLogic.js';
 import { HorseMind } from './HorseMind.js';
-import { seedFastRandom, saveFastRandom } from './HorseEval.js';
+import { nextCardOutlook, variantInfo, seedFastRandom, saveFastRandom } from './HorseEval.js';
+import { omahaFlushBlocker } from './OmahaFlushBlocker.js';
 import type { Card, ActionRecord, SeatPlayer } from '../types.js';
 const c = (s: string): Card => ({
   rank: s[0] as Card['rank'],
@@ -204,5 +205,44 @@ describe('a planned turn barrel retains its private river outlook', () => {
       expect(on.effects).toEqual(off.effects);
       expect(on.rng).toBe(off.rng);
     }
+  });
+});
+
+describe('Omaha dirty-card outlook reaches the actual continuation chooser', () => {
+  it('keeps nut-blocker bluff judgment separate from the made-hand card classification', () => {
+    const run = (quality: boolean) => {
+      HorseMind.reset();
+      seedFastRandom(16);
+      const f = fixture('plo5');
+      f.hero.cards = ['Ad', 'Ks', 'Qh', 'Jc', 'Tc'].map(c);
+      f.gs.communityCards = ['9d', '4d', '2s', 'Kd'].map(c);
+      const outlook = nextCardOutlook(
+        f.hero.cards,
+        f.gs.communityCards.slice(0, 3),
+        variantInfo('plo5'),
+        quality
+      );
+      HorseMind.notePlan(f.key, 'hero', true);
+      HorseMind.noteOutlook(f.key, 'hero', 'flop', outlook.good, outlook.scare);
+      expect(omahaFlushBlocker(f.hero.cards, f.gs.communityCards, 5)).toMatchObject({
+        madeFlush: false,
+        blocksNutFlush: true,
+        straightFlushPossible: false,
+      });
+      const decision = HorseMind.captureDecisionEffects(() =>
+        HorseLogic.decide(f.hero, f.gs as never, 'balanced', {}, { telemetry: false })
+      );
+      return { ...decision, outlook };
+    };
+    const legacy = run(false);
+    const corrected = run(true);
+    expect(legacy.outlook.good).toContain('Kd');
+    expect(corrected.outlook.good).not.toContain('Kd');
+    expect(corrected.outlook.scare).toContain('Kd');
+    expect(legacy.value).toMatchObject({ action: 'bet', amount: 13 });
+    expect(corrected.value).toMatchObject({ action: 'bet', amount: 7 });
+    // This is a paired path regression, not an assertion that the lower bet
+    // wins more. Duplicate-deal strategy qualification remains separate.
+    expect(corrected.effects.some((effect) => effect.type === 'outlook')).toBe(true);
   });
 });

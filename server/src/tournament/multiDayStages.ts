@@ -26,6 +26,7 @@
  * entitlement together.
  */
 import { supabase } from '../services/supabase.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 
 export const MULTI_DAY_CAPABILITY = 'tournament.multi_day.single_flight';
@@ -338,13 +339,25 @@ const CLOSED_TABLE_STATUSES = new Set(['closed', 'deleted', 'completed', 'cancel
  * Every open table of the event and its last accepted hand, or null when any
  * part of that could not be read. A partial watermark is not a watermark.
  */
-export async function readTableWatermarks(tournamentId: string): Promise<TableWatermark[] | null> {
+export async function readTableWatermarks(
+  tournamentId: string,
+  shouldContinue?: () => boolean
+): Promise<TableWatermark[] | null> {
   try {
-    const { data: tables, error } = await supabase
-      .from('tables')
-      .select('id, status, is_deleted')
-      .eq('tournament_id', tournamentId);
-    if (error || !Array.isArray(tables)) return null;
+    const { rows: tables, complete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tables')
+          .select('id, status, is_deleted')
+          .eq('tournament_id', tournamentId)
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.stage_watermark_tables', shouldContinue }
+    );
+    if (!complete) return null;
     const open = tables.filter(
       (table: { id?: unknown; status?: unknown; is_deleted?: unknown }) =>
         typeof table.id === 'string' &&
@@ -353,6 +366,7 @@ export async function readTableWatermarks(tournamentId: string): Promise<TableWa
     ) as Array<{ id: string }>;
     const watermarks: TableWatermark[] = [];
     for (const table of open) {
+      if (shouldContinue?.() === false) return null;
       const { data: last, error: lastError } = await supabase
         .from('hand_atomic_commits')
         .select('hand_number')
@@ -360,7 +374,7 @@ export async function readTableWatermarks(tournamentId: string): Promise<TableWa
         .order('hand_number', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (lastError) return null;
+      if (lastError || shouldContinue?.() === false) return null;
       const handNumber = last ? Number((last as { hand_number?: unknown }).hand_number) : null;
       if (handNumber !== null && !Number.isSafeInteger(handNumber)) return null;
       watermarks.push({ table_id: table.id, last_hand_number: handNumber });
@@ -387,16 +401,25 @@ export interface StageEntitlementRow {
 /** Every entitlement targeting the stage, or null when unreadable. */
 export async function readStageEntitlements(
   tournamentId: string,
-  stageNo: number
+  stageNo: number,
+  shouldContinue?: () => boolean
 ): Promise<StageEntitlementRow[] | null> {
   try {
-    const { data, error } = await supabase
-      .from('tournament_qualification_entitlements')
-      .select('id, user_id, stack, state, consumed_table_id, consumed_seat_number')
-      .eq('tournament_id', tournamentId)
-      .eq('target_stage_no', stageNo)
-      .order('id', { ascending: true });
-    if (error || !Array.isArray(data)) return null;
+    const { rows: data, complete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tournament_qualification_entitlements')
+          .select('id, user_id, stack, state, consumed_table_id, consumed_seat_number')
+          .eq('tournament_id', tournamentId)
+          .eq('target_stage_no', stageNo)
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.stage_entitlements', shouldContinue }
+    );
+    if (!complete) return null;
     const rows: StageEntitlementRow[] = [];
     for (const raw of data as Array<Record<string, unknown>>) {
       const stack = Number(raw.stack);

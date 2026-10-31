@@ -41,6 +41,7 @@ import {
   initialRabbitEntitlement,
   rememberRabbitEntitlement,
   rememberRabbitVipRemaining,
+  rabbitVipUsageVersion,
 } from './rabbitEntitlement';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -56,6 +57,7 @@ export interface RabbitHuntRevealResult {
   success: boolean;
   cards?: Card[];
   error?: string;
+  retryable?: boolean;
   source?: string;
   diamondsSpent?: number;
   /** VIP monthly hunts left AFTER this one. Server-counted; null for non-VIP. */
@@ -145,6 +147,7 @@ export function RabbitHunt({
   const {
     reveal,
     isRevealing,
+    isSlow,
     hasRevealed,
     vipRemaining,
     packRemaining,
@@ -229,8 +232,18 @@ export function RabbitHunt({
         return;
       }
       try {
+        const usageVersion = rabbitVipUsageVersion(userId);
         const status = await vipService.checkVIPStatus(userId);
         if (cancelled || activeUserRef.current !== entitlementUser) return;
+        if (rabbitVipUsageVersion(userId) !== usageVersion) {
+          const latest = initialRabbitEntitlement(userId, useUserStore.getState().user);
+          setEntitlementStateUserId(entitlementUser);
+          setAnsweredFor(entitlementUser);
+          setIsVIP(latest.isVIP);
+          setIsLifetime(latest.isLifetime);
+          setVipRemaining(latest.vipRemaining);
+          return;
+        }
         setEntitlementStateUserId(entitlementUser);
         setAnsweredFor(entitlementUser);
         setIsVIP(!!status?.isVIP);
@@ -318,9 +331,12 @@ export function RabbitHunt({
           className={`rabbit-hunt__button ${isRevealing ? 'rabbit-hunt__button--loading' : ''} ${visibleIsVIP ? 'rabbit-hunt__button--vip' : ''}`}
           onClick={handleReveal}
           disabled={isRevealing}
+          aria-busy={isRevealing}
           aria-label={
             isRevealing
-              ? 'Revealing Rabbit Hunt'
+              ? isSlow
+                ? 'Still Connecting To Rabbit Hunt'
+                : 'Revealing Rabbit Hunt'
               : visibleIsLifetime
                 ? 'Rabbit Hunt, Unlimited With Lifetime VIP'
                 : visibleIsVIP && typeof visibleVipRemaining === 'number' && visibleVipRemaining > 0
@@ -358,7 +374,7 @@ export function RabbitHunt({
             typeof (visibleVipRemaining ?? packRemaining) === 'number' && (
               <span className="rabbit-hunt__remaining">{visibleVipRemaining ?? packRemaining}</span>
             )}
-          {!isRevealing && !visibleIsLifetime && (
+          {!visibleIsLifetime && (
             <span
               className={`rabbit-hunt__cost ${visibleIsLifetime || (visibleIsVIP && visibleVipRemaining !== 0) ? 'rabbit-hunt__cost--free' : ''}`}
             >
@@ -374,6 +390,11 @@ export function RabbitHunt({
         </button>
       )}
 
+      {isSlow && (
+        <span className="rabbit-hunt__status" role="status">
+          Still Connecting...
+        </span>
+      )}
       {/* Cards are now rendered natively on the CommunityCards board */}
     </div>
   );

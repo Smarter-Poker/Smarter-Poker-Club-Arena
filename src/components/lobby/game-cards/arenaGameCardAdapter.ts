@@ -1,3 +1,4 @@
+import { customCashGameName } from '../../../utils/customCashGameName';
 import { compactChips } from '../../../utils/format';
 import {
   cashTemplateLabel,
@@ -76,7 +77,7 @@ export function cashCardTitle(entry: LobbyEntry): { title: string; subtitle?: st
     /* Dan 2026-09-03: "Make sure the Variant Name is first, Like PLO5 25/50
        and then the table name under it." */
     const title = [entry.gameLabel, entry.stakesLabel].filter(Boolean).join(' ').trim();
-    const residual = stripTableIndex(cashTitleLines(entry).subtitle || '');
+    const residual = cashTitleLines(entry).subtitle || '';
     const subtitle =
       residual ||
       entry.clubLabel ||
@@ -165,6 +166,17 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
           subtitle: entry.clubLabel || entry.variantLabel,
         };
 
+  const customName =
+    family === 'plo' && entry.kind === 'cash' ? customCashGameName(entry.name) : null;
+  const templateLabel = entry.game?.style?.label ?? cashTemplateLabel(entry.game?.template);
+  const ordinaryStyleNote = entry.kind === 'cash' ? cashStyleNote(entry) : null;
+  // The host name uses the existing wide, wrapping note zone. A PLO card's
+  // narrow one-line subtitle cannot hold a complete custom name at its floor.
+  const renderedSubtitle = customName ? templateLabel || undefined : heading.subtitle;
+  const renderedStyleNote = customName
+    ? [customName, ordinaryStyleNote].filter(Boolean).join(', ')
+    : ordinaryStyleNote || undefined;
+
   return {
     id: entry.id,
     family,
@@ -174,8 +186,8 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
       !/\b(?:GTD|Guaranteed)\b/i.test(heading.title)
         ? `${heading.title} · ${compactChips(entry.guaranteeValue!)} Guaranteed`
         : heading.title,
-    subtitle: heading.subtitle,
-    styleNote: (entry.kind === 'cash' ? cashStyleNote(entry) : null) || undefined,
+    subtitle: renderedSubtitle,
+    styleNote: renderedStyleNote,
     gameType: entry.gameLabel,
     stakes: entry.stakesLabel || undefined,
     players: entry.capacity > 0 ? `${entry.players}/${entry.capacity}` : String(entry.players),

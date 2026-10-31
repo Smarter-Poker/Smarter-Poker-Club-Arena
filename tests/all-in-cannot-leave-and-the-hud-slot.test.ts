@@ -167,7 +167,7 @@ describe('the bottom-left HUD slot', () => {
     // Runtime boundary tests in tableHudControl.test.ts pin immediate offers,
     // stale-turn suppression, and priority of a real next-hand decision.
     expect(strip(TABLE_PAGE)).toMatch(
-      /handSettling,\s*handInProgress: tableState\.isHandInProgress,\s*rabbitAvailable: isRabbitAvailable,/
+      /handSettling,\s*handInProgress: tableState\.isHandInProgress,\s*rabbitAvailable: isRabbitAvailable && rabbitViewIsCurrent,/
     );
   });
 

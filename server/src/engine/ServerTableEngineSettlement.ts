@@ -3894,6 +3894,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             tableId: this.tableId,
             userId: horse.user_id,
             bigBlind: Number(this.tableInfo?.big_blind) || 0,
+            smallBlind: Number(this.tableInfo?.small_blind) || 0,
+            variant: this.tableInfo?.game_variant,
             minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,
             maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
             rebuysTaken: currentRebuys,

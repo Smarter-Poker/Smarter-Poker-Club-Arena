@@ -1,0 +1,266 @@
+[
+  {
+    "signature": "public.fn_union_weekly_rakeback_close(uuid,timestamp with time zone,timestamp with time zone)",
+    "preimage": "89fd1a7dddbdd86b9dc55ac46e02fd71",
+    "postimage": "64c4c5191e1263399cf63e63b1a7b46b",
+    "replacements": [
+      {
+        "old": "  -- settlement walk: one row per (union, period), resumable after 'failed'",
+        "new": "  PERFORM smarter_private.weekly_payout_require_round('union',p_union_id,p_period_start,p_period_end,1);\n\n  -- settlement walk: one row per (union, period), resumable after 'failed'"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_union_weekly_rakeback_close",
+      "prorows": 0,
+      "pronargs": 3,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_union_id", "p_period_start", "p_period_end"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  },
+  {
+    "signature": "public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)",
+    "preimage": "46cc46eac314417706523cc9bd273405",
+    "postimage": "c69a291c3347a6b27fbc62016411d7b2",
+    "replacements": [
+      {
+        "old": "prior_saved_context:=current_setting('app.accounting_routing_context',true);",
+        "new": "PERFORM smarter_private.weekly_payout_require_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,2);\n  prior_saved_context:=current_setting('app.accounting_routing_context',true);"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_settle_accounting_commission_stage",
+      "prorows": 0,
+      "pronargs": 4,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_scope_kind", "p_scope_id", "p_period_start", "p_period_end"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  },
+  {
+    "signature": "public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)",
+    "preimage": "efff450311e1c001d8873b29e080e551",
+    "postimage": "5b50ed269444dfe82b2bb15782ad50c0",
+    "replacements": [
+      {
+        "old": "prior_saved_context:=current_setting('app.accounting_routing_context',true);",
+        "new": "PERFORM smarter_private.weekly_payout_require_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,2);\n  prior_saved_context:=current_setting('app.accounting_routing_context',true);"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_settle_accounting_commission_stage_v3",
+      "prorows": 0,
+      "pronargs": 4,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_scope_kind", "p_scope_id", "p_period_start", "p_period_end"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  },
+  {
+    "signature": "public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)",
+    "preimage": "60570d34b4704fe81ff2de7fc43ad770",
+    "postimage": "236228d068e90194a306b81d0f6c88fd",
+    "replacements": [
+      {
+        "old": " v_batched:=COALESCE(current_setting('app.weekly_accounting_chunked',true),'')='on'",
+        "new": "  PERFORM smarter_private.weekly_payout_require_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,3);\n v_batched:=COALESCE(current_setting('app.weekly_accounting_chunked',true),'')='on'"
+      },
+      {
+        "old": "  amount:=r.owed;\n  INSERT INTO public.rakeback_period_payouts",
+        "new": "   PERFORM smarter_private.weekly_payout_require_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,3);\n   amount:=r.owed;\n   INSERT INTO public.rakeback_period_payouts"
+      },
+      {
+        "old": "  IF v_batched AND clock_timestamp()>v_stop THEN EXIT; END IF;",
+        "new": "  IF v_batched AND clock_timestamp()>v_stop\n    AND NOT smarter_private.weekly_payout_owns_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,3) THEN EXIT; END IF;"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_settle_accounting_rakeback_stage",
+      "prorows": 0,
+      "pronargs": 4,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_scope_kind", "p_scope_id", "p_period_start", "p_period_end"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  },
+  {
+    "signature": "public.fn_bank_standalone_week_rake(uuid,timestamp with time zone,timestamp with time zone)",
+    "preimage": "b42512f8ab7745caf37c7d3ace67bd6f",
+    "postimage": "b1f78d08489b0609db3bf4c354fa5b36",
+    "replacements": [
+      {
+        "old": "  v_res := public.fn_ca_fund_club(",
+        "new": "  IF NOT EXISTS(SELECT FROM smarter_private.weekly_payout_financial_receipts r WHERE r.scope_kind='club' AND r.scope_id=p_club_id\n   AND r.period_start=p_period_start AND r.period_end=p_period_end) THEN\n   PERFORM smarter_private.weekly_payout_require_round('club',p_club_id,p_period_start,p_period_end,1);\n  END IF;\n  v_res := public.fn_ca_fund_club("
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_bank_standalone_week_rake",
+      "prorows": 0,
+      "pronargs": 3,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_club_id", "p_period_start", "p_period_end"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  },
+  {
+    "signature": "public.fn_refuse_while_frozen()",
+    "preimage": "9dd363ba494c92c08988022a34831def",
+    "postimage": "a8dd811942377b0e67fa219ba039681e",
+    "replacements": [
+      {
+        "old": "  IF public.fn_platform_frozen() THEN",
+        "new": "  -- The original private transaction capability, never a user-set GUC.\n  -- Ordinary invoker-rights callers do not invoke this private reader.\n  IF current_user='postgres' THEN\n    IF smarter_private.weekly_payout_owned_money_write(TG_TABLE_NAME) THEN\n      RETURN COALESCE(NEW, OLD);\n    END IF;\n  END IF;\n\n  IF public.fn_platform_frozen() THEN"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_refuse_while_frozen",
+      "prorows": 0,
+      "pronargs": 0,
+      "proconfig": ["search_path=public, pg_temp"],
+      "proretset": false,
+      "prosecdef": false,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": null,
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  },
+  {
+    "signature": "public.fn_union_settlement_cascade_due()",
+    "preimage": "9b9b4ad4bd11c9456ddf1e63509b6780",
+    "postimage": "e22a7077ab22bc2a0df56104ff2cef07",
+    "replacements": [
+      {
+        "old": "DECLARE v_advance jsonb; v_promo jsonb;",
+        "new": "DECLARE v_advance jsonb; v_promo jsonb; v_weekly_phase jsonb;"
+      },
+      {
+        "old": " v_promo:=public.fn_midway_weekly_horse_promo_due();",
+        "new": " -- The original bounded tick prepares before four and then owns ALL R1,\n -- ALL gross R2 and ALL secondary R3 before slow post-money books.\n v_weekly_phase:=smarter_private.weekly_payout_due();\n IF v_weekly_phase IS NOT NULL THEN RETURN v_weekly_phase;END IF;\n v_promo:=public.fn_midway_weekly_horse_promo_due();"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_union_settlement_cascade_due",
+      "prorows": 0,
+      "pronargs": 0,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": null,
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  }
+]

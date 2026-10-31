@@ -1,3 +1,21 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
+import { createClient } from '@supabase/supabase-js';
+import {
+  acknowledgePreferenceWelcome,
+  logoutAndOpenFreshPreferenceDevice,
+  openFreshPreferenceDevice,
+} from './support/accountPreferenceSession';
+import {
+  CLEANUP_FREEZE_ALLOWANCE_MS,
+  createTemporaryCustomizationAccount,
+  cleanupTemporaryCustomizationAccount,
+  requireCustomizationCertificationEnvironment,
+  type TemporaryCustomizationAccount,
+} from './support/temporaryCustomizationAccount';
+import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
+import { observeSetupFailure } from './support/setupFailureObservation';
+import { ensurePlayableProfile } from './support/ensurePlayableProfile';
+import { ensureClubMembership } from './support/ensureClubMembership';
 import { test, expect, devices, type Page, type Frame } from '@playwright/test';
 import { CASH_SPECTATOR_ACTION, CASH_TABLE_CARD_SELECTOR } from './support/cashTableCandidates';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
@@ -67,7 +85,7 @@ test.afterEach(async ({ page }, testInfo) => {
 // than relying on on-first-retry, which never records these failures.
 test.use({ ...devices['iPhone 13'], trace: 'retain-on-failure' });
 
-async function openLobby(page: Page) {
+async function openLobby(page: Page, openSection = true) {
   // The Diamond Spins offer opens on the answer to this read. Listen before
   // navigating: it leaves as soon as the club resolves.
   const offer = diamondEntryRead(page);
@@ -81,13 +99,14 @@ async function openLobby(page: Page) {
   // Either optional welcome can cover a later tab action. Use the original
   // public dismissals, including the shared handler for a delayed Diamond offer.
   await prepareCashLobbyActions(page);
-  await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Cash Games', exact: true })).toBeVisible({
     timeout: 45_000,
   });
   // Then settle that offer here, through its real Not Now and with its whole
   // budget, before a 5-second assertion or a scroll measurement can meet it
   // (support/diamondInvitationOffer.ts has the four runs it failed).
   await settleDiamondSpinsOffer(page, offer);
+  if (openSection) await openLobbyGameSection(page, 'ALL');
 }
 
 test.describe('the mobile lobby chrome on production', () => {
@@ -114,11 +133,22 @@ test.describe('the mobile lobby chrome on production', () => {
       const proof = observeLobbyPreferenceProof(document, CLUB_ID);
       proofs.set(document, proof);
       proof.phase(phase);
-      await openLobby(document);
+      await openLobby(document, false);
       const documentOwner = await readLobbyPreferenceOwner(document);
       if (ownerId && documentOwner !== ownerId) throw new Error('Lobby preference account changed');
       ownerId = documentOwner;
       const saved = await proof.ready(ownerId);
+      if (saved) {
+        const section = ['MTT', 'SNG', 'SPIN', 'SATELLITE'].includes(saved)
+          ? 'Tournaments'
+          : 'Cash Games';
+        await expect(document.getByRole('button', { name: section, exact: true })).toHaveAttribute(
+          'aria-expanded',
+          'true'
+        );
+      } else {
+        await openLobbyGameSection(document, 'ALL');
+      }
       if (saved) {
         await expect(
           document
@@ -131,7 +161,7 @@ test.describe('the mobile lobby chrome on production', () => {
     const certificateOwner = await openPreferenceLobby(page, 'original-open');
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
-    const target = original === 'PLO' ? 'NLH' : 'PLO';
+    const target = ["MTT'S", 'SPINS', 'HEADS UP'].includes(original) ? 'PLO' : "MTT'S";
     let returningPage: Page | undefined;
     let returningReady = false;
     const failures: unknown[] = [];
@@ -202,9 +232,14 @@ test.describe('the mobile lobby chrome on production', () => {
     if (failures.length === 1) throw failures[0];
   });
 
-  test('MY WALLETS prints the count, keeps it, centred and unclipped', async ({ page }) => {
+  test('MY WALLETS lives in Cashier and keeps its count centred and unclipped', async ({
+    page,
+  }) => {
     await openLobby(page);
-    const small = page.locator('.lobby-wallets-trigger__copy small');
+    await expect(page.locator('.lobby-wallets-trigger')).toHaveCount(0);
+    await page.getByRole('link', { name: 'Cashier', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Cashier', exact: true })).toBeVisible();
+    const small = page.locator('.cashier-my-wallets .lobby-wallets-trigger__copy small');
 
     /* The number the viewer's role decides, in the wallet's own words. Not a
        placeholder, and not the empty bay that a wiped count leaves behind. */
@@ -238,6 +273,19 @@ test.describe('the mobile lobby chrome on production', () => {
     }, TITLE_CENTRE_PCT);
     expect(m.clipped, `${printed} is clipped at the plate's edge`).toBe(false);
     expect(m.offCentreByPct, `${printed} is off the painted title's centre`).toBeLessThan(1);
+    const wallets = page.getByRole('region', { name: 'My Wallets', exact: true });
+    const trigger = wallets.getByRole('button', { name: /^My Wallets/i });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(
+      wallets.getByRole('region', { name: 'Wallet Balances', exact: true })
+    ).toBeVisible();
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(
+      wallets.getByRole('region', { name: 'Wallet Balances', exact: true })
+    ).toBeHidden();
   });
 
   test('Create, Find and Join lead the arena with no Play Poker plate', async ({ page }) => {
@@ -251,8 +299,9 @@ test.describe('the mobile lobby chrome on production', () => {
 
   test('compact rows open details and filters stay at their original position', async ({
     page,
-  }) => {
+  }, testInfo) => {
     await openLobby(page);
+    await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     await allGames.click();
     await expect(allGames).toHaveAttribute('aria-selected', 'true');
@@ -302,6 +351,59 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toBeVisible();
     await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toHaveCount(0);
+
+    const cashDoor = page.getByRole('button', { name: 'Cash Games', exact: true });
+    const tournamentDoor = page.getByRole('button', { name: 'Tournaments', exact: true });
+    await tournamentDoor.click();
+    await expect(tournamentDoor).toHaveAttribute('aria-expanded', 'true');
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'false');
+    const gameTypes = page.getByRole('tablist', { name: 'Game Type', exact: true });
+    await expect(gameTypes.getByRole('tab')).toHaveText([
+      "MTT'S",
+      'SPINS',
+      "SIT N GO'S",
+      'SATELLITES',
+    ]);
+    await gameTypes.getByRole('tab', { name: "MTT'S", exact: true }).click();
+    await expect(gameTypes.getByRole('tab', { name: "MTT'S", exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await page.evaluate(() => document.fonts.ready);
+    const labels = page.locator('#lobby-game-section-controls .lobby-filter-label__text');
+    expect(await labels.count()).toBeGreaterThanOrEqual(4);
+    for (const label of await labels.all()) {
+      const fits = await label.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const ink = range.getBoundingClientRect();
+        const face = el.parentElement!.getBoundingClientRect();
+        return (
+          ink.left >= face.left - 1 &&
+          ink.right <= face.right + 1 &&
+          ink.top >= face.top - 1 &&
+          ink.bottom <= face.bottom + 1
+        );
+      });
+      expect(fits, `${await label.textContent()} must fit its painted face`).toBe(true);
+    }
+    await testInfo.attach('live-tournament-filters.png', {
+      body: await page.locator('.lobby-controls').screenshot(),
+      contentType: 'image/png',
+    });
+    await tournamentDoor.click();
+    await expect(gameTypes).toHaveCount(0);
+    await cashDoor.click();
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'true');
+    await expect(gameTypes.getByRole('tab')).toHaveText(['ALL', 'NLH', 'PLO', 'LIMIT']);
+    await testInfo.attach('live-cash-filters.png', {
+      body: await page.locator('.lobby-controls').screenshot(),
+      contentType: 'image/png',
+    });
+    await cashDoor.click();
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'false');
+    await expect(tournamentDoor).toHaveAttribute('aria-expanded', 'false');
+    await expect(gameTypes).toHaveCount(0);
   });
 
   test('tournament Details stays inside the spectator table lobby tab', async ({
@@ -336,6 +438,7 @@ test.describe('the mobile lobby chrome on production', () => {
     };
     try {
       await openLobby(page);
+      await openLobbyGameSection(page, 'ALL');
       await page.getByRole('tab', { name: 'ALL', exact: true }).click();
       const cash = page.locator(`${CASH_TABLE_CARD_SELECTOR}:visible`).first();
       await expect(cash, 'the certificate club has a live cash game to view').toBeVisible({
@@ -357,7 +460,8 @@ test.describe('the mobile lobby chrome on production', () => {
         .click();
       const lobby = page.locator('.multi-table-page__lobby-tab .club-home:visible');
       await expect(lobby).toBeVisible({ timeout: 30_000 });
-      await lobby.getByRole('tab', { name: 'MTT', exact: true }).click();
+      await openLobbyGameSection(lobby, 'MTT');
+      await lobby.getByRole('tab', { name: "MTT'S", exact: true }).click();
       const tournament = lobby
         .locator('[data-testid="lobby-game-row"][data-kind="mtt"]:visible')
         .first();
@@ -380,11 +484,64 @@ test.describe('the mobile lobby chrome on production', () => {
         timeout: 20_000,
       });
       await expect(actionBar).toBeVisible();
+      const lobbyTab = actionBar.locator('[data-tabid^="lobby:"]');
+      await expect(lobbyTab).toHaveCount(1);
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      // The former restore only stole focus when the remembered table index
+      // was greater than zero. Put that observer behind the active lobby
+      // through the real tab menu so this case exercises that exact branch.
+      const lobbyId = await lobbyTab.getAttribute('data-tabid');
+      const observerId = new URL(tableUrl).pathname.split('/').pop()!;
+      await lobbyTab.click({ button: 'right' });
+      await page.getByRole('button', { name: 'Move Left', exact: true }).click();
+      await expect(actionBar.locator('[data-tabid]').nth(0)).toHaveAttribute(
+        'data-tabid',
+        lobbyId!
+      );
+      await expect(actionBar.locator('[data-tabid]').nth(1)).toHaveAttribute(
+        'data-tabid',
+        observerId
+      );
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      const ownerId = await readLobbyPreferenceOwner(page);
+      const seatRefresh = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname.endsWith('/table_seats') &&
+          url.searchParams.get('select') === 'table_id' &&
+          url.searchParams.get('user_id') === `eq.${ownerId}`
+        );
+      });
+      // Exercise the real visibility recovery read, without a seat or purchase.
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      const refreshed = await seatRefresh;
+      expect(refreshed.ok(), 'the owned seat refresh failed').toBe(true);
+      expect(await refreshed.json(), 'the certificate identity must stay an observer').toEqual([]);
+      // The former focus theft ran 250ms after this authoritative response.
+      // Observe past that known deadline, then require the same details page.
+      await page.waitForTimeout(500);
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      await expect(
+        page.locator('.tournament-details[data-lobby-tab="true"]:visible')
+      ).toBeVisible();
+      await testInfo.attach('plus-page-after-seat-refresh', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
       expect(page.url()).toBe(tableUrl);
       expect(
         routeTrace.every((url) => url === tableUrl),
         'Details left the running table route'
       ).toBe(true);
+      // Only the player's explicit Close Lobby gesture removes this page.
+      await lobbyTab.click({ button: 'right' });
+      await page.getByRole('button', { name: 'Close Lobby', exact: true }).click();
+      await expect(actionBar.locator('[data-tabid^="lobby:"]')).toHaveCount(0);
+      await expect(actionBar.locator(`[data-tabid="${observerId}"]`)).toHaveAttribute(
+        'aria-current',
+        'true'
+      );
       expect(participation, 'spectator navigation attempted participation').toEqual([]);
     } finally {
       page.off('framenavigated', observeRoute);
@@ -447,4 +604,757 @@ test.describe('the mobile lobby chrome on production', () => {
       )
       .toBeLessThan(1);
   });
+  test('player preferences save automatically and survive reload and reconnect', async ({
+    page,
+  }) => {
+    await page.goto('settings', { waitUntil: 'domcontentloaded' });
+    const volume = page.getByRole('slider', { name: 'Sound Volume', exact: true });
+    await expect(volume).toBeVisible({ timeout: 30_000 });
+    const original = await volume.inputValue();
+    const chosen = original === '23' ? '24' : '23';
+    const save = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rpc/fn_patch_account_settings') &&
+        response.ok() &&
+        response.request().postDataJSON()?.p_settings_patch?.soundVolume === Number(chosen)
+    );
+    await volume.evaluate((input: HTMLInputElement, value) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, chosen);
+    await save;
+    await expect(page.getByText('All Visible Controls Are Saved.', { exact: true })).toBeVisible();
+    try {
+      await page.context().setOffline(true);
+      await expect(volume).toHaveValue(chosen);
+    } finally {
+      await page.context().setOffline(false);
+    }
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(volume).toHaveValue(chosen, { timeout: 30_000 });
+    const restore = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rpc/fn_patch_account_settings') &&
+        response.ok() &&
+        response.request().postDataJSON()?.p_settings_patch?.soundVolume === Number(original)
+    );
+    await volume.evaluate((input: HTMLInputElement, value) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, original);
+    await restore;
+
+    await page.goto('notifications', { waitUntil: 'domcontentloaded' });
+    const unread = page
+      .getByRole('group', { name: 'Filter Notifications' })
+      .getByRole('button', { name: /^Unread/ });
+    await expect(unread).toBeVisible({ timeout: 30_000 });
+    const preferenceOwner = await readLobbyPreferenceOwner(page);
+    const preferenceKey = 'NotificationsPage:filter:global';
+    const filterSaved = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rest/v1/user_page_preferences') &&
+        response.request().method() === 'POST' &&
+        response.ok() &&
+        response.request().postDataJSON()?.user_id === preferenceOwner &&
+        response.request().postDataJSON()?.preference_key === preferenceKey &&
+        response.request().postDataJSON()?.value === 'unread'
+    );
+    await unread.click();
+    await filterSaved;
+    const readback = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rest/v1/user_page_preferences') &&
+        response.request().method() === 'GET' &&
+        new URL(response.url()).searchParams.get('user_id') === `eq.${preferenceOwner}` &&
+        new URL(response.url()).searchParams.get('preference_key') === `eq.${preferenceKey}` &&
+        response.ok()
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const row = await (await readback).json();
+    expect(row?.value ?? row?.[0]?.value).toBe('unread');
+    await expect(unread).toHaveAttribute('aria-pressed', 'true');
+
+    const all = page
+      .getByRole('group', { name: 'Filter Notifications' })
+      .getByRole('button', { name: /^All/ });
+    const interrupted = page.waitForEvent('requestfailed', {
+      predicate: (request) =>
+        request.url().includes('/rest/v1/user_page_preferences') &&
+        request.method() === 'POST' &&
+        request.postDataJSON()?.user_id === preferenceOwner &&
+        request.postDataJSON()?.preference_key === preferenceKey &&
+        request.postDataJSON()?.value === 'all',
+    });
+    try {
+      await page.context().setOffline(true);
+      await all.click();
+      await expect(all).toHaveAttribute('aria-pressed', 'true');
+      await interrupted;
+      await expect(all).toHaveAttribute('aria-pressed', 'true');
+    } finally {
+      await page.context().setOffline(false);
+    }
+    const recovered = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rest/v1/user_page_preferences') &&
+        response.request().method() === 'POST' &&
+        response.ok() &&
+        response.request().postDataJSON()?.user_id === preferenceOwner &&
+        response.request().postDataJSON()?.preference_key === preferenceKey &&
+        response.request().postDataJSON()?.value === 'all'
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await recovered;
+    const recoveredReadback = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rest/v1/user_page_preferences') &&
+        response.request().method() === 'GET' &&
+        new URL(response.url()).searchParams.get('user_id') === `eq.${preferenceOwner}` &&
+        new URL(response.url()).searchParams.get('preference_key') === `eq.${preferenceKey}` &&
+        response.ok()
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const recoveredRow = await (await recoveredReadback).json();
+    expect(recoveredRow?.value ?? recoveredRow?.[0]?.value).toBe('all');
+    await expect(all).toHaveAttribute('aria-pressed', 'true');
+  });
 });
+
+const preferenceLifecycleTest = test.extend<{ preferenceAccount: TemporaryCustomizationAccount }>({
+  preferenceAccount: [
+    async ({ baseURL }, provide, testInfo) => {
+      if (!baseURL) throw new Error('Configured BASE_URL required');
+      const environment = requireCustomizationCertificationEnvironment();
+      const account = await createTemporaryCustomizationAccount(
+        environment,
+        'preferences-lifecycle',
+        0
+      );
+      try {
+        await testInfo.attach('preference-account-owner.json', {
+          body: Buffer.from(JSON.stringify({ ownerId: account.id })),
+          contentType: 'application/json',
+        });
+        await provide(account);
+      } finally {
+        // The test SDK auth lock stalled a prior teardown. A fresh anonymous
+        // client lets the original guarded cleanup retire this owner's sessions.
+        const cleanupClient = createClient(environment.supabaseUrl, environment.publishableKey, {
+          auth: {
+            storageKey: `preference-cleanup:${account.id}`,
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false,
+          },
+        });
+        await cleanupTemporaryCustomizationAccount(environment, {
+          ...account,
+          client: cleanupClient,
+        });
+        await testInfo.attach('preference-account-cleanup.json', {
+          body: Buffer.from(JSON.stringify({ ownerId: account.id, cleanupVerified: true })),
+          contentType: 'application/json',
+        });
+      }
+    },
+    // The guarded cleanup can wait on a real freeze; preserve its existing allowance.
+    { timeout: 120_000 + CLEANUP_FREEZE_ALLOWANCE_MS },
+  ],
+  page: [
+    async ({ browser, baseURL, preferenceAccount }, provide, testInfo) => {
+      if (!baseURL) throw new Error('Configured BASE_URL required');
+      const owned = await openFreshPreferenceDevice(browser, baseURL, preferenceAccount);
+      // Own contexts do not inherit global setup's passive navigation observer.
+      // Retain evidence for this original attempt without another navigation.
+      const observation = observeSetupFailure(
+        owned.page,
+        baseURL,
+        process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+      );
+      try {
+        try {
+          await owned.page.goto('settings', { waitUntil: 'domcontentloaded' });
+          observation.stage('terms');
+          await ensureAcceptedTerms(owned.page);
+          observation.stage('profile');
+          await ensurePlayableProfile(owned.page);
+          await acknowledgePreferenceWelcome(owned.page);
+        } catch (error) {
+          try {
+            await testInfo.attach('owned-preference-setup-failure.json', {
+              contentType: 'application/json',
+              body: Buffer.from(JSON.stringify(observation.snapshot())),
+            });
+          } catch (attachmentError) {
+            throw new AggregateError(
+              [error, attachmentError],
+              'Preference setup and evidence attachment failed.'
+            );
+          }
+          throw error;
+        }
+        observation.dispose();
+        await provide(owned.page);
+      } finally {
+        observation.dispose();
+        await owned.context.close();
+      }
+    },
+    { timeout: 120_000 },
+  ],
+});
+
+preferenceLifecycleTest.describe('owned preference lifecycle', () => {
+  preferenceLifecycleTest.describe.configure({ timeout: 300_000 });
+  preferenceLifecycleTest(
+    'all visible settings and category filters survive UI logout and a fresh device',
+    async ({ page, preferenceAccount }, testInfo) => {
+      test.setTimeout(300_000);
+      await page.goto('settings', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('checkbox', { name: 'Sound Effects', exact: true })).toBeVisible({
+        timeout: 30_000,
+      });
+      const controls: Record<string, boolean | string> = {};
+      const settingKeys: Record<string, string> = {
+        'Sound Effects': 'soundEnabled',
+        'Four-Color Deck': 'fourColorDeck',
+        'Announcement Ticker': 'showTicker',
+        'Show Pot Odds': 'showPotOdds',
+        'Tournament Reminders': 'tournamentReminders',
+        'Club Activity': 'clubActivity',
+        'Achievement Unlocked': 'achievementNotifications',
+        'Friend Alerts': 'friendAlerts',
+        'Settlement Alerts': 'settlementAlerts',
+        'Share Usage Analytics': 'shareAnalytics',
+      };
+      for (const checkbox of await page.getByRole('checkbox').all()) {
+        if (!(await checkbox.isVisible())) continue;
+        const label = await checkbox.getAttribute('aria-label');
+        if (!label || !settingKeys[label]) throw new Error('Unmapped visible Settings checkbox');
+        const target = !(await checkbox.isChecked());
+        const saved = page.waitForResponse(
+          (response) =>
+            response.url().includes('/rpc/fn_patch_account_settings') &&
+            response.ok() &&
+            response.request().postDataJSON()?.p_settings_patch?.[settingKeys[label]] === target,
+          { timeout: 45_000 }
+        );
+        await checkbox.locator('..').click();
+        await expect(checkbox).toBeChecked({ checked: target });
+        await saved;
+        controls[label] = target;
+        await expect(
+          page.getByText('All Visible Controls Are Saved.', { exact: true })
+        ).toBeVisible();
+      }
+      for (const [label, value] of [
+        ['Theme', 'light'],
+        ['Animation Speed', 'slow'],
+      ]) {
+        const select = page.getByRole('combobox', { name: label, exact: true });
+        const target =
+          (await select.inputValue()) === value ? (label === 'Theme' ? 'dark' : 'fast') : value;
+        const key = label === 'Theme' ? 'theme' : 'animationSpeed';
+        const saved = page.waitForResponse(
+          (response) =>
+            response.url().includes('/rpc/fn_patch_account_settings') &&
+            response.ok() &&
+            response.request().postDataJSON()?.p_settings_patch?.[key] === target,
+          { timeout: 45_000 }
+        );
+        await select.selectOption(target);
+        await saved;
+        controls[label] = target;
+        await expect(
+          page.getByText('All Visible Controls Are Saved.', { exact: true })
+        ).toBeVisible();
+      }
+      await page.goto('achievements', { waitUntil: 'domcontentloaded' });
+      const category = page
+        .getByRole('group', { name: 'Achievement Category' })
+        .getByRole('button', { name: /^Social \(/ });
+      await category.click();
+      await expect(category).toHaveAttribute('aria-pressed', 'true');
+      const fresh = await logoutAndOpenFreshPreferenceDevice(
+        page,
+        testInfo.project.use.baseURL!,
+        preferenceAccount
+      );
+      try {
+        await expect
+          .poll(async () => {
+            const row = await fresh.client
+              .from('user_page_preferences')
+              .select('value')
+              .eq('user_id', fresh.ownerId)
+              .eq('preference_key', 'achievements:category:global')
+              .maybeSingle();
+            if (row.error) return null;
+            return row.data?.value;
+          })
+          .toBe('social');
+        const profile = await fresh.client
+          .from('profiles')
+          .select('settings')
+          .eq('id', fresh.ownerId)
+          .maybeSingle();
+        expect(profile.error).toBeNull();
+        for (const [label, value] of Object.entries(controls))
+          expect(
+            profile.data?.settings[
+              settingKeys[label] || (label === 'Theme' ? 'theme' : 'animationSpeed')
+            ],
+            label
+          ).toBe(value);
+        await fresh.page.goto('settings', { waitUntil: 'domcontentloaded' });
+        await acknowledgePreferenceWelcome(fresh.page);
+        for (const [label, value] of Object.entries(controls)) {
+          if (typeof value === 'boolean')
+            await expect(
+              fresh.page.getByRole('checkbox', { name: label, exact: true })
+            ).toBeChecked({
+              checked: value,
+              timeout: 30_000,
+            });
+          else
+            await expect(
+              fresh.page.getByRole('combobox', { name: label, exact: true })
+            ).toHaveValue(value, { timeout: 30_000 });
+        }
+        await fresh.page.goto('achievements', { waitUntil: 'domcontentloaded' });
+        await expect(
+          fresh.page
+            .getByRole('group', { name: 'Achievement Category' })
+            .getByRole('button', { name: /^Social \(/ })
+        ).toHaveAttribute('aria-pressed', 'true');
+        await testInfo.attach('account-settings-fresh-device-proof.json', {
+          body: Buffer.from(
+            JSON.stringify({
+              ownerId: fresh.ownerId,
+              controls,
+              accountSettingsReadback: Object.fromEntries(
+                Object.keys(controls).map((label) => [
+                  label,
+                  profile.data?.settings[
+                    settingKeys[label] || (label === 'Theme' ? 'theme' : 'animationSpeed')
+                  ],
+                ])
+              ),
+              category: 'social',
+              authOnlyContext: true,
+              logout: 'real-ui',
+              hardwareConsent: 'not requested by visible controls',
+            })
+          ),
+          contentType: 'application/json',
+        });
+      } finally {
+        await fresh.context.close();
+      }
+    }
+  );
+
+  preferenceLifecycleTest(
+    'club advanced seats and Players heading survive logout and an empty-device context',
+    async ({ page, preferenceAccount }, testInfo) => {
+      test.setTimeout(300_000);
+      await ensureClubMembership(page, testInfo.project.use.baseURL!, CLUB_ID);
+      await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded' });
+      await prepareCashLobbyActions(page);
+      await openLobbyGameSection(page, 'NLH');
+      const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
+      await tabs.getByRole('tab', { name: 'NLH', exact: true }).click();
+      await expect(tabs.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      const exactUrl = page.url();
+      await page.getByRole('button', { name: 'Filters And Sort', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Advanced Filters', exact: true });
+      const seats = dialog.getByRole('slider', { name: 'Minimum Seats', exact: true });
+      await expect(seats).toBeVisible();
+      const original = await seats.inputValue();
+      const chosen = original === '3' ? '4' : '3';
+      const saved = page.waitForResponse(
+        (response) =>
+          response.url().includes('/rest/v1/user_lobby_filters') &&
+          response.request().method() === 'POST' &&
+          response.ok() &&
+          response.request().postDataJSON()?.filters?.HOLDEM?.seatMin === Number(chosen),
+        { timeout: 45_000 }
+      );
+      await seats.evaluate((input: HTMLInputElement, value) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+          input,
+          value
+        );
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }, chosen);
+      await saved;
+      await dialog.getByRole('button', { name: 'Close Game Filters', exact: true }).click();
+      const players = page
+        .getByRole('columnheader', { name: /^Players/ })
+        .filter({ visible: true })
+        .first();
+      await expect(players).toBeVisible();
+      if (await players.getByRole('button').count()) await players.getByRole('button').click();
+      else await players.click();
+      const direction = await players.getAttribute('aria-sort');
+      expect(['ascending', 'descending']).toContain(direction);
+      const fresh = await logoutAndOpenFreshPreferenceDevice(
+        page,
+        testInfo.project.use.baseURL!,
+        preferenceAccount
+      );
+      try {
+        await expect
+          .poll(async () => {
+            const row = await fresh.client
+              .from('user_lobby_filters')
+              .select('filters')
+              .eq('user_id', fresh.ownerId)
+              .eq('club_id', CLUB_ID)
+              .maybeSingle();
+            return row.error ? null : row.data?.filters?.HOLDEM?.seatMin;
+          })
+          .toBe(Number(chosen));
+        const sortKey = `lobby:headingSort:HOLDEM:${CLUB_ID}`;
+        await expect
+          .poll(async () => {
+            const row = await fresh.client
+              .from('user_page_preferences')
+              .select('value')
+              .eq('user_id', fresh.ownerId)
+              .eq('preference_key', sortKey)
+              .maybeSingle();
+            return row.error ? null : row.data?.value;
+          })
+          .toEqual({
+            key: 'players',
+            dir: direction === 'ascending' ? 'asc' : 'desc',
+            chosen: true,
+          });
+        await fresh.page.goto(exactUrl, { waitUntil: 'domcontentloaded' });
+        await acknowledgePreferenceWelcome(fresh.page);
+        await prepareCashLobbyActions(fresh.page);
+        await expect(fresh.page).toHaveURL(exactUrl);
+        await openLobbyGameSection(fresh.page, 'NLH');
+        await expect(fresh.page.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+          { timeout: 30_000 }
+        );
+        await expect(
+          fresh.page
+            .getByRole('columnheader', { name: /^Players/ })
+            .filter({ visible: true })
+            .first()
+        ).toHaveAttribute('aria-sort', direction!, { timeout: 30_000 });
+        await fresh.page.getByRole('button', { name: 'Filters And Sort', exact: true }).click();
+        await expect(
+          fresh.page
+            .getByRole('dialog', { name: 'Advanced Filters', exact: true })
+            .getByRole('slider', { name: 'Minimum Seats', exact: true })
+        ).toHaveValue(chosen, { timeout: 30_000 });
+        const filterReadback = await fresh.client
+          .from('user_lobby_filters')
+          .select('filters')
+          .eq('user_id', fresh.ownerId)
+          .eq('club_id', CLUB_ID)
+          .maybeSingle();
+        const headingReadback = await fresh.client
+          .from('user_page_preferences')
+          .select('value')
+          .eq('user_id', fresh.ownerId)
+          .eq('preference_key', sortKey)
+          .maybeSingle();
+        expect(filterReadback.error).toBeNull();
+        expect(headingReadback.error).toBeNull();
+        await testInfo.attach('club-filter-fresh-device-proof.json', {
+          body: Buffer.from(
+            JSON.stringify({
+              ownerId: fresh.ownerId,
+              clubId: CLUB_ID,
+              exactUrl,
+              category: 'HOLDEM',
+              minimumSeats: Number(chosen),
+              sortKey,
+              direction,
+              accountFilterReadback: filterReadback.data?.filters.HOLDEM,
+              accountHeadingReadback: headingReadback.data?.value,
+              authOnlyContext: true,
+              logout: 'real-ui',
+            })
+          ),
+          contentType: 'application/json',
+        });
+      } finally {
+        await fresh.context.close();
+      }
+    }
+  );
+});
+
+preferenceLifecycleTest(
+  'table toggle preferences survive UI logout and a cache-empty device',
+  async ({ page, preferenceAccount }, testInfo) => {
+    test.setTimeout(300_000);
+    await page.goto('settings', { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Open Menu', exact: true }).click();
+    await page.getByRole('button', { name: 'Table Settings', exact: true }).click();
+    const panel = page.locator('.tsp-inline');
+    await expect(panel).toHaveAttribute('aria-busy', 'false', { timeout: 45_000 });
+    const choices: Record<string, boolean> = {};
+    const labels: Record<string, string> = {};
+    for (const control of await panel.getByRole('switch').all()) {
+      if ((await control.getAttribute('data-vip-gated')) === 'true') continue;
+      const labelId = await control.getAttribute('aria-labelledby');
+      if (!labelId?.startsWith('table-setting-') || !labelId.endsWith('-label'))
+        throw new Error('Unknown table preference owner');
+      const key = labelId.slice('table-setting-'.length, -'-label'.length);
+      const target = (await control.getAttribute('aria-checked')) !== 'true';
+      const save = page.waitForResponse(
+        (response) =>
+          response.url().includes('/rest/v1/user_table_settings') &&
+          response.request().method() === 'POST' &&
+          response.ok() &&
+          response.request().postDataJSON()?.[key] === target,
+        { timeout: 45_000 }
+      );
+      await control.click();
+      await save;
+      await expect(control).toHaveAttribute('aria-checked', String(target));
+      choices[key] = target;
+      labels[key] = (await page.locator(`[id="${labelId}"]`).innerText()).trim();
+    }
+    expect(Object.keys(choices).length).toBeGreaterThan(0);
+    const fresh = await logoutAndOpenFreshPreferenceDevice(
+      page,
+      testInfo.project.use.baseURL!,
+      preferenceAccount
+    );
+    try {
+      await fresh.page.goto('settings', { waitUntil: 'domcontentloaded' });
+      await acknowledgePreferenceWelcome(fresh.page);
+      await fresh.page.getByRole('button', { name: 'Open Menu', exact: true }).click();
+      await fresh.page.getByRole('button', { name: 'Table Settings', exact: true }).click();
+      const row = await fresh.client
+        .from('user_table_settings')
+        .select('*')
+        .eq('user_id', fresh.ownerId)
+        .maybeSingle();
+      expect(row.error).toBeNull();
+      for (const [key, value] of Object.entries(choices)) {
+        expect(row.data?.[key], key).toBe(value);
+        await expect(
+          fresh.page
+            .locator('.tsp-inline')
+            .locator(`[role="switch"][aria-labelledby="table-setting-${key}-label"]`)
+        ).toHaveAttribute('aria-checked', String(value), { timeout: 30_000 });
+      }
+      await testInfo.attach('table-toggle-fresh-device-proof.json', {
+        body: Buffer.from(
+          JSON.stringify({
+            ownerId: fresh.ownerId,
+            choices,
+            labels,
+            authOnlyContext: true,
+            logout: 'real-ui',
+          })
+        ),
+        contentType: 'application/json',
+      });
+    } finally {
+      await fresh.context.close();
+    }
+  }
+);
+
+preferenceLifecycleTest(
+  'stats workspace autosaves independent preferences through UI logout and a fresh device',
+  async ({ page, preferenceAccount }, testInfo) => {
+    test.setTimeout(300_000);
+    const table = 'ca_stats_workspace_preferences';
+    const ownerId = preferenceAccount.id;
+    const safePreferenceResponses: Array<Record<string, unknown>> = [];
+    page.on('response', (response) => {
+      const request = response.request();
+      if (!['POST', 'PATCH', 'PUT'].includes(request.method())) return;
+      let body: Record<string, unknown>;
+      try {
+        const raw = request.postDataJSON();
+        body = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
+      } catch {
+        return;
+      }
+      if (!body || (body.user_id && body.user_id !== ownerId)) return;
+      const preferences = Object.fromEntries(
+        Object.entries(body).filter(([key]) =>
+          [
+            'dashboard_layout',
+            'privacy_presentation_mode',
+            'p_dashboard_layout',
+            'p_privacy_presentation_mode',
+          ].includes(key)
+        )
+      );
+      if (!Object.keys(preferences).length) return;
+      safePreferenceResponses.push({
+        method: request.method(),
+        path: new URL(response.url()).pathname,
+        status: response.status(),
+        preferences,
+      });
+    });
+    const attachSafeResponses = () =>
+      testInfo.attach('stats-workspace-preference-response-metadata.json', {
+        body: Buffer.from(JSON.stringify(safePreferenceResponses)),
+        contentType: 'application/json',
+      });
+    const read = async (client: typeof preferenceAccount.client) => {
+      const result = await client
+        .from(table)
+        .select('dashboard_layout, privacy_presentation_mode')
+        .eq('user_id', ownerId)
+        .single();
+      expect(result.error).toBeNull();
+      return result.data;
+    };
+    // Exercise authenticated REST/RLS partial upserts independently of the UI:
+    // each omitted column must retain the other device's recorded choice.
+    for (const patch of [
+      {
+        user_id: ownerId,
+        dashboard_layout: ['overview', 'hands'],
+        privacy_presentation_mode: true,
+      },
+      { user_id: ownerId, dashboard_layout: ['performance', 'overview'] },
+    ]) {
+      const result = await preferenceAccount.client
+        .from(table)
+        .upsert(patch, { onConflict: 'user_id' });
+      expect(result.error).toBeNull();
+    }
+    expect(await read(preferenceAccount.client)).toEqual({
+      dashboard_layout: ['performance', 'overview'],
+      privacy_presentation_mode: true,
+    });
+    const privacyPatch = await preferenceAccount.client
+      .from(table)
+      .upsert({ user_id: ownerId, privacy_presentation_mode: false }, { onConflict: 'user_id' });
+    expect(privacyPatch.error).toBeNull();
+    expect(await read(preferenceAccount.client)).toEqual({
+      dashboard_layout: ['performance', 'overview'],
+      privacy_presentation_mode: false,
+    });
+
+    await page.goto('stats?tab=workspace', { waitUntil: 'domcontentloaded' });
+    const zones = page.getByLabel('Dashboard Zones', { exact: true });
+    await expect(zones).toHaveValue(/^performance, overview,/, { timeout: 45_000 });
+    await zones.fill('over');
+    expect(await read(preferenceAccount.client)).toEqual({
+      dashboard_layout: ['performance', 'overview'],
+      privacy_presentation_mode: false,
+    });
+    const layoutSave = page.waitForResponse(
+      (response) => {
+        if (
+          !response.url().includes(`/rest/v1/${table}`) ||
+          response.request().method() !== 'POST' ||
+          !response.ok()
+        )
+          return false;
+        const raw = response.request().postDataJSON();
+        const body = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
+        return (
+          JSON.stringify(body?.dashboard_layout) === JSON.stringify(['hands', 'overview']) &&
+          !Object.hasOwn(body, 'privacy_presentation_mode')
+        );
+      },
+      { timeout: 45_000 }
+    );
+    await zones.fill('hands, overview');
+    await layoutSave.catch(async (error) => {
+      await attachSafeResponses();
+      throw error;
+    });
+    await expect(page.getByText('Preference Saved.', { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(await read(preferenceAccount.client)).toEqual({
+      dashboard_layout: ['hands', 'overview'],
+      privacy_presentation_mode: false,
+    });
+    const privacyButton = page.getByRole('button', { name: 'Use Presentation Mode', exact: true });
+    await privacyButton.scrollIntoViewIfNeeded({ timeout: 15_000 });
+    const privacySave = page.waitForResponse(
+      (response) => {
+        if (
+          !response.url().includes(`/rest/v1/${table}`) ||
+          response.request().method() !== 'POST' ||
+          !response.ok()
+        )
+          return false;
+        const raw = response.request().postDataJSON();
+        const body = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
+        return body?.privacy_presentation_mode === true && !Object.hasOwn(body, 'dashboard_layout');
+      },
+      { timeout: 45_000 }
+    );
+    await Promise.all([
+      privacySave,
+      (async () => {
+        await privacyButton.click({ timeout: 15_000 });
+        await expect(
+          page.getByRole('button', { name: 'Show Full Detail', exact: true })
+        ).toBeVisible({ timeout: 15_000 });
+      })(),
+    ]).catch(async (error) => {
+      await attachSafeResponses();
+      throw error;
+    });
+    await attachSafeResponses();
+    expect(await read(preferenceAccount.client)).toEqual({
+      dashboard_layout: ['hands', 'overview'],
+      privacy_presentation_mode: true,
+    });
+    const fresh = await logoutAndOpenFreshPreferenceDevice(
+      page,
+      testInfo.project.use.baseURL!,
+      preferenceAccount
+    );
+    try {
+      await fresh.page.goto('stats?tab=workspace', { waitUntil: 'domcontentloaded' });
+      await acknowledgePreferenceWelcome(fresh.page);
+      await expect(fresh.page.getByLabel('Dashboard Zones', { exact: true })).toHaveValue(
+        /^hands, overview,/,
+        { timeout: 45_000 }
+      );
+      await expect(
+        fresh.page.getByRole('button', { name: 'Show Full Detail', exact: true })
+      ).toBeVisible();
+      const persisted = await read(fresh.client);
+      expect(persisted).toEqual({
+        dashboard_layout: ['hands', 'overview'],
+        privacy_presentation_mode: true,
+      });
+      await testInfo.attach('stats-workspace-fresh-device-proof.json', {
+        body: Buffer.from(
+          JSON.stringify({
+            ownerId,
+            persisted,
+            independentAuthenticatedPartialWrites: true,
+            validLayoutAutosave: true,
+            invalidPartialTypingIgnored: true,
+            authOnlyContext: true,
+            logout: 'real-ui',
+          })
+        ),
+        contentType: 'application/json',
+      });
+    } finally {
+      await fresh.context.close();
+    }
+  }
+);

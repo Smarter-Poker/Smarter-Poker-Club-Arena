@@ -23,6 +23,8 @@ type ClubFixture = {
 };
 
 const h = vi.hoisted(() => ({
+  prepareTable: vi.fn(),
+  warning: vi.fn(),
   from: vi.fn(),
   rpc: vi.fn(),
   resolveClub: vi.fn(),
@@ -101,17 +103,28 @@ vi.mock('../../src/utils/clubIdResolver', async (original) => ({
   resolveClubIdFilter: (id: string) => ({ column: 'id', value: id }),
 }));
 vi.mock('../../src/stores/useUserStore', () => ({
-  useUserStore: Object.assign((selector: any = (state: any) => state) => selector({ user: null }), {
-    getState: () => ({ user: null, setCurrentClub: h.setCurrentClub }),
-  }),
+  useUserStore: Object.assign(
+    (selector: any = (state: any) => state) =>
+      selector({ user: h.authenticated ? { id: 'viewer' } : null }),
+    {
+      getState: () => ({
+        user: h.authenticated ? { id: 'viewer' } : null,
+        setCurrentClub: h.setCurrentClub,
+      }),
+    }
+  ),
 }));
 vi.mock('../../src/components/common/Toast', () => ({
-  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: h.warning }),
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/components/lobby/lobbyViewPrefs', async (original) => ({
   ...(await original<any>()),
   fetchRemoteViewPrefs: async () => null,
+}));
+vi.mock('../../src/services/tableWarmup', async (original) => ({
+  ...(await original<any>()),
+  prepareTableForEntry: h.prepareTable,
 }));
 import ClubHomePage, { CLUB_HOME_CACHE_VER } from '../../src/pages/ClubHomePage';
 import { CLUB_HOME_CACHE_PREFIX } from '../../src/utils/clearUserCaches';
@@ -130,6 +143,7 @@ function mount(club = 'club-a') {
       <Link to="/clubs/club-b">Change Club</Link>
       <Routes>
         <Route path="/clubs/:clubId" element={<ClubHomePage />} />
+        <Route path="/table/:tableId" element={<div>Prepared Table Route</div>} />
       </Routes>
     </MemoryRouter>
   );
@@ -144,6 +158,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   vi.clearAllMocks();
+  h.prepareTable.mockReset().mockResolvedValue(undefined);
   h.factories.clear();
   h.bus.clear();
   h.channels.length = 0;
@@ -671,5 +686,35 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
     ).toHaveLength(0);
     expect(h.clubReads).toHaveLength(2);
     expect(h.tournamentReads).toHaveLength(2);
+  });
+});
+
+describe('the actual mounted View caller awaits table preparation', () => {
+  it('keeps the lobby after five seconds and opens only after preparation resolves', async () => {
+    h.authenticated = true;
+    const preparation = deferred<void>();
+    h.prepareTable.mockReturnValue(preparation.promise);
+    await mountCachedTable();
+    const buttons = screen.getAllByRole('button', { name: /View (?:Game|Table)/i });
+    fireEvent.click(buttons[0]);
+    await flush();
+    expect(h.prepareTable).toHaveBeenCalledWith('known-table');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    expect(screen.queryByText('Prepared Table Route')).toBeNull();
+    await act(async () => preparation.resolve());
+    expect(screen.getByText('Prepared Table Route')).toBeTruthy();
+    expect(h.warning).not.toHaveBeenCalled();
+  });
+  it('reports preparation failure and never navigates to an unprepared table', async () => {
+    h.authenticated = true;
+    h.prepareTable.mockRejectedValue(new Error('Table Preparation Timed Out'));
+    await mountCachedTable();
+    fireEvent.click(screen.getAllByRole('button', { name: /View (?:Game|Table)/i })[0]);
+    await flush();
+    expect(h.prepareTable).toHaveBeenCalledWith('known-table');
+    expect(screen.queryByText('Prepared Table Route')).toBeNull();
+    expect(h.warning).toHaveBeenCalledWith('Could Not Connect To The Table. Please Try Again.');
   });
 });

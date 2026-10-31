@@ -156,6 +156,7 @@ if [ -f "$CA_TREE_TOP/server/package.json" ]; then
 fi
 
 ALL_FILES=""
+PUSH_MAIN_TIP=""
 # Get the range of commits being pushed
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # Skip deletions
@@ -176,6 +177,13 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
         "${REMOTE_REF#refs/heads/}" "$REMOTE" "$URL"
       ;;
   esac
+
+  # Git passes a literal URL as $1 for URL pushes, not a remote name.
+  # Capture the associated tracking main once. Unknown/ambiguous destinations
+  # refuse explicitly instead of silently falling back to stale local main.
+  if [ -z "$PUSH_MAIN_TIP" ]; then
+    PUSH_MAIN_TIP=$(node "$CA_TREE_TOP/scripts/ci/resolve-push-main.mjs" "$REMOTE" "$URL") || exit 1
+  fi
 
   if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
     # ─────────────────────────────────────────────────────────────────────
@@ -205,8 +213,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     # against the merge base, and if there is no base, check the whole tree.
     # Never nothing.
     # ─────────────────────────────────────────────────────────────────────
-    BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null \
-           || git merge-base "$LOCAL_SHA" main 2>/dev/null || true)
+    BASE=$(git merge-base "$LOCAL_SHA" "$PUSH_MAIN_TIP" 2>/dev/null || true)
     if [ -n "$BASE" ]; then
       RANGE="$BASE..$LOCAL_SHA"
       FILES=$(git diff --name-only "$BASE" "$LOCAL_SHA" 2>/dev/null || true)
@@ -250,8 +257,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       RANGE="$REMOTE_SHA..$LOCAL_SHA"
       FILES=$(git diff --name-only "$REMOTE_SHA" "$LOCAL_SHA" 2>/dev/null || true)
     else
-      BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null \
-             || git merge-base "$LOCAL_SHA" main 2>/dev/null || true)
+      BASE=$(git merge-base "$LOCAL_SHA" "$PUSH_MAIN_TIP" 2>/dev/null || true)
       if [ -n "$BASE" ]; then
         echo "[club-arena pre-push] NOTE: the remote tip of this branch"
         echo "                      ($REMOTE_SHA)"
@@ -296,8 +302,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # newer engine bytes must not turn our unchanged inherited engine into a
   # branch-owned change. Capture the base once; no known base keeps every input.
   # ═══════════════════════════════════════════════════════════════════════
-  if [ -n "$FILES" ] && git rev-parse --verify -q "$REMOTE/main" >/dev/null 2>&1; then
-    QUALIFIED_MAIN_BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null || true)
+  if [ -n "$FILES" ]; then
+    QUALIFIED_MAIN_BASE=$(git merge-base "$LOCAL_SHA" "$PUSH_MAIN_TIP" 2>/dev/null || true)
     KEPT=""
     DROPPED=0
     for f in $FILES; do
@@ -390,8 +396,7 @@ $FILES"
   # Migration presence uses Git and the tracked schema manifest, not credentials.
   # Check the whole branch: a follow-up push can otherwise hide an earlier
   # migration behind HEAD~1 or the previous remote feature-branch tip.
-  MIGRATION_BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null \
-                   || git merge-base "$LOCAL_SHA" main 2>/dev/null || true)
+  MIGRATION_BASE=$(git merge-base "$LOCAL_SHA" "$PUSH_MAIN_TIP" 2>/dev/null || true)
   if [ -z "$MIGRATION_BASE" ]; then
     echo "[club-arena pre-push] BLOCKED: cannot establish the migration branch base."
     FAIL=1

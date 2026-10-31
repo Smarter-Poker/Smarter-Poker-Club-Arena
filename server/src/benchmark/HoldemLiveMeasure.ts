@@ -21,7 +21,7 @@
  *                           HANDS WITH |net| >= 20bb (HorseHandReview.FLAG_BB),
  *                           so this is the big-pot subset, stated in the report.
  *   4. receipt counts     - horse_brain_telemetry fires per day for
- *                           v61_river_one_pair_shade and v62_river_bettor_polarity.
+ *                           v61_river_one_pair_shade, v63_large_river_bet_shade and v62_river_bettor_polarity.
  *                           V62 is OPT-IN (default off since #8781), so zero V62
  *                           fires on a containing revision is the expected
  *                           state, not a wiring fault; V61 is the live witness.
@@ -516,7 +516,7 @@ export interface TelemetryRow {
   fires: number | string;
 }
 
-export const RECEIPT_FEATURES = ['v61_river_one_pair_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold'] as const;
+export const RECEIPT_FEATURES = ['v61_river_one_pair_shade', 'v63_large_river_bet_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold'] as const;
 
 export interface ReceiptCount {
   feature: string;

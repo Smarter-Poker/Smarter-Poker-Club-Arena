@@ -120,7 +120,9 @@ describe('the game bar does not offer a control that does nothing', () => {
 
   it('labels the button Sort on ALL', () => {
     expect(src).toContain("aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}");
-    expect(src).toContain("<span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>");
+    expect(src).toMatch(
+      /<LobbyFilterLabel>\s*\{gameType === 'ALL' \? 'Sort' : 'Filters'\}\s*<\/LobbyFilterLabel>/
+    );
   });
 
   it('the sheet hides the type tabs and every filter section in that mode', () => {

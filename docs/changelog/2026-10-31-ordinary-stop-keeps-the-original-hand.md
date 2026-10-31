@@ -1,42 +1,43 @@
-# Ordinary engine stop retains the original hand while joining its writers
+# Stop exact hand waits without discarding the original
 
-A direct engine stop could cancel the cooperative hand safety timer and then
-wait on the dealing loop whose active controller wait had no remaining release
-edge. Shutdown after its bounded drain and tournament-manager stop both reach
-this ordinary stop path.
+Ordinary engine stop could cancel the cooperative hand safety timer and then
+wait forever for a dealing loop whose exact controller wait had no remaining
+release edge. Shutdown after its bounded drain and tournament-manager stop both
+reach this path.
 
-Stop now releases only that exact controller-owned local wait after fencing
-further input. It retains the controller through the existing final snapshot;
-it does not complete a hand, invent an action, cancel its original permit, or
-release process ownership early. The captured continuation lane physically
-drains its accepted work. If an original remains unretained, stop explicitly
-refuses retirement before snapshot or controller/process cleanup and preserves
-the exact lane, controller and permit in quarantine. The same rejected stop
-promise remains authoritative on retry. Live publication fences still apply.
+After fencing input, stop releases only that controller-owned local wait and
+physically joins accepted continuation, settlement and other owned writers.
+It does not complete a hand, invent an action, cancel its original permit or
+release process ownership early.
 
-The existing terminal-boundary fixture exercises the actual controller wait
-producer and verifies snapshot custody. A pending real continuation persistence
-fixture verifies that ownership stays held through both the accepted write and
-refuses retirement with custody preserved. A queued batch also refuses without
-bypassing retention authority. A separate held snapshot proves custody until
-its completion.
-The lane fixture distinguishes terminal physical drainage from live authority.
+An unretained continuation refuses retirement before snapshot, controller
+cleanup or process release. An unfinished original without a retained lane also
+refuses: generic cash snapshots omit the private deck, and their legacy startup
+path abandons incomplete hands rather than reconstructing them. Both refusals
+retain the exact original controller, lane and permit in quarantine. The same
+rejected stop remains authoritative on retry.
 
-Source qualification is separate from engine activation and live behavior.
-This change does not establish applicability to the historical serving EED
-cutover: that guarded route excludes an active continuation lane.
+A side-effect-free controller getter exposes only authoritative started and
+completed lifecycle flags. The exact controller captured at the stop fence is
+checked after physical writers drain. Unknown or malformed phases refuse;
+genuinely prepared and completed controllers remain eligible. Completed
+external RIT boards do not need private recovery serialization merely to prove
+their completed phase. This getter is not a retention or settlement receipt.
 
-RIT and insurance response waits now drop their callbacks when their exact
-engine no longer has mutation authority, and clear their polling interval when
-the owner stops or is superseded. Retaining a controller for a pending snapshot
-must not allow a late response or its synchronous error fallback to advance that
-hand. The existing terminal-boundary fixture reproduces both stale callbacks
-before the guard and checks the original controller bytes remain unchanged.
+RIT and insurance response waits check mutation authority before continuing the
+hand, and clear their existing intervals on stop or supersession. The common
+synchronous runout fallback checks the same authority: waking a paced sleep at
+stop must not let its catch handler advance the retained original.
 
-The common synchronous runout fallback also checks lifecycle authority before
-any mutation. The actual paced-runout sleep wakes during stop, rejects at the
-existing weekly-pause checkpoint, and reaches this fallback; its regression
-fails before the guard and preserves the original controller after it. Existing
-positive runout, offer, consent, telemetry and weekly-barrier fixtures now claim
-real process ownership and release the exact isolated fixture registration in
-cleanup. Their gameplay and payout assertions remain unchanged.
+The existing fixtures reproduce the wait timeout, false successful retirement
+of an unfinished cash original, stale response callbacks and actual paced catch
+fallback. Regression coverage includes pending and queued continuation writes,
+unknown phases, repeated refused stops, held final snapshots, genuine prepared
+originals, completed external RIT and the existing positive gameplay/payout
+assertions. Positive fixtures claim and clean up their exact isolated process
+registrations; that cleanup is not a runtime retirement certificate.
+
+Source qualification is separate from activation and live behavior. This change
+does not establish applicability to the historical serving EED guarded cutover
+or automatically recover a quarantined original. No retention authority is
+bypassed, and no migration, payment, refund, forced action or watchdog is added.

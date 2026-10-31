@@ -121,16 +121,11 @@ afterEach(async () => {
 });
 
 describe('Run It Twice terminal error boundary', () => {
-  it('ordinary stop releases the exact active hand wait without losing its snapshot', async () => {
+  it('ordinary stop releases its exact wait but refuses to discard an unfinished cash original', async () => {
     const { engine, controller } = harness();
     expect(engine.claimProcessOwnership()).toBe(true);
     const original = controller.serializeRecoveryState();
-    const snapshots: string[] = [];
-    engine.flushSnapshot = vi.fn(async () => {
-      snapshots.push(engine.handController.serializeRecoveryState());
-    });
-    // Exercise the actual producer/release closure, without starting a second
-    // hand or allowing this already-started fixture to emit new poker events.
+    engine.flushSnapshot = vi.fn(async () => {});
     vi.spyOn(controller, 'start').mockImplementation(() => {});
     engine.discardPreparedHandForPause = () => false;
     const loop = engine.runOriginalController(engine.seatedPlayers, controller, 91, Date.now(), {
@@ -141,20 +136,84 @@ describe('Run It Twice terminal error boundary', () => {
     await Promise.resolve();
     expect(engine.activeHandWaitRelease?.controller).toBe(controller);
     const release = vi.spyOn(engine.activeHandWaitRelease, 'release');
-    snapshots.length = 0; // Ignore the existing hand-start anchor snapshot.
+    engine.flushSnapshot.mockClear(); // Ignore the existing hand-start anchor.
     const stopping = engine.stop();
+    const outcome = stopping.then(
+      () => null,
+      (error: unknown) => error
+    );
     try {
-      expect(await completionOutcome(stopping)).toBe('complete');
+      expect(await completionOutcome(outcome.then(() => {}))).toBe('complete');
+      expect(await outcome).toBeInstanceOf(AggregateError);
       expect(release).toHaveBeenCalledOnce();
       expect(release).toHaveBeenCalledWith('engine_stopped', true);
-      expect(snapshots).toEqual([original]);
-      expect(engine.hasReleasedProcessOwnership()).toBe(true);
+      expect(engine.flushSnapshot).not.toHaveBeenCalled();
+      expect(engine.handController).toBe(controller);
+      expect(controller.serializeRecoveryState() === original).toBe(true);
+      expect(engine.hasReleasedProcessOwnership()).toBe(false);
+      expect(engine.stop()).toBe(stopping);
+      await expect(engine.stop()).rejects.toThrow('retains unproven original hand custody');
     } finally {
-      // A failing pre-fix case must leave no synthetic owned writer behind.
       engine.activeHandWaitRelease?.release('test_cleanup', true);
-      await stopping;
+      await outcome;
+      (engine.constructor as any).releaseCurrentEngine(TABLE, engine);
     }
   });
+
+  it.each(['prepared', 'completed', 'external_completed'] as const)(
+    'permits retirement at a genuinely %s controller boundary',
+    async (boundary) => {
+      const { engine, controller, active } = harness();
+      expect(engine.claimProcessOwnership()).toBe(true);
+      const exact =
+        boundary === 'prepared'
+          ? new HandController(
+              JSON.parse(controller.serializeRecoveryState()).config,
+              [player(1), player(2)],
+              1
+            )
+          : controller;
+      if (boundary === 'completed') exact.continueRunout();
+      if (boundary === 'external_completed') await engine.dealAndResolveRIT(active);
+      engine.handController = exact;
+      const phase = exact.getLifecyclePhase();
+      expect(phase.handStarted).toBe(boundary !== 'prepared');
+      expect(phase.handCompleted).toBe(boundary !== 'prepared');
+      if (boundary === 'external_completed')
+        expect(() => exact.serializeRecoveryState()).toThrow('External Runout Original');
+      engine.flushSnapshot = vi.fn(async () => {
+        expect(engine.handController).toBe(exact);
+      });
+      await engine.stop();
+      expect(engine.flushSnapshot).toHaveBeenCalledWith(true);
+      expect(engine.hasReleasedProcessOwnership()).toBe(true);
+    }
+  );
+
+  it.each(['unknown', 'malformed'] as const)(
+    'retains exact controller custody when its lifecycle phase is %s',
+    async (phase) => {
+      const { engine, controller } = harness();
+      expect(engine.claimProcessOwnership()).toBe(true);
+      if (phase === 'unknown')
+        vi.spyOn(controller, 'getLifecyclePhase').mockImplementation(() => {
+          throw new Error('phase unavailable');
+        });
+      else vi.spyOn(controller, 'getLifecyclePhase').mockReturnValue({ handStarted: true } as any);
+      engine.flushSnapshot = vi.fn(async () => {});
+      const stopping = engine.stop();
+      try {
+        await expect(stopping).rejects.toThrow('retains unproven original hand custody');
+        expect(engine.handController).toBe(controller);
+        expect(engine.flushSnapshot).not.toHaveBeenCalled();
+        expect(engine.hasReleasedProcessOwnership()).toBe(false);
+        expect(engine.stop()).toBe(stopping);
+      } finally {
+        await stopping.catch(() => {});
+        (engine.constructor as any).releaseCurrentEngine(TABLE, engine);
+      }
+    }
+  );
 
   it.each(['scheduled', 'physical'] as const)(
     'refuses retirement while an accepted %s continuation remains unretained',
@@ -217,6 +276,7 @@ describe('Run It Twice terminal error boundary', () => {
   it('retains controller and process custody until the final snapshot completes', async () => {
     const { engine, controller } = harness();
     expect(engine.claimProcessOwnership()).toBe(true);
+    controller.continueRunout();
     const entered = deferred();
     const held = deferred();
     engine.flushSnapshot = vi.fn(async () => {
@@ -237,45 +297,41 @@ describe('Run It Twice terminal error boundary', () => {
     }
   });
 
-  it('drops the actual paced-runout catch fallback after stop wakes its sleep', async () => {
+  it('drops the actual paced-runout catch fallback while stop retains unfinished cash custody', async () => {
     const { engine, controller, active } = harness();
     expect(engine.claimProcessOwnership()).toBe(true);
     const original = controller.serializeRecoveryState();
     const continuation = vi.spyOn(controller, 'continueRunout');
-    const entered = deferred();
-    const held = deferred();
-    engine.flushSnapshot = vi.fn(async () => {
-      entered.resolve();
-      await held.promise;
-    });
+    engine.flushSnapshot = vi.fn(async () => {});
     const paced = engine.pacedAllInRunout(active, controller.getPot());
     const stopping = engine.stop();
+    const outcome = stopping.then(
+      () => null,
+      (error: unknown) => error
+    );
     try {
-      await entered.promise;
+      expect(await outcome).toBeInstanceOf(AggregateError);
       await paced;
       expect(engine.handController).toBe(controller);
       expect(continuation).not.toHaveBeenCalled();
       expect(controller.serializeRecoveryState() === original).toBe(true);
+      expect(engine.flushSnapshot).not.toHaveBeenCalled();
+      expect(engine.hasReleasedProcessOwnership()).toBe(false);
     } finally {
-      held.resolve();
       await paced;
-      await stopping;
+      await outcome;
+      (engine.constructor as any).releaseCurrentEngine(TABLE, engine);
     }
   });
 
   it.each(['rit', 'insurance'] as const)(
-    'drops a late %s response while stop retains its controller for snapshot',
+    'drops a late %s response while stop retains unfinished cash custody',
     async (kind) => {
       vi.useFakeTimers();
       const { engine, controller } = harness();
       expect(engine.claimProcessOwnership()).toBe(true);
       const original = controller.serializeRecoveryState();
-      const entered = deferred();
-      const held = deferred();
-      engine.flushSnapshot = vi.fn(async () => {
-        entered.resolve();
-        await held.promise;
-      });
+      engine.flushSnapshot = vi.fn(async () => {});
       const continuation = vi.spyOn(controller, 'continueRunout');
       // The real wait finish catch owns this synchronous runout fallback.
       const onComplete = vi.fn(() => {
@@ -290,8 +346,12 @@ describe('Run It Twice terminal error boundary', () => {
       }
       const interval = intervals.mock.results.at(-1)!.value;
       const stopping = engine.stop();
+      const outcome = stopping.then(
+        () => null,
+        (error: unknown) => error
+      );
       try {
-        await entered.promise;
+        expect(await outcome).toBeInstanceOf(AggregateError);
         expect(engine.handController).toBe(controller);
         await vi.advanceTimersByTimeAsync(250);
         expect(onComplete).not.toHaveBeenCalled();
@@ -299,8 +359,8 @@ describe('Run It Twice terminal error boundary', () => {
         expect(controller.serializeRecoveryState() === original).toBe(true);
         expect(clearedIntervals).toHaveBeenCalledWith(interval);
       } finally {
-        held.resolve();
-        await stopping;
+        await outcome;
+        (engine.constructor as any).releaseCurrentEngine(TABLE, engine);
         vi.clearAllTimers();
         vi.useRealTimers();
       }

@@ -35,15 +35,17 @@ export function registerLobbyGameSectionsCases(lobbyGameSectionsFixture: () => P
         })
       );
       await page.setContent(
-        `<base href="https://fixture.invalid/"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;800&display=swap"><style>body{margin:0;background:#000;color:#e4e7ec}.club-home{width:100%;padding:0}.club-lobby-command-top{display:block!important;min-height:0!important;padding:0!important}${css}</style><div id="root"></div>`
+        `<meta name="viewport" content="width=device-width,initial-scale=1"><base href="https://fixture.invalid/"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;800&display=swap"><style>body{margin:0;background:#000;color:#e4e7ec}.club-home{width:100%;padding:0}.club-lobby-command-top{display:block!important;min-height:0!important;padding:0!important}${css}</style><div id="root"></div>`
       );
+      // Match the production document: iPhone WebKit otherwise lays out at 980px.
+      expect(await page.evaluate(() => window.innerWidth)).toBe(width);
       await page.addScriptTag({ content: await lobbyGameSectionsFixture() });
-      await page.evaluate(() => document.fonts.ready);
       const cash = page.getByRole('button', { name: 'Cash Games', exact: true });
       const tournaments = page.getByRole('button', { name: 'Tournaments', exact: true });
       await expect(cash).toHaveAttribute('aria-expanded', 'false');
       await expect(tournaments).toHaveAttribute('aria-expanded', 'false');
       await expect(page.getByRole('tablist')).toHaveCount(0);
+      await page.evaluate(() => document.fonts.ready);
       for (const button of [cash, tournaments]) {
         const rect = await button.boundingBox();
         expect(rect!.height).toBeGreaterThanOrEqual(60);

@@ -1,6 +1,12 @@
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-const m = vi.hoisted(() => ({ navigate: vi.fn(), emit: vi.fn(), rows: [] as any[] }));
+const m = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  emit: vi.fn(),
+  rows: [] as any[],
+  gate: 'unavailable',
+  stage: vi.fn(),
+}));
 vi.mock('react-router-dom', () => ({
   useNavigate: () => m.navigate,
   useLocation: () => ({ pathname: '/clubs/club' }),
@@ -23,6 +29,8 @@ vi.mock('../src/lib/supabase', () => ({
     },
   },
 }));
+vi.mock('../src/hooks/usePlatformCapability', () => ({ usePlatformCapability: () => m.gate }));
+vi.mock('../src/services/TournamentStageService', () => ({ readTournamentStageView: m.stage }));
 import TournamentAutoSeat from '../src/components/tournament/TournamentAutoSeat';
 function seat(id: string, overrides = {}) {
   return {
@@ -36,6 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
   m.rows = [];
+  m.gate = 'unavailable';
 });
 afterEach(cleanup);
 it('opens and enters the fresh assigned tournament once, including after a remount', async () => {
@@ -58,4 +67,26 @@ it('does not redirect for cash games, old seats or closed tournaments', async ()
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(m.navigate).not.toHaveBeenCalled();
   expect(m.emit).not.toHaveBeenCalled();
+});
+
+it('does not select another table for the same admitted tournament', async () => {
+  m.rows = [seat('first')];
+  const view = render(<TournamentAutoSeat />);
+  await waitFor(() => expect(m.navigate).toHaveBeenCalledTimes(1));
+  view.unmount();
+  m.rows = [seat('moved')];
+  render(<TournamentAutoSeat />);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(m.emit).toHaveBeenCalledWith('TABLE_SEATED', { tableId: 'moved', seat: 0 });
+  expect(m.navigate).toHaveBeenCalledTimes(1);
+});
+it('keeps later-day resumes in the background', async () => {
+  m.gate = 'available';
+  m.stage.mockResolvedValue({ status: 'ok', view: { currentStage: { stageNo: 2 } } });
+  m.rows = [seat('day-two')];
+  render(<TournamentAutoSeat />);
+  await waitFor(() =>
+    expect(m.emit).toHaveBeenCalledWith('TABLE_SEATED', { tableId: 'day-two', seat: 0 })
+  );
+  expect(m.navigate).not.toHaveBeenCalled();
 });

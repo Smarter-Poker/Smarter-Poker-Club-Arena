@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { PRIVATE_RECORD_CLIENT_TITLE } from '../../scripts/ci/private-record-client-proof.mjs';
 import { installPrivateRecordEngineInterruption } from './support/privateRecordEngineInterruption';
+import {
+  hasLiveGatewayReady,
+  type PrivateRecordObservation,
+} from './support/privateRecordObservation';
 
 const API = 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
@@ -26,8 +30,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     syntheticFrames: 0,
     paidRetirementQualified: false,
   };
-  type Frame = { endpoint: 'engine' | 'gateway'; topic: string; type: string; ready?: boolean };
-  const frames: Frame[] = [];
+  const frames: PrivateRecordObservation[] = [];
   const paid: { topic: string; event: string; direction: string; socket: number }[] = [];
   const paidOpen = new Set<number>();
   const gatewayOpen = new Set<number>();
@@ -95,6 +98,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
           frames.length < 512
         )
           frames.push({
+            socket: id,
             endpoint: endpoint === ENGINE ? 'engine' : 'gateway',
             topic: frame.topic,
             type: frame.type,
@@ -175,27 +179,14 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     proof.engineReadyBefore = true;
     const initial = await avatar.getAttribute('src');
     const selected = initial?.includes('free_ninja') ? [...images].reverse() : images;
-    const afterFault = frames.length;
     await fault.block();
     proof.isolatedEngineChannelFault = true;
     await expect
-      .poll(
-        () =>
-          frames
-            .slice(afterFault)
-            .some(
-              (f) =>
-                f.endpoint === 'gateway' &&
-                f.topic === topic &&
-                f.type === 'PRIVATE_RECORD_STATUS' &&
-                f.ready === true
-            ),
-        {
-          timeout: 60_000,
-          message:
-            'Published client did not reach its independent gateway; an empty fallback build cannot qualify',
-        }
-      )
+      .poll(() => hasLiveGatewayReady(frames, gatewayOpen, topic), {
+        timeout: 60_000,
+        message:
+          'Published client did not reach its independent gateway; an empty fallback build cannot qualify',
+      })
       .toBe(true);
     proof.gatewayReadyAfterFault = true;
     const paidActive = () => {
@@ -345,6 +336,8 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
   } finally {
     fault.restore();
     proof.faultRestored = true;
+    proof.observedRecordFrames = frames;
+    proof.openGatewaySockets = [...gatewayOpen];
     await testInfo.attach('published-private-record-failover', {
       body: JSON.stringify(proof),
       contentType: 'application/json',

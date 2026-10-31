@@ -1,3 +1,4 @@
+import { isClubMemberOwnerJoin } from './support/rowChannelOwner';
 import { isReadOnlySpectatorSocketType } from './support/spectatorSocketRead';
 import { test, expect, type Page } from '@playwright/test';
 import { openLobbyGameSection } from './support/lobbyGameSections';
@@ -38,7 +39,6 @@ test('both club views keep receiving rows and one survives the other unmounting'
   };
   const publishedClient = await readPublishedClient();
   const owners = new Map<string, { ref: string; joined: boolean; updates: number }>();
-  const prefix = `realtime:club-members-${CLUB_ID}:row:`;
   const frame = (raw: string | Buffer) => {
     try {
       const value = JSON.parse(String(raw));
@@ -53,10 +53,10 @@ test('both club views keep receiving rows and one survives the other unmounting'
     if (!new URL(socket.url()).hostname.endsWith('.supabase.co')) return;
     socket.on('framesent', ({ payload }) => {
       const item = frame(payload);
-      if (!item?.topic?.startsWith(prefix)) return;
-      if (item.event === 'phx_join')
+      if (!item) return;
+      if (isClubMemberOwnerJoin(item.topic, item.event, item.payload, CLUB_ID))
         owners.set(item.topic, { ref: String(item.ref), joined: false, updates: 0 });
-      if (item.event === 'phx_leave') owners.delete(item.topic);
+      if (item.event === 'phx_leave' && owners.has(item.topic)) owners.delete(item.topic);
     });
     socket.on('framereceived', ({ payload }) => {
       const item = frame(payload);

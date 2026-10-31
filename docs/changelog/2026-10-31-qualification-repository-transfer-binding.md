@@ -24,3 +24,11 @@ qualification remains unexecuted until its actual admitted inputs/executor exist
 - After: canonical namespace plus original numeric identity matched to actual provider metadata.
 - Verified: source reread; accepted exact identity and eight negative bindings checked.
 - TypeScript: PASS (`tsc --noEmit`) on the integrated candidate.
+
+The first follow-up CI stopped before image creation: the existing native
+artifact-boundary test returned its jobs-list double for the newly required
+repository metadata request. Its provider double now dispatches only the exact
+canonical metadata and original jobs routes, rejecting unexpected routes. The
+real identity guard and all isolation, cleanup and stop-before-oracle assertions
+remain unchanged. The affected seven-case Python file passes locally; this
+boundary result is not native service or connected application execution.

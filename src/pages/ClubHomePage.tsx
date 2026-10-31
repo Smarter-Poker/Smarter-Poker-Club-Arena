@@ -116,6 +116,10 @@ import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels'
 import { useToast } from '../components/common/Toast';
 import { joinCashGame, joinGameRefusalText, waitlistedText } from '../services/cashGameLobby';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
+import {
+  reconcileTournamentLobbyRead,
+  type TournamentLobbyChange,
+} from '../utils/tournamentLobbyRead';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
@@ -1333,8 +1337,9 @@ function ClubHomePageContent({
    * reset effect below.
    */
   const listsPaintedRef = useRef(false);
-  // A newer joinable row contradicts an in-flight query's empty snapshot.
+  // Keep newer row updates and removals while either lobby read is in flight.
   const tournamentRevisionRef = useRef(0);
+  const tournamentReadChangesRef = useRef(new Map<string, TournamentLobbyChange<TournamentData>>());
   const loadingRef = useRef(false);
   const reloadPendingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(false);
@@ -1392,6 +1397,7 @@ function ClubHomePageContent({
     setLoading(true);
     loadingRef.current = false;
     reloadPendingRef.current = false;
+    tournamentReadChangesRef.current.clear();
     hasDataRef.current = false;
     listsPaintedRef.current = false;
     setGameListsLoaded(false);
@@ -1684,26 +1690,46 @@ function ClubHomePageContent({
         if (!isCurrent()) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
           const updated = payload.new as any;
+          const listed = belongsInTournamentList(updated);
+          const revision = ++tournamentRevisionRef.current;
+          // A late duplicate UPDATE cannot undo removal within this read.
+          if (!listed || tournamentReadChangesRef.current.get(updated.id)?.row !== null) {
+            tournamentReadChangesRef.current.set(updated.id, {
+              revision,
+              row: listed ? updated : null,
+            });
+          }
           // A tournament leaving a joinable state (CANCELLED/COMPLETED) used to
           // be merged and left on screen as a clickable card — re-opening the
           // silent-join bug live, without a refresh. Drop it instead, mirroring
           // the table handler.
-          if (!belongsInTournamentList(updated)) {
+          if (!listed) {
             setTournaments((prev) => prev.filter((t) => t.id !== updated.id));
           } else {
-            tournamentRevisionRef.current += 1;
             setTournaments((prev) =>
               prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
             );
           }
         } else if (payload.eventType === 'INSERT' && payload.new) {
           if (!belongsInTournamentList(payload.new)) return;
+          if (tournamentReadChangesRef.current.get(payload.new.id)?.row === null) return;
           tournamentRevisionRef.current += 1;
+          if (!tournamentReadChangesRef.current.has(payload.new.id)) {
+            tournamentReadChangesRef.current.set(payload.new.id, {
+              revision: tournamentRevisionRef.current,
+              row: payload.new,
+              insertOnly: true,
+            });
+          }
           setTournaments((prev) => {
             if (prev.some((t) => t.id === payload.new.id)) return prev;
             return [payload.new as any, ...prev];
           });
         } else if (payload.eventType === 'DELETE' && payload.old) {
+          tournamentReadChangesRef.current.set((payload.old as any).id, {
+            revision: ++tournamentRevisionRef.current,
+            row: null,
+          });
           setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
         }
       };
@@ -2652,6 +2678,7 @@ function ClubHomePageContent({
          A's role and A's jackpot over B. The token is bumped by every new
          load and by unmount, so a late answer knows it is stale. */
       const stale = () => loadToken !== loadTokenRef.current;
+      const fastTournamentRevisionAtRead = tournamentRevisionRef.current;
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
         .then(async ({ data: home, error: homeErr }) => {
           if (homeErr || !home || home.found !== true) return;
@@ -2704,8 +2731,14 @@ function ClubHomePageContent({
               }));
             }
             if (Array.isArray(home.tables)) setTables((prev) => mergeFastRows(prev, home.tables));
-            if (Array.isArray(home.tournaments))
-              setTournaments((prev) => mergeFastRows(prev, home.tournaments));
+            if (Array.isArray(home.tournaments)) {
+              const fastTournaments = reconcileTournamentLobbyRead(
+                home.tournaments,
+                tournamentReadChangesRef.current,
+                fastTournamentRevisionAtRead
+              );
+              setTournaments((prev) => mergeFastRows(prev, fastTournaments));
+            }
             if (home.union_id) {
               setIsInUnion(true);
               setUnionIdForCreate(home.union_id);
@@ -3464,12 +3497,16 @@ function ClubHomePageContent({
       if (!clubTournamentResult.error && Array.isArray(clubTournamentResult.data)) {
         /* A Diamond Spin advertises the top of the table its creation pinned;
            a board with no Diamond Spin on it asks nothing (diamondSpinCeilings). */
-        const allTournaments: TournamentData[] = await withDiamondSpinCeilings([
-          /* The cast is the arena embed's: the generated types carry no
+        const allTournaments: TournamentData[] = reconcileTournamentLobbyRead(
+          await withDiamondSpinCeilings([
+            /* The cast is the arena embed's: the generated types carry no
              relationship names, so the typed client cannot resolve the join
              (TournamentService.getTournaments makes the same one). */
-          ...(clubTournamentResult.data as unknown as TournamentData[]),
-        ]);
+            ...(clubTournamentResult.data as unknown as TournamentData[]),
+          ]),
+          tournamentReadChangesRef.current,
+          tournamentRevisionAtRead
+        );
         if (getIsMounted && !getIsMounted()) return;
 
         // The warm fast path cannot remove old rows. A confirmed empty read
@@ -3485,14 +3522,12 @@ function ClubHomePageContent({
             ),
             'ClubHomePage.emptyTournamentOverwrite'
           );
-        } else if (tournamentRevisionAtRead !== tournamentRevisionRef.current) {
-          // A realtime change can be newer than this query's empty snapshot.
-          // Keep it and let the existing coalesced owner read again.
-          reloadPendingRef.current = true;
         } else {
           setTournaments(allTournaments);
           tournamentsRead = true;
         }
+        // Keep the latest change per row until scope reset: the independent
+        // first-paint RPC may still finish after this complete read.
       }
       // A failed or unconfirmed half is not a loaded list; the next load retries.
       if (tablesRead && tournamentsRead) setGameListsLoaded(true);

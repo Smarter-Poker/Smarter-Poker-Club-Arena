@@ -164,6 +164,7 @@ export default function SharedClubStatsView(props: Props) {
     if (errorStage === 'overview') setOverviewAttempt((attempt) => attempt + 1);
   };
 
+  const tournament = props.gameMode === 'tournament';
   const o = readyPayload?.overview ?? null;
   const t = readyPayload?.tournaments ?? null;
   return (
@@ -243,7 +244,7 @@ export default function SharedClubStatsView(props: Props) {
         <section className="stats-club-comparison" aria-label="Shared Club Public Aggregates">
           <div className="stats-club-comparison-head">
             <div>
-              <h2>Performance Readout</h2>
+              <h2>{tournament ? 'Tournament Performance' : 'Cash Performance'}</h2>
             </div>
           </div>
           <div className="stats-club-table-wrap">
@@ -252,30 +253,40 @@ export default function SharedClubStatsView(props: Props) {
                 <tr>
                   <th>Hands</th>
                   <th>Won</th>
-                  <th>BB/100</th>
+                  {!tournament && <th>BB/100</th>}
                   <th>VPIP</th>
                   <th>PFR</th>
-                  <th>Tournaments</th>
-                  <th>Cashes</th>
-                  <th>Wins</th>
+                  {tournament && (
+                    <>
+                      <th>Tournaments</th>
+                      <th>Cashes</th>
+                      <th>Wins</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>{o.hands ?? 0}</td>
                   <td>{o.hands_won ?? 0}</td>
-                  <td>
-                    {ratioOrUnmeasured(o.bb_per_100, o.cash_hands, (value) => value.toFixed(1))}
-                  </td>
+                  {!tournament && (
+                    <td>
+                      {ratioOrUnmeasured(o.bb_per_100, o.cash_hands, (value) => value.toFixed(1))}
+                    </td>
+                  )}
                   <td>
                     {ratioOrUnmeasured(o.vpip, o.hands, (value) => `${(value * 100).toFixed(1)}%`)}
                   </td>
                   <td>
                     {ratioOrUnmeasured(o.pfr, o.hands, (value) => `${(value * 100).toFixed(1)}%`)}
                   </td>
-                  <td>{t.entries ?? 0}</td>
-                  <td>{t.cashes ?? 0}</td>
-                  <td>{t.wins ?? 0}</td>
+                  {tournament && (
+                    <>
+                      <td>{t.entries ?? 0}</td>
+                      <td>{t.cashes ?? 0}</td>
+                      <td>{t.wins ?? 0}</td>
+                    </>
+                  )}
                 </tr>
               </tbody>
             </table>

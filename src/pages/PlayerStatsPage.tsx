@@ -25,6 +25,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
 import { statsGameMode, type StatsGameMode } from '../services/statsGameMode';
+import StatsGameModeControl from './stats/StatsGameModeControl';
 import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { findClubByParam, readClubContextParam } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
@@ -159,30 +160,11 @@ const STATS_TOUR: TutorialStep[] = [
 ];
 
 export default function PlayerStatsPage() {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const mode = statsGameMode(params.get('gameMode'));
   return (
     <>
-      <div className="stats-pill-tabs" role="group" aria-label="Statistics Game Mode">
-        {(['cash', 'tournament'] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            className={mode === value ? 'active' : ''}
-            aria-pressed={mode === value}
-            onClick={() =>
-              setParams((current) => {
-                const next = new URLSearchParams(current);
-                next.set('gameMode', value);
-                next.delete('tab');
-                return next;
-              })
-            }
-          >
-            {value === 'cash' ? 'Cash Games' : 'Tournaments'}
-          </button>
-        ))}
-      </div>
+      <StatsGameModeControl />
       <SeparatedPlayerStatsPage key={mode} gameMode={mode} />
     </>
   );
@@ -1391,11 +1373,19 @@ function SeparatedPlayerStatsPage({ gameMode }: { gameMode: StatsGameMode }) {
   useEffect(() => {
     if (comparisonOpen && comparisonLoadedKey !== comparisonKey) void loadClubComparison();
   }, [comparisonOpen, comparisonLoadedKey, comparisonKey, loadClubComparison]);
+  const effectiveComparisonSort =
+    gameMode === 'tournament'
+      ? ['profit', 'bb100', 'rake'].includes(comparisonSort)
+        ? 'hands'
+        : comparisonSort
+      : comparisonSort === 'tournaments'
+        ? 'hands'
+        : comparisonSort;
   const sortedComparisonRows = useMemo(() => {
     const rows = [...(comparisonRows ?? [])];
     const lastPlay = (row: ClubComparisonRow) => Date.parse(row.lastPlayedAt || '') || 0;
     rows.sort((a, b) => {
-      if (comparisonSort === 'club') return a.club.name.localeCompare(b.club.name);
+      if (effectiveComparisonSort === 'club') return a.club.name.localeCompare(b.club.name);
       const values: Record<
         Exclude<ClubComparisonSort, 'club'>,
         (row: ClubComparisonRow) => number
@@ -1409,10 +1399,10 @@ function SeparatedPlayerStatsPage({ gameMode }: { gameMode: StatsGameMode }) {
         tournaments: (row) => row.tournamentEntries,
         lastPlay,
       };
-      return values[comparisonSort](b) - values[comparisonSort](a);
+      return values[effectiveComparisonSort](b) - values[effectiveComparisonSort](a);
     });
     return rows;
-  }, [comparisonRows, comparisonSort]);
+  }, [comparisonRows, effectiveComparisonSort]);
   const changeComparisonSort = useCallback(
     (nextSort: ClubComparisonSort) => {
       setComparisonSort(nextSort);
@@ -1659,6 +1649,7 @@ function SeparatedPlayerStatsPage({ gameMode }: { gameMode: StatsGameMode }) {
           : 'Tournament Hands And Results Only. Tournament Stacks Are Not Cash Profit.'}
       </div>
       <ClubScopeConsole
+        gameMode={gameMode}
         statsScope={statsScope}
         clubLabel={clubLabel}
         selectedClub={selectedClub}
@@ -1671,7 +1662,7 @@ function SeparatedPlayerStatsPage({ gameMode }: { gameMode: StatsGameMode }) {
         comparisonOpen={comparisonOpen}
         setComparisonOpen={setComparisonOpen}
         onRetryComparison={() => void loadClubComparison()}
-        comparisonSort={comparisonSort}
+        comparisonSort={effectiveComparisonSort}
         changeComparisonSort={changeComparisonSort}
         comparisonLoading={comparisonLoading}
         comparisonError={comparisonError}

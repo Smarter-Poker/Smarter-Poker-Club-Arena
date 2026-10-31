@@ -10,6 +10,7 @@ import {
 } from './playerStatsPageModel';
 
 interface Props {
+  gameMode?: 'cash' | 'tournament';
   statsScope: string;
   clubLabel: string;
   selectedClub?: StatsClubOption | null;
@@ -49,6 +50,7 @@ export default function ClubScopeConsole(props: Props) {
     comparisonError,
     sortedComparisonRows,
   } = props;
+  const tournament = props.gameMode === 'tournament';
   return (
     <>
       {statsScope === CHIP_STATS && (
@@ -128,7 +130,11 @@ export default function ClubScopeConsole(props: Props) {
               <h2 id="stats-club-comparison-title">Club Comparison</h2>
             </div>
             <div className="stats-club-sort" role="group" aria-label="Sort Club Comparison">
-              {CLUB_SORTS.map((sort) => (
+              {CLUB_SORTS.filter((sort) =>
+                tournament
+                  ? !['profit', 'bb100', 'rake'].includes(sort.key)
+                  : sort.key !== 'tournaments'
+              ).map((sort) => (
                 <button
                   type="button"
                   key={sort.key}
@@ -159,13 +165,13 @@ export default function ClubScopeConsole(props: Props) {
                   <tr>
                     <th scope="col">Club</th>
                     <th scope="col">Hands</th>
-                    <th scope="col">Profit</th>
-                    <th scope="col">BB/100</th>
+                    {!tournament && <th scope="col">Profit</th>}
+                    {!tournament && <th scope="col">BB/100</th>}
                     <th scope="col">VPIP</th>
                     <th scope="col">PFR</th>
                     <th scope="col">Hours</th>
-                    <th scope="col">Rake</th>
-                    <th scope="col">Tournament Results</th>
+                    {!tournament && <th scope="col">Rake</th>}
+                    {tournament && <th scope="col">Tournament Results</th>}
                     <th scope="col">Last Play</th>
                   </tr>
                 </thead>
@@ -178,21 +184,27 @@ export default function ClubScopeConsole(props: Props) {
                         </button>
                       </th>
                       <td>{row.hands.toLocaleString()}</td>
-                      <td className={row.profit >= 0 ? 'positive' : 'negative'}>
-                        {row.profit >= 0 ? '+' : ''}
-                        {compactChips(row.profit)}
-                      </td>
-                      <td>{row.hands ? row.bb100.toFixed(1) : NOT_YET_MEASURED}</td>
+                      {!tournament && (
+                        <>
+                          <td className={row.profit >= 0 ? 'positive' : 'negative'}>
+                            {row.profit >= 0 ? '+' : ''}
+                            {compactChips(row.profit)}
+                          </td>
+                          <td>{row.hands ? row.bb100.toFixed(1) : NOT_YET_MEASURED}</td>
+                        </>
+                      )}
                       <td>{row.hands ? `${(row.vpip * 100).toFixed(1)}%` : NOT_YET_MEASURED}</td>
                       <td>{row.hands ? `${(row.pfr * 100).toFixed(1)}%` : NOT_YET_MEASURED}</td>
                       <td>{row.hours === null ? 'Unavailable' : row.hours.toFixed(1)}</td>
-                      <td>{compactChips(row.rake)}</td>
-                      <td>
-                        {row.tournamentEntries.toLocaleString()} Entries //{' '}
-                        {row.tournamentCashes.toLocaleString()} Cashes //{' '}
-                        {row.tournamentWins.toLocaleString()} Wins //{' '}
-                        {compactChips(row.tournamentWinnings)} Won
-                      </td>
+                      {!tournament && <td>{compactChips(row.rake)}</td>}
+                      {tournament && (
+                        <td>
+                          {row.tournamentEntries.toLocaleString()} Entries //{' '}
+                          {row.tournamentCashes.toLocaleString()} Cashes //{' '}
+                          {row.tournamentWins.toLocaleString()} Wins //{' '}
+                          {compactChips(row.tournamentWinnings)} Won
+                        </td>
+                      )}
                       <td>
                         {row.lastPlayedAt
                           ? new Date(row.lastPlayedAt).toLocaleDateString('en-US', {

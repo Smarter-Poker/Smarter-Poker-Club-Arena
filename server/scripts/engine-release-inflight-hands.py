@@ -165,11 +165,56 @@ def get_json(url: str, service_key: str, timeout_seconds: float, payload: dict |
         unknown(f"the response was not readable JSON: {exc}")
 
 
+# THE DATABASE HALF OF A DRAINED HAND BOUNDARY (2026-10-31)
+# ─────────────────────────────────────────────────────────
+# The release may replace eed06fe5 without its full-heap census only when the
+# engine's strict certificate is open AND this witness is quiet. The engine's
+# certificate counts its REGISTERED running tables; this asks the database,
+# which every tournament hand anywhere in that process writes as it moves
+# (smarter_private.hand_continuations) and where every Lightning hand is
+# formed and settled. Movement, not existence: the measured ages and why are
+# in supabase/migrations/20261031212432_release_drained_predecessor_witness.sql.
+DRAINED_WITNESS_CONTRACT = "drained-predecessor-witness-v1"
+LIGHTNING_WINDOW_SECONDS = 600
+DRAINED_COUNTS = (
+    "reserved_tournament_permits",
+    "retained_tournament_hands",
+    "moving_tournament_hands",
+    "unsettled_recent_lightning_hands",
+)
+
+
+def drained_predecessor_witness(base_url: str, service_key: str, timeout_seconds: float,
+                                moving_window_seconds: int) -> dict:
+    """Read and validate the witness. Anything unreadable is UNKNOWN (exit 3)."""
+    state = get_json(
+        f"{base_url}/rest/v1/rpc/fn_ca_release_drained_predecessor_witness",
+        service_key, timeout_seconds,
+        {"p_moving_window_seconds": moving_window_seconds,
+         "p_lightning_window_seconds": LIGHTNING_WINDOW_SECONDS},
+    )
+    if not isinstance(state, dict) or state.get("contract") != DRAINED_WITNESS_CONTRACT:
+        unknown("the drained-boundary witness did not prove its contract")
+    if (state.get("moving_window_seconds") != moving_window_seconds
+            or state.get("lightning_window_seconds") != LIGHTNING_WINDOW_SECONDS):
+        unknown("the drained-boundary witness answered for different windows")
+    for key in DRAINED_COUNTS:
+        value = state.get(key)
+        # Never coerce: an absent, boolean or negative count is not a zero.
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            unknown(f"the drained-boundary witness count {key} is unreadable")
+    if not isinstance(state.get("observed_at"), str):
+        unknown("the drained-boundary witness carries no database time")
+    return state
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", required=True)
     parser.add_argument("--weekly-payout-only", action="store_true",
                         help="Read the existing weekly owner without advancing it")
+    parser.add_argument("--drained-predecessor", action="store_true",
+                        help="Also read the database half of a drained hand boundary for eed06fe5")
     parser.add_argument("--max-age-seconds", type=int, default=DEFAULT_MAX_AGE_SECONDS)
     parser.add_argument("--timeout-seconds", type=float, default=8.0)
     args = parser.parse_args()
@@ -210,6 +255,10 @@ def main() -> None:
         print("[engine-release-inflight-hands] database proves no active weekly payout owner")
         raise SystemExit(EXIT_QUIET)
 
+    witness = None
+    if args.drained_predecessor:
+        witness = drained_predecessor_witness(base_url, service_key, args.timeout_seconds, args.max_age_seconds)
+
     since = datetime.now(timezone.utc) - timedelta(seconds=args.max_age_seconds)
     query = urlencode(
         {
@@ -231,6 +280,27 @@ def main() -> None:
     # could have excluded can only make it refuse, which is the safe direction;
     # excluding one wrongly would let a live hand through. Freshness alone is
     # the discriminator, and a closed table stops updating within the window.
+    if witness is not None:
+        # Both witnesses were READ before either is judged: an unreadable half
+        # has already exited UNKNOWN above, so "in the air" here is an answer.
+        moving = witness["moving_tournament_hands"]
+        lightning = witness["unsettled_recent_lightning_hands"]
+        print(
+            "[engine-release-inflight-hands] drained-boundary witness: "
+            f"moving_tournament_hands={moving} unsettled_recent_lightning_hands={lightning} "
+            f"moving_snapshots={len(rows)} reserved_tournament_permits={witness['reserved_tournament_permits']} "
+            f"retained_tournament_hands={witness['retained_tournament_hands']} "
+            f"observed_at={witness['observed_at']}",
+            file=sys.stderr,
+        )
+        if moving or lightning or rows:
+            print("[engine-release-inflight-hands] the predecessor is NOT at a drained hand boundary", file=sys.stderr)
+            raise SystemExit(EXIT_HAND_IN_AIR)
+        print("[engine-release-inflight-hands] drained hand boundary: no tournament hand moving, "
+              "no recent Lightning hand unsettled, no incomplete snapshot written in the last "
+              f"{args.max_age_seconds}s")
+        raise SystemExit(EXIT_QUIET)
+
     if rows:
         print(
             f"[engine-release-inflight-hands] {len(rows)} hand(s) in the air within "

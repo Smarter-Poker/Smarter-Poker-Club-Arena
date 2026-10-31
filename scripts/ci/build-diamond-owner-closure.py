@@ -2,7 +2,7 @@
 import hashlib,json
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
-MIGRATION='supabase/migrations/20261031031602_diamond_arena_owner_boundary_closure_without_refunds.sql'
+MIGRATION='supabase/migrations/20261031032915_diamond_arena_owner_boundary_closure_without_refunds.sql'
 CLUB='002c2d27-9584-4e52-835a-bb2be148fc81'
 OP='01a18fed-2211-7a62-9416-611dd6e4d96d'
 def render():

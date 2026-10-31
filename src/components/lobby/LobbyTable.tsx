@@ -338,6 +338,7 @@ function compactRowClass(entry: LobbyEntry): string | undefined {
   const signals = tournamentSignals(entry);
   if (signals.length === 0 && entry.kind === 'cash') return undefined;
   const cls: string[] = [];
+  if (entry.kind === 'mtt' && entry.featured) cls.push('is-featured');
   if (entry.kind !== 'cash') cls.push('compact-lobby__row--tourney');
   if (signals.includes('freeroll')) cls.push('is-freeroll');
   else if (signals.includes('hot-gtd')) cls.push('is-hot-gtd');
@@ -2345,6 +2346,7 @@ export default function LobbyTable({
                         entry.variantLabel
                       )}
                     </span>
+                    {entry.kind === 'mtt' && entry.featured && <LobbyFlagChips entry={entry} />}
                     {entry.kind !== 'cash' && <SatelliteRowDestination entry={entry} />}
                     {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
                     <PlayerStateChip entry={entry} ctx={rowCtx} />

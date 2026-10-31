@@ -122,6 +122,9 @@ describe('MTT schedule upgrade', () => {
       event('top', { is_pinned: true, buy_in_amount: 1 }),
     ]);
     expect(ids()).toEqual(['top', 'late', 'soon', 'open', 'running']);
+    const compactTop = document.querySelector('.compact-lobby tr[data-id="top"]')!;
+    expect(compactTop.classList.contains('is-featured')).toBe(true);
+    expect(within(compactTop as HTMLElement).getByText('Top Event')).toBeTruthy();
     const heading = document.querySelector('.lobby-table-wrap thead') as HTMLElement;
     const price = within(heading).getByRole('columnheader', { name: /buy-in/i });
     fireEvent.click(within(price).queryByRole('button') ?? price);

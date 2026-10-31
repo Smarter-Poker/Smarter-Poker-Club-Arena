@@ -69,3 +69,7 @@ cannot match the earlier `this.tableLivenessSnapshot(...)` call. Affected
 no remote source was admitted by that attempt. Related server checks passed
 317 files/4241 tests with 166 existing conditional skips, not full-suite proof.
 **TypeScript:** unchanged runtime/header inputs retain root/server PASS.
+
+## Hosted source-extraction harness compatibility
+
+Read owning CI 41218058874/job124586719010 actual failed log: two existing fixtures failed before reaching their guarded behavior. OriginalPayloadRetry.runtime.mjs lines 13/96 imported existing production dependencies but did not bind the new real PostHandStageTiming into its isolated VM; import and bind the production helper, preserving every financial/custody assertion. LiveTableFormatHealth.guard.test.ts lines 13/23 located the old no-argument declaration; retain the private declaration anchor with an open argument prefix so the existing sourceWindow matcher still extracts the whole actual method. No runtime/helper/header changes. Read verified: YES. Affected existing suites: 28/28 PASS (26 original payload retries, 2 public category/privacy guards). Server TypeScript: PASS, exit 0; runtime/header unchanged and root TypeScript PASS retained.

@@ -102,7 +102,7 @@ describe('the break screen reads the tournament, not four constants', () => {
       /\.from\('tournaments'\)\s*\.select\('current_level, prize_pool, current_players, max_players'\)/
     );
     expect(screenSrc).toMatch(
-      /\.from\('tournament_players'\)\s*\.select\('user_id, username, chips, status'\)/
+      /readTournamentStandings\(\s*tournamentId,\s*'id, user_id, username, chips, status'\s*\)/
     );
     expect(screenSrc).toMatch(/topPlayers: ranked\.slice\(0, 5\)/);
     expect(screenSrc).toMatch(/myPlayer: ranked\.find\(\(r\) => r\.isCurrentUser\)/);

@@ -342,7 +342,12 @@ for (const width of [375, 393]) {
  * status prints in full and inside its row at every phone width. */
 const PHONE_ROWS = [
   { alias: 'PostDealerDelux', role: 'Admin', id: '1004114', status: 'Online' },
-  { alias: 'CoachTimTheGreat', upline: 'TrustedAgentMike', id: '4418820931', status: 'Seen Today' },
+  {
+    alias: 'CoachTimTheGreat',
+    upline: 'TrustedAgentMike',
+    id: '4418820931',
+    status: 'Seen 23 Hours Ago',
+  },
   {
     alias: 'Bhrine',
     upline: 'KingFishSupreme',

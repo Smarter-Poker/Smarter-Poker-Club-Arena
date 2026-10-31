@@ -38,13 +38,18 @@ import {
 } from '../src/benchmark/HoldemLiveMeasure.js';
 
 const HEALTH_URL = process.env.ENGINE_HEALTH_URL ?? 'https://engine.smarter.poker/health';
-// Hold'em review rows only (12,207 of ~62,000 in a day, measured 2026-10-30):
-// the cap would otherwise be spent on Omaha rows the measurement discards.
-const REVIEW_ROW_CAP = 6000;
+// Hold'em review rows only (12,207 of ~62,000 in a day, measured 2026-10-30),
+// read in keyset pages of PAGE newest-first up to REVIEW_ROW_CAP, so a day
+// fits without one oversized read.
+const REVIEW_PAGE = 2000;
+const REVIEW_ROW_CAP = 20000;
 
 function arg(name: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(name);
-  return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : fallback;
+  if (i < 0 || i + 1 >= process.argv.length) return fallback;
+  const value = process.argv[i + 1];
+  if (value.startsWith('--')) throw new Error(`${name} needs a value`);
+  return value;
 }
 
 async function fetchHealth(): Promise<HealthSample | null> {
@@ -105,14 +110,25 @@ async function report(): Promise<void> {
   const samples = readSamples(arg('--samples'));
   if (live) samples.push(live);
 
+  // Unfloored tables only, as the tuner and fn_horse_frequency_leaks read
+  // them: a VPIP-floored table forces 40-70% VPIP and its 3-bet shares are not
+  // comparable. horse_daily_play carries no variant, so this is every variant.
   const play = await select<PlayRow>(
     'horse_daily_play',
-    `select=horse_user_id,day,format,hands,three_bets,three_bet_opps,faced_3bets,fold_to_3bets&day=gte.${sinceDay}&limit=20000`
+    `select=horse_user_id,day,format,hands,three_bets,three_bet_opps,faced_3bets,fold_to_3bets&day=gte.${sinceDay}&floored=eq.false&limit=20000`
   );
-  const reviews = await select<ReviewRow>(
-    'horse_hand_reviews',
-    `select=horse_user_id,game_variant,net_bb,hole_cards,board,actions,leak_tags&game_variant=eq.nlh&played_at=gte.${encodeURIComponent(since.toISOString())}&order=played_at.desc&limit=${REVIEW_ROW_CAP}`
-  );
+  const reviews: ReviewRow[] = [];
+  let before: string | null = null;
+  while (reviews.length < REVIEW_ROW_CAP) {
+    const cursor: string = before ? `&played_at=lt.${encodeURIComponent(before)}` : '';
+    const page: Array<ReviewRow & { played_at: string }> = await select<ReviewRow & { played_at: string }>(
+      'horse_hand_reviews',
+      `select=played_at,horse_user_id,game_variant,net_bb,hole_cards,board,actions&game_variant=eq.nlh&played_at=gte.${encodeURIComponent(since.toISOString())}${cursor}&order=played_at.desc&limit=${REVIEW_PAGE}`
+    );
+    reviews.push(...page);
+    if (page.length < REVIEW_PAGE) break;
+    before = page[page.length - 1].played_at;
+  }
   const telemetry = await select<TelemetryRow>(
     'horse_brain_telemetry',
     `select=day,feature,fires&day=gte.${sinceDay}&feature=in.(${RECEIPT_FEATURES.join(',')})&order=day.asc`
@@ -129,6 +145,7 @@ async function report(): Promise<void> {
   if (reviews.length >= REVIEW_ROW_CAP) {
     result.riverOnePair.caveat += `; the review window hit its ${REVIEW_ROW_CAP}-row cap, so only the newest rows are counted`;
   }
+  result.threeBetCaveat = 'horse_daily_play carries no variant: every variant, unfloored tables only, as the tuner reads them';
   const md = renderMarkdown(result);
   writeFileSync(`${out}.json`, JSON.stringify(result, null, 2) + '\n');
   writeFileSync(`${out}.md`, md);

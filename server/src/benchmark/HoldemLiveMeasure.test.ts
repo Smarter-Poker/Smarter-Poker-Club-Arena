@@ -181,7 +181,6 @@ describe('river one-pair calls by size class', () => {
         { userId: 'h', action: 'call', stage: 'preflop', amount: 6 },
         ...river,
       ],
-      leak_tags: [],
     });
     const bet = (amt: number) => [{ userId: 'v', action: 'bet', stage: 'river', amount: amt }, { userId: 'h', action: 'call', stage: 'river', amount: amt }];
     const rows = [
@@ -191,7 +190,7 @@ describe('river one-pair calls by size class', () => {
       base('Qs Qd', 'Jh 7c 2d 9s 3c', bet(12), 40), // large, won
       base('As 7d', 'Ah 7c 2d 9s Jc', bet(12), 40), // two pair: not counted
       base('As Kd', 'Ah 7c 2d 9s Jc', bet(12), 40, 'plo4'), // Omaha: skipped
-      { horse_user_id: 'h', game_variant: 'nlh', net_bb: 1, hole_cards: null, board: null, actions: null, leak_tags: [] }, // unreadable
+      { horse_user_id: 'h', game_variant: 'nlh', net_bb: 1, hole_cards: null, board: null, actions: null }, // unreadable
       base('As Kd', 'Ah 7c 2d 9s Jc', bet(12), 40, ''), // no variant named: not assumed Hold em
     ];
     const out = riverOnePairCalls(rows);
@@ -216,7 +215,6 @@ describe('river one-pair calls by size class', () => {
         { userId: 'v', action: 'bet', stage: 'river', amount: 10 },
         { userId: 'h', action: 'call', stage: 'river', amount: 10 },
       ],
-      leak_tags: [],
     };
     const out = riverOnePairCalls([row]);
     expect(out.cells.reduce((n, c) => n + c.calls, 0)).toBe(1);

@@ -212,7 +212,6 @@ export interface ReviewRow {
   hole_cards: unknown;
   board: unknown;
   actions: ReviewAction[] | null;
-  leak_tags: string[] | null;
 }
 
 export type SizeClass = 'small' | 'medium' | 'large';
@@ -392,9 +391,9 @@ export function riverOnePairCalls(rows: ReviewRow[]): RiverOnePairReport {
   let considered = 0;
   let unreadable = 0;
   for (const row of rows) {
-    // Hold'em only, named: a row with no variant is not assumed to be one.
-    const variant = String(row.game_variant ?? '').toLowerCase();
-    if (!/^(nlh|holdem|hold_em|texas_holdem|nl_holdem)$/.test(variant)) continue;
+    // Hold'em only, named as the review rows name it ('nlh'; the CLI query
+    // asks for exactly that, so the two agree). No variant is not assumed.
+    if (String(row.game_variant ?? '').toLowerCase() !== 'nlh') continue;
     const hole = parseCards(row.hole_cards);
     const board = parseCards(row.board);
     if (!hole || !board || !Array.isArray(row.actions)) {
@@ -450,6 +449,7 @@ export interface LiveMeasureReport {
   servingReleaseSha: string | null;
   heap: HeapSlope[];
   threeBet: ThreeBetShare[];
+  threeBetCaveat?: string;
   riverOnePair: RiverOnePairReport;
   receipts: ReceiptCount[];
 }
@@ -475,6 +475,10 @@ export function renderMarkdown(report: LiveMeasureReport): string {
   lines.push('');
   lines.push('## 2. 3-bet shares (horse_daily_play)');
   lines.push('');
+  if (report.threeBetCaveat) {
+    lines.push(`Caveat: ${report.threeBetCaveat}. Formats are the play rows' own (cash, tournament, lightning_<bb>bb); 'all' sums them.`);
+    lines.push('');
+  }
   lines.push('| format | horses | hands | 3-bet % | fold to 3-bet % | 3-bets / opps | folds / faced |');
   lines.push('|---|---|---|---|---|---|---|');
   for (const t of report.threeBet) {

@@ -13,6 +13,9 @@ attributed to the fix (the report names the serving release).
      `null` with a reason, never 0.
   2. `threeBetShares` - 3-bet% and fold-to-3-bet% per format and overall from
      `horse_daily_play`, the accumulator the tuner and the panel already read.
+     Unfloored tables only (`floored = false`), as the tuner reads them - a
+     VPIP-floored table forces 40-70% VPIP; the table carries no variant, so
+     this is every variant, and the report says so.
   3. `riverOnePairCalls` - how often a horse that called a river bet holding
      exactly one pair won, by the V62 size class of the bet faced (small
      < 0.4 pot, medium < 0.7, large or a raise). Reads `horse_hand_reviews`
@@ -33,8 +36,9 @@ attributed to the fix (the report names the serving release).
      report says so.
 - `server/scripts/holdem-live-measure.ts`: `sample-health --samples FILE`
   appends one `/health` sample; `report --samples FILE --since-hours N --out
-  PATH` runs three bounded SELECTs (by day / indexed `played_at` with a
-  5,000-row cap / day+feature) and writes `<out>.json` and `<out>.md`.
+  PATH` runs bounded SELECTs (play rows by day; Hold'em review rows in keyset
+  pages of 2,000 newest-first up to 20,000; telemetry by day and feature) and
+  writes `<out>.json` and `<out>.md`.
   Credentials come from the environment the engine already has and are never
   printed. No RPC that writes, no retry loop, no scan.
 

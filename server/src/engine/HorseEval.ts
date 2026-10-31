@@ -1277,6 +1277,46 @@ export interface OppPostflopRead {
    * a river bettor holds it at that size - value always, a worse made hand
    * by how often it is bet for value, air by a bluff share. */
   riverPolar?: boolean;
+  /** V66 (Hold'em, attached by HorseLogic on the flop and turn only): this
+   * opponent RAISED over the hero's own wager this street, so their sampled
+   * hand is drawn from the raise stratum (V66_RAISE_BLUFF_SHARE /
+   * V66_RAISE_VALUE_MIX) instead of the any-contact read. */
+  raisePolar66?: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V66 FLOP/TURN RAISE STRATUM (2026-10-31)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The contact sampler asks whether a flop or turn aggressor CONNECTS with the
+// board, and a raise over a bet was read exactly like a bet: ninety percent
+// any pair or draw, ten percent air. Measured over 7 days of NLH review hands
+// (12% sample, |net| >= 20bb), a horse that bet the flop and called the raise
+// with top pair won 43%, with an under pair 22%, with air 13%; on the turn
+// top pair won 40-44%. Against "any pair" those hands read 70-87%. A raise
+// over a bet is value-heavy: two pair or better most of the time, a strong
+// top pair some of the time, a bluff or a semi-bluff a fifth of the time.
+// The prior is independent of the hero's hand, as the raiser cannot see it.
+/** Bluff (or semi-bluff) share of a raise over a bet, by street: a flop
+ * raise still carries the draws, a turn raise with one card to come is
+ * nearer pure value (measured top pair won 43% against the flop raise and
+ * 40% against the turn raise). Index 0 = flop, 1 = turn. */
+export const V66_RAISE_BLUFF_SHARE = [0.2, 0.15] as const;
+/** Value sub-strata shares for a raise over a bet, by street (flop, turn):
+ * [two pair+, top pair/overpair, weaker pair]. */
+export const V66_RAISE_VALUE_MIX = [
+  [0.55, 0.35, 0.1],
+  [0.65, 0.3, 0.05],
+] as const;
+
+/** Draw the target stratum for one flop/turn raiser sample: 0 = bluff, else
+ * the value class (1..3). `r1`/`r2` are uniform draws. Exported for the test. */
+export function v66RaiseTargetClass(street: 0 | 1, r1: number, r2: number): 0 | 1 | 2 | 3 {
+  if (r1 < V66_RAISE_BLUFF_SHARE[street]) return 0;
+  const mix = V66_RAISE_VALUE_MIX[street];
+  if (r2 < mix[0]) return 3;
+  if (r2 < mix[0] + mix[1]) return 2;
+  return 1;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2658,11 +2698,18 @@ export function simulateEquity(
     return 0.5;
   }
   // V62: one exact stratum index per river bettor for this call.
+  // V66: the same exact index for a flop/turn raiser over the hero's wager.
   let v62Indexes: Array<V62StratumIndex | null> | null = null;
-  if (oppReads && !vi.isOmaha && boardCards.length === 5 && oppHole === 2) {
+  const raisePolar66Board = boardCards.length >= 3 && boardCards.length <= 4;
+  if (oppReads && !vi.isOmaha && boardCards.length >= 3 && oppHole === 2) {
     for (let o = 0; o < numOpponents; o++) {
       const read = oppReads[o];
-      if (!read || read.riverPolar !== true) continue;
+      if (!read) continue;
+      if (
+        !(read.riverPolar === true && boardCards.length === 5) &&
+        !(read.raisePolar66 === true && raisePolar66Board)
+      )
+        continue;
       if (!v62Indexes) v62Indexes = new Array<V62StratumIndex | null>(numOpponents).fill(null);
       v62Indexes[o] = buildV62StratumIndex(
         oppBands ? (oppBands[o] ?? null) : null,
@@ -3050,6 +3097,22 @@ export function simulateEquity(
           if (index62) {
             const target62 = v62TargetClass(v62SizeClass(read), fastRandom(), fastRandom());
             if (placeV62Combo(deck, windowStart, n, index62, target62, vi.isShortDeck)) {
+              oppCards[0] = deck[windowStart];
+              oppCards[1] = deck[windowStart + 1];
+            }
+          }
+        }
+        // V66: a flop/turn raiser over the hero's own wager is drawn from the
+        // raise stratum, placed exactly from the same per-call band index.
+        if (read.raisePolar66 === true && raisePolar66Board && oppHole === 2) {
+          const index66 = v62Indexes ? v62Indexes[o] : null;
+          if (index66) {
+            const target66 = v66RaiseTargetClass(
+              boardCards.length === 4 ? 1 : 0,
+              fastRandom(),
+              fastRandom()
+            );
+            if (placeV62Combo(deck, windowStart, n, index66, target66, vi.isShortDeck)) {
               oppCards[0] = deck[windowStart];
               oppCards[1] = deck[windowStart + 1];
             }

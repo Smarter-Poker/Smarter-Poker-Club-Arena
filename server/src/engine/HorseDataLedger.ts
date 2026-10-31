@@ -732,6 +732,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V61'
   ),
   flag(
+    'v66BetRaisedOnePair',
+    '2026-10-31 Hold em flop/turn bet-then-raised one pair (or air with no real draw): hero own wager this street no longer counts toward commitment, the call carries a raise shade of up to 0.10 equity scaled by the raise size, and the class calls or folds at that price without jamming; measured 7-day review calls won 33-36% at an average raise of 0.86 pot; explicit off arm retained',
+    'V66'
+  ),
+  flag(
     'v64RiverRaiseNeedsTwoPair',
     '2026-10-31 Hold em river raise discipline: facing a river wager on one board, one pair, high card and board-paired two pair never value-raise or bluff-raise (a measured over-folder read keeps the blocker bluff-raise); they fall through to the V38 call verdict with the V61 shade. Live review: one-pair raises won 34% (-4,184bb cash), air raises 7% (-1,696bb cash), two pair+ raises about +16,000bb; explicit off arm retained',
     'V64'
@@ -2151,6 +2156,22 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V61)',
     'Hold em one-pair river call shaded against the price',
     'V61',
+    'decide',
+    0.001
+  ),
+  receipt(
+    'v66_bet_raised_one_pair',
+    'HorseLogic (V66)',
+    'Hold em flop/turn one-pair call of a raise over hero own bet priced with the raise shade or released from commitment',
+    'V66',
+    'decide',
+    0.001
+  ),
+  receipt(
+    'v66_raise_stratum',
+    'HorseLogic (V66) via HorseEval',
+    'Hold em flop/turn raiser over hero own wager sampled from the raise stratum',
+    'V66',
     'decide',
     0.001
   ),

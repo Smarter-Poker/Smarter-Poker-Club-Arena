@@ -1,5 +1,7 @@
 # Lightning Go-Live Handoff (2026-10-15, Updated 20:30 UTC)
 
+> **Owner update, 2026-10-31: the Lightning Internal Pilot is removed.** Lightning runs live in Midway Union. Owner: "REMOVE THE LIGHTNING INTERNAL PILOT, AND ANY AND ALL TRACES OF IT IF ITS NO LONGER NEEDED FOR ANYTHING." Club 95087 is retired (migration `20261031184340`), and its tooling, workflows, engine seat scope and database objects are gone. Every pilot step, run and target below is history only; nothing here should be dispatched again.
+
 You are picking up the Lightning programme for Club Arena (Smarter Poker). Lightning is the pooled fast-fold cash mode. This document is the complete state of the work and every step left before Lightning can go live for real players. Read it top to bottom before acting. Nothing in it is a summary of a summary: every id, run, migration and rule you need is here.
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.

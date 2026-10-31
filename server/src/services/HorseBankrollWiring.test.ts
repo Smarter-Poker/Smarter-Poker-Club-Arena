@@ -50,8 +50,8 @@ describe('both decision points consult it', () => {
     );
     expect(filter).toContain('canSit(');
     expect(filter).toContain('referenceBuyIn(');
-    // The temperament policy, via seatPolicyFor (LightningPilotSeatScope).
-    expect(filter).toContain('seatPolicyFor(');
+    // The horse's own temperament policy.
+    expect(filter).toContain('bankrollPolicyFor(');
   });
 
   it('the BUY-IN is capped to a share of the roll, and a zero cap skips the seat', () => {
@@ -88,9 +88,9 @@ describe('both decision points consult it', () => {
     // band is only meaningful against the ladder that host actually deals.
     expect(SRC).toContain('!stakeBandAllows(');
     expect(SRC).toContain('table.big_blind,');
-    // seatPolicyFor is the temperament's own policy everywhere but an assigned
-    // Lightning pilot horse at a pilot seat (LightningPilotSeatScope).
-    expect(SRC).toContain('canSit(roll, ref, seatPolicyFor(h.id, seatClub))');
+    // The temperament's own policy at every seat (the Lightning pilot's
+    // dedicated-fund exception was removed with the pilot, 2026-10-31).
+    expect(SRC).toContain('canSit(roll, ref, bankrollPolicyFor(h.id))');
   });
 });
 

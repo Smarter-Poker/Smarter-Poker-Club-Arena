@@ -10,6 +10,10 @@ import {
   readPrivateRecordClientPin,
   assertPrivateRecordClientProof,
   PRIVATE_RECORD_CLIENT_TITLE,
+  PRIVATE_RECORD_ROSTER_READ_MS,
+  PRIVATE_RECORD_CASE_MS,
+  PRIVATE_RECORD_OBSERVATION_LIMIT,
+  summarizePrivateRecordObservations,
   snapshotPrivateRecordFixtureProfile,
   readPrivateRecordFixturePlayerNumber,
   assertPrivateRecordFixtureRoster,
@@ -153,6 +157,37 @@ function report(evidence = browserEvidence()) {
   };
 }
 describe('finite published record client proof admission and verdict', () => {
+  it('retains bounded diagnostics without exceeding the unchanged certificate cap', () => {
+    const frames = Array.from({ length: PRIVATE_RECORD_OBSERVATION_LIMIT }, (_, socket) => ({
+      socket,
+      endpoint: 'gateway',
+      topic: `member-record:${'a'.repeat(36)}:${'b'.repeat(36)}`,
+      type: 'PRIVATE_RECORD_STATUS',
+      ready: true,
+    }));
+    const summary = summarizePrivateRecordObservations(frames);
+    expect(summary.observedRecordFrames).toEqual(frames.slice(-64));
+    expect(summary.observedRecordFrameCount).toBe(PRIVATE_RECORD_OBSERVATION_LIMIT);
+    expect(frames).toHaveLength(PRIVATE_RECORD_OBSERVATION_LIMIT);
+    expect(Buffer.byteLength(JSON.stringify({ ...browserEvidence(), ...summary }))).toBeLessThan(
+      32768
+    );
+  });
+  it('fits both real roster refresh intervals and cleanup within the existing provider budget', () => {
+    const roster = readFileSync('src/pages/ClubMembersPage.tsx', 'utf8');
+    const interval = roster.match(/liveRosterRefreshPolicy = \{ minIntervalMs: ([\d_]+) \}/);
+    expect(interval).not.toBeNull();
+    const floor = Number(interval![1].replaceAll('_', ''));
+    expect(PRIVATE_RECORD_ROSTER_READ_MS).toBeGreaterThanOrEqual(floor + 45_000);
+    expect(PRIVATE_RECORD_CASE_MS).toBeGreaterThanOrEqual(
+      2 * PRIVATE_RECORD_ROSTER_READ_MS + 150_000
+    );
+    expect(PRIVATE_RECORD_CASE_MS).toBeLessThanOrEqual(600_000);
+    expect(PRIVATE_RECORD_OBSERVATION_LIMIT).toBeGreaterThan(
+      (127 * PRIVATE_RECORD_CASE_MS) / 60_000
+    );
+    expect(PRIVATE_RECORD_OBSERVATION_LIMIT).toBeLessThanOrEqual(2048);
+  });
   it('accepts retained readiness only on an open gateway with no later refusal', () => {
     const ready: PrivateRecordObservation = {
       endpoint: 'gateway',

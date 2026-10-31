@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 261100,
-      "sha256": "8b6b7d1a4ad6b80795ae646f383c7be81fb24065a175f65dc19a832b83b0ec35"
+      "bytes": 261919,
+      "sha256": "d21b38abec531563c1c652301b8cc4dd88da6a77c7c6313cc8c6300e2c5d32f8"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1656,6 +1656,51 @@
     "currentWorkflowPin": {
       "bytes": 261100,
       "sha256": "8b6b7d1a4ad6b80795ae646f383c7be81fb24065a175f65dc19a832b83b0ec35"
+    },
+    "execution_performed": false,
+    "qualificationStateChanged": false
+  },
+  "weeklyBoundaryFrameCoverEnforcementSourceAudit20261031": {
+    "scope": "Current CI source identity only: add the original pending cash-boundary frame-cover native qualification to existing accounting shard 2 and retain its result with an always-running artifact step. The 12 additive workflow lines preserve every prior command, native business input, financial assertion, profile, source generation, budget, runner, permission and dependency.",
+    "reason": "Enforce exact index installation, full original row/club-total equivalence and concurrent visibility regression protection for the demonstrated Midway pending-boundary timeout; this binding records the reviewed workflow bytes.",
+    "previousCiPin": {
+      "bytes": 260024,
+      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+    },
+    "currentCiPin": {
+      "bytes": 260843,
+      "sha256": "acdc890f2b87c8d89246fbb47335081f022264596df1b09dc6be294873e6a3fa"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false,
+    "qualification": "Source identity only; unchanged native business fixtures and prior financial verdicts are not recertified. Exact-head required checks, production installation and live book-closure proof remain separate."
+  },
+  "weeklyFrameCoverProtectedMainComposition20261031": {
+    "scope": "Compose protected main original top-up receipt qualification with frame-cover qualification. Preserve all native commands, financial inputs, historical receipts, existing audits and qualification state. Source identity only, not recertification.",
+    "protectedMainCiPin": {
+      "bytes": 260283,
+      "sha256": "ee357f77ae898d976025839707e3ff7e530b56ae41b5c2be0d59a03fb72d9b02"
+    },
+    "combinedCiPin": {
+      "bytes": 261102,
+      "sha256": "8fa7d5fcead6ebfa0b5db36a3f65797497e658482287b11e8c9125f8bed2bf7c"
+    },
+    "execution_performed": false
+  },
+  "satelliteFinalConcurrencyComposition20261031": {
+    "scope": "Source identity only: compose protected-main2cb9c211 frame-cover qualification and retained original-history withdrawal with the unchanged satellite native qualifier plus actual two-backend value-ticket cases. No historical input, verdict or financial qualification state changed.",
+    "branchWorkflowPin": {
+      "bytes": 261100,
+      "sha256": "8b6b7d1a4ad6b80795ae646f383c7be81fb24065a175f65dc19a832b83b0ec35"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 261102,
+      "sha256": "8fa7d5fcead6ebfa0b5db36a3f65797497e658482287b11e8c9125f8bed2bf7c"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 261919,
+      "sha256": "d21b38abec531563c1c652301b8cc4dd88da6a77c7c6313cc8c6300e2c5d32f8"
     },
     "execution_performed": false,
     "qualificationStateChanged": false

@@ -573,6 +573,42 @@ class ReaderTests(unittest.TestCase):
         with patch.object(R, 'bounded_journal', side_effect=journal):
             return R.pending_journal(request, unit)
 
+    def test_pending_entry_producer_timestamps_are_selected_without_private_text(self):
+        cases = [
+            ('[engine-release-lightning-hold] Lightning hold recorded: 11 owned, 0 foreign, 0 refused', 'lightning_hold_recorded'),
+            ('[engine-release-lightning-hold] Lightning hold released: 11 owned Cluster(s)', 'lightning_hold_released'),
+            ('[engine-release-lightning-hold] UNKNOWN: private transport fixture', 'lightning_hold_unknown'),
+        ]
+        for phase, reason in [('admitted', 'verified'), ('locked', 'verified'),
+                              ('checkpoint', 'verified'), ('completed', 'verified'),
+                              ('refused', 'countdown_refused'), ('refused', 'checkpoint_refused')]:
+            cases.append(('[engine-release-transaction] legacy entry phase=' + phase + ' reason=' + reason
+                          + ' elapsedEntryMs=123 remainingEntryMs=39877 remainingWindowMs=290123',
+                          'legacy_entry_' + (reason if phase == 'refused' else phase)))
+        cases += [
+            ('[engine-release-transaction] WARN: the Lightning hold answered UNKNOWN (exit 124); it is retried on the next pass', 'lightning_hold_timeout'),
+            ('[engine-release-transaction] WARN: the Lightning hold answered UNKNOWN (exit 3); it is retried on the next pass', 'lightning_hold_unknown'),
+            ('[engine-release-transaction] WARN: the Lightning hold helper could not run (exit 127); Lightning was NEVER ASKED to pause this pass and the census guard decides on its own', 'lightning_hold_helper_unavailable'),
+        ]
+        signs = self.recovery_signs([message for message, _ in cases], native=True)
+        self.assertEqual([sign['category'] for sign in signs], [category for _, category in cases])
+        self.assertTrue(all(sign['details'] is None for sign in signs))
+        R.validate_pending_signs(signs)
+        self.assertNotIn('private', json.dumps(signs))
+        self.assertNotIn('290123', json.dumps(signs))
+
+    def test_pending_entry_categories_refuse_unknown_phases_and_forged_details(self):
+        bad = [
+            '[engine-release-lightning-hold] Lightning hold recorded: bad owned, 0 foreign, 0 refused',
+            '[engine-release-lightning-hold] Lightning hold released: 11 owned Cluster(s) private',
+            '[engine-release-transaction] legacy entry phase=private reason=verified elapsedEntryMs=1 remainingEntryMs=2 remainingWindowMs=3',
+            '[engine-release-transaction] legacy entry phase=admitted reason=private elapsedEntryMs=1 remainingEntryMs=2 remainingWindowMs=3',
+            '[engine-release-transaction] legacy entry phase=admitted reason=verified elapsedEntryMs=1 remainingEntryMs=2 remainingWindowMs=3 private',
+        ]
+        self.assertEqual(self.recovery_signs(bad, native=True), [])
+        with self.assertRaises(ValueError):
+            R.validate_pending_signs([{'category': 'lightning_hold_recorded', 'observedAtMs': 1793318108736, 'details': [11]}])
+
     def test_pending_recovery_producer_messages_export_closed_categories_only(self):
         cases = self.recovery_messages()
         signs = self.recovery_signs([message for message, _ in cases])

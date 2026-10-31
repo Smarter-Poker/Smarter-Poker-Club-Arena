@@ -191,7 +191,11 @@ describe('paid leaderboard funding waterfall', () => {
   it('settles only through the server role and has a scheduled boundary sweep', () => {
     expect(sweepSql).toContain('CREATE OR REPLACE FUNCTION public.fn_settle_due_leaderboards()');
     expect(sweepScheduleSql).toContain("'leaderboard-payout-waterfall-daily'");
-    expect(sweepScheduleSql).toContain("'20 0 * * *'");
+    expect(sweepScheduleSql).toContain("'0 7,8 * * 1'");
+    expect(sweepScheduleSql).toContain("AT TIME ZONE 'America/Chicago'");
+    expect(sweepScheduleSql).toContain(
+      "extract(hour FROM now() AT TIME ZONE 'America/Chicago') = 2"
+    );
     const permissionSql = read(
       'supabase/migrations/20261009112249_leaderboard_ranking_preserved_access_declaration.sql'
     );

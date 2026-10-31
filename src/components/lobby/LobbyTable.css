@@ -2157,6 +2157,7 @@ abbr.lt-variant[title] {
   box-shadow: inset 4px 0 0 var(--tournament-row-accent);
 }
 .lobby-table tr[data-kind]:not([data-kind='cash']).is-featured {
+  --tournament-row-accent: var(--accent-red, #f02849);
   outline: 2px solid var(--accent-red, #f02849);
   outline-offset: -2px;
   background: #000;
@@ -2207,6 +2208,20 @@ abbr.lt-variant[title] {
   .lobby-table tr[data-kind]:not([data-kind='cash']).is-featured {
     border-left-color: var(--accent-red, #f02849);
   }
+}
+
+.lt-tournament-icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  margin-right: 5px;
+  flex-shrink: 0;
+  vertical-align: middle;
+  color: var(--tournament-row-accent, #45adff);
+}
+.lt-tournament-icon > svg {
+  width: 100%;
+  height: 100%;
 }
 
 /* Lightning frames share the cells' paint layer in both schedule layouts. */

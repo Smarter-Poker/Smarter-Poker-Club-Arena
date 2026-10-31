@@ -412,6 +412,7 @@
 }
 /* An inset outline reaches every edge without widening any table column. */
 .compact-lobby tbody tr[data-kind]:not([data-kind='cash']).is-featured {
+  --tournament-row-accent: var(--accent-red, #f02849);
   outline: 2px solid var(--accent-red, #f02849);
   outline-offset: -2px;
 }

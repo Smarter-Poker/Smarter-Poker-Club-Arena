@@ -14,7 +14,9 @@ export function summarize(profile) {
   for (let i = 0; i < profile.samples.length; i++) {
     const n = nodes.get(profile.samples[i]);
     const us = profile.timeDeltas[i];
-    if (!n || !Number.isFinite(us) || us < 0) throw new Error('profile_sample_invalid');
+    if (!n) throw new Error('profile_sample_invalid_node');
+    if (!Number.isFinite(us)) throw new Error('profile_sample_invalid_delta');
+    if (us < 0) throw new Error('profile_sample_invalid_negative_delta');
     const f = n.callFrame;
     // Only code coordinates leave the process. No source text or runtime values.
     const url = f.url || '';
@@ -189,6 +191,7 @@ const refusalCodes = new Set([
   'inspector_command_timeout', 'inspector_cleanup_timeout', 'inspector_cleanup_not_confirmed',
   'inspector_discovery_refused', 'inspector_target_count', 'engine_changed_during_profile',
   'profile_samples_missing', 'profile_sample_invalid', 'profile_duration_missing',
+  'profile_sample_invalid_node', 'profile_sample_invalid_delta', 'profile_sample_invalid_negative_delta',
 ]);
 export function failureReason(error) {
   return refusalCodes.has(error?.message) ? error.message : 'unclassified_failure';

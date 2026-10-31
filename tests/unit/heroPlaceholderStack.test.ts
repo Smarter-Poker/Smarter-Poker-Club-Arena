@@ -16,19 +16,21 @@ function placeholder(
   lightningWaitingSeat: { status: string; stack: number | null } | null = null,
   /* Lightning transition, phase 1: the Lightning waiting chair's face, worked
      out above the seat loop (lightningStandInIdentity). Null at Classic. */
-  lightningStandIn: { name: string; avatar: string; frame?: string; aura?: string } | null = null
+  lightningStandIn: { name: string; avatar: string; frame?: string; aura?: string } | null = null,
+  heroSitsOutPerRow = true
 ) {
   return new Function(
     'heroRowStack',
     'pendingSeatStackRef',
     'lightningWaitingSeat',
     'lightningStandIn',
+    'heroSitsOutPerRow',
     `let displayPlayer = null;
      const pendingSeat = null, seatNumber = 8, tableState = { heroSeat: 8 };
      const userId = 'hero', username = 'Player', heroAvatarUrl = '';
      ${branch}
      return displayPlayer;`
-  )(rowStack, { current: pendingStack }, lightningWaitingSeat, lightningStandIn);
+  )(rowStack, { current: pendingStack }, lightningWaitingSeat, lightningStandIn, heroSitsOutPerRow);
 }
 
 describe('hero placeholder identity', () => {
@@ -92,6 +94,10 @@ describe('hero placeholder stack', () => {
 
   it('shows the confirmed buy-in while the seat row has not arrived', () => {
     expect(placeholder(null).stack).toBe(400);
+  });
+
+  it('shows a confirmed waiting entrant without an invented sitting-out tag', () => {
+    expect(placeholder(20000, 0, null, null, false).status).toBe('active');
   });
 
   it('is still sitting out at a cash table', () => {

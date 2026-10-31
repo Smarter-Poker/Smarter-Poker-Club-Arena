@@ -192,6 +192,9 @@ vi.mock('../../src/services/SoundService', () => ({
   soundService: new Proxy({}, { get: () => vi.fn() }),
   haptic: new Proxy({}, { get: () => vi.fn() }),
 }));
+vi.mock('../../src/hooks/useServerCashSessionProfit', () => ({
+  useServerCashSessionProfit: () => ({}),
+}));
 vi.mock('../../src/services/SessionStatsService', () => ({
   sessionStatsService: { getStats: () => null, moveSession: state.moveSession },
 }));
@@ -202,7 +205,27 @@ vi.mock('../../src/services/GameServerAPI', () => ({
 vi.mock('../../src/utils/clubQuickLink', () => ({ resolveLobbyClubId: async () => null }));
 vi.mock('../../src/utils/lazyWithRetry', () => ({
   lazyWithRetry: (loader: () => Promise<unknown>) => {
-    if (!String(loader).includes('TablePage')) return () => <div>Lobby Page</div>;
+    if (!String(loader).includes('TablePage'))
+      return function Lobby() {
+        const navigate = useAppNavigate();
+        const context = useInTabLobby();
+        return (
+          <button
+            onClick={() =>
+              navigate('/table/B', {
+                state: {
+                  tournamentSeat: {
+                    tournamentId: 'event',
+                    lobbyTabId: context?.getLobbyTabId?.(),
+                  },
+                },
+              })
+            }
+          >
+            Register In This Pill
+          </button>
+        );
+      };
     return function Felt({
       embeddedTableId,
       onTableInfoUpdate,
@@ -226,6 +249,7 @@ vi.mock('../../src/utils/lazyWithRetry', () => ({
 }));
 
 import MultiTablePage from '../../src/pages/MultiTablePage';
+import { useAppNavigate, useInTabLobby } from '../../src/context/InTabLobbyContext';
 import {
   resetLightningRegistryForTests,
   getLightningPoolSession,
@@ -301,6 +325,49 @@ describe('Rendered MultiTable authoritative seat rebuild', () => {
     fireEvent.click(screen.getByText('Enter Assigned Tournament'));
     await waitFor(() => expect(screen.getByTestId('tabs').getAttribute('data-active')).toBe('A'));
     expect(screen.getByTestId('felt-A')).toBeTruthy();
+  });
+  it('replaces the registration lobby pill rather than opening another page', async () => {
+    await seatA();
+    await act(async () => masterBus.emit('OPEN_LOBBY_TAB', {}));
+    const before = screen.getByTestId('tabs').getAttribute('data-active');
+    const count = screen.getByTestId('tabs').textContent?.split(',').length;
+    expect(before).toContain('lobby:');
+    fireEvent.click(screen.getByText('Register In This Pill'));
+    await waitFor(() => expect(screen.getByTestId('tabs').getAttribute('data-active')).toBe('B'));
+    expect(screen.queryByTestId('tab-' + before)).toBeNull();
+    expect(screen.getByTestId('felt-A')).toBeTruthy();
+    expect(screen.getByTestId('felt-B')).toBeTruthy();
+    expect(screen.getByTestId('tabs').textContent?.split(',').length).toBe(count);
+  });
+  it('uses the initiating pill even if the seat event already opened the game in the background', async () => {
+    await seatA();
+    await act(async () => masterBus.emit('OPEN_LOBBY_TAB', {}));
+    const lobby = screen.getByTestId('tabs').getAttribute('data-active');
+    await act(async () => masterBus.emit('TABLE_SEATED', { tableId: 'B', userId: 'account-a' }));
+    expect(screen.getByTestId('tabs').getAttribute('data-active')).toBe(lobby);
+    fireEvent.click(screen.getByText('Register In This Pill'));
+    await waitFor(() => expect(screen.getByTestId('tabs').getAttribute('data-active')).toBe('B'));
+    expect(screen.getByTestId('tabs').textContent).toBe('A,B');
+    expect(screen.queryByTestId('tab-' + lobby)).toBeNull();
+  });
+  it('consumes an admission lobby at the cap without a false blocked-seat warning', async () => {
+    await seatA();
+    await act(async () => masterBus.emit('TABLE_SEATED', { tableId: 'C', userId: 'account-a' }));
+    await act(async () => masterBus.emit('TABLE_SEATED', { tableId: 'D', userId: 'account-a' }));
+    await act(async () => masterBus.emit('OPEN_LOBBY_TAB', {}));
+    const origin = screen.getByTestId('tabs').getAttribute('data-active')!;
+    const blocked = vi.fn();
+    state.listeners.set('TABLE_CAP_BLOCKED', new Set([blocked]));
+    await act(async () =>
+      masterBus.emit('TABLE_SEATED', {
+        tableId: 'B',
+        userId: 'account-a',
+        registrationLobbyTabId: origin,
+      })
+    );
+    expect(screen.getByTestId('tabs').textContent).toBe('A,C,D,B');
+    expect(screen.queryByTestId('tab-' + origin)).toBeNull();
+    expect(blocked).not.toHaveBeenCalled();
   });
   it('hands the game session over before a verified tournament seat insertion replaces the felt', async () => {
     await seatA();

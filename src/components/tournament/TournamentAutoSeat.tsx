@@ -42,6 +42,7 @@ import { MULTI_DAY_CAPABILITY } from '../../utils/multiDaySchedule';
 import { readTournamentStageView } from '../../services/TournamentStageService';
 import {
   markTournamentEntered,
+  tournamentSeatNavigationOptions,
   tournamentEntryNavigationKey,
 } from '../../utils/tournamentEntryNavigation';
 import './TournamentAutoSeat.css';
@@ -279,14 +280,20 @@ export default function TournamentAutoSeat() {
         // Hand it to the multi-table layer: it opens a tab when there is room
         // and replies TABLE_CAP_BLOCKED when there is not.
         warmTable(tableId);
-        masterBus.emit('TABLE_SEATED', { tableId, seat: 0 });
+        const navigation = tournamentSeatNavigationOptions(user.id, t.tournament_id);
+        const origin = enterGame ? navigation.state.tournamentSeat.lobbyTabId : null;
+        masterBus.emit('TABLE_SEATED', {
+          tableId,
+          seat: 0,
+          ...(origin ? { registrationLobbyTabId: origin } : {}),
+        });
         // Registration authorizes entering this game, including a seat that
         // arrives at tournament start. Opening a background tab leaves the
         // paid entrant in the lobby until another click.
         if (enterGame) {
           enteredRef.current.add(entryKey);
           markTournamentEntered(user.id, t.tournament_id);
-          navigate(`/table/${tableId}`);
+          navigate(`/table/${tableId}`, navigation);
         }
       }
       if (!visibleSeatAway) setBlindingOff(null);

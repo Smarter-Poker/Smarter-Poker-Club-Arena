@@ -211,13 +211,53 @@ function renderLobby(selected: string[] = [], onStylesChange = vi.fn()) {
 describe('Lightning Games lobby identity', () => {
   it('replaces the dot with the painted bolt only for Lightning rows, including legacy aliases', () => {
     renderLobby();
-    const icon = screen.getByRole('img', { name: 'Lightning Games' });
-    expect(icon.getAttribute('src')).toContain('lightning_bolt-192-242cf8769546.webp');
-    expect(icon.closest('tr')?.getAttribute('data-cash-format')).toBe('madness');
+    const icons = screen.getAllByRole('img', { name: 'Lightning Games' });
+    expect(icons).toHaveLength(2);
+    for (const icon of icons) {
+      expect(icon.getAttribute('src')).toContain('lightning_bolt-192-242cf8769546.webp');
+      expect(icon.closest('tr')?.getAttribute('data-cash-format')).toBe('madness');
+      expect(icon.closest('tr')?.getAttribute('data-lightning-format')).toBe('true');
+    }
     expect(document.querySelector('tr[data-cash-format="classic"] .lt-lightning-icon')).toBeNull();
     expect(read('src/components/lobby/ClubLobbyCommandTop.css')).toContain(
       "tr[data-cash-format='madness'] td.lt-col-name::before"
     );
+  });
+  it('does not mark ordinary Madness or variants excluded from Lightning', () => {
+    render(
+      <MemoryRouter>
+        <LobbyTable
+          entries={[
+            cashEntry(
+              table({
+                id: 'ordinary-madness',
+                cluster_id: 'g1',
+                cluster_template: 'classic',
+                big_blind_ante_enabled: true,
+                nit_game: true,
+                maintain_percent_min: 50,
+                bomb_pot_enabled: true,
+              })
+            ),
+            cashEntry(
+              table({
+                id: 'excluded',
+                cluster_id: 'g2',
+                cluster_template: 'action',
+                game_variant: 'short_deck',
+              })
+            ),
+          ]}
+          category="HOLDEM"
+          selectedId={null}
+          onSelect={() => {}}
+          onActivate={() => {}}
+          ctx={ctx}
+        />
+      </MemoryRouter>
+    );
+    expect(screen.queryByRole('img', { name: 'Lightning Games' })).toBeNull();
+    expect(document.querySelector('tr[data-lightning-format="true"]')).toBeNull();
   });
 });
 
@@ -246,5 +286,26 @@ describe('Stakes headings directly adjust the same board without popups', () => 
     fireEvent.keyDown(stakes, { key: 'Enter' });
     expect(stakes).toHaveAttribute('aria-sort', 'ascending');
     expect(document.querySelector('.lt-stakes-menu')).toBeNull();
+  });
+});
+
+describe('schedule frames paint above opaque table cells', () => {
+  it('keeps all four featured and Lightning edges on the cell paint layer', () => {
+    for (const path of [
+      'src/components/lobby/CompactLobbyRows.css',
+      'src/components/lobby/LobbyTable.css',
+    ]) {
+      const css = read(path);
+      for (const identity of ['.is-featured', "[data-lightning-format='true']"]) {
+        const escaped = identity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        for (const edge of ['first-child', 'last-child']) {
+          const rule = css.match(new RegExp(escaped + ' td:' + edge + ' {([^}]+)}'));
+          expect(rule, `${path}: ${identity} ${edge}`).not.toBeNull();
+          expect(rule![1]).toContain('inset 0 2px 0');
+          expect(rule![1]).toContain('inset 0 -2px 0');
+          expect(rule![1]).toContain(edge === 'first-child' ? 'inset 2px 0 0' : 'inset -2px 0 0');
+        }
+      }
+    }
   });
 });

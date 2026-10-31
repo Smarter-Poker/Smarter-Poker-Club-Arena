@@ -468,3 +468,90 @@ describe('main-game vacancies take the first completed hand boundary', () => {
     );
   });
 });
+
+describe('exact-hand timing observes the existing settlement barrier', () => {
+  it('identifies a blocked committed refresh, announcement and seat lane without advancing the hand', async () => {
+    const { engine, players } = cashTable();
+    let monotonic = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonic);
+    let refresh!: (value: unknown) => void;
+    let announce!: () => void;
+    let leave!: (value: unknown[]) => void;
+    const refreshResult = new Promise((resolve) => {
+      refresh = resolve;
+    });
+    const announceResult = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+    const leaveResult = new Promise<unknown[]>((resolve) => {
+      leave = resolve;
+    });
+    vi.mocked(supabase.from).mockImplementation((() => {
+      const chain: any = { select: vi.fn(), eq: vi.fn(), is: vi.fn(() => refreshResult) };
+      chain.select.mockReturnValue(chain);
+      chain.eq.mockReturnValue(chain);
+      return chain;
+    }) as any);
+    engine.announceEnvelopeResolvedAddOns.mockReturnValue(announceResult);
+    mocks.leaves.mockReturnValue(leaveResult);
+    let completed = false;
+    const work = engine.postHandTasks(players, 1).then(() => {
+      completed = true;
+    });
+    const until = async (predicate: () => boolean) => {
+      for (let i = 0; i < 100 && !predicate(); i++) await Promise.resolve();
+      expect(predicate()).toBe(true);
+    };
+    const stage = (name: string) =>
+      engine.postHandTimingSnapshot()?.stages.find((s: any) => s.name === name);
+    await until(() => stage('committed_seat_refresh')?.outcome === 'pending');
+    monotonic = 100;
+    engine.armNextHandRest(2000);
+    monotonic = 500;
+    expect(stage('committed_seat_refresh')).toMatchObject({
+      outcome: 'pending',
+      elapsedMs: 500,
+      postHoldMs: 400,
+    });
+    expect(completed).toBe(false);
+    expect(mocks.obligations).toHaveBeenCalledTimes(1);
+    monotonic = 600;
+    refresh({
+      data: [
+        { user_id: 'a', stack: 90 },
+        { user_id: 'b', stack: 110 },
+      ],
+      error: null,
+    });
+    await until(() => stage('addon_announcement')?.outcome === 'pending');
+    monotonic = 800;
+    expect(stage('committed_seat_refresh')).toMatchObject({
+      outcome: 'returned',
+      elapsedMs: 600,
+      postHoldMs: 500,
+    });
+    expect(stage('addon_announcement')).toMatchObject({
+      outcome: 'pending',
+      elapsedMs: 200,
+      postHoldMs: 200,
+    });
+    expect(mocks.leaves).not.toHaveBeenCalled();
+    expect(completed).toBe(false);
+    announce();
+    await until(() => stage('leave_pending')?.outcome === 'pending');
+    expect(stage('leave_pending').lane).toBe('seats');
+    expect(completed).toBe(false);
+    leave([]);
+    await work;
+    expect(engine.postHandTimingSnapshot()).toMatchObject({
+      handNumber: 9459694,
+      pipelineComplete: true,
+      captureIncomplete: false,
+    });
+    expect(stage('lane_join').outcome).toBe('returned');
+    expect(mocks.commit).toHaveBeenCalledTimes(1);
+    expect(mocks.obligations).toHaveBeenCalledTimes(1);
+    expect(mocks.leaves).toHaveBeenCalledTimes(1);
+    expect(engine.killForRestart).not.toHaveBeenCalled();
+  });
+});

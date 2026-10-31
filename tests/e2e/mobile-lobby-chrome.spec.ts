@@ -401,6 +401,16 @@ for (const first of ['invitation', 'greeting'] as const) {
   });
 }
 
+test('production greeting gives an already-open deferred invitation its own action budget', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await mountLobbyDoors(page, 'greeting', { notNowDelayMs: 11_000 });
+  await expect(dismissClubEntryMessage(page)).resolves.toBe(true);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 1 });
+});
+
 for (const first of ['invitation', 'greeting'] as const) {
   test(`cash lobby retires Diamond with both doors open and ${first} first`, async ({ page }) => {
     await mountLobbyDoors(page, first);

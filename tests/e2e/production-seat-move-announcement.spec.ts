@@ -83,6 +83,34 @@ test('the published table explains controlled seat moves without moving a player
   const clients: WebSocketRoute[] = [];
   let observedViewerId: string | null = null;
   let realIncomingFrames = 0;
+  let subjectTableId: string | null = null;
+  let snapshotTemplate: Record<string, any> | null = null;
+  let latestSequence = 0;
+  let syntheticPhase = false;
+  const refusedSynthetic = { http: 0, websocket: 0 };
+  let forwardedSyntheticUpstream = 0;
+  const heroDiagnostics: string[] = [];
+  await context.addInitScript(() => {
+    // Retain only a native socket reference, never its URL/token/frame data.
+    // The probe below is a harmless PING, and must be refused by the proxy.
+    const send = WebSocket.prototype.send;
+    const sockets: { engine?: WebSocket } = {};
+    WebSocket.prototype.send = function (data) {
+      if (this.url.startsWith('wss://engine.smarter.poker/')) sockets.engine = this;
+      return send.call(this, data);
+    };
+    Object.defineProperty(window, '__a14ReadOnlySocketProbe', {
+      value: () => {
+        if (!sockets.engine || sockets.engine.readyState !== WebSocket.OPEN)
+          throw new Error('No live engine socket for refusal proof');
+        sockets.engine.send(JSON.stringify({ type: 'PING' }));
+      },
+    });
+  });
+  page.on('console', (message) => {
+    if (syntheticPhase && message.text().includes('TablePage.EngineHeroSeatNotRendered'))
+      heroDiagnostics.push('TablePage.EngineHeroSeatNotRendered');
+  });
   const evidence: Record<string, unknown> = {
     source: 'controlled-browser-event',
     naturalMoveObserved: false,
@@ -90,6 +118,13 @@ test('the published table explains controlled seat moves without moving a player
   await context.route('**/*', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
+    const nonRead = !['GET', 'HEAD', 'OPTIONS'].includes(req.method());
+    // Synthetic input must never create production telemetry or any write.
+    if (nonRead && (syntheticPhase || url.pathname.endsWith('/rpc/fn_report_client_errors'))) {
+      if (syntheticPhase) refusedSynthetic.http++;
+      await route.abort('blockedbyclient');
+      return;
+    }
     if (forbiddenParticipation(req.method(), url, req.postData())) {
       writes.push({ transport: 'http', operation: req.method(), path: url.pathname });
       await route.abort('blockedbyclient');
@@ -111,17 +146,48 @@ test('the published table explains controlled seat moves without moving a player
     await route.fallback();
   });
   await context.routeWebSocket(
-    (url) => url.hostname === ENGINE_HOST && url.pathname === '/ws/multi',
+    () => true,
     (client) => {
-      clients.push(client);
+      const engine = new URL(client.url()).hostname === ENGINE_HOST;
+      if (engine) clients.push(client);
       const server = client.connectToServer();
+      const upstream = (message: string | Buffer) => {
+        if (syntheticPhase) forwardedSyntheticUpstream++;
+        server.send(message);
+      };
       // Preserve all genuine server bytes; only the extra test packets below
       // are synthetic, and original-route.send delivers them to this page only.
       server.onMessage((message) => {
-        realIncomingFrames += 1;
+        // During the final synthetic phase only this browser's display is
+        // held. The real engine, players and upstream connection are untouched.
+        if (syntheticPhase) return;
+        if (engine) {
+          realIncomingFrames += 1;
+          try {
+            const frame = JSON.parse(String(message));
+            if (frame.tableId === subjectTableId) {
+              if (typeof frame.seq === 'number')
+                latestSequence = Math.max(latestSequence, frame.seq);
+              if (frame.type === 'SNAPSHOT' && Array.isArray(frame.state?.players))
+                snapshotTemplate = frame;
+            }
+          } catch {
+            /* genuine non-JSON bytes are still forwarded unchanged */
+          }
+        }
         client.send(message);
       });
       client.onMessage((message) => {
+        // Every upstream socket, including Realtime, is read-only during this
+        // phase. Never forward synthetic client participation or diagnostics.
+        if (syntheticPhase) {
+          refusedSynthetic.websocket++;
+          return;
+        }
+        if (!engine) {
+          upstream(message);
+          return;
+        }
         let type = '';
         try {
           type = String(JSON.parse(String(message)).type || '');
@@ -136,7 +202,7 @@ test('the published table explains controlled seat moves without moving a player
           });
           return;
         }
-        server.send(message);
+        upstream(message);
       });
     }
   );
@@ -208,6 +274,7 @@ test('the published table explains controlled seat moves without moving a player
       'the reserved club needs an occupied cash spectator subject'
     ).toBeGreaterThan(0);
     const source = candidates[0];
+    subjectTableId = source.id;
     const catalogueRead = await cashRead;
     if (catalogueRead.error || !catalogueRead.rows)
       throw new Error(`The cash catalogue was unreadable: ${catalogueRead.error}`);
@@ -343,12 +410,82 @@ test('the published table explains controlled seat moves without moving a player
     console.log(
       `SEAT_MOVE_NOTICE_PROOF ${JSON.stringify({ ...evidence, refusedParticipationAttempts: writes })}`
     );
-  } finally {
-    await info.attach('mobile-live-table-seat-move-rendering', {
-      body: Buffer.from(
-        JSON.stringify({ ...evidence, refusedParticipationAttempts: writes }, null, 2)
-      ),
-      contentType: 'application/json',
+
+    // A synthetic reserved-account identity tests the deployed diagnostic,
+    // not an authoritative seat, natural gameplay or a financial receipt.
+    await expect.poll(() => snapshotTemplate !== null).toBe(true);
+    const template = snapshotTemplate! as Record<string, any>;
+    expect(
+      template.state.lightning_observer,
+      'a public Lightning observer cannot qualify a classic hero diagnostic'
+    ).not.toBe(true);
+    const input = structuredClone(template);
+    const index = input.state.players.findIndex(
+      (player: { user_id?: string }) => player.user_id === actorId
+    );
+    expect(index).toBeGreaterThanOrEqual(0);
+    const seat = input.state.players[index].seat;
+    expect(seat).toBeGreaterThanOrEqual(1);
+    expect(seat).toBeLessThanOrEqual(9);
+    input.state.players[index].user_id = fixtureUserId;
+    input.seq = latestSequence + 1;
+    // The guard is armed before any synthetic bytes reach the real parser.
+    syntheticPhase = true;
+    clients.at(-1)!.send(JSON.stringify(input));
+    await expect(page.locator(`.seat--hero[data-player-id="${fixtureUserId}"]`)).toHaveCount(1);
+    await expect(page.locator('.table-page')).toHaveAttribute('data-hero', 'true');
+    // Observe actual committed rendering, not a queued React state update.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    );
+    await expect(page.locator(`.seat--hero[data-player-id="${fixtureUserId}"]`)).toHaveAttribute(
+      'data-seat-num',
+      String(seat)
+    );
+    expect(heroDiagnostics).toEqual([]);
+    await page.evaluate(async () => {
+      (window as unknown as { __a14ReadOnlySocketProbe: () => void }).__a14ReadOnlySocketProbe();
+      // A nonread against a nonexistent static path proves the HTTP guard
+      // without touching any money, seat, telemetry or backend mutation API.
+      await fetch('/hub/club-arena/__a14_ui_only_refusal_probe__', {
+        method: 'POST',
+        body: 'ui-only',
+      }).catch(() => undefined);
     });
+    await expect.poll(() => refusedSynthetic.websocket).toBeGreaterThan(0);
+    expect(refusedSynthetic.http).toBeGreaterThan(0);
+    expect(forwardedSyntheticUpstream).toBe(0);
+    expect(heroDiagnostics).toEqual([]);
+    const afterSynthetic = await readBuild();
+    expect(afterSynthetic).toEqual(evidence.before);
+    evidence.heroDiagnostic = {
+      source: 'synthetic-reserved-row-browser-input',
+      actualServedParserMapperAndEffect: true,
+      authoritativeSeatReceipt: false,
+      naturalSeatedGameplay: false,
+      financialReceipt: false,
+      originalSeatMoveStageFinishedAsSpectator: true,
+      renderedHeroRows: 1,
+      diagnosticCount: heroDiagnostics.length,
+      refusedUpstreamAttempts: refusedSynthetic,
+      forwardedSyntheticUpstream,
+      client: afterSynthetic,
+    };
+  } finally {
+    // Keep every write guard armed until the synthetic page is gone. Never
+    // resume a real stream or unload handler against its synthetic hero state.
+    try {
+      if (syntheticPhase) await context.close();
+    } finally {
+      await info.attach('mobile-live-table-seat-move-rendering', {
+        body: Buffer.from(
+          JSON.stringify({ ...evidence, refusedParticipationAttempts: writes }, null, 2)
+        ),
+        contentType: 'application/json',
+      });
+    }
   }
 });

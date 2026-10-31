@@ -1,3 +1,8 @@
+import {
+  copyPostHandStageSnapshot,
+  type PostHandStageSnapshot,
+} from '../engine/PostHandStageTiming.js';
+
 /** Explicit, bounded public progress reads. Ordinary health probes stay compact. */
 export const MAX_PUBLIC_LIVENESS_TABLES = 32;
 export type PublicTableLivenessQuery =
@@ -6,6 +11,7 @@ export type PublicTableLivenessQuery =
 
 export interface PublicTableLiveness {
   tableId: string;
+  postHandTiming?: PostHandStageSnapshot | null;
   gameFormat: 'cash' | 'mtt' | 'spin' | 'sng' | null;
   clubId: string | null;
   seated: number;
@@ -98,5 +104,8 @@ export function selectPublicTableLiveness(
     loopPhase: table.loopPhase.slice(0, 160),
     paused: table.paused,
     running: table.running,
+    ...(query.kind === 'tables' && table.postHandTiming !== undefined
+      ? { postHandTiming: copyPostHandStageSnapshot(table.postHandTiming) }
+      : {}),
   }));
 }

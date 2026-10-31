@@ -12,6 +12,13 @@ COPY native/public_hist215_wtl.cc ./native/public_hist215_wtl.cc
 COPY scripts/build-public-hist215-native.mjs ./scripts/build-public-hist215-native.mjs
 RUN node scripts/build-public-hist215-native.mjs
 
+# Build the legacy census from maintained source with this exact Linux Node/V8
+# image. Its ABI-specific binary and provenance remain an inseparable image pair.
+COPY scripts/native/legacy-census.cc ./scripts/native/legacy-census.cc
+COPY scripts/native/build-legacy-census.mjs ./scripts/native/build-legacy-census.mjs
+COPY scripts/legacy-engine-checkpoint.mjs ./scripts/legacy-engine-checkpoint.mjs
+RUN node scripts/native/build-legacy-census.mjs --headers=/usr/local/include/node --output=/native-build/native/legacy-census/legacy-census.node
+
 FROM node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
 
 WORKDIR /app
@@ -26,6 +33,8 @@ RUN npm ci --include=dev --no-audit --no-fund
 COPY tsconfig.json tsconfig.runtime.json tsconfig.emit.json ./
 COPY src/ ./src/
 COPY --from=public-hist215-native /native-build/native/build/public_hist215_wtl.node ./native/build/public_hist215_wtl.node
+COPY --from=public-hist215-native /native-build/native/legacy-census/ ./native/legacy-census/
+COPY scripts/legacy-census-scale-fixture.mjs ./native/legacy-census/scale-fixture.mjs
 # Committed admission evidence for the Horse Brain protected release selections
 # (qualification, strength and completion records). The image is built from the
 # server tree alone, so these are the only copies the running engine can read;

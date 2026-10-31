@@ -313,7 +313,13 @@ export function browserStorage(session, supabaseHost) {
   return {
     cookies: [],
     origins: [
-      { origin: 'https://smarter.poker', localStorage: [{ name, value: JSON.stringify(session) }] },
+      {
+        origin: 'https://smarter.poker',
+        localStorage: [
+          { name, value: JSON.stringify(session) },
+          { name: 'smarter-poker-auth', value: JSON.stringify(session) },
+        ],
+      },
     ],
   };
 }

@@ -48,6 +48,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..');
+// Valid immutable-artifact input supplied by the original preparation stage.
+// These cases isolate intent/deadline semantics; packaging has its own real fixture.
+const nativeDescriptor =
+  '{"schema":"legacy-native-census-artifact/v1","path":"/app/.legacy-census-checkpoint-123/legacy-census.node","manifestPath":"/app/.legacy-census-checkpoint-123/legacy-census.node.json","binarySHA256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","manifestSHA256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","sourceSHA256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","candidateSHA":"dddddddddddddddddddddddddddddddddddddddd","candidateImageId":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","candidateSourceTree":"ffffffffffffffffffffffffffffffffffffffff"}';
+
 const checkpointShell = readFileSync(
   join(ROOT, 'server', 'scripts', 'legacy-engine-checkpoint.sh'),
   'utf8'
@@ -142,7 +147,7 @@ describe('a re-entered release refuses by name', () => {
     // transaction would, and read the answers rather than the source.
     const block = checkpointShell.slice(
       checkpointShell.indexOf('# Persist intent before opening debugger access.'),
-      checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
+      checkpointShell.indexOf('# Staging is inside the original one-shot intent')
     );
     expect(block).toContain('O_EXCL');
     const root = mkdtempSync(join(tmpdir(), 'release-reentry-'));
@@ -165,6 +170,7 @@ LEGACY_SHA=${PREDECESSOR}
 CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
 STARTED_AT=2026-09-18T21:55:50.88305198Z
 HOST_PID=1231816
+NATIVE_DESCRIPTOR='${nativeDescriptor}'
 REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
 ${block}
 printf '%s' inspector-boundary-reached
@@ -182,6 +188,7 @@ printf '%s' inspector-boundary-reached
       expect(first.stdout).toContain('inspector-boundary-reached');
       expect(existsSync(join(root, INTENT_NAME))).toBe(true);
       const written = readFileSync(join(root, INTENT_NAME), 'utf8');
+      expect(JSON.parse(written).nativeCensus).toEqual(JSON.parse(nativeDescriptor));
 
       const second = run();
       // named, not a traceback, and not the generic `die` 1
@@ -200,7 +207,7 @@ printf '%s' inspector-boundary-reached
     (outcome) => {
       const writer = checkpointShell.slice(
         checkpointShell.indexOf('# Persist intent before opening debugger access.'),
-        checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
+        checkpointShell.indexOf('# Staging is inside the original one-shot intent')
       );
       const retirement = checkpointShell.slice(
         checkpointShell.indexOf('if [ "$CHECKPOINT_RC" = 75 ]; then')
@@ -229,7 +236,8 @@ printf '%s' inspector-boundary-reached
  CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
  STARTED_AT=2026-09-18T21:55:50.88305198Z
  HOST_PID=1231816
- REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
+ NATIVE_DESCRIPTOR='${nativeDescriptor}'
+REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
  ${writer}
  if [ "$PROBE_OUTCOME" = tampered ]; then printf ' ' >> "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"; fi
  cp "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" "$PROBE_ROOT/before"

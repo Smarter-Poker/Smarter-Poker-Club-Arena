@@ -10,7 +10,7 @@ const manager = readFileSync(join(here, '..', 'tournament', 'TournamentManagerBa
 
 describe('public table liveness carries category, never ownership authority', () => {
   it('derives tournament categories from the owning manager and cash locally', () => {
-    const snapshot = sliceMethod(gameServer, 'private tableLivenessSnapshot()');
+    const snapshot = sliceMethod(gameServer, 'private tableLivenessSnapshot(');
 
     expect(snapshot).toContain('manager.getPublicLiveTableFormat()');
     expect(snapshot).toContain('manager.getPublicLiveTableClubId()');
@@ -20,7 +20,7 @@ describe('public table liveness carries category, never ownership authority', ()
   });
 
   it('does not copy a lease proof or private tournament row into health', () => {
-    const snapshot = sliceMethod(gameServer, 'private tableLivenessSnapshot()');
+    const snapshot = sliceMethod(gameServer, 'private tableLivenessSnapshot(');
     const getter = sliceMethod(manager, 'getPublicLiveTableFormat()');
     const clubGetter = sliceMethod(manager, 'getPublicLiveTableClubId()');
 

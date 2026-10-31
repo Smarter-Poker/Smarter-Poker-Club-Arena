@@ -1354,6 +1354,7 @@ jobs:
             tests/e2e/smoke.spec.ts \
             tests/e2e/club-data-deep.spec.ts \
             tests/e2e/production-mobile-lobby-chrome.spec.ts \
+            tests/e2e/production-row-channel-owners.spec.ts \
             tests/e2e/mobile-fit-audit.spec.ts \
             tests/e2e/mobile-tap-targets.spec.ts \
             tests/e2e/mobile-input-zoom.spec.ts \
@@ -2083,7 +2084,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           E2E_REQUIRE_AUTH: '1'
-          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
           E2E_UNION_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
           PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/seat-move-announcement.json
         run: |

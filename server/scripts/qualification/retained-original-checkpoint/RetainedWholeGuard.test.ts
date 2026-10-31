@@ -639,6 +639,29 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     expect(server.lightningHosting.pending.size).toBe(0);
     expect(server.lightningRooms.hosts.size).toBe(0);
   }
+  let census = [[server], objects, managers, [worker], detachedHosts];
+  if (process.env.RETAINED_NATIVE_CENSUS_ADDON) {
+    expect(process.version).toBe('v22.23.2');
+    expect(process.versions.v8).toBe('12.4.254.21-node.56');
+    const { createRequire } = await import('node:module');
+    const native = createRequire(import.meta.url)(process.env.RETAINED_NATIVE_CENSUS_ADDON);
+    const transport = await import(
+      /* @vite-ignore */ process.env.RETAINED_NATIVE_CENSUS_TRANSPORT_URL!
+    );
+    expect(native.sourceSHA256).toBe(transport.LEGACY_CENSUS_NATIVE_SOURCE_SHA256);
+    const key = '__legacyEngineCensus_' + crypto.randomUUID().replaceAll('-', '');
+    const deadline = Date.now() + 30000;
+    const imported = { gameServer, engine, manager, lightningWorker, lightningHost };
+    transport.bindLegacyCensusModules.call(imported, key, deadline, native);
+    const physical = transport.collectMarkedLegacyCensus(key, deadline);
+    census = transport.projectLegacyCensus.call(physical, imported, deadline);
+    const expected = [[server], objects, managers, [worker], detachedHosts];
+    for (let group = 0; group < expected.length; group++) {
+      expect(new Set(census[group]).size).toBe(expected[group].length);
+      for (const original of expected[group]) expect(census[group]).toContain(original);
+    }
+    expect(Object.hasOwn(globalThis, key)).toBe(false);
+  }
   const result = await retainedOriginalCheckpointGuard.call(
     server,
     {
@@ -646,12 +669,12 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
       expectedPid: process.pid,
       expectedInstanceId: tableLease.INSTANCE_ID,
     },
-    [server],
+    census[0],
     modules,
-    objects,
-    scenario === 'missing-manager-census' ? [] : managers,
-    scenario === 'lightning-missing-worker-census' ? [] : [worker],
-    detachedHosts
+    census[1],
+    scenario === 'missing-manager-census' ? [] : census[2],
+    scenario === 'lightning-missing-worker-census' ? [] : census[3],
+    census[4]
   );
   if (releaseFrontLease) {
     releaseFrontLease(false);

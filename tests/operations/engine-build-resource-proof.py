@@ -255,6 +255,41 @@ def main():
             if list(Path(temp, "contexts").iterdir()):
                 raise RuntimeError("successful build left source staging behind")
             receipt["image_id"] = inspect(tag)["Id"]
+            # Qualify the ABI-specific census inside this exact built Linux
+            # image. These isolated processes never import the application,
+            # contact production, or create a second image/build route.
+            native_cases = ["bounded", "near-limit", "at-cap", "overflow",
+                            "process-refusal", "deadline-refusal", "headroom-refusal", "scan-deadline"]
+            receipt["legacy_native_census"] = {}
+            for scenario in native_cases:
+                name = f"engine-native-census-{os.getpid()}-{scenario}"
+                heap = (["--max-old-space-size=16", "--max-semi-space-size=1"]
+                        if scenario == "headroom-refusal" else ["--max-old-space-size=128"])
+                try:
+                    qualification = run(["docker", "run", "--rm", "--name", name,
+                        "--network", "none", "--memory", "1g", "--memory-swap", "1g",
+                        "--read-only", "--mount", f"type=bind,src={ROOT},dst=/qualification,readonly",
+                        "--entrypoint", "node", receipt["image_id"], *heap,
+                        "/qualification/tests/operations/legacy-census-native.mjs",
+                        "/app/native/legacy-census/legacy-census.node", scenario], timeout=45)
+                    (out / f"legacy-native-census-{scenario}.log").write_text(qualification.stdout)
+                    receipt["legacy_native_census"][scenario] = {"status": "passed",
+                        "image_id": receipt["image_id"], "production_certificate": False}
+                finally:
+                    # A timed-out Docker client does not prove its container
+                    # stopped. Remove only this disposable fixture by name.
+                    run(["docker", "rm", "--force", name], check=False)
+                    if run(["docker", "inspect", name], check=False).returncode == 0:
+                        raise RuntimeError("native census fixture cleanup failed")
+            # Compose this exact CPP artifact with the real pinned predecessor,
+            # exact imported five prototypes and unchanged original guard.
+            composition = run(["node", "server/scripts/qualification/retained-original-checkpoint/qualify.mjs",
+                               "--native-census-image=" + receipt["image_id"]], timeout=185)
+            (out / "legacy-native-census-eed-guard.json").write_text(composition.stdout)
+            receipt["legacy_native_census_eed_guard"] = {
+                "status": "passed", "image_id": receipt["image_id"], "selected_cases": 2,
+                "historical_revision": "eed06fe51dea622069c661a6213d5b031ff3a9e3",
+                "production_certificate": False}
             run(["docker", "create", "--name", image_reader, tag])
             image_output = Path(temp, "image-dist")
             run(["docker", "cp", f"{image_reader}:/app/dist", str(image_output)])

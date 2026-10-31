@@ -254,8 +254,9 @@ describe('achievement reads and page-owned notification invalidation', () => {
     view.unmount();
     await act(() => vi.advanceTimersByTimeAsync(120_000));
     expect(count('training_user_achievements')).toBe(3);
-    expect(h.removed).toHaveBeenCalledWith('achievement-notifications-owner-a', expect.anything());
-    expect(h.removedFactory).toHaveBeenCalledWith('achievement-notifications-owner-a');
+    expect(h.channels[0].name).toMatch(/^achievement-notifications-owner-a:row:/);
+    expect(h.removed).toHaveBeenCalledWith(h.channels[0].name, h.channels[0]);
+    expect(h.removedFactory).toHaveBeenCalledWith(h.channels[0].name);
   });
 
   it('accepts only the owner achievement signal, then celebrates the authoritative unlock once', async () => {

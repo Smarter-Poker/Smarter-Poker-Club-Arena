@@ -23,6 +23,37 @@ export const ritPlayerUICases = Object.freeze([
 const BASE = 'https://smarter.poker/hub/club-arena/';
 const sorted = (values) => [...values].sort();
 
+/** Only public key names identify the fixture project; owner session values
+ * are never inspected or copied into a played actor's browser. */
+export function ritActorBrowserStorage(fixture, user, now = Date.now()) {
+  const origins = fixture.storage_state?.origins;
+  assert.ok(Array.isArray(origins) && origins.length === 1);
+  assert.equal(origins[0].origin, 'https://smarter.poker');
+  const namespaces = origins[0].localStorage
+    .map(({ name }) => /^sb-([a-z0-9]{20})-auth-token$/.exec(name)?.[1])
+    .filter(Boolean);
+  assert.equal(namespaces.length, 1, 'RIT_PUBLIC_PROJECT_NAMESPACE_REQUIRED');
+  assert.match(user.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  assert.equal(user.session.user.id, user.id);
+  const token = user.session.access_token;
+  assert.equal(typeof token, 'string');
+  assert.equal(token.split('.').length, 3);
+  const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+  assert.equal(claims.sub, user.id);
+  assert.equal(claims.role, 'authenticated');
+  const seconds = Math.floor(now / 1000);
+  assert.ok(Number.isSafeInteger(seconds));
+  assert.ok(Number.isSafeInteger(claims.exp) && claims.exp > seconds);
+  return browserStorage({
+    access_token: token,
+    user: { id: user.id },
+    token_type: 'bearer',
+    expires_at: claims.exp,
+    expires_in: claims.exp - seconds,
+    refresh_token: '',
+  }, `${namespaces[0]}.supabase.co`);
+}
+
 /** Validate genuine wire observations before discarding cards and private state.
  * Missing, replayed, different-hand and mandatory results cannot pass this UI
  * consent proof. The existing presentation helpers own all timing bounds.
@@ -226,7 +257,7 @@ export async function qualifyRitPlayerUI({
     for (const user of scenario.users) {
       const context = await browser.newContext({
         ignoreHTTPSErrors: true,
-        storageState: browserStorage(user.session, fixture.supabase_host),
+        storageState: ritActorBrowserStorage(fixture, user),
       });
       contexts.push(context);
       const actorPage = await context.newPage(),

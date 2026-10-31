@@ -5,6 +5,7 @@ import {
   verifyRitIdentity,
   qualifyRitPlayerUI,
   isRitActorTurn,
+  ritActorBrowserStorage,
 } from '../../operations/release/native/rit-player-ui-suite.mjs';
 
 const sample = (): any => ({
@@ -225,4 +226,85 @@ test('RIT refuses historical/incomplete schema before creating any browser conte
     })
   );
   assert.equal(opened, false);
+});
+
+test('actor storage uses actual stripped descriptor and never reads owner values', () => {
+  const id = '10000000-0000-4000-8000-000000000001';
+  const now = 1800000000000;
+  const token = (claims: any) =>
+    `e30.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.synthetic`;
+  const actor = (claims: any = { sub: id, role: 'authenticated', exp: 1800000600 }) => ({
+    id,
+    session: { user: { id }, access_token: token(claims) },
+  });
+  const namespace = {
+    name: 'sb-abcdefghijklmnopqrst-auth-token',
+    get value(): string {
+      throw new Error('owner value read');
+    },
+  };
+  const fixture = {
+    storage_state: {
+      cookies: [],
+      origins: [
+        {
+          origin: 'https://smarter.poker',
+          localStorage: [
+            namespace,
+            {
+              name: 'smarter-poker-auth',
+              get value(): string {
+                throw new Error('owner value read');
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const state = ritActorBrowserStorage(fixture, actor(), now);
+  assert.deepEqual(state.cookies, []);
+  assert.equal(state.origins.length, 1);
+  assert.deepEqual(
+    state.origins[0].localStorage.map((entry: any) => entry.name),
+    [namespace.name, 'smarter-poker-auth']
+  );
+  const session = JSON.parse(state.origins[0].localStorage[1].value);
+  assert.deepEqual(session, {
+    access_token: actor().session.access_token,
+    user: { id },
+    token_type: 'bearer',
+    expires_at: 1800000600,
+    expires_in: 600,
+    refresh_token: '',
+  });
+  for (const claims of [
+    { sub: 'other', role: 'authenticated', exp: 1800000600 },
+    { sub: id, role: 'service_role', exp: 1800000600 },
+    { sub: id, role: 'authenticated', exp: 1800000000 },
+  ])
+    assert.throws(() => ritActorBrowserStorage(fixture, actor(claims), now));
+  for (const localStorage of [
+    [],
+    [{ name: 'smarter-poker-auth' }],
+    [namespace, { name: 'sb-bbcdefghijklmnopqrst-auth-token' }],
+  ])
+    assert.throws(() =>
+      ritActorBrowserStorage(
+        { storage_state: { origins: [{ origin: 'https://smarter.poker', localStorage }] } },
+        actor(),
+        now
+      )
+    );
+  assert.throws(() =>
+    ritActorBrowserStorage(
+      {
+        storage_state: {
+          origins: [{ origin: 'https://other.invalid', localStorage: [namespace] }],
+        },
+      },
+      actor(),
+      now
+    )
+  );
 });

@@ -7,3 +7,13 @@ The native module uses actual authenticated playing pages, the shared legal all-
 This is source preparation, not an executed connected proof, WebKit certificate or physical-phone result. Genuine full-schema provisioning, admitted immutable runtime/engine/web artifacts, controller integration and the existing qualification journal remain prerequisites. No workflow, financial rule, game setting, deck or clock is changed. The canonical cash creation path already enables player-choice three-run support; the proof requires the actual engine offer and accepted three-board result to demonstrate runtime capability.
 
 Owned paths: the native suite, its focused unit contract regression and this changelog. The tournament UI owner retains sole ownership of controller integration and the shared browser-input helper. Actual browser execution remains NOT_EXECUTED until the existing isolated admission route is available.
+
+Integration binds the transferred canonical GitHub namespace to the original
+numeric repository identity and adds the opt-in controller mode without changing
+schema readiness or admission requirements. Canonical browserStorage now emits
+both the existing public project key and the actual client SSO key for the same
+synthetic session at the sole origin. RIT actor storage derives the namespace
+from names only and validates/normalizes the stripped actor JWT envelope; no
+owner session value or service/refresh credential is read. Focused regressions
+cover the current client key and descriptor ingress failures. Connected runtime
+qualification remains NOT_EXECUTED and native admission NOT_SUBMITTED.

@@ -186,3 +186,6 @@ if __name__=='__main__':
 
     # Daily maintenance observation shares this required maintenance-native lane.
     subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-daily-maintenance-observation.py')], check=True)
+
+    # Retired history cannot block active/system maintenance clock credit.
+    subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-thaw-preserves-retired-clubs.py')], check=True)

@@ -107,7 +107,9 @@ describe('Lightning is held for the engine cutover', () => {
       transaction.indexOf('recover_on_exit() {'),
       transaction.indexOf('\ntrap recover_on_exit EXIT')
     );
-    expect(onExit).toContain('  release_lightning_hold "$rc"\n  if [ "$LOCK_HELD" = 1 ]; then');
+    // After the engine lock is released, never while holding it.
+    expect(onExit).toContain('    flock -u 9\n    LOCK_HELD=0\n  fi\n  # After the engine lock is released');
+    expect(onExit).toContain('  release_lightning_hold "$rc"\n  exit "$rc"');
     // A signalled exit has 330 s before SIGKILL: it waits at most two minutes.
     expect(fn).toMatch(/case "\$exit_code" in 75\|130\)/);
     expect(transaction).toContain('LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');

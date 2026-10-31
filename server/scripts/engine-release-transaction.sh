@@ -595,10 +595,13 @@ recover_on_exit() {
   elif [ "$rc" -ne 0 ] && [ "$MUTATION_STARTED" = 1 ]; then
     echo '[engine-release-transaction] WARN: deferred recovery to ExecStopPost because the engine lock is not held' >&2
   fi
-  release_lightning_hold "$rc"
   if [ "$LOCK_HELD" = 1 ]; then
     flock -u 9
+    LOCK_HELD=0
   fi
+  # After the engine lock is released: waiting for the thaw must not keep the
+  # supervisor or a successor release out of the lock for minutes.
+  release_lightning_hold "$rc"
   exit "$rc"
 }
 trap recover_on_exit EXIT

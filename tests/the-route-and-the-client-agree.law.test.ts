@@ -72,8 +72,34 @@ function latestDeclaring(decl: string): { file: string; body: string } {
   }
   const file = hits[hits.length - 1];
   const sql = read(`${MIGRATIONS_DIR}/${file}`);
-  return { file: `${MIGRATIONS_DIR}/${file}`, body: sql.slice(sql.indexOf(decl)) };
+  return { file: `${MIGRATIONS_DIR}/${file}`, body: declaredFunction(sql, decl) };
 }
+
+/** Restrict a derivation to its actual dollar-quoted function, not later owners. */
+function declaredFunction(sql: string, decl: string): string {
+  const start = sql.indexOf(decl);
+  if (start < 0) throw new Error(`missing function declaration: ${decl}`);
+  const rest = sql.slice(start);
+  const opener = /\bAS\s+(\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$)/i.exec(rest);
+  if (!opener) throw new Error(`no dollar-quoted body for: ${decl}`);
+  const bodyStart = opener.index + opener[0].length;
+  const end = rest.indexOf(opener[1], bodyStart);
+  if (end < 0) throw new Error(`unterminated function body: ${decl}`);
+  return rest.slice(0, end + opener[1].length);
+}
+
+describe('SQL response derivation boundaries', () => {
+  it.each(['$$', '$function$'])('stops at the matching %s body delimiter', (tag) => {
+    const decl = 'CREATE OR REPLACE FUNCTION public.first(';
+    const own = `${decl}) RETURNS jsonb LANGUAGE sql AS ${tag} SELECT jsonb_build_object('own', 1); ${tag}`;
+    const sql = `${own}; CREATE OR REPLACE FUNCTION public.other() RETURNS jsonb LANGUAGE sql AS ${tag} SELECT jsonb_build_object('other', 2); ${tag};`;
+    expect(declaredFunction(sql, decl)).toBe(own);
+    expect(sorted(sqlKeys(declaredFunction(sql, decl)))).toEqual(['own']);
+  });
+  it('refuses an unreadable function body', () => {
+    expect(() => declaredFunction('CREATE FUNCTION broken(', 'CREATE FUNCTION broken(')).toThrow();
+  });
+});
 
 /**
  * The key literals a `jsonb_build_object(...)` writes: a quoted lower-snake
@@ -270,7 +296,7 @@ describe('the route and the client agree: the diamond ledger read', () => {
     // It is the one place the player-facing line is decided (phase 6).
     expect(fn.body).toContain('public.fn_diamond_ledger_line(');
     // Without this grant every ledger read is a 403, on every surface at once.
-    expect(fn.body).toContain(
+    expect(read(fn.file)).toContain(
       'GRANT EXECUTE ON FUNCTION public.player_line(public.diamond_transactions) TO authenticated'
     );
 
@@ -319,6 +345,10 @@ interface RpcContract {
  * precedent), restore the one parse line together with the surface that
  * renders it, and move this key back into `readers` in the same commit.
  */
+const TICKET_VALUE_UNREAD =
+  'funded entry-only ticket escrow is not wallet cash or seated custody; ' +
+  'the admission ticket reader exposes the usable award separately';
+
 const READ_AT_UNREAD =
   'the RPC dates its own answer; no diamond surface prints that timestamp today, ' +
   'so it is fetched and deliberately dropped rather than parsed and forgotten';
@@ -355,6 +385,7 @@ const RPC_CONTRACTS: RpcContract[] = [
       t: ['big_blind', 'id', 'name', 'small_blind'],
     },
     unread: {
+      ticket_value: TICKET_VALUE_UNREAD,
       user_id: 'the caller is the only user this function will answer for',
       read_at: READ_AT_UNREAD,
     },
@@ -393,6 +424,7 @@ const RPC_CONTRACTS: RpcContract[] = [
       r: ['custody_id', 'reason', 'request_id'],
     },
     unread: {
+      ticket_value: TICKET_VALUE_UNREAD,
       user_id: 'the caller is the only user this function will answer for',
       read_at: READ_AT_UNREAD,
     },
@@ -426,7 +458,11 @@ function producedKeys(contract: RpcContract): Set<string> {
         .filter(Boolean)
     );
   }
-  const scope = contract.keysFrom ? body.slice(body.indexOf(contract.keysFrom)) : body;
+  const bodyOpener = /\bAS\s+(\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$)/i.exec(body);
+  if (!bodyOpener) throw new Error(`${file} has no readable SQL body`);
+  const scope = contract.keysFrom
+    ? body.slice(body.indexOf(contract.keysFrom))
+    : body.slice(bodyOpener.index + bodyOpener[0].length);
   if (contract.keysFrom && !body.includes(contract.keysFrom)) {
     throw new Error(`${file} no longer builds ${contract.rpc}'s answer with ${contract.keysFrom}`);
   }

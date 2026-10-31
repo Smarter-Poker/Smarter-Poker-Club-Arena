@@ -11,7 +11,7 @@ import { diamondMiniPlateAmount, type DiamondJackpotSnapshot } from '../../lib/d
  */
 
 import { useEffectiveRake } from '../../hooks/useEffectiveRake';
-import PlayerNotesPanel from '../gameplay/PlayerNotesPanel';
+import { PlayerNotesDialog } from '../gameplay/PlayerNotesDialog';
 import HandReplay from '../replay/HandReplay';
 import { GameRulesModal } from './GameRulesModal';
 import { ClubProfileModal } from './ClubProfileModal';
@@ -154,6 +154,7 @@ export interface TableModalsLayerProps {
   showPlayerNotes: boolean;
   selectedPlayerForNotes: { id: string; name: string } | null;
   onClosePlayerNotes: () => void;
+  onOpenPlayerNotes: () => void;
 
   // Hand Replay Modal
   showHandReplay: boolean;
@@ -568,6 +569,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showPlayerNotes,
     selectedPlayerForNotes,
     onClosePlayerNotes,
+    onOpenPlayerNotes,
     // Hand Replay
     showHandReplay,
     lastHandId,
@@ -822,18 +824,11 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     <>
       {/* Player Notes Modal */}
       {showPlayerNotes && (
-        <div className="player-notes-overlay" onClick={onClosePlayerNotes}>
-          <div className="player-notes-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={onClosePlayerNotes}>
-              ✕
-            </button>
-            <PlayerNotesPanel
-              targetUserId={selectedPlayerForNotes?.id}
-              targetName={selectedPlayerForNotes?.name}
-              onClose={onClosePlayerNotes}
-            />
-          </div>
-        </div>
+        <PlayerNotesDialog
+          targetUserId={selectedPlayerForNotes?.id}
+          targetName={selectedPlayerForNotes?.name}
+          onClose={onClosePlayerNotes}
+        />
       )}
 
       {/* Hand Replay Modal */}
@@ -1120,6 +1115,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         <div className="throwable-selector-overlay">
           <ThrowableSelector
             userId={userId}
+            targetName={selectedPlayerForNotes?.name}
+            onOpenNotes={selectedPlayerForNotes ? onOpenPlayerNotes : undefined}
             onSelect={onThrowableSelect}
             onClose={onThrowableClose}
           />

@@ -2231,7 +2231,9 @@ it('the actual replay condition executes for missing output and non-instruction 
     for (const presentation of ['true', 'false', undefined, '']) {
       expect(
         evaluate({
-          compile_scope: { outputs: { instructions_only: value, presentation_only: presentation } },
+          compile_scope: {
+            outputs: { instructions_only: value, isolated_simulations_unchanged: presentation },
+          },
         })
       ).toBe(value !== 'true' && presentation !== 'true');
     }

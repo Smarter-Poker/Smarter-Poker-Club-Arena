@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 261967,
-      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+      "bytes": 262364,
+      "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -325,8 +325,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 116628,
-      "sha256": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c"
+      "bytes": 116664,
+      "sha256": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4"
     }
   },
   "nativePgCron": {
@@ -5694,5 +5694,32 @@
       }
     },
     "qualification": "CI source identity only. Existing financial/native/live results are not recertified; fixed inputs and all other source pins are unchanged."
+  },
+  "deliveryLatencyScopeAndShardSourceAudit20261031": {
+    "scope": "Current CI source identity only: use positive unchanged isolated-simulation input evidence for existing compiler replay and throughput selection, and move the unchanged isolated Diamond acceptance group and backed payout scan to accounting shard 2. Preserve all commands, assertions, deadlines, artifacts, required verdicts, four-runner matrix and historical evidence.",
+    "previousCiPin": {
+      "bytes": 261967,
+      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+    },
+    "currentCiPin": {
+      "bytes": 262364,
+      "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "qualification": "Source binding only; not financial/native recertification, installation or live proof. Exact-candidate required checks remain necessary.",
+    "compilerScopeContract": {
+      "source": "tests/unit/fixtureNativeCi.test.ts",
+      "previous": {
+        "bytes": 116628,
+        "sha256": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c"
+      },
+      "current": {
+        "bytes": 116664,
+        "sha256": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4"
+      },
+      "scope": "Updated source contract output name only; all native cases/assertions unchanged."
+    }
   }
 }

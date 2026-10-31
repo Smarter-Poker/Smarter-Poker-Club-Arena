@@ -28,6 +28,7 @@ import {
   receiptCounts,
   renderMarkdown,
   riverOnePairCalls,
+  riverOnePairFromRpc,
   threeBetShares,
   RECEIPT_FEATURES,
   type HealthSample,
@@ -86,6 +87,25 @@ function database(): { url: string; key: string } {
   return { url, key };
 }
 
+/** POST an RPC; returns { status, body } so the caller can tell absent from refused. */
+async function rpc(name: string, args: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  const { url, key } = database();
+  const res = await fetch(`${url}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify(args),
+    redirect: 'error',
+    signal: AbortSignal.timeout(120000),
+  });
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  return { status: res.status, body };
+}
+
 async function select<T>(table: string, query: string): Promise<T[]> {
   const { url, key } = database();
   const res = await fetch(`${url}/rest/v1/${table}?${query}`, {
@@ -119,9 +139,20 @@ async function report(): Promise<void> {
     'horse_daily_play',
     `select=horse_user_id,day,format,hands,three_bets,three_bet_opps,faced_3bets,fold_to_3bets&day=gte.${sinceDay}&floored=eq.false&limit=20000`
   );
+  // River one-pair cells: the database function first (one bounded scan, no
+  // hand data exported). Only an ABSENT function (404 / PGRST202) falls back
+  // to fetching rows; any other refusal is reported, never guessed around.
+  let riverOnePair = null as ReturnType<typeof riverOnePairFromRpc>;
+  const answer = await rpc('fn_horse_river_one_pair_calls', { p_since: since.toISOString(), p_limit: REVIEW_ROW_CAP });
+  if (answer.status === 200) {
+    riverOnePair = riverOnePairFromRpc(answer.body);
+    if (!riverOnePair) throw new Error('fn_horse_river_one_pair_calls answered outside its contract');
+  } else if (!(answer.status === 404 || (answer.body as { code?: string } | null)?.code === 'PGRST202')) {
+    throw new Error(`fn_horse_river_one_pair_calls answered HTTP ${answer.status}`);
+  }
   const reviews: ReviewRow[] = [];
   let before: string | null = null;
-  while (reviews.length < REVIEW_ROW_CAP) {
+  while (!riverOnePair && reviews.length < REVIEW_ROW_CAP) {
     const cursor: string = before ? `&played_at=lt.${encodeURIComponent(before)}` : '';
     const page: Array<ReviewRow & { played_at: string }> = await select<ReviewRow & { played_at: string }>(
       'horse_hand_reviews',
@@ -141,10 +172,10 @@ async function report(): Promise<void> {
     servingReleaseSha: live?.releaseSha ?? null,
     heap: heapSlopes(samples),
     threeBet: threeBetShares(play),
-    riverOnePair: riverOnePairCalls(reviews),
+    riverOnePair: riverOnePair ?? riverOnePairCalls(reviews),
     receipts: receiptCounts(telemetry),
   };
-  if (reviews.length >= REVIEW_ROW_CAP) {
+  if (!riverOnePair && reviews.length >= REVIEW_ROW_CAP) {
     result.riverOnePair.caveat += `; the review window hit its ${REVIEW_ROW_CAP}-row cap, so only the newest rows are counted`;
   }
   result.threeBetCaveat = 'horse_daily_play carries no variant: every variant, unfloored tables only, as the tuner reads them';

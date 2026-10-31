@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 259539,
-      "sha256": "44fda252fa7886c40d2fae757946cb998b8c1760dcbd688b933abfa4ea794a75"
+      "bytes": 260023,
+      "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -1820,6 +1820,19 @@
     "currentCiPin": {
       "bytes": 259539,
       "sha256": "44fda252fa7886c40d2fae757946cb998b8c1760dcbd688b933abfa4ea794a75"
+    }
+  },
+  "riverOnePairParitySourceAudit20261031": {
+    "scope": "Source identity only: accounting shard 2 gains one step, `bash scripts/dev/test-horse-river-one-pair-calls.sh`, proving fn_horse_river_one_pair_calls agrees with the TypeScript live-measure reader on shared fixture hands in a throwaway PostgreSQL. No financial assertion, deadline, dependency, runner route, worker count, production artifact or publish transaction changes.",
+    "execution_performed": false,
+    "qualification": "Current source binding only; no historical financial/native/live receipt is restamped. Required final-head checks remain necessary.",
+    "previousCiPin": {
+      "bytes": 259539,
+      "sha256": "44fda252fa7886c40d2fae757946cb998b8c1760dcbd688b933abfa4ea794a75"
+    },
+    "currentCiPin": {
+      "bytes": 260023,
+      "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
     }
   }
 }

@@ -6,6 +6,8 @@ import {
   renderMarkdown,
   riverCallFaced,
   riverOnePairCalls,
+  riverOnePairFromRpc,
+  RIVER_ONE_PAIR_RPC_SCHEMA,
   sizeClassOf,
   threeBetShares,
   MIN_SLOPE_SAMPLES,
@@ -248,5 +250,45 @@ describe('receipt counts and the report', () => {
     expect(md).toContain('Serving release: abc');
     expect(md).toContain('n/a');
     expect(md).toContain('v62_river_bettor_polarity | 15 |');
+  });
+});
+
+describe('the database function answer', () => {
+  const good = {
+    schema: RIVER_ONE_PAIR_RPC_SCHEMA,
+    since: '2026-10-30T00:00:00Z',
+    limit: 20000,
+    consideredRows: 11262,
+    unreadableRows: 958,
+    cells: [
+      { sizeClass: 'medium', calls: 301, won: 53 },
+      { sizeClass: 'small', calls: 106, won: 35 },
+      { sizeClass: 'large', calls: 618, won: 83 },
+    ],
+    caveat: 'horse_hand_reviews holds only hands with |net| >= 20bb, so these are big-pot river calls',
+  };
+
+  it('is adopted in size-class order with percentages and its source named', () => {
+    const r = riverOnePairFromRpc(good);
+    expect(r?.source).toBe('fn_horse_river_one_pair_calls');
+    expect(r?.cells.map((c) => c.sizeClass)).toEqual(['small', 'medium', 'large']);
+    expect(r?.cells[2]).toEqual({ sizeClass: 'large', calls: 618, won: 83, wonPct: 13.4 });
+    expect(r?.consideredRows).toBe(11262);
+    expect(r?.caveat).toContain('20bb');
+  });
+
+  it('is refused (null, so the caller fetches rows) outside the contract', () => {
+    expect(riverOnePairFromRpc(null)).toBeNull();
+    expect(riverOnePairFromRpc({ ...good, schema: 'other' })).toBeNull();
+    expect(riverOnePairFromRpc({ ...good, cells: good.cells.slice(0, 2) })).toBeNull();
+    expect(riverOnePairFromRpc({ ...good, cells: [{ sizeClass: 'small', calls: 1, won: 2 }, good.cells[0], good.cells[2]] })).toBeNull();
+    expect(riverOnePairFromRpc({ ...good, consideredRows: -1 })).toBeNull();
+  });
+
+  it('renders which side computed the cells', () => {
+    const fromRows = riverOnePairCalls([]);
+    expect(fromRows.source).toBe('rows');
+    const md = renderMarkdown({ generatedAt: 'x', servingReleaseSha: null, heap: [], threeBet: [], riverOnePair: riverOnePairFromRpc(good)!, receipts: [] });
+    expect(md).toContain('computed by fn_horse_river_one_pair_calls in the database');
   });
 });

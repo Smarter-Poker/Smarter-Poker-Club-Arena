@@ -21,3 +21,8 @@ No paid capacity, extra matrix jobs, runtime changes or production SQL are added
 Active qualification bindings record source wiring only, not financial or live
 recertification. Final normal hosted execution and timing evidence are recorded
 in the delivery checkpoint; before/after figures are observational, not promises.
+
+Hosted validation exposed a wallet-broadcast fixture race: member text could
+appear before the two child-card bootstrap reads. The test now awaits those
+initial reads before measuring wallet-triggered work, preserving every original
+no-additional-read and financial-display assertion. The focused 36-test file passes.

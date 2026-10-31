@@ -1163,7 +1163,21 @@ it('coalesces all member lifecycle catchups and keeps the post-start invalidatio
 });
 
 it('keeps real wallet broadcasts in the wallet-only read lane', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   render(<MemberManagementPage />);
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+  await act(async () => initial.resolve(memberDetail));
+  // Member text can appear before the child cards begin their initial reads.
+  // Observe both bootstrap RPCs before measuring wallet-triggered rereads.
+  await waitFor(() => {
+    expect(
+      state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_win_loss')
+    ).toHaveLength(1);
+    expect(
+      state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_upline_chain')
+    ).toHaveLength(1);
+  });
   await screen.findByText('River Shark');
   const downlineReads = state.getDownline.mock.calls.length;
   const cardReads = state.rpc.mock.calls.length;

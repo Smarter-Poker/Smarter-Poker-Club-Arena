@@ -12979,8 +12979,15 @@ export abstract class TournamentManagerBase {
     }
 
     if (!alreadyRepriced) {
-      await this.recalculateEliminatedPrizes(finalPool);
+      const repriced = await this.recalculateEliminatedPrizes(finalPool);
       if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;
+      // A partial entitlement pass is not a completed tail. Preserve the
+      // existing bounded continuation and its original finalized pool.
+      if (!repriced) {
+        throw new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Add-on entitlement reprice is incomplete`
+        );
+      }
     }
     const delivered = await this.broadcast('ADDON_PERIOD_END', {});
     if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;

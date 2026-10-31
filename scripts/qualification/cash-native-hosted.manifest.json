@@ -229,8 +229,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 47143,
-      "sha256": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c"
+      "bytes": 47200,
+      "sha256": "48c0f13534ac5861d72ef9f26ee7c5d0c8c59d36a0eb15619fb00f418db40310"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -5456,5 +5456,17 @@
       "bytes": 260023,
       "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
     }
+  },
+  "memberJackpotQualificationInputs20261031": {
+    "scope": "Additive matcher selects existing required accounting qualification for the new jackpot native runner and fixture paths. No cash financial source, assertion, execution budget or result changed.",
+    "previous": {
+      "bytes": 47143,
+      "sha256": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c"
+    },
+    "current": {
+      "bytes": 47200,
+      "sha256": "48c0f13534ac5861d72ef9f26ee7c5d0c8c59d36a0eb15619fb00f418db40310"
+    },
+    "qualification": "Current source identity only; no financial/native/live certification restamped."
   }
 }

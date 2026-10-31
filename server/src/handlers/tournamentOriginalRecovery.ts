@@ -63,7 +63,8 @@ export async function handleTournamentOriginalRecoveryPrepare(
       Array.isArray(body) ||
       body.operationId !== ORIGINAL_RECOVERY_OPERATION ||
       !ORIGINAL_RECOVERY_TWENTY.has(body.tournamentId) ||
-      !UUID.test(body.nonce || '') ||
+      typeof body.nonce !== 'string' ||
+      !UUID.test(body.nonce) ||
       !['prepare', 'read'].includes(body.action ?? 'prepare') ||
       Object.keys(body).some((k) => !['operationId', 'tournamentId', 'nonce', 'action'].includes(k))
     )

@@ -587,10 +587,31 @@ describe('blind rows at manager recovery', () => {
             select: () => ({
               eq: () => ({
                 maybeSingle: async () => ({ data: structuredClone(row), error: null }),
-                in: async () => ({
-                  data: tableIds.map((id) => ({ id, ...tables.get(id) })),
-                  error: null,
-                }),
+                in: () => {
+                  let cursor: string | null = null;
+                  let limit = 1000;
+                  const query = {
+                    order: () => query,
+                    limit: (value: number) => {
+                      limit = value;
+                      return query;
+                    },
+                    gt: (_column: string, value: string) => {
+                      cursor = value;
+                      return query;
+                    },
+                    then: (resolve: (value: unknown) => unknown) =>
+                      Promise.resolve({
+                        data: [...tableIds]
+                          .sort()
+                          .filter((id) => cursor === null || id > cursor)
+                          .slice(0, limit)
+                          .map((id) => ({ id, ...tables.get(id) })),
+                        error: null,
+                      }).then(resolve),
+                  };
+                  return query;
+                },
               }),
             }),
           }) as never

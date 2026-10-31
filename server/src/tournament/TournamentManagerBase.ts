@@ -8218,16 +8218,29 @@ export abstract class TournamentManagerBase {
       // Find existing tables. `first_button_seat` comes along so a Spin whose
       // button was drawn but never dealt keeps the seat it drew — see
       // restoreDrawnFirstButtons.
-      const { data: tables, error: tablesError } = await supabase
-        .from('tables')
-        .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['running', 'waiting']);
+      const { rows: tables, complete: tablesComplete } = await fetchAllRows(
+        (cursor, limit) => {
+          let query = supabase
+            .from('tables')
+            .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
+            .eq('tournament_id', this.tournamentId)
+            .in('status', ['running', 'waiting'])
+            .order('id', { ascending: true })
+            .limit(limit);
+          if (cursor) query = query.gt('id', cursor);
+          return query;
+        },
+        {
+          label: 'Tournament.resume_table_inventory',
+          shouldContinue: () => {
+            this.assertLifecycleCurrent(lifecycle);
+            return true;
+          },
+        }
+      );
       this.assertLifecycleCurrent(lifecycle);
-      if (tablesError)
-        throw new Error(`Tournament resume table inventory read failed: ${tablesError.message}`);
-      if (!Array.isArray(tables))
-        throw new Error('Tournament resume table inventory was unreadable');
+      if (!tablesComplete)
+        throw new Error('Tournament resume table inventory could not be read completely');
 
       /**
        * A DEAD GENERATION'S HAND IS DECIDED BEFORE THIS ONE ADOPTS THE CLOCK

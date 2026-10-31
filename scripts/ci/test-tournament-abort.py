@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Qualify exact started-event abort migration and scoped real-money rollback/replay."""
-import argparse,json,sys,hashlib,re,time
+import argparse,json,sys,hashlib,re,time,subprocess
 from pathlib import Path
 sys.dont_write_bytecode=True
 from satellite_qualifier_fixture import module
@@ -92,6 +92,16 @@ END$$;""")
   e.report['postimages']=json.loads(postimages.strip())
   inputs=[Path(__file__),ROOT/'scripts/ci/test-tournament-cancellation-lane.py',ROOT/'scripts/ci/tournament_abort_native.py',ROOT/'scripts/ci/chip_abort_overlay_native.py',ROOT/'scripts/ci/tournament_abort_fixture.py',ROOT/'scripts/ci/tournament_abort_registry_native.py',MIGRATION,ROOT/'.github/workflows/ci.yml']
   e.report['source_sha256'].update({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs})
+  # The fixed NONPAYING original69 wrapper composes this same real canonical
+  # foundation in a private socket-only child. Its new migration always receives
+  # the owning required accounting shard's existing abort qualification.
+  subprocess.run(['node','--test','tests/operations/original69-nonpaying-probe.test.mjs'],cwd=ROOT,check=True,timeout=30)
+  subprocess.run([sys.executable,'-B',str(ROOT/'scripts/ci/test-original69-nonpaying-probe.py'),
+   '--evidence',str(a.evidence/'original69-probe'),'--work-root',str(a.work_root/'original69-probe'),
+   '--socket-root',str(a.socket_root),'--pg-bin',str(a.pg_bin)],check=True,timeout=390)
+  probe=json.loads((a.evidence/'original69-probe/probe-report.json').read_text())
+  assert probe.get('passed') is True and probe.get('cleanup')=={'stopped':True,'removed':True}
+  e.report['original69_probe']={'passed':True,'report':'original69-probe/probe-report.json','cases':len(probe['cases'])}
   e.report['passed']=True;e.report['status']='passed'
  finally:
   e.close();(a.evidence/'abort-report.json').write_text(json.dumps(e.report,indent=2)+'\n')

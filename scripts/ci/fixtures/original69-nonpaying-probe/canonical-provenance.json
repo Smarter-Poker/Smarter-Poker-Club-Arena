@@ -1,0 +1,7 @@
+{
+  "source_commit": "0a5243885bd73fc39087a7b16e3b154de5bd68f9",
+  "source_path": "supabase/migrations/20261031161513_tournament_original_twenty_can_withdraw_unsettled_abort.sql",
+  "source_sha256": "85d4000789c67ee498069b7996468044c76bcae62c0d9c954e97d7df1ae66171",
+  "fixture_sha256": "d945de744d7f9f718de41f7f446775f9c9f9bc1e839e625d039c3f4eee521008",
+  "required_canonical_md5": "32ffc8212bcbaec490b76fb904707d3c"
+}

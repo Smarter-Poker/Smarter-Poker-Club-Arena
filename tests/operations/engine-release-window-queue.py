@@ -98,6 +98,9 @@ emit_already_released() {{ event ALREADY_RELEASED; exit 0; }}
 # proof and the one-shot helper are stubbed; the queue's own ordering and the
 # minimum it hands the post-checkpoint certificate are what is under test.
 RUN_ID=35615604946-1
+SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+TARGET_IMAGE_ID=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+EXPECTED_SERVER_TREE=cccccccccccccccccccccccccccccccccccccccc
 RELEASE_SEAL=engine-release-seal.py
 LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
@@ -116,7 +119,7 @@ prove_rollback_readiness() {{ event "ROLLBACK_PROOF:$LOCK_HELD:$BREAK_END_EPOCH"
 # intent (nothing attempted), anything else refused. A deferral that leaves an
 # intent behind is the fail-closed case and is simulated by writing the file.
 legacy_checkpoint_stub() {{
-  [ "$1" = "$RUN_ID" ]
+  [ "$#" = 6 ] && [ "$1" = "$RUN_ID" ] && [ "$4" = "$SHA" ] && [ "$5" = "$TARGET_IMAGE_ID" ] && [ "$6" = "$EXPECTED_SERVER_TREE" ]
   k=$(cat "$CHECKPOINT_SEQUENCE"); k=$((k + 1)); printf '%s\\n' "$k" > "$CHECKPOINT_SEQUENCE"
   event "LEGACY_CHECKPOINT:$LOCK_HELD:$k"; NOW=$((NOW + 25))
   if [ {int(intent_after_defer)} = 1 ]; then : > "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"; fi

@@ -1,0 +1,55 @@
+{
+  "kind": "postpaid_original_discovery_catalog",
+  "actor": "postgres",
+  "owners": [
+    {
+      "md5": "fd2603a21dc9c93a234afbda57d6abba",
+      "metadata": {
+        "oid": "277353611",
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "weekly_payout_eligible_scopes",
+        "prorows": 1000,
+        "pronargs": 2,
+        "proowner": "16384",
+        "proconfig": ["search_path=pg_catalog, public"],
+        "proretset": true,
+        "prosecdef": true,
+        "prorettype": "2249",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": ["i", "i", "t", "t", "t"],
+        "proargnames": ["p_end", "p_now", "kind", "id", "first_week"],
+        "proargtypes": ["1184", "1184"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "pronamespace": "24465641",
+        "proallargtypes": ["1184", "1184", "25", "2950", "1184"],
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "smarter_private.weekly_payout_eligible_scopes(timestamp with time zone,timestamp with time zone)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.weekly_payout_eligible_scopes(p_end timestamp with time zone, p_now timestamp with time zone)\n RETURNS TABLE(kind text, id uuid, first_week timestamp with time zone)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE v_to timestamptz:=p_end;v_now timestamptz:=p_now;v_chunked boolean:=true;\nBEGIN\n IF md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))<>'a68500342f07e0608c6eb69f4cb0739e'\n THEN RAISE EXCEPTION 'weekly_payout_original_scope_authority_changed' USING ERRCODE='55000';END IF;\n RETURN QUERY\nWITH cash_clubs AS MATERIALIZED (\n          SELECT DISTINCT s.club_id FROM public.accounting_cash_rake_sources s\n          WHERE s.coordinator_union_id IS NULL AND s.earned_at<v_to\n        ), cash_cutoffs AS MATERIALIZED (\n          SELECT c.club_id,public.fn_ca_launch_accounting_cutoff('club',c.club_id) AS cutoff FROM cash_clubs c\n        ), standalone_earned AS (\n          SELECT s.club_id,s.earned_at FROM public.accounting_cash_rake_sources s\n          LEFT JOIN cash_cutoffs c ON c.club_id=s.club_id\n          WHERE s.coordinator_union_id IS NULL AND s.earned_at<v_to\n            AND CASE WHEN c.cutoff IS NULL THEN true\n              ELSE s.earned_at IS NOT NULL AND isfinite(s.earned_at) AND s.earned_at>=c.cutoff END\n          UNION ALL\n          -- STANDALONE TOURNAMENT EARNINGS ARE READ PER CLUB (20261022150614): this branch\n          -- used to read the tournament_fee_accrual half of\n          -- accounting_payable_earning_sources for every source row on every tick\n          -- (1.7M recognition probes, 10 s warm and over 100 s cold), which spent\n          -- the close attempt's own 3-minute budget before the attempt began.\n          -- The predicate below is that view branch verbatim, read per club from\n          -- the club's own standalone fee rows. Only eligible below reads these\n          -- rows, as GREATEST(first week, the club's settlement floor) for clubs\n          -- that are not unions, so a club with any such earning before its floor\n          -- contributes the floor itself and is not read further; any other club\n          -- contributes its earliest earning (and earliest finite one).\n          SELECT tc.id AS club_id,te.earned_at FROM public.clubs tc\n          CROSS JOIN LATERAL (SELECT public.fn_club_settlement_floor_week(tc.id) AS floor) tf\n          CROSS JOIN LATERAL (SELECT CASE WHEN tf.floor IS NOT NULL AND EXISTS(SELECT 1\n              FROM (SELECT s.id,s.tournament_id,s.club_id,s.union_id,s.charged_at,s.rake_credit FROM public.accounting_tournament_fee_sources s\n                     WHERE s.club_id=tc.id AND s.coordinator_union_id IS NULL OFFSET 0) s\n              JOIN public.accounting_tournament_recognized_sources rs ON rs.source_id=s.id AND rs.tournament_id=s.tournament_id\n              JOIN public.accounting_tournament_fee_recognitions r ON r.tournament_id=s.tournament_id\n              LEFT JOIN public.fn_ca_launch_accounting_club_cutoffs() bd(club_id,cutoff_at) ON bd.club_id=s.club_id\n              WHERE (bd.cutoff_at IS NULL OR s.charged_at IS NOT NULL AND isfinite(s.charged_at) AND s.charged_at>=bd.cutoff_at)\n                AND (bd.cutoff_at IS NULL OR rs.recognized_at IS NOT NULL AND isfinite(rs.recognized_at) AND rs.recognized_at>=bd.cutoff_at)\n                AND rs.disposition='earned' AND r.status='recognized' AND rs.rake_credit=s.rake_credit AND rs.recognized_at=r.recognized_at\n                AND NOT s.union_id IS DISTINCT FROM r.union_id AND rs.recognized_at<v_to AND rs.recognized_at<tf.floor)\n            THEN tf.floor END AS clamp) tk\n          CROSS JOIN LATERAL (\n            SELECT tk.clamp AS earned_at WHERE tk.clamp IS NOT NULL\n            UNION ALL\n            SELECT tm.earned_at FROM (SELECT min(rs.recognized_at) AS m,min(rs.recognized_at) FILTER(WHERE isfinite(rs.recognized_at)) AS mf\n              FROM (SELECT s.id,s.tournament_id,s.club_id,s.union_id,s.charged_at,s.rake_credit FROM public.accounting_tournament_fee_sources s\n                     WHERE s.club_id=tc.id AND s.coordinator_union_id IS NULL OFFSET 0) s\n              JOIN public.accounting_tournament_recognized_sources rs ON rs.source_id=s.id AND rs.tournament_id=s.tournament_id\n              JOIN public.accounting_tournament_fee_recognitions r ON r.tournament_id=s.tournament_id\n              LEFT JOIN public.fn_ca_launch_accounting_club_cutoffs() bd(club_id,cutoff_at) ON bd.club_id=s.club_id\n              WHERE tk.clamp IS NULL AND (bd.cutoff_at IS NULL OR s.charged_at IS NOT NULL AND isfinite(s.charged_at) AND s.charged_at>=bd.cutoff_at)\n                AND (bd.cutoff_at IS NULL OR rs.recognized_at IS NOT NULL AND isfinite(rs.recognized_at) AND rs.recognized_at>=bd.cutoff_at)\n                AND rs.disposition='earned' AND r.status='recognized' AND rs.rake_credit=s.rake_credit AND rs.recognized_at=r.recognized_at\n                AND NOT s.union_id IS DISTINCT FROM r.union_id AND rs.recognized_at<v_to) ta\n            CROSS JOIN LATERAL (VALUES(ta.m),(ta.mf)) tm(earned_at) WHERE tm.earned_at IS NOT NULL) te\n          WHERE tc.is_union IS NOT TRUE\n        ), standalone_work AS (\n          SELECT s.club_id,LEAST(public.fn_union_week_start(min(s.earned_at) FILTER(WHERE isfinite(s.earned_at))),min(s.earned_at)) AS first_week\n           FROM standalone_earned s GROUP BY s.club_id\n          UNION ALL SELECT q.standalone_club_id,q.period_start FROM public.union_accounting_runs q\n           WHERE q.standalone_club_id IS NOT NULL AND q.status<>'complete'\n          UNION ALL SELECT q.standalone_club_id,q.period_start FROM public.union_accounting_runs q\n           WHERE q.standalone_club_id IS NOT NULL AND q.status='complete' AND q.period_end<v_to\n            AND NOT EXISTS(SELECT 1 FROM public.union_accounting_runs later\n              WHERE later.standalone_club_id=q.standalone_club_id AND later.period_end>q.period_end)\n          UNION ALL SELECT rp.club_id,min(public.fn_union_week_start(rp.period_start::timestamp AT TIME ZONE 'America/Los_Angeles'))\n           FROM public.rakeback_periods rp WHERE rp.status='pending' AND rp.period_end<(v_to AT TIME ZONE 'America/Los_Angeles')::date\n            AND NOT EXISTS(SELECT 1 FROM public.union_clubs uc WHERE uc.club_id=rp.club_id) GROUP BY rp.club_id\n          UNION ALL SELECT a.club_id,public.fn_union_prev_week_start(v_now) FROM public.agents a\n           WHERE NOT COALESCE(a.is_prepaid,false) AND a.credit_limit>0 AND NOT EXISTS(SELECT 1 FROM public.union_clubs uc WHERE uc.club_id=a.club_id)\n        ), union_floors AS (\n          SELECT u.id,f.earliest_period_start,CASE WHEN f.earliest_period_start IS NULL THEN public.fn_union_prev_week_start(v_now)\n             WHEN public.fn_union_week_start(f.earliest_period_start)<f.earliest_period_start\n              THEN public.fn_union_week_start(public.fn_union_week_start(f.earliest_period_start)+interval '8 days')\n             ELSE public.fn_union_week_start(f.earliest_period_start) END AS first_week\n           FROM public.unions u LEFT JOIN public.union_settlement_floor f ON f.union_id=u.id\n        ), union_work AS (\n          SELECT u.id,LEAST(u.first_week,(SELECT min(q.period_start) FROM public.union_accounting_runs q\n            WHERE q.union_id=u.id\n              AND (q.status<>'complete' OR (u.earliest_period_start IS NULL\n                AND q.status='complete' AND q.result->>'success'='true' AND q.result->>'accounting_version'='3'))\n              AND (u.earliest_period_start IS NULL OR q.period_start>=u.first_week))) AS first_week\n           FROM union_floors u\n        ), eligible AS (\n          -- Match the exact-scope floor rounding and per-week due check. An\n          -- older union backlog remains due before this Monday's new close.\n          SELECT 'union'::text AS kind,w.id FROM union_work w WHERE w.first_week<v_to\n           AND v_now>=CASE WHEN v_chunked THEN public.fn_union_week_start(w.first_week+interval '8 days') ELSE public.fn_union_accounting_run_at(public.fn_union_week_start(w.first_week+interval '8 days')) END\n          UNION ALL SELECT 'club',w.club_id FROM standalone_work w JOIN public.clubs c ON c.id=w.club_id\n           WHERE c.is_union IS NOT TRUE AND GREATEST(w.first_week,public.fn_club_settlement_floor_week(w.club_id))<v_to\n            AND v_now>=CASE WHEN v_chunked THEN public.fn_union_week_start(GREATEST(w.first_week,public.fn_club_settlement_floor_week(w.club_id))+interval '8 days') ELSE public.fn_union_accounting_run_at(public.fn_union_week_start(GREATEST(w.first_week,public.fn_club_settlement_floor_week(w.club_id))+interval '8 days')) END GROUP BY w.club_id\n        )\n SELECT e.kind,e.id,CASE WHEN e.kind='union' THEN (SELECT min(w.first_week) FROM union_work w WHERE w.id=e.id)\n  ELSE (SELECT min(GREATEST(w.first_week,public.fn_club_settlement_floor_week(w.club_id))) FROM standalone_work w WHERE w.club_id=e.id) END\n FROM eligible e ORDER BY (e.kind='union') DESC,e.id;\nEND $function$\n"
+    }
+  ],
+  "session": "postgres",
+  "source65": true,
+  "read_only": "on",
+  "generation": "original-inventory-245-v1:05f51b14eb6ebcb361fd88f7ba7a7343",
+  "observed_at": "2026-10-31T16:30:06.813871+00:00",
+  "runtime_hash_references": [
+    {
+      "md5": "fd2603a21dc9c93a234afbda57d6abba",
+      "signature": "smarter_private.weekly_payout_eligible_scopes(timestamp with time zone,timestamp with time zone)",
+      "scope_hash": true,
+      "discovery_hash": false
+    }
+  ]
+}

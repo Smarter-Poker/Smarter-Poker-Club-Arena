@@ -507,6 +507,10 @@ jobs:
           IMAGE_ID="$(printf '%s' "$IMAGE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["Id"])')"
           GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" show "$CONTROL_SHA:server/scripts/prewarm-engine-image.sh" \
             | cmp -s - "$STAGE/server/scripts/prewarm-engine-image.sh"
+          for asset in legacy-census-scale-preflight.py legacy-census-scale-fixture.mjs engine-release-seal.py; do
+            GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" show "$CONTROL_SHA:server/scripts/$asset" \
+              | cmp -s - "$STAGE/server/scripts/$asset"
+          done
           "$STAGE/server/scripts/prewarm-engine-image.sh" "$IMAGE_ID" "$RUN_KEY" "$NOT_AFTER_EPOCH"
           REMOTE
           fi

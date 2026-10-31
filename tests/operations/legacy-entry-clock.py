@@ -58,6 +58,7 @@ python3() {{
         stop = script.index('LEGACY_CHECKPOINT=legacy_checkpoint_stub', start)
         script = script[:start] + f'''legacy_checkpoint_stub() {{
   event PHYSICAL_PROBE
+  [ "$#" = 6 ] && [ "$4" = "$SHA" ] && [ "$5" = "$TARGET_IMAGE_ID" ] && [ "$6" = "$EXPECTED_SERVER_TREE" ] || return 1
   [ "$2" = "$(( {now} * 1000 + 40000 ))" ] || {{ event RESET_DEADLINE; return 1; }}
   [ "$3" = 399 ] || {{ event CHANGED_BREAK; return 1; }}
   CHECKPOINT_DEADLINE_MS="$2"

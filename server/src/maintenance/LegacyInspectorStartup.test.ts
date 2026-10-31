@@ -13,5 +13,5 @@ it('keeps legacy recovery children neutral under the engine check runtime', () =
     env: { ...process.env, PATH: dirname(process.execPath) + delimiter + process.env.PATH },
   });
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 9 tests');
+  expect(result.stderr).toContain('Ran 14 tests');
 }, 20_000);

@@ -43,6 +43,14 @@ function fixture(runFails = false, remaining = 600) {
   chmodSync(join(app, '.env'), 0o000);
   writeFileSync(join(sandbox, 'outside-secret'), 'OUTSIDE_CANDIDATE');
   symlinkSync(join(sandbox, 'outside-secret'), join(app, 'linked-secret'));
+  // This fixture qualifies filesystem hydration only. The native scale gate
+  // has its own controller boundary tests and provider-only image evidence.
+  const helper = join(sandbox, 'prewarm-engine-image.sh');
+  writeFileSync(helper, HELPER);
+  writeFileSync(
+    join(sandbox, 'legacy-census-scale-preflight.py'),
+    'import sys\nassert len(sys.argv) == 4\nprint("SCALE_BOUNDARY_FIXTURE_ONLY")\n'
+  );
   const calls = join(sandbox, 'docker.calls');
   const docker = join(bin, 'docker');
   writeFileSync(
@@ -91,7 +99,7 @@ function fixture(runFails = false, remaining = 600) {
         env: { ...process.env, PATH: bin + ':' + process.env.PATH },
       }),
     runHelper: (args: string[]) =>
-      spawnSync('bash', [HELPER_PATH, ...args], {
+      spawnSync('bash', [helper, ...args], {
         encoding: 'utf8',
         env: { ...process.env, PATH: bin + ':' + process.env.PATH },
       }),

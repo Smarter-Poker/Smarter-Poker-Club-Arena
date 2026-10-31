@@ -494,7 +494,7 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c",
+    "scripts/ci/classify-ci-changes.mjs": "336b49a88ace6ca18d8e1b8c3b7dadf95bd562d3dbb7028cf30aacac3144a54b",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
     "tests/fixtures/legacy-fee-finality/source-binding.json": "f024fedf322b535fe448e326a015a5a07517e1fb27b942f9c080d4cbb850e13b",
@@ -2999,6 +2999,13 @@
           "to": "1f6bc078af417542917561e2667dde60fff236eaaffee07f7591170f7bfc42b4"
         }
       ]
+    },
+    {
+      "on": "2026-10-30",
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c",
+      "to": "336b49a88ace6ca18d8e1b8c3b7dadf95bd562d3dbb7028cf30aacac3144a54b",
+      "why": "Reviewed one additive classifier alternative for tests/fixtures/player-throwable-favorites so fixture-only edits execute the existing required PostgreSQL qualification. All existing routes, financial fixtures, assertions and historical qualification states are unchanged. Source identity refresh only; not financial or production certification."
     }
   ],
   "tournament_rake_club_successor_20260921": {

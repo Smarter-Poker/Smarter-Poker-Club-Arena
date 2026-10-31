@@ -12,6 +12,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+# macOS requires the caller's owned SSD TMPDIR; hosted Linux supplies RUNNER_TEMP.
+TEST_TMP = os.environ.get('TMPDIR') or (os.environ.get('RUNNER_TEMP') if sys.platform.startswith('linux') else None)
+if not TEST_TMP:
+    raise RuntimeError('An explicit owned TMPDIR or hosted Linux RUNNER_TEMP is required')
+TEST_TMP = str(Path(TEST_TMP).resolve(strict=True))
+
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('withdrawal', ROOT / 'scripts/ci/withdraw-waiting-engine-release.py')
 module = importlib.util.module_from_spec(spec)
@@ -273,7 +279,7 @@ class AnnouncedCancellation(unittest.TestCase):
             with self.assertRaises(ValueError): module.prove_thaw(rows, active, stamp, stamp + 430000)
 
     def test_durable_records_are_create_once_and_symlinks_refuse(self):
-        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder:
             path = Path(folder) / 'intent'
             # The host requires root ownership; fixture reads its own immutable bytes.
             with patch.object(module, 'regular', side_effect=lambda p, mode=None: Path(p).read_text()):
@@ -345,7 +351,7 @@ class AnnouncedCancellation(unittest.TestCase):
         return request, control, state, entry, reservation, units
 
     def test_actual_exit_is_retained_and_repeat_only_reads(self):
-        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
             request, control, state, entry, reservation, units = self.harness(folder, patches)
             answer = module.cancel_announced(request)
             module.validate_cancellation_reply(answer, request)
@@ -358,7 +364,7 @@ class AnnouncedCancellation(unittest.TestCase):
             self.assertFalse(any('record-failure' in args for args in control['commands']))
 
     def test_unknown_stop_never_reissues_and_can_finish_from_quiescence(self):
-        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
             request, control, state, *_ = self.harness(folder, patches)
             control['unknownStop'] = True
             for _ in range(2):
@@ -370,7 +376,7 @@ class AnnouncedCancellation(unittest.TestCase):
             self.assertTrue(answer['quiescent']); self.assertEqual(control['stopCount'], 1)
 
     def test_nonempty_cgroup_never_retires(self):
-        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
             request, control, state, *_ = self.harness(folder, patches)
             control['cgroupEmpty'] = False
             with self.assertRaises(ValueError): module.cancel_announced(request)
@@ -378,7 +384,7 @@ class AnnouncedCancellation(unittest.TestCase):
             self.assertFalse((state / 'engine-release-cancellations' / (request['runKey'] + '.receipt.json')).exists())
 
     def test_source_or_runtime_proof_refusal_has_no_stop_or_mask(self):
-        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
             request, control, state, _, _, units = self.harness(folder, patches)
             control['evidenceFails'] = True
             with self.assertRaises(ValueError): module.cancel_announced(request)
@@ -387,7 +393,7 @@ class AnnouncedCancellation(unittest.TestCase):
 
     def test_crashes_at_each_durable_edge_preserve_one_stop_and_history(self):
         for edge in ['intent.json', 'stop-issued.json', 'quiescent.json', 'receipt.json']:
-            with self.subTest(edge=edge), tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            with self.subTest(edge=edge), tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
                 request, control, state, entry, reservation, units = self.harness(folder, patches)
                 original_save = module.save_once
                 def crashed(path, value):
@@ -405,7 +411,7 @@ class AnnouncedCancellation(unittest.TestCase):
 
     def test_partial_mask_and_foreign_mask_fail_closed(self):
         for foreign in [False, True]:
-            with self.subTest(foreign=foreign), tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            with self.subTest(foreign=foreign), tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
                 request, control, state, _, _, units = self.harness(folder, patches)
                 path = module.SYSTEMD / units[0]
                 if foreign:
@@ -425,7 +431,7 @@ class AnnouncedCancellation(unittest.TestCase):
     def test_original_announced_recovery_exits_before_engine_lock_or_supervisor(self):
         source = (ROOT / 'server/scripts/engine-release-recover.sh').read_text()
         branch = source.split('case "$FLOOR_DISPOSITION" in', 1)[1].split('\nif [ "$RECOVERY_MODE"', 1)[0]
-        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as directory:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             lock = Path(directory) / 'must-not-open'
             result = subprocess.run(['bash', '-c', 'set -eu\nFLOOR_DISPOSITION=announced\nENGINE_LOCK="$1"\ncase "$FLOOR_DISPOSITION" in' + branch, 'fixture', str(lock)], capture_output=True, text=True, timeout=3)
             self.assertEqual(result.returncode, 75, result.stderr)
@@ -434,7 +440,7 @@ class AnnouncedCancellation(unittest.TestCase):
 
     def test_admission_checks_real_announcement_files_and_refuses_changed_custody(self):
         for failure in [None, 'runtime', 'foreign', 'manifest', 'checkpoint', 'hold', 'pending', 'source']:
-            with self.subTest(failure=failure), tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
                 root = Path(folder); state = root / 'state'; state.mkdir(); parent = root / 'parent'; parent.mkdir()
                 generation = parent / 'engine-control-generations' / module.CANCEL_CONTROL; generation.mkdir(parents=True)
                 request = {'runKey': '41177442979-1', 'releaseSha': module.CANCEL_CONTROL, 'controlSha': module.CANCEL_CONTROL,
@@ -474,7 +480,7 @@ class AnnouncedCancellation(unittest.TestCase):
                 else: self.assertEqual(module.announcement_evidence(request)['thaw'], {'verified': True})
 
     def test_partial_retirement_resumes_without_another_stop(self):
-        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
             request, control, state, entry, reservation, units = self.harness(folder, patches)
             original_unlink = Path.unlink; fired = False
             def interrupted(path, *args, **kwargs):
@@ -497,7 +503,9 @@ class AnnouncedCancellation(unittest.TestCase):
                   'KillMode': 'control-group', 'FragmentPath': str(module.SYSTEMD / 'club-arena-engine-release-v1@.service'),
                   'DropInPaths': '', 'RequiredBy': '', 'RequisiteOf': '', 'BoundBy': '', 'ConsistsOf': '', 'PropagatesStopTo': ''}
         render = lambda value: '\n'.join(k + '=' + v for k, v in value.items())
-        with patch.object(module, 'command', return_value=render(config)):
+        def real_empty_property_behavior(args):
+            return render(config if '--all' in args else {k: v for k, v in config.items() if v})
+        with patch.object(module, 'command', side_effect=real_empty_property_behavior):
             module.loaded_stop_contract(unit, key)
         for field in config:
             bad = config | {field: 'foreign'}
@@ -511,7 +519,7 @@ class AnnouncedCancellation(unittest.TestCase):
             module.loaded_stop_contract(unit, key)
 
     def test_pre_stop_interruption_with_positive_quiescence_needs_no_stop(self):
-        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
             request, control, state, entry, reservation, units = self.harness(folder, patches)
             original_save = module.save_once
             def crash(path, value):

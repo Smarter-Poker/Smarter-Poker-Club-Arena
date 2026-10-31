@@ -240,7 +240,7 @@ def own_wants_edge(unit):
 def unit_snapshot(unit):
     names = ['MainPID', 'InvocationID', 'ActiveState', 'SubState', 'Result',
              'ExecMainCode', 'ExecMainStatus', 'ControlGroup']
-    args = ['systemctl', 'show', unit]
+    args = ['systemctl', 'show', unit, '--all']
     for name in names: args += ['-p', name]
     value = dict(line.split('=', 1) for line in command(args).splitlines())
     require(set(value) == set(names))
@@ -250,7 +250,7 @@ def unit_snapshot(unit):
 def loaded_stop_contract(unit, key, allow_masked=False):
     fields = ['ExecStart', 'ExecStop', 'ExecStopPost', 'KillMode', 'FragmentPath', 'DropInPaths',
               'RequiredBy', 'RequisiteOf', 'BoundBy', 'ConsistsOf', 'PropagatesStopTo']
-    args = ['systemctl', 'show', unit]
+    args = ['systemctl', 'show', unit, '--all']
     for field in fields: args += ['-p', field]
     result = dict(line.split('=', 1) for line in command(args).splitlines())
     require(set(result) == set(fields))

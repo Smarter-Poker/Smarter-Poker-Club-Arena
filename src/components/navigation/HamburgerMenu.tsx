@@ -56,6 +56,8 @@ import {
   tableStudioCheckoutResult,
 } from '../../lib/tableStudioCheckoutResume';
 import { formatPopupText } from '../../utils/popupStyle';
+import { enablePush, notificationPermission } from '../../lib/pushClient';
+import { pushMenuState, type PushMenuState } from '../../lib/pushMenuState';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import styles from './HamburgerMenu.module.css';
 import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
@@ -103,6 +105,23 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
+  // Turn On Notifications (Dan 2026-10-31): re-read every time the menu opens,
+  // because permission and the subscription change outside this component.
+  const [pushRow, setPushRow] = useState<PushMenuState>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+  useEffect(() => {
+    if (!isOpen || !user?.id) {
+      setPushRow(null);
+      return;
+    }
+    let live = true;
+    void pushMenuState().then((state) => {
+      if (live) setPushRow(state);
+    });
+    return () => {
+      live = false;
+    };
+  }, [isOpen, user?.id]);
   const touchStartRef = useRef<number | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const previousBodyOverflowRef = useRef('');
@@ -1517,6 +1536,44 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span>Press Search To Look Across Players And Clubs.</span>
             </div>
           )}
+
+        {pushRow && (
+          <button
+            type="button"
+            className={`${styles.quickAction} ${styles.quickActionFull}`}
+            disabled={pushBusy}
+            onClick={() => {
+              if (pushRow !== 'ask') {
+                // Install-first (iPhone or iPad in Safari) and blocked browsers
+                // get their instructions from the Notifications page banner.
+                handleNavigate('/notifications');
+                return;
+              }
+              // DELIBERATE: enablePush() is called before anything is awaited.
+              // iOS only shows its permission prompt inside the tap itself.
+              const pending = enablePush();
+              setPushBusy(true);
+              void pending
+                .then((result) => {
+                  if (result.ok) {
+                    setPushRow(null);
+                    toast.success('Notifications Are On For This Device');
+                  } else if (notificationPermission() === 'denied') {
+                    setPushRow('blocked');
+                    toast.error(
+                      'Notifications Are Blocked. Allow Them In Your Browser Site Settings.'
+                    );
+                  } else {
+                    toast.error(result.error || 'Notifications Could Not Be Turned On');
+                  }
+                })
+                .catch(() => toast.error('Notifications Could Not Be Turned On'))
+                .finally(() => setPushBusy(false));
+            }}
+          >
+            {pushBusy ? 'Turning On...' : 'Turn On Notifications'}
+          </button>
+        )}
 
         <button
           type="button"

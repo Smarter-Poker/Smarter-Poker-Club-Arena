@@ -1,11 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Profiler } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const f = vi.hoisted(() => ({
   actor: { user: { id: '00000000-0000-0000-0000-000000000042' } },
   toast: vi.fn(),
+  workspaceRead: null as Promise<unknown> | null,
+  workspaceWrite: vi.fn(),
   page: vi.fn(),
   summary: vi.fn(),
   period: vi.fn(),
@@ -65,6 +68,18 @@ vi.mock('../../src/utils/strictClubIdResolver', () => ({
 vi.mock('../../src/services/ClubRosterService', () => ({
   default: { getRosterPage: f.page, getSummary: f.summary, getMembersWinLoss: f.period },
 }));
+vi.mock('../../src/lib/rosterWorkspace', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/lib/rosterWorkspace')>();
+  return {
+    ...actual,
+    loadRosterWorkspace: (...args: Parameters<typeof actual.loadRosterWorkspace>) =>
+      f.workspaceRead ?? actual.loadRosterWorkspace(...args),
+    writeRosterWorkspace: (...args: Parameters<typeof actual.writeRosterWorkspace>) => {
+      f.workspaceWrite(...args);
+      return actual.writeRosterWorkspace(...args);
+    },
+  };
+});
 import ClubMembersPage, {
   MemberRow,
   liveRosterRefreshPolicy,
@@ -72,6 +87,9 @@ import ClubMembersPage, {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  f.actor = { user: { id: '00000000-0000-0000-0000-000000000042' } };
+  f.workspaceRead = null;
+  f.workspaceWrite.mockClear();
   f.aborts = 0;
   f.searches = [];
   f.page.mockReset();
@@ -634,4 +652,162 @@ it('shows automatic name relevance during search and restores the selected manua
   expect(sort).toHaveValue('oldest');
   expect(sort).not.toBeDisabled();
   expect(f.page.mock.calls.at(-1)?.[1]).toMatchObject({ search: '', sort: 'oldest' });
+});
+
+it.each([
+  { advanced: false, sort: 'newest' },
+  { advanced: true, sort: 'newest' },
+  { advanced: false, sort: 'oldest' },
+  { advanced: true, sort: 'oldest' },
+])(
+  'acknowledges the complete preference URL before workspace readiness (Advanced=$advanced sort=$sort)',
+  async ({ advanced, sort }) => {
+    let resolve!: (value: unknown) => void;
+    f.workspaceRead = new Promise((done) => {
+      resolve = done;
+    });
+    // Directory liveness must not be a prerequisite for preference readiness.
+    f.page.mockImplementation(() => new Promise(() => {}));
+    const observations: Array<{ url: string; busy: string | null }> = [];
+    function LocationProbe() {
+      const location = useLocation();
+      const navigate = useNavigate();
+      return (
+        <>
+          <output data-testid="workspace-url">{location.pathname + location.search}</output>
+          <button
+            onClick={() => {
+              const query = new URLSearchParams(location.search);
+              query.set('keep', '2');
+              navigate('?' + query.toString());
+            }}
+          >
+            Change Unrelated Context
+          </button>
+        </>
+      );
+    }
+    const expected =
+      '/clubs/shark-club/members?view=online&' +
+      (sort === 'newest' ? '' : 'sort=oldest&') +
+      'keep=1';
+    render(
+      <MemoryRouter
+        initialEntries={['/clubs/shark-club/members?q=Legacy&view=online&sort=' + sort + '&keep=1']}
+      >
+        <Profiler
+          id="workspace"
+          onRender={() => {
+            const workspace = document.querySelector('.members-console');
+            if (workspace)
+              observations.push({
+                url: screen.getByTestId('workspace-url').textContent || '',
+                busy: workspace.getAttribute('aria-busy'),
+              });
+          }}
+        >
+          <Routes>
+            <Route
+              path="/clubs/:clubId/members"
+              element={
+                <>
+                  <ClubMembersPage />
+                  <LocationProbe />
+                </>
+              }
+            />
+          </Routes>
+        </Profiler>
+      </MemoryRouter>
+    );
+    await act(async () => {});
+    if (advanced) fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    expect(document.querySelector('.members-console')).toHaveAttribute('aria-busy', 'true');
+    await act(async () =>
+      resolve({ search: 'Saved Search', filter: 'online', sort, columns: ['fees'] })
+    );
+    expect(screen.getByRole('combobox', { name: 'Sort Players' })).toHaveValue('search');
+    expect(screen.getByTestId('workspace-url')).toHaveTextContent(expected);
+    expect(document.querySelector('.members-console')).toHaveAttribute('aria-busy', 'false');
+    expect(document.querySelector('.club-members-page')).toHaveAttribute('aria-busy', 'true');
+    expect(observations.some(({ busy }) => busy === 'true')).toBe(true);
+    expect(
+      observations.filter(({ busy }) => busy === 'false').map(({ url }) => url)
+    ).not.toHaveLength(0);
+    expect(
+      observations.filter(({ busy }) => busy === 'false').every(({ url }) => url === expected)
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Change Unrelated Context' }));
+    await act(async () => {});
+    expect(screen.getByTestId('workspace-url')).toHaveTextContent(
+      expected.replace('keep=1', 'keep=2')
+    );
+    expect(document.querySelector('.members-console')).toHaveAttribute('aria-busy', 'false');
+    expect(document.querySelector('.club-members-page')).toHaveAttribute('aria-busy', 'true');
+  }
+);
+
+it('keeps workspace controls unavailable until the account workspace resolves, then persists edits', async () => {
+  let resolve!: (value: unknown) => void;
+  f.workspaceRead = new Promise((done) => {
+    resolve = done;
+  });
+  const view = render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: 'All', exact: true })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Agents', exact: true })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Group By Role', exact: true })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+  const search = screen.getByRole('searchbox', { name: 'Search Club Members' });
+  expect(search).toBeDisabled();
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toBeDisabled();
+  expect(screen.getByRole('combobox', { name: 'Sort Players' })).toBeDisabled();
+  await act(async () =>
+    resolve({
+      search: '',
+      filter: 'all',
+      sort: 'newest',
+      columns: ['fees', 'downlines', 'activity'],
+    })
+  );
+  expect(search).toBeEnabled();
+  expect(screen.getByRole('combobox', { name: 'Filter Players' })).toBeEnabled();
+  expect(screen.getByRole('combobox', { name: 'Sort Players' })).toBeEnabled();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort Players' }), {
+    target: { value: 'name' },
+  });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'online' },
+  });
+  fireEvent.change(search, { target: { value: 'Preference Proof' } });
+  expect(f.workspaceWrite).toHaveBeenLastCalledWith(
+    f.actor.user.id,
+    '00000000-0000-0000-0000-000000000043',
+    expect.objectContaining({ search: 'Preference Proof', filter: 'online', sort: 'name' })
+  );
+  let resolveNext!: (value: unknown) => void;
+  f.workspaceRead = new Promise((done) => {
+    resolveNext = done;
+  });
+  f.actor = { user: { id: '00000000-0000-0000-0000-000000000099' } };
+  view.rerender(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  expect(search).toBeDisabled();
+  await act(async () =>
+    resolveNext({ search: '', filter: 'all', sort: 'name', columns: ['fees'] })
+  );
+  expect(search).toBeEnabled();
+  expect(search).toHaveValue('');
+  expect(screen.getByRole('combobox', { name: 'Sort Players' })).toHaveValue('name');
 });

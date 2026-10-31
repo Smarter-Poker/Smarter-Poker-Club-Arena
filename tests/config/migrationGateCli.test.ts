@@ -401,6 +401,12 @@ test('pre-push checks earlier branch migrations on a follow-up push', () => {
       return git(dir, ['rev-parse', 'HEAD']);
     };
     const base = commit('baseline');
+    git(dir, [
+      'remote',
+      'add',
+      'origin',
+      'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git',
+    ]);
     git(dir, ['update-ref', 'refs/remotes/origin/main', base]);
     put(
       path.join(dir, 'supabase/migrations/20260916000000_probe.sql'),
@@ -416,9 +422,11 @@ test('pre-push checks earlier branch migrations on a follow-up push', () => {
     const runHookGate = () =>
       cli(dir, 'bash', [
         '-c',
-        'set -e\nREMOTE=origin\nLOCAL_SHA=$(git rev-parse HEAD)\nFAIL=0\n' +
+        'set -e\nREMOTE=origin\nPUSH_MAIN_TIP=$(node "$1" origin https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git 2>/dev/null || true)\nLOCAL_SHA=$(git rev-parse HEAD)\nFAIL=0\n' +
           hook.slice(start, end) +
           '\nexit "$FAIL"\n',
+        'migration-hook-fixture',
+        path.resolve(__dirname, '../../scripts/ci/resolve-push-main.mjs'),
       ]);
     const missing = runHookGate();
     expect(missing.status, missing.stdout + missing.stderr).toBe(1);

@@ -2746,7 +2746,9 @@ export class HorseMind {
           // first record of the hand has no gap.
           const ts = typeof a.timestamp === 'number' && isFinite(a.timestamp) ? a.timestamp : null;
           const gap = ts !== null && prevTs !== null ? ts - prevTs : null;
-          if (ts !== null) prevTs = ts;
+          // Preserve adjacency: a missing clock breaks this pair instead of
+          // turning the time since an older action into a fabricated tell.
+          prevTs = ts;
           if (a.stage !== 'river' || !a.userId || counted.has(a.userId)) continue;
           if (!isMindAggression(a)) continue;
           if ((a.amount ?? 0) < 20 * bb) continue;

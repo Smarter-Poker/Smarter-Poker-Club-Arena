@@ -6,6 +6,9 @@ import {
   renderMarkdown,
   riverCallFaced,
   riverOnePairCalls,
+  riverOnePairFromRpc,
+  RIVER_ONE_PAIR_RPC_SCHEMA,
+  samplesFromPrometheus,
   sizeClassOf,
   threeBetShares,
   MIN_SLOPE_SAMPLES,
@@ -222,18 +225,20 @@ describe('river one-pair calls by size class', () => {
 });
 
 describe('receipt counts and the report', () => {
-  it('counts the four receipts by day and renders every section', () => {
+  it('counts the five receipts by day and renders every section', () => {
     const rows = [
       { day: '2026-10-31', feature: 'v62_river_bettor_polarity', fires: 12 },
       { day: '2026-10-30', feature: 'v62_river_bettor_polarity', fires: '3' },
       { day: '2026-10-30', feature: 'v61_river_one_pair_shade', fires: 40 },
+      { day: '2026-10-30', feature: 'v63_large_river_bet_shade', fires: 7 },
       { day: '2026-10-30', feature: 'unrelated', fires: 99 },
     ];
     const counts = receiptCounts(rows);
-    expect(counts.map((r) => r.feature)).toEqual(['v61_river_one_pair_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold']);
-    expect(counts[1].total).toBe(15);
-    expect(counts[1].byDay.map((d) => d.day)).toEqual(['2026-10-30', '2026-10-31']);
-    expect(counts[2].total).toBe(0);
+    expect(counts.map((r) => r.feature)).toEqual(['v61_river_one_pair_shade', 'v63_large_river_bet_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold']);
+    expect(counts[1].total).toBe(7);
+    expect(counts[2].total).toBe(15);
+    expect(counts[2].byDay.map((d) => d.day)).toEqual(['2026-10-30', '2026-10-31']);
+    expect(counts[3].total).toBe(0);
     const md = renderMarkdown({
       generatedAt: '2026-10-31T00:00:00Z',
       servingReleaseSha: 'abc',
@@ -248,5 +253,80 @@ describe('receipt counts and the report', () => {
     expect(md).toContain('Serving release: abc');
     expect(md).toContain('n/a');
     expect(md).toContain('v62_river_bettor_polarity | 15 |');
+  });
+});
+
+describe('the database function answer', () => {
+  const good = {
+    schema: RIVER_ONE_PAIR_RPC_SCHEMA,
+    since: '2026-10-30T00:00:00Z',
+    limit: 20000,
+    consideredRows: 11262,
+    unreadableRows: 958,
+    cells: [
+      { sizeClass: 'medium', calls: 301, won: 53 },
+      { sizeClass: 'small', calls: 106, won: 35 },
+      { sizeClass: 'large', calls: 618, won: 83 },
+    ],
+    caveat: 'horse_hand_reviews holds only hands with |net| >= 20bb, so these are big-pot river calls',
+  };
+
+  it('is adopted in size-class order with percentages and its source named', () => {
+    const r = riverOnePairFromRpc(good);
+    expect(r?.source).toBe('fn_horse_river_one_pair_calls');
+    expect(r?.cells.map((c) => c.sizeClass)).toEqual(['small', 'medium', 'large']);
+    expect(r?.cells[2]).toEqual({ sizeClass: 'large', calls: 618, won: 83, wonPct: 13.4 });
+    expect(r?.consideredRows).toBe(11262);
+    expect(r?.caveat).toContain('20bb');
+  });
+
+  it('is refused (null, so the caller fetches rows) outside the contract', () => {
+    expect(riverOnePairFromRpc(null)).toBeNull();
+    expect(riverOnePairFromRpc({ ...good, schema: 'other' })).toBeNull();
+    expect(riverOnePairFromRpc({ ...good, cells: good.cells.slice(0, 2) })).toBeNull();
+    expect(riverOnePairFromRpc({ ...good, cells: [{ sizeClass: 'small', calls: 1, won: 2 }, good.cells[0], good.cells[2]] })).toBeNull();
+    expect(riverOnePairFromRpc({ ...good, consideredRows: -1 })).toBeNull();
+  });
+
+  it('renders which side computed the cells', () => {
+    const fromRows = riverOnePairCalls([]);
+    expect(fromRows.source).toBe('rows');
+    const md = renderMarkdown({ generatedAt: 'x', servingReleaseSha: null, heap: [], threeBet: [], riverOnePair: riverOnePairFromRpc(good)!, receipts: [] });
+    expect(md).toContain('computed by fn_horse_river_one_pair_calls in the database');
+  });
+});
+
+describe('samples from Prometheus', () => {
+  const range = (metric: Record<string, string>, values: Array<[number, number]>) => ({
+    status: 'success',
+    data: { resultType: 'matrix', result: [{ metric, values: values.map(([t, v]) => [t, String(v)] as [number, string]) }] },
+  });
+
+  it('labels each heap point with the instance serving at that instant and drops unknown instants', () => {
+    const t0 = 1_793_400_000;
+    const heap = range({ __name__: 'poker_engine_heap_used_bytes' }, [[t0, 3.0e9], [t0 + 60, 3.1e9], [t0 + 120, 0.4e9], [t0 + 180, 0.45e9], [t0 + 240, 0.5e9]]);
+    const rss = range({}, [[t0, 15e9], [t0 + 60, 15.2e9], [t0 + 120, 2e9], [t0 + 180, 2.1e9], [t0 + 240, 2.2e9]]);
+    const info = {
+      status: 'success',
+      data: {
+        resultType: 'matrix',
+        result: [
+          { metric: { instance_id: '1-old', version: 'eed06fe5' }, values: [[t0, '1'], [t0 + 60, '1']] as Array<[number, string]> },
+          { metric: { instance_id: '2-new', version: '034e2a21' }, values: [[t0 + 120, '1'], [t0 + 180, '1']] as Array<[number, string]> },
+        ],
+      },
+    };
+    const samples = samplesFromPrometheus(heap, rss, info);
+    // t0+240 has no presence point within 30 s: dropped, never guessed.
+    expect(samples.map((s) => s.instanceId)).toEqual(['1-old', '1-old', '2-new', '2-new']);
+    expect(samples[2]).toEqual({ at: (t0 + 120) * 1000, instanceId: '2-new', releaseSha: '034e2a21', heapUsedMb: 400, rssMb: 2000 });
+    const slopes = heapSlopes(samples);
+    expect(slopes.map((s) => s.instanceId)).toEqual(['1-old', '2-new']);
+    expect(slopes[0].reason).toContain('needed'); // two points per instance: not enough
+  });
+
+  it('is empty on a non-success or malformed answer', () => {
+    expect(samplesFromPrometheus({ status: 'error' }, { status: 'error' }, { status: 'error' })).toEqual([]);
+    expect(samplesFromPrometheus({} as never, {} as never, {} as never)).toEqual([]);
   });
 });

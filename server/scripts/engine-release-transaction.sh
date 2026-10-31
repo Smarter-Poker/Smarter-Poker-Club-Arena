@@ -440,20 +440,21 @@ if [ -e "$LEGACY_CHECKPOINT_INTENT_FILE" ] || [ -L "$LEGACY_CHECKPOINT_INTENT_FI
   LEGACY_CHECKPOINT_ATTEMPTED=1
 fi
 
-# Place the Lightning hold once the announced break is durably counting down.
+# Prepare Lightning during this exact owner window's durable last-hand lead.
+# Other supported releases retain their existing counting-down admission.
 # Idempotent: the helper replays its own request ids, and a placed hold is
 # never re-sent. An UNKNOWN answer is retried on the next loop pass; it never
 # admits or refuses the checkpoint by itself (the census guard still decides).
 hold_lightning_when_counting_down() {
-  local response http_code body rc
+  local response http_code body rc early_stamp=0
   if [ "$LIGHTNING_HOLD_PLACED" = 1 ]; then
-    # A placed hold is not re-asked - unless it is a partly released one, whose
-    # resumed Clusters are dealing again and must be re-held (new generation).
+    # Continue only an incomplete pausing journal using its exact original IDs.
+    # Cleanup is irreversible; a partial or unknown resume cannot re-pause.
     [ -e "$LIGHTNING_HOLD_FILE" ] && python3 -c '
 import json, sys
 try: d = json.load(open(sys.argv[1]))
 except Exception: raise SystemExit(1)
-raise SystemExit(0 if d.get("resume_refused") else 1)
+raise SystemExit(0 if d.get("phase") == "pausing" else 1)
 ' "$LIGHTNING_HOLD_FILE" 2>/dev/null || return 0
   fi
   [ -z "${DRILL_MODE:-}" ] || return 0
@@ -462,13 +463,34 @@ raise SystemExit(0 if d.get("resume_refused") else 1)
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in 200|503) ;; *) return 0 ;; esac
+  # Synchronous operator calls at countdown spent the headroom before
+  # the unchanged 285s entry reserve. Prepare only an exact owned announcement
+  # during its two-minute lead; this pauses formation, never an active hand.
+  if printf '%s' "$body" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit(1)
+m=d.get("maintenance") if isinstance(d,dict) else None
+raise SystemExit(0 if isinstance(m,dict) and m.get("phase")=="last_hand" else 1)
+' 2>/dev/null; then
+    [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ] || return 0
+    early_stamp="$(floor_reservation_stamp)" || return 0
+    "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --weekly-payout-only >&2 || return 0
+    # Re-read after authoritative ownership: a stale announcement cannot be
+    # turned into a pause by slow policy/database reads.
+    response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+      http://127.0.0.1:8080/health 2>/dev/null)" || return 0
+    http_code="${response##*$'\n'}"
+    body="${response%$'\n'*}"
+    case "$http_code" in 200|503) ;; *) return 0 ;; esac
+  fi
   # Only a break this release may actually use. The serving original still
   # announces an hourly :55 break it cannot consume (the countdown refuses
   # everything but the daily 04:00 certificate, a Deployment Recovery window
   # or the one transition break), and a hold placed on those would park
   # Lightning for hours while the release waits. Same predicate as the
   # countdown, evaluated at the announcement instead of at admission.
-  printf '%s' "$body" | DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" python3 -c '
+  printf '%s' "$body" | EARLY_HOLD_STAMP="$early_stamp" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" python3 -c '
 import json, os, sys, time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -476,6 +498,26 @@ try: d = json.load(sys.stdin)
 except Exception: raise SystemExit(1)
 m = d.get("maintenance") if isinstance(d, dict) else None
 if not isinstance(m, dict): raise SystemExit(1)
+# An early preparation read cannot fall through to a different countdown.
+if int(os.environ.get("EARLY_HOLD_STAMP", "0")) > 0 and m.get("phase") != "last_hand":
+    raise SystemExit(1)
+if m.get("phase") == "last_hand":
+    stamp=int(os.environ.get("EARLY_HOLD_STAMP", "0"))
+    floor_end=int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
+    p=m.get("presentation")
+    if not (os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW") and stamp>0
+            and d.get("running") is True and "weeklyPayout" in d and d["weeklyPayout"] is None
+            and m.get("active") is True and m.get("durableConfirmed") is True
+            and m.get("reason")=="Deployment Recovery" and isinstance(p,dict)
+            and p.get("active") is True and p.get("phase")=="last_hand"
+            and p.get("reason")=="Deployment Recovery"
+            and type(p.get("break_id")) is int and p["break_id"]==stamp
+            and type(p.get("break_ends_at")) is int and p["break_ends_at"]==stamp+420000
+            and type(p.get("scheduled_ends_at")) is int and p["scheduled_ends_at"]==stamp+420000
+            and stamp/1000 <= time.time() < stamp/1000+120
+            and stamp/1000+420 <= floor_end):
+        raise SystemExit(1)
+    raise SystemExit(0)
 if not (m.get("active") is True and m.get("phase") == "counting_down" and m.get("durableConfirmed") is True): raise SystemExit(1)
 local = datetime.now(ZoneInfo("America/Chicago"))
 daily = (local.hour == 3 and local.minute >= 58) or (local.hour == 4 and local.minute < 5)

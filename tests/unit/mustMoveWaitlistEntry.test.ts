@@ -1,10 +1,32 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { sliceCall, sliceMethod } from '../helpers/sourceWindow';
+import { sliceCall } from '../helpers/sourceWindow';
+import ts from 'typescript';
 
 const source = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
-const handler = sliceMethod(source, 'const handleOpenWaitlist = useCallback(() => {');
+const parsed = ts.createSourceFile(
+  'TablePage.tsx',
+  source,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TSX
+);
+let handler = '';
+function findHandler(node: ts.Node): void {
+  if (
+    ts.isVariableDeclaration(node) &&
+    node.name.getText(parsed) === 'handleOpenWaitlist' &&
+    node.initializer &&
+    ts.isCallExpression(node.initializer)
+  ) {
+    const callback = node.initializer.arguments[0];
+    if (callback && ts.isArrowFunction(callback) && ts.isBlock(callback.body))
+      handler = callback.body.getText(parsed);
+  }
+  ts.forEachChild(node, findHandler);
+}
+findHandler(parsed);
 
 describe('the full Must-Move table reaches its game entry door', () => {
   it.each(['game-1', null])('routes cluster=%s to the appropriate existing lobby', (clusterId) => {

@@ -136,7 +136,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
@@ -257,7 +257,7 @@ jobs:
   source_windows:
     if: github.event_name == 'schedule'
     name: Source Windows Are Structural
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
       - name: Checkout
@@ -303,7 +303,7 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -374,7 +374,7 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # 8443 job122933361176 completed every functional step at14:59, then
     # its 15-minute cap cancelled cache cleanup. Comparable8440 took14:26.
     # Preserve all commands/test deadlines and reserve5minutes for the
@@ -1271,12 +1271,12 @@ jobs:
         needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
-    # Use up to four workers; Vitest clamps this to the actual VM CPU budget.
+    # Use up to eight workers; Vitest clamps this to the actual VM CPU budget.
     env:
-      VITEST_MAX_THREADS: 4
+      VITEST_MAX_THREADS: 8
     # Every pull-request shard gets a fresh hosted image. A dependency or test
     # from a branch cannot persist into any later credential-bearing job.
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
     # critical path by a distance - p50 264s, max 779s, against 236s for the
@@ -1390,9 +1390,9 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4
-    # Standard hosted qualification remains available when paid runners refuse admission.
-    # Only the fixed large profile opts this exact repository into its approved 8-core label.
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    # Standard GitHub-hosted runners are free for this public repository.
+    # Preserve the complete qualification matrix and fail-closed required verdict.
+    runs-on: ubuntu-latest
     # Run 35276340849 reached V31 after 26m13s and exhausted the 30m job cap.
     # V31 passed in 4m31s in 35276304884. Keep room for hosted runtime variance;
     # every case, statement, cleanup deadline and required gate stays unchanged.
@@ -1530,6 +1530,13 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Cash top-up retries read their original receipt
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-cash-addon-receipt-postgres.py
+
       - name: Original committed horse turns have an independent complete census
         if: matrix.shard == 3
         env:
@@ -1560,6 +1567,18 @@ jobs:
         run: |
           python3 -B scripts/ci/test-weekly-linked-window-proof-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-linked-window-proof.json"
           python3 -B scripts/ci/test-weekly-linked-window-proof-verifier.py --scratch "${{ runner.temp }}"
+      - name: Weekly cash boundaries keep original rows and use the frame cover
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-weekly-pending-funding-index-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --candidate supabase/migrations/20261031081522_cover_original_cash_boundary_transaction_frames.sql --output "${{ runner.temp }}/weekly-pending-funding-index.json"
+      - name: Retain weekly pending funding index qualification
+        if: always() && matrix.shard == 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-pending-funding-index-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weekly-pending-funding-index.json
+          if-no-files-found: error
       - name: Cash horses use bankroll eligibility and table closure preserves seats
         if: matrix.shard == 2
         env:
@@ -1718,6 +1737,15 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           MANAGED_GAME_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-managed-game-one-door-postgres.sh
+      # The Hold'em live measure's river one-pair cells are computed in the
+      # database (fn_horse_river_one_pair_calls) and by the TypeScript module;
+      # both read the same fixture hands and must agree cell for cell.
+      - name: River one-pair calls agree between SQL and TypeScript
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: bash scripts/dev/test-horse-river-one-pair-calls.sh
       - name: A chip request approval key belongs to its approver (20261010003544)
         if: matrix.shard == 2
         env:
@@ -3502,9 +3530,9 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
-    # Standard hosted qualification remains available when paid runners refuse admission.
-    # Only the fixed large profile opts this exact repository into its approved 8-core label.
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    # Standard GitHub-hosted runners are free for this public repository.
+    # Preserve the complete qualification matrix and fail-closed required verdict.
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -3742,7 +3770,7 @@ jobs:
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
@@ -3948,7 +3976,7 @@ jobs:
     # that is the "is main actually green" net (see the schedule note).
     if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 25
 
     steps:
@@ -4090,7 +4118,7 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
@@ -4220,9 +4248,8 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         partition: [general, portrait]
-    # Dedicated 8-core/300-GB hosted pool keeps browser setup off the shared
-    # 4-core queue. The same image, tests and disk-capacity guard remain.
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
+    # Free standard hosted runners retain every browser shard and the disk-capacity guard.
+    runs-on: ubuntu-latest
     # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
     # to build/install; 20m killed the final financial-decision suite.
     # Preserve every suite and its own deadlines, with room for cleanup.
@@ -4591,7 +4618,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # 7.1 minutes measured inside the old job; room for a slow browser install.
     timeout-minutes: 25
 

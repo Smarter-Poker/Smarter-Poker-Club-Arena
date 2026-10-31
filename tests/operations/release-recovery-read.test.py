@@ -32,6 +32,48 @@ def kernel_evidence(owner='unknown'):
 
 
 class ServingRoleTests(unittest.TestCase):
+    def test_pending_retains_exact_expired_announcement_causes(self):
+        unit = {'activeState':'activating','subState':'start','invocationId':'a'*32}
+        messages = [('[engine-release-recover] announcement-only owner retained; no runtime restoration or terminal certification','announcement_only_recovery_retained'),
+                    ('[engine-release-transaction] FATAL: this run announced inside an owner window that has since expired; its runtime entry is refused','expired_announced_runtime_refused'),
+                    ('[engine-release-transaction] FATAL: immutable release not-after epoch expired before new release mutation','immutable_request_expired')]
+        rows=[{'MESSAGE':message,'_SYSTEMD_INVOCATION_ID':unit['invocationId'],'_SYSTEMD_UNIT':'club-arena-engine-release-v1@'+REQUEST['runKey']+'.service','__REALTIME_TIMESTAMP':'1793440868000000'} for message,_ in messages]
+        with patch.object(R,'bounded_journal',return_value=subprocess.CompletedProcess([],0,stdout=('\n'.join(json.dumps(row) for row in rows)).encode())) as call:
+            signs=R.pending_journal(REQUEST,unit)
+        self.assertEqual([row['category'] for row in signs],[kind for _,kind in messages])
+        grep=next(x for x in call.call_args.args[0] if x.startswith('--grep='))
+        for message,_ in messages:
+            self.assertIsNotNone(R.re.search(grep[7:],message))
+        R.validate_pending_journal(signs,None)
+
+    def test_pending_child_exact_proc_identity_and_no_commandline_export(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState':'activating', 'subState':'start', 'invocationId':'a'*32}
+        name = 'club-arena-engine-release-v1@'+request['runKey']+'.service'
+        group = '/system.slice/'+name
+        control = 'b'*40
+        generation = '/usr/local/lib/club-arena/engine-control-generations/'+control
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            def write(pid, field, value):
+                path=root/str(pid)/field;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(value)
+            for pid, parent in [(12,1),(13,12)]:
+                write(pid,'stat',(str(pid)+' (bash) S '+str(parent)+' '+' '.join(['0']*17)+' 123 0').encode())
+                write(pid,'cgroup',('0::'+group+'\n').encode())
+            write(12,'cmdline',('bash\0/usr/local/lib/club-arena/engine-release-unit-wrapper-v1.sh\0start\0'+request['runKey']+'\0').encode())
+            write(12,'task/12/children',b'13')
+            props=('MainPID=12\nControlGroup='+group+'\nInvocationID='+unit['invocationId']+'\n').encode()
+            with patch.object(R,'KERNEL_PROC_ROOT',root), patch.object(R,'inspector_command',return_value=props):
+                for script, tail, expected in [('engine-release-transaction.sh','','pinned_transaction'),('engine-release-recover.sh','\0--mode\0retryable','pinned_announcement_recovery')]:
+                    write(13,'cmdline',('bash\0'+generation+'/'+script+'\0--run-id\0'+request['runKey']+tail+'\0').encode())
+                    answer=R.pending_child(request,unit,control);R.validate_pending_child(answer)
+                    self.assertEqual(answer['processClass'],expected)
+                    self.assertNotIn('/usr/',json.dumps(answer));self.assertNotIn('12',json.dumps({k:v for k,v in answer.items() if k!='argvSha256'}))
+                write(13,'cgroup',b'0::/other')
+                self.assertEqual(R.pending_child(request,unit,control)['status'],'unproven')
+                write(13,'cgroup',('0::'+group).encode());write(12,'task/12/children',b'13 14')
+                self.assertEqual(R.pending_child(request,unit,control)['status'],'unproven')
+
     def test_serving_role_exact_selector(self):
         request = {'mode':'current_serving_inspector_role', 'releaseSha':R.EED,
                    'instanceId':'1-12345678'}
@@ -573,6 +615,42 @@ class ReaderTests(unittest.TestCase):
         with patch.object(R, 'bounded_journal', side_effect=journal):
             return R.pending_journal(request, unit)
 
+    def test_pending_entry_producer_timestamps_are_selected_without_private_text(self):
+        cases = [
+            ('[engine-release-lightning-hold] Lightning hold recorded: 11 owned, 0 foreign, 0 refused', 'lightning_hold_recorded'),
+            ('[engine-release-lightning-hold] Lightning hold released: 11 owned Cluster(s)', 'lightning_hold_released'),
+            ('[engine-release-lightning-hold] UNKNOWN: private transport fixture', 'lightning_hold_unknown'),
+        ]
+        for phase, reason in [('admitted', 'verified'), ('locked', 'verified'),
+                              ('checkpoint', 'verified'), ('completed', 'verified'),
+                              ('refused', 'countdown_refused'), ('refused', 'checkpoint_refused')]:
+            cases.append(('[engine-release-transaction] legacy entry phase=' + phase + ' reason=' + reason
+                          + ' elapsedEntryMs=123 remainingEntryMs=39877 remainingWindowMs=290123',
+                          'legacy_entry_' + (reason if phase == 'refused' else phase)))
+        cases += [
+            ('[engine-release-transaction] WARN: the Lightning hold answered UNKNOWN (exit 124); it is retried on the next pass', 'lightning_hold_timeout'),
+            ('[engine-release-transaction] WARN: the Lightning hold answered UNKNOWN (exit 3); it is retried on the next pass', 'lightning_hold_unknown'),
+            ('[engine-release-transaction] WARN: the Lightning hold helper could not run (exit 127); Lightning was NEVER ASKED to pause this pass and the census guard decides on its own', 'lightning_hold_helper_unavailable'),
+        ]
+        signs = self.recovery_signs([message for message, _ in cases], native=True)
+        self.assertEqual([sign['category'] for sign in signs], [category for _, category in cases])
+        self.assertTrue(all(sign['details'] is None for sign in signs))
+        R.validate_pending_signs(signs)
+        self.assertNotIn('private', json.dumps(signs))
+        self.assertNotIn('290123', json.dumps(signs))
+
+    def test_pending_entry_categories_refuse_unknown_phases_and_forged_details(self):
+        bad = [
+            '[engine-release-lightning-hold] Lightning hold recorded: bad owned, 0 foreign, 0 refused',
+            '[engine-release-lightning-hold] Lightning hold released: 11 owned Cluster(s) private',
+            '[engine-release-transaction] legacy entry phase=private reason=verified elapsedEntryMs=1 remainingEntryMs=2 remainingWindowMs=3',
+            '[engine-release-transaction] legacy entry phase=admitted reason=private elapsedEntryMs=1 remainingEntryMs=2 remainingWindowMs=3',
+            '[engine-release-transaction] legacy entry phase=admitted reason=verified elapsedEntryMs=1 remainingEntryMs=2 remainingWindowMs=3 private',
+        ]
+        self.assertEqual(self.recovery_signs(bad, native=True), [])
+        with self.assertRaises(ValueError):
+            R.validate_pending_signs([{'category': 'lightning_hold_recorded', 'observedAtMs': 1793318108736, 'details': [11]}])
+
     def test_pending_recovery_producer_messages_export_closed_categories_only(self):
         cases = self.recovery_messages()
         signs = self.recovery_signs([message for message, _ in cases])
@@ -849,8 +927,9 @@ class ReaderTests(unittest.TestCase):
         lists = [node for node in ast.walk(tree) if isinstance(node, ast.List)
                  and node.elts and isinstance(node.elts[0], ast.Constant)
                  and node.elts[0].value == 'systemctl']
-        self.assertEqual(len(lists), 1)
-        self.assertEqual(lists[0].elts[1].value, 'show')
+        self.assertEqual(len(lists), 2)
+        self.assertTrue(all(node.elts[1].value == 'show' for node in lists))
+        self.assertEqual({node.elts[-1].value for node in lists}, {'--property=ActiveState,SubState,InvocationID', '--property=MainPID,ControlGroup,InvocationID'})
         self.assertIn('--property=ActiveState,SubState,InvocationID', source)
 
     def witness_fixture(self):
@@ -1650,7 +1729,7 @@ class KernelOwnerTests(unittest.TestCase):
                 (kernel_evidence(),'main'),(unread,'unknown'),({'stage':'snapshot','code':'not_read'},'unknown')]:
             with self.subTest(value=value,owner=owner),self.assertRaises(ValueError):
                 R.validate_kernel_owner_evidence(value,owner)
-        self.assertEqual(R.PENDING_SCHEMA,'existing-release-pending-observation/v6')
+        self.assertEqual(R.PENDING_SCHEMA,'existing-release-pending-observation/v7')
 
     def test_kernel_snapshot_bounds_shared_unmapped_descriptors_and_process_races(self):
         # Native Linux components below exercise /proc; these finite adversarial

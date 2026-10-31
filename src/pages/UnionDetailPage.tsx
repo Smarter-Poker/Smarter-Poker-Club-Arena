@@ -80,7 +80,7 @@ function statementMoney(value: number | null): string {
 
 export default function UnionDetailPage() {
   /* /unions/<slug> in the URL, a UUID in every query (useUnionRouteId). */
-  const { unionId, unionRef } = useUnionRouteId();
+  const { unionId, unionRef, resolutionStatus, retryResolution } = useUnionRouteId();
   const { user } = useAuthUser();
   const toast = useToast();
   useVisibilityRefresh(async () => {
@@ -706,7 +706,7 @@ export default function UnionDetailPage() {
   const activeTables = useMemo(() => tables.filter((t) => (t.current_players || 0) > 0), [tables]);
   const emptyTables = useMemo(() => tables.filter((t) => (t.current_players || 0) === 0), [tables]);
 
-  if (loading) {
+  if (resolutionStatus === 'loading' || (resolutionStatus === 'ready' && loading)) {
     return (
       <div className={styles.loading}>
         <LoadingState message="Opening Union Command" />
@@ -714,15 +714,26 @@ export default function UnionDetailPage() {
     );
   }
 
-  if (loadError) {
+  if (resolutionStatus === 'error' || loadError) {
     return (
       <div className={styles.error}>
-        <ErrorState message={loadError} onRetry={() => setLoadRevision((value) => value + 1)} />
+        <ErrorState
+          message={
+            resolutionStatus === 'error'
+              ? 'Could Not Load This Union. Please Try Again.'
+              : loadError!
+          }
+          onRetry={
+            resolutionStatus === 'error'
+              ? retryResolution
+              : () => setLoadRevision((value) => value + 1)
+          }
+        />
       </div>
     );
   }
 
-  if (!union) {
+  if (resolutionStatus === 'not_found' || !union) {
     return (
       <div className={styles.error}>
         <EmptyState

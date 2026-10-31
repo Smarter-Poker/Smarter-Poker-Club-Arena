@@ -1,4 +1,3 @@
-import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THROWABLE SELECTOR — Pick from the 48 Dynamic 3D Throwables (2026-08-20)
@@ -36,29 +35,34 @@ import './ThrowableSelector.css';
 import { haptic } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
 import { prepareThrowableArtwork } from '../../throwables/artwork';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { getThrowableFavorites } from '../../services/ThrowableFavoritesService';
 
 interface ThrowableSelectorProps {
   userId: string;
   onSelect: (throwable: Throwable, requestId?: string) => void;
   onClose: () => void;
+  onOpenNotes?: () => void;
+  targetName?: string;
 }
 
-/**
- * Tab order and copy. Dan 2026-08-21: VIP leads, and the labels were renamed
- * so all five fit one row without truncating — the old panel showed four and a
- * clipped fifth, so the VIP tab (the one that sells something) was the one you
- * could not see. Short nouns beat verbs here: "Emoji" reads as a category,
- * "React" read as a button.
- */
-const CATEGORY_LABELS: Record<ThrowableCategory, { label: string }> = {
-  premium: { label: 'VIP' },
+/** Favorites leads; Party and Emoji share Reactions. Catalog IDs stay unchanged. */
+type PickerCategory = 'favorites' | 'throws' | 'sports' | 'reactions' | 'premium';
+const CATEGORY_LABELS: Record<PickerCategory, { label: string }> = {
+  favorites: { label: 'Favorites' },
   throws: { label: 'Food' },
   sports: { label: 'Sports' },
-  cheers: { label: 'Party' },
-  reactions: { label: 'Emoji' },
+  reactions: { label: 'Reactions' },
+  premium: { label: 'VIP' },
 };
 
-export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelectorProps) {
+export function ThrowableSelector({
+  userId,
+  onSelect,
+  onClose,
+  onOpenNotes,
+  targetName,
+}: ThrowableSelectorProps) {
   const [throwables, setThrowables] = useState<Record<ThrowableCategory, Throwable[]>>({
     reactions: [],
     throws: [],
@@ -66,11 +70,11 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
     cheers: [],
     premium: [],
   });
-  const [activeCategory, setActiveCategory] = usePlayerPreference<ThrowableCategory>(
-    'throwableSelector.category',
-    'premium',
-    'global'
-  );
+  const [activeCategory, setActiveCategory] = useState<PickerCategory>('favorites');
+  const [favorites, setFavorites] = useState<Throwable[]>([]);
+  const [favoritesOwner, setFavoritesOwner] = useState<string | null>(null);
+  const [favoritesError, setFavoritesError] = useState(false);
+  const [favoritesAttempt, setFavoritesAttempt] = useState(0);
   const [allowance, setAllowance] = useState<ThrowAllowance | null>(null);
   const [allowanceUserId, setAllowanceUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,6 +86,27 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   const generationRef = useRef(0);
   const [sending, setSending] = useState(false);
   activeUserRef.current = userId;
+
+  useEffect(() => {
+    let active = true;
+    setFavorites([]);
+    setFavoritesOwner(null);
+    setFavoritesError(false);
+    void getThrowableFavorites()
+      .then((items) => {
+        if (!active || activeUserRef.current !== userId) return;
+        setFavorites(items);
+        setFavoritesOwner(userId);
+      })
+      .catch(() => {
+        if (!active || activeUserRef.current !== userId) return;
+        setFavoritesError(true);
+        setFavoritesOwner(userId);
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId, favoritesAttempt]);
 
   useEffect(() => {
     const requestedUserId = userId;
@@ -188,19 +213,32 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
     onClose();
   };
 
-  if (loading || allowanceUserId !== userId) {
-    return (
-      <div className="throwable-selector throwable-selector--loading">
-        <div className="throwable-selector__spinner" />
-      </div>
-    );
-  }
+  const visibleItems =
+    activeCategory === 'favorites'
+      ? favoritesOwner === userId
+        ? favorites
+        : []
+      : activeCategory === 'reactions'
+        ? [...throwables.reactions, ...throwables.cheers]
+        : throwables[activeCategory];
+  const allowanceLoading = loading || allowanceUserId !== userId;
 
   return (
-    <div className="throwable-selector" onClick={(e) => e.stopPropagation()}>
+    <SpadeConsole
+      className="throwable-selector"
+      title="Player Menu"
+      eyebrow={targetName || 'Throwables'}
+      pill={CATEGORY_LABELS[activeCategory].label}
+      foot="foot"
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="throwable-selector__header">
-        <h3 className="throwable-selector__title">Send Reaction</h3>
-        {allowance && (
+        {onOpenNotes && (
+          <button className="throwable-selector__tab" onClick={onOpenNotes} disabled={sending}>
+            Notes
+          </button>
+        )}
+        {allowance && allowanceUserId === userId && (
           <span className="throwable-selector__allowance">
             {allowance.unavailable ? (
               <span className="throwable-selector__cost">Allowance Unavailable</span>
@@ -235,7 +273,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
 
       {/* Category Tabs */}
       <div className="throwable-selector__tabs">
-        {(Object.keys(CATEGORY_LABELS) as ThrowableCategory[]).map((cat) => (
+        {(Object.keys(CATEGORY_LABELS) as PickerCategory[]).map((cat) => (
           <button
             key={cat}
             className={`throwable-selector__tab ${activeCategory === cat ? 'throwable-selector__tab--active' : ''}`}
@@ -251,17 +289,34 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
         ))}
       </div>
 
+      {activeCategory === 'favorites' && favoritesOwner !== userId && (
+        <p className="throwable-selector__status" role="status">
+          Loading Favorites...
+        </p>
+      )}
+      {activeCategory === 'favorites' && favoritesOwner === userId && favoritesError && (
+        <div className="throwable-selector__status" role="alert">
+          Favorites Could Not Be Loaded.
+          <button
+            className="throwable-selector__tab"
+            onClick={() => setFavoritesAttempt((n) => n + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {/* Throwable Grid — 3D renders on black, blended transparent */}
       <div className="throwable-selector__grid" data-cat={activeCategory}>
-        {throwables[activeCategory].map((throwable) => (
+        {visibleItems.map((throwable) => (
           <button
             key={throwable.id}
+            data-throwable-id={throwable.id}
             className="throwable-selector__item"
             onClick={() => {
               haptic.light();
               handleSelect(throwable);
             }}
-            disabled={sending}
+            disabled={sending || allowanceLoading}
             aria-busy={sending}
             title={throwable.name}
           >
@@ -296,7 +351,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
           </span>
         </button>
       )}
-    </div>
+    </SpadeConsole>
   );
 }
 

@@ -5,6 +5,9 @@ import ClubRosterService from '../../src/services/ClubRosterService';
 beforeEach(() => state.rpc.mockReset());
 it('reads the selected period once and keeps fee cents beside its profit/loss', async () => {
   state.rpc.mockReturnValue({
+    setHeader() {
+      return this;
+    },
     abortSignal: () =>
       Promise.resolve({
         data: [{ user_id: 'a', cash: -2, mtt: 1, net: -1, fees: '66.63', downline_fees: '155.09' }],
@@ -22,6 +25,9 @@ it('reads the selected period once and keeps fee cents beside its profit/loss', 
 });
 it('rejects an old or incomplete summary instead of treating missing fees as zero', async () => {
   state.rpc.mockReturnValue({
+    setHeader() {
+      return this;
+    },
     abortSignal: () =>
       Promise.resolve({ data: [{ user_id: 'a', cash: -2, mtt: 1, net: -1 }], error: null }),
   });

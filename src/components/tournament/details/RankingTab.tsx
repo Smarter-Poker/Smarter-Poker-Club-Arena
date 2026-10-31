@@ -1,3 +1,4 @@
+import { tournamentTableLabel } from '../../../utils/tournamentTableLabel';
 import { formatPrizeAtUnit } from '../../../utils/format';
 import {
   useSatelliteAwards,
@@ -236,7 +237,9 @@ const RankRow = React.memo(function RankRow({
           ? `Busted ${ordinal(entry.position)}`
           : 'Busted'
         : entry.table_id
-          ? tableName || 'At A Table'
+          ? watchable
+            ? 'Tap To Observe Table'
+            : 'Table Unavailable'
           : 'Not Seated Yet';
 
   const body = (
@@ -264,6 +267,9 @@ const RankRow = React.memo(function RankRow({
       <span className="rk-main">
         <span className="rk-nameline">
           <span className="tl-name">{entry.username}</span>
+          {!out && !champion && entry.table_id && tableName && (
+            <span className="rk-table-number">{tableName}</span>
+          )}
           {entry.is_satellite_qualifier && <SatelliteSeatBadge />}
           {isHero && <span className="tl-badge tl-badge--action">You</span>}
           {isDownline && !isHero && <span className="tl-badge">Yours</span>}
@@ -441,7 +447,7 @@ function WatchModal({ entry, tableName, bigBlind, onCancel, onConfirm }: WatchMo
         </div>
 
         <p className="rk-modal__note">
-          This Opens A New Screen. Every Table You Already Have Open Keeps Playing.
+          Continue Watching When This Player Moves Tables. Every Table You Are Playing Stays Open.
         </p>
 
         <div className="rk-modal__actions">
@@ -819,9 +825,22 @@ export default function RankingTab({
     const map = new Map<string, string>();
     /* "Table 2", not "<Event Name> - Table 2": the header already names the
        event, and at 375px the full name truncated before the number. */
-    for (const t of tables) if (t.id) map.set(t.id, shortTableName(t.name, tournament.name));
+    for (const t of tables) {
+      if (t.id)
+        map.set(t.id, tournamentTableLabel(t.name) || shortTableName(t.name, tournament.name));
+    }
     return map;
   }, [tables, tournament.name]);
+
+  const openTableIds = useMemo(
+    () =>
+      new Set(
+        tables
+          .filter((table) => String(table.status || '').toLowerCase() !== 'closed')
+          .map((table) => table.id)
+      ),
+    [tables]
+  );
 
   const heroIndex = useMemo(
     () => (currentUserId ? ordered.findIndex((e) => e.user_id === currentUserId) : -1),
@@ -902,18 +921,33 @@ export default function RankingTab({
   const confirmWatch = useCallback(() => {
     // Confirm against the complete current field, not the row captured before
     // a balance move or elimination while this dialog was open.
-    const entry = picked ? entries.find((row) => row.user_id === picked.user_id) : undefined;
+    const current = picked ? merged.find((row) => row.user_id === picked.user_id) : undefined;
+    const entry = current
+      ? { ...current, ...pendingPatches.current.get(current.user_id) }
+      : undefined;
     setPicked(null);
     // Only reachable if the seat vanished between the click and the confirm.
     if (!entry?.table_id || isOut(entry) || !onWatchPlayer) {
       toast.warning('That Player Is No Longer Seated');
       return;
     }
+    if (!openTableIds.has(entry.table_id)) {
+      toast.warning('That Table Is No Longer Available');
+      return;
+    }
     /* Through the page's one door, not a navigate of this tab's own: the page
        knows whether it is the in-game popup, and there a watch has to put the
        popup away or the table it opens stays hidden behind it. */
-    onWatchPlayer(entry.table_id, tableNameById.get(entry.table_id) || entry.username);
-  }, [picked, entries, onWatchPlayer, tableNameById, toast]);
+    onWatchPlayer(entry.table_id, tableNameById.get(entry.table_id) || entry.username, {
+      tournamentId,
+      userId: entry.user_id,
+      username: entry.username,
+    });
+  }, [picked, merged, onWatchPlayer, tableNameById, openTableIds, toast, tournamentId]);
+
+  const pickedCurrent = picked
+    ? merged.find((entry) => entry.user_id === picked.user_id)
+    : undefined;
 
   // ── render ──────────────────────────────────────────────────────────────────
   if (entries.length === 0) {
@@ -1155,17 +1189,17 @@ export default function RankingTab({
                     )
                   : undefined
               }
-              eventRunning={eventRunning}
+              eventRunning={eventRunning && !!entry.table_id && openTableIds.has(entry.table_id)}
               onPick={handlePick}
             />
           );
         })}
       </ul>
 
-      {picked && (
+      {pickedCurrent && (
         <WatchModal
-          entry={picked}
-          tableName={picked.table_id ? tableNameById.get(picked.table_id) : undefined}
+          entry={pickedCurrent}
+          tableName={pickedCurrent.table_id ? tableNameById.get(pickedCurrent.table_id) : undefined}
           bigBlind={bigBlind}
           onCancel={() => setPicked(null)}
           onConfirm={confirmWatch}

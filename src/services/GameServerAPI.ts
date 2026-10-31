@@ -465,8 +465,8 @@ export interface ActionResult {
    * Set by the engine when this answer came from its duplicate guard rather
    * than from applying the action a second time (Phase 3, 2026-09-05). The
    * verdict itself is identical to the first answer, so nothing in the UI
-   * needs to branch on it - it exists so a replay is legible in a log and in
-   * a test.
+   * needs to submit it again. Paid top-up consumers use it to recover the
+   * absolute wallet balance rather than subtracting an already committed debit.
    */
   replayed?: boolean;
   /**
@@ -1232,6 +1232,7 @@ export async function addChips(
       error: data.error,
       applied: typeof data.applied === 'number' ? data.applied : undefined,
       queued: data.queued === true,
+      replayed: data.replayed === true,
       charged: typeof data.charged === 'boolean' ? data.charged : undefined,
       requested: typeof data.requested === 'number' ? data.requested : undefined,
       request_id: typeof data.request_id === 'string' ? data.request_id : undefined,

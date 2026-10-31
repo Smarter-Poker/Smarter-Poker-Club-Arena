@@ -1,0 +1,6 @@
+{
+  "_owner": "Burls BBJ Win/Loss, migration 20261031040028; install only from protected main and read back.",
+  "functions": ["ca_club_member_jackpot_money"],
+  "tables": ["bbj_recipient_reporting_owners", "ca_paid_jackpot_reporting"],
+  "columns": {}
+}

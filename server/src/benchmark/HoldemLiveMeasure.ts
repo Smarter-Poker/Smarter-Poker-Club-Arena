@@ -21,7 +21,7 @@
  *                           HANDS WITH |net| >= 20bb (HorseHandReview.FLAG_BB),
  *                           so this is the big-pot subset, stated in the report.
  *   4. receipt counts     - horse_brain_telemetry fires per day for
- *                           v61_river_one_pair_shade and v62_river_bettor_polarity.
+ *                           v61_river_one_pair_shade, v63_large_river_bet_shade and v62_river_bettor_polarity.
  *                           V62 is OPT-IN (default off since #8781), so zero V62
  *                           fires on a containing revision is the expected
  *                           state, not a wiring fault; V61 is the live witness.
@@ -130,6 +130,65 @@ export function heapSlopes(samples: HealthSample[]): HeapSlope[] {
   return out;
 }
 
+/**
+ * Prometheus on engine-01 scrapes the engine every 15 s and keeps
+ * poker_engine_heap_used_bytes, poker_engine_process_rss_bytes and
+ * poker_engine_info{instance_id, version} (infra/monitoring/prometheus.yml,
+ * job engine_game_server). Three query_range results over the same window
+ * become HealthSamples - one per heap point, labelled with the instance that
+ * was serving at that instant - so a slope needs no sampler loop and survives
+ * the session that started one. A heap point with no serving instance known
+ * at that instant is dropped rather than guessed.
+ */
+export interface PrometheusRange {
+  status?: unknown;
+  data?: { resultType?: unknown; result?: Array<{ metric?: Record<string, string>; values?: Array<[number | string, string]> }> };
+}
+
+export function samplesFromPrometheus(heap: PrometheusRange, rss: PrometheusRange, info: PrometheusRange): HealthSample[] {
+  const series = (r: PrometheusRange): Array<{ metric: Record<string, string>; values: Array<[number, number]> }> => {
+    if (!r || r.status !== 'success' || !r.data || !Array.isArray(r.data.result)) return [];
+    return r.data.result.map((s) => ({
+      metric: s.metric ?? {},
+      values: (s.values ?? [])
+        .map(([ts, v]) => [Number(ts), Number(v)] as [number, number])
+        .filter(([ts, v]) => Number.isFinite(ts) && Number.isFinite(v)),
+    }));
+  };
+  // The serving instance over time: info series carry instance_id/version and
+  // a value of 1 while that instance is scraped.
+  const presence: Array<{ at: number; instanceId: string; version: string }> = [];
+  for (const s of series(info)) {
+    const instanceId = s.metric.instance_id;
+    const version = s.metric.version ?? '';
+    if (!instanceId) continue;
+    for (const [ts, v] of s.values) if (v === 1) presence.push({ at: ts, instanceId, version });
+  }
+  presence.sort((a, b) => a.at - b.at);
+  const instanceAt = (ts: number): { instanceId: string; version: string } | null => {
+    // Nearest presence point within one scrape interval either side.
+    let best: { at: number; instanceId: string; version: string } | null = null;
+    for (const p of presence) {
+      const d = Math.abs(p.at - ts);
+      if (d <= 30 && (!best || d < Math.abs(best.at - ts))) best = p;
+    }
+    return best ? { instanceId: best.instanceId, version: best.version } : null;
+  };
+  const rssAt = new Map<number, number>();
+  for (const s of series(rss)) for (const [ts, v] of s.values) rssAt.set(ts, v);
+  const out: HealthSample[] = [];
+  for (const s of series(heap)) {
+    for (const [ts, v] of s.values) {
+      const who = instanceAt(ts);
+      const r = rssAt.get(ts);
+      if (!who || r === undefined) continue;
+      out.push({ at: ts * 1000, instanceId: who.instanceId, releaseSha: who.version, heapUsedMb: Math.round(v / 1e6), rssMb: Math.round(r / 1e6) });
+    }
+  }
+  out.sort((a, b) => a.at - b.at);
+  return out;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. 3-bet shares
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,6 +290,41 @@ export interface RiverOnePairReport {
   /** rows that could not be read (missing cards, board or actions) */
   unreadableRows: number;
   caveat: string;
+  /** who computed it: the database function or this module over fetched rows */
+  source?: 'fn_horse_river_one_pair_calls' | 'rows';
+}
+
+export const RIVER_ONE_PAIR_RPC_SCHEMA = 'horse-river-one-pair-calls/v1';
+
+/**
+ * The answer of public.fn_horse_river_one_pair_calls (migration
+ * 20261031024652), the same arithmetic run where the rows are. Returns null
+ * when the payload is not that function's contract, so a caller falls back to
+ * fetching rows rather than printing a shape it did not understand.
+ */
+export function riverOnePairFromRpc(payload: unknown): RiverOnePairReport | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as { schema?: unknown; cells?: unknown; consideredRows?: unknown; unreadableRows?: unknown; caveat?: unknown };
+  if (p.schema !== RIVER_ONE_PAIR_RPC_SCHEMA || !Array.isArray(p.cells) || p.cells.length !== 3) return null;
+  const order: SizeClass[] = ['small', 'medium', 'large'];
+  const cells: RiverOnePairCell[] = [];
+  for (const k of order) {
+    const c = (p.cells as Array<{ sizeClass?: unknown; calls?: unknown; won?: unknown }>).find((x) => x && x.sizeClass === k);
+    const calls = Number(c?.calls);
+    const won = Number(c?.won);
+    if (!c || !Number.isInteger(calls) || !Number.isInteger(won) || calls < 0 || won < 0 || won > calls) return null;
+    cells.push({ sizeClass: k, calls, won, wonPct: pct(won, calls) });
+  }
+  const considered = Number(p.consideredRows);
+  const unreadable = Number(p.unreadableRows);
+  if (!Number.isInteger(considered) || !Number.isInteger(unreadable) || considered < 0 || unreadable < 0) return null;
+  return {
+    cells,
+    consideredRows: considered,
+    unreadableRows: unreadable,
+    caveat: typeof p.caveat === 'string' && p.caveat ? p.caveat : RIVER_ONE_PAIR_CAVEAT,
+    source: 'fn_horse_river_one_pair_calls',
+  };
 }
 
 export const RIVER_ONE_PAIR_CAVEAT =
@@ -409,7 +503,7 @@ export function riverOnePairCalls(rows: ReviewRow[]): RiverOnePairReport {
     if (Number(row.net_bb) > 0) cell.won += 1;
   }
   for (const c of cells.values()) c.wonPct = pct(c.won, c.calls);
-  return { cells: [...cells.values()], consideredRows: considered, unreadableRows: unreadable, caveat: RIVER_ONE_PAIR_CAVEAT };
+  return { cells: [...cells.values()], consideredRows: considered, unreadableRows: unreadable, caveat: RIVER_ONE_PAIR_CAVEAT, source: 'rows' };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -422,7 +516,7 @@ export interface TelemetryRow {
   fires: number | string;
 }
 
-export const RECEIPT_FEATURES = ['v61_river_one_pair_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold'] as const;
+export const RECEIPT_FEATURES = ['v61_river_one_pair_shade', 'v63_large_river_bet_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold'] as const;
 
 export interface ReceiptCount {
   feature: string;
@@ -488,7 +582,7 @@ export function renderMarkdown(report: LiveMeasureReport): string {
   lines.push('');
   lines.push('## 3. River one-pair calls by size class faced (horse_hand_reviews)');
   lines.push('');
-  lines.push(`Caveat: ${report.riverOnePair.caveat}. Rows read: ${report.riverOnePair.consideredRows}; unreadable: ${report.riverOnePair.unreadableRows}.`);
+  lines.push(`Caveat: ${report.riverOnePair.caveat}. Rows read: ${report.riverOnePair.consideredRows}; unreadable: ${report.riverOnePair.unreadableRows}; computed by ${report.riverOnePair.source === 'rows' ? 'this module over fetched rows' : 'fn_horse_river_one_pair_calls in the database'}.`);
   lines.push('');
   lines.push('| size class | calls | won | won % |');
   lines.push('|---|---|---|---|');

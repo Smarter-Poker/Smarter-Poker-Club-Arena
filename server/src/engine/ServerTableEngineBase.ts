@@ -8780,6 +8780,10 @@ export abstract class ServerTableEngineBase {
   }
 
   /** Captured async decision clocks exclude only this hand owner's held time. */
+  protected weeklyPayoutAppliedPauseMilliseconds(): number {
+    return this.weeklyHandPausedTotalMs;
+  }
+
   protected weeklyPayoutPausedMilliseconds(): number {
     return (
       (this.weeklyHandPausedTotalMs ?? 0) +

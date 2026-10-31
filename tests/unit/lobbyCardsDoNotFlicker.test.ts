@@ -166,7 +166,9 @@ describe('the fast path cannot repaint a warm lobby', () => {
     );
     // Cleared in the per-club reset, beside the other per-club refs.
     const reset = PAGE.indexOf('hasDataRef.current = false;');
-    expect(sliceEnclosingBlock(PAGE, 'hasDataRef.current = false;')).toContain('listsPaintedRef.current = false;');
+    expect(sliceEnclosingBlock(PAGE, 'hasDataRef.current = false;')).toContain(
+      'listsPaintedRef.current = false;'
+    );
   });
 
   it('the boot cache still carries no tournaments, which is what makes the above necessary', () => {
@@ -180,7 +182,8 @@ describe('the fast path cannot repaint a warm lobby', () => {
 
   it('routes BOTH fast-path lists through mergeFastRows, never a bare replace', () => {
     expect(PAGE).toContain('setTables((prev) => mergeFastRows(prev, home.tables))');
-    expect(PAGE).toContain('setTournaments((prev) => mergeFastRows(prev, home.tournaments))');
+    expect(PAGE).toContain('const fastTournaments = reconcileTournamentLobbyRead(');
+    expect(PAGE).toContain('setTournaments((prev) => mergeFastRows(prev, fastTournaments))');
     expect(PAGE, 'a bare replace is what caused the flicker').not.toContain(
       'setTournaments(home.tournaments)'
     );

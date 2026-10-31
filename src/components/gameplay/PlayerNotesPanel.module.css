@@ -297,3 +297,20 @@
   opacity: 1;
   padding-inline: 1cqw;
 }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: rgb(0 0 0 / 60%);
+}
+
+.dialog {
+  width: min(480px, 100%);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

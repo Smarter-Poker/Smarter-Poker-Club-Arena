@@ -105,6 +105,14 @@ function fixture(
         error: null,
       };
     if (name === 'fn_f06_break_state') return { data: { ...park }, error: null };
+    if (name === 'fn_f06_claim_custody') {
+      Object.assign(park, {
+        custody_id: params.p_custody_id,
+        custody_generation: generation,
+        revision: String(Number(park.revision) + 1),
+      });
+      return { data: { ...park }, error: null };
+    }
     if (name === 'fn_f06_admit_parked_movement') {
       if (admit === 'prove')
         return {
@@ -332,3 +340,26 @@ it.each(['not-a-time', '2026-02-30T00:00:00Z', '2026-10-27', null, 0])(
     expect(f.start).not.toHaveBeenCalled();
   }
 );
+
+it('claims a null-custody refused park before withdrawal', async () => {
+  const f = fixture('refuse', 'withdrawn', { park_created_at: new Date(0).toISOString() });
+  Object.assign(f.park, { custody_id: null, custody_generation: null, revision: '0' });
+  vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+  await expect(f.admitOnce()).resolves.toBeUndefined();
+  expect(
+    names(f.calls).filter(
+      (n) => n === 'fn_f06_claim_custody' || n === 'fn_f06_withdraw_unproven_movement_park'
+    )
+  ).toEqual(['fn_f06_claim_custody', 'fn_f06_withdraw_unproven_movement_park']);
+  expect(f.stop).toHaveBeenCalledTimes(1);
+  expect(f.manager.readmitContinuedNoStartTable).toHaveBeenCalledWith(source, f.engine);
+});
+
+it('refuses an incomplete custody identity before movement or withdrawal', async () => {
+  const f = fixture('refuse', 'withdrawn', { park_created_at: new Date(0).toISOString() });
+  Object.assign(f.park, { custody_id: null });
+  await expect(f.admitOnce()).rejects.toThrow('F06 incomplete custody identity');
+  expect(names(f.calls)).not.toContain('fn_f06_claim_custody');
+  expect(names(f.calls)).not.toContain('fn_f06_withdraw_unproven_movement_park');
+  expect(f.stop).not.toHaveBeenCalled();
+});

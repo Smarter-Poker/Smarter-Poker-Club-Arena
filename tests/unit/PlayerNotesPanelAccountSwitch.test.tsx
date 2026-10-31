@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   purchaseFeature: vi.fn(),
   showDiamondTopUp: vi.fn(),
   toast: { error: vi.fn() },
+  save: vi.fn().mockResolvedValue({ error: null }),
 }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -45,6 +46,7 @@ vi.mock('../../src/services/VIPService', () => ({
 vi.mock('../../src/services/PlayerNotesService', () => ({
   NOTE_COLORS: [{ name: 'None', value: 'none', hex: 'transparent' }],
   PLAYER_TAGS: ['Aggressive'],
+  playerNotesService: { clearCache: vi.fn() },
 }));
 
 vi.mock('../../src/hooks/useStaggerAnimation', () => ({
@@ -77,7 +79,7 @@ vi.mock('../../src/lib/supabase', () => ({
       };
       builder.order = () => Promise.resolve({ data: [], error: null });
       builder.in = () => Promise.resolve({ data: [], error: null });
-      builder.upsert = () => Promise.resolve({ error: null });
+      builder.upsert = (...args: unknown[]) => mocks.save(...args);
       builder.delete = () => builder;
       return builder;
     },
@@ -230,7 +232,7 @@ describe('Player Notes Account Isolation', () => {
 
     render(view());
 
-    expect(await screen.findByText('Player Note Could Not Be Loaded. Close And Try Again.')).toBe(
+    expect(await screen.findByText('Player Note Could Not Be Loaded.')).toBe(
       screen.getByRole('alert')
     );
     expect(screen.getByPlaceholderText('Add Notes About This Player...')).toBeDisabled();
@@ -238,4 +240,61 @@ describe('Player Notes Account Isolation', () => {
     expect(screen.getByRole('button', { name: 'Save Note' })).toBeDisabled();
     expect(mocks.purchaseFeature).not.toHaveBeenCalled();
   });
+});
+
+it('saves edited and cleared notes, blocks repeat saves and retains a failed draft', async () => {
+  mocks.checkVIPStatus.mockResolvedValue({ isVIP: true });
+  mocks.noteReads.set(
+    'account-a',
+    Promise.resolve({
+      data: { id: 'note', notes: 'Previous Read', tags: [], color_label: 'none' },
+      error: null,
+    })
+  );
+  const saved = deferred<{ error: null }>();
+  mocks.save.mockReturnValueOnce(saved.promise);
+  const rendered = render(view());
+  const input = await screen.findByDisplayValue('Previous Read');
+  fireEvent.change(input, { target: { value: 'New Read' } });
+  const save = screen.getByRole('button', { name: 'Save Note' });
+  fireEvent.click(save);
+  fireEvent.click(save);
+  expect(mocks.save).toHaveBeenCalledTimes(1);
+  expect(mocks.save.mock.calls[0][0]).toMatchObject({
+    user_id: 'account-a',
+    target_user_id: 'opponent',
+    notes: 'New Read',
+  });
+  await act(async () => saved.resolve({ error: null }));
+  mocks.save.mockRejectedValueOnce(new Error('offline'));
+  fireEvent.change(input, { target: { value: 'Keep My Draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Note' }));
+  await waitFor(() =>
+    expect(mocks.toast.error).toHaveBeenCalledWith('Failed To Save Note. Your Draft Is Still Here.')
+  );
+  expect(input).toHaveValue('Keep My Draft');
+  expect(input).not.toBeDisabled();
+  mocks.save.mockResolvedValueOnce({ error: null });
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Note' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(3));
+  expect(mocks.save.mock.calls[2][0]).toMatchObject({ notes: '' });
+  rendered.unmount();
+});
+
+it('retries an unread note before permitting an edit', async () => {
+  mocks.checkVIPStatus.mockResolvedValue({ isVIP: false });
+  mocks.noteReads.set('account-a', Promise.reject(new Error('offline')));
+  render(view());
+  const retry = await screen.findByRole('button', { name: 'Retry' });
+  expect(screen.getByRole('button', { name: 'Save Note' })).toBeDisabled();
+  mocks.noteReads.set(
+    'account-a',
+    Promise.resolve({
+      data: { id: 'note', notes: 'Recovered Read', tags: [], color_label: 'none' },
+      error: null,
+    })
+  );
+  fireEvent.click(retry);
+  expect(await screen.findByDisplayValue('Recovered Read')).not.toBeDisabled();
 });

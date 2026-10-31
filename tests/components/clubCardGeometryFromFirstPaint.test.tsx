@@ -77,10 +77,10 @@ const CLUBS: UserClub[] = [
   },
 ];
 
-function renderLobbyCarousel() {
+function renderLobbyCarousel(clubs = CLUBS) {
   return render(
     <CarouselSection
-      displayClubs={CLUBS}
+      displayClubs={clubs}
       clubStats={{}}
       pinnedClubIds={[]}
       navigate={vi.fn()}
@@ -154,4 +154,21 @@ describe('a club card has its final geometry from the first paint', () => {
       expect(stripComments(read(rel))).toContain("import './ClubCardPanel.css';");
     }
   });
+});
+
+// The owner closure overrides memberships, pins and stale directory results.
+it('hides Diamond entries while retaining other clubs and their cards', () => {
+  const { container } = renderLobbyCarousel([
+    ...CLUBS,
+    {
+      id: '002c2d27-9584-4e52-835a-bb2be148fc81',
+      name: 'Diamond Arena',
+      slug: 'diamond-arena',
+      automatic_entry: true,
+    },
+  ]);
+  expect(container.querySelector('[alt="Diamond Arena Card"]')).toBeNull();
+  expect(container.textContent).not.toContain('Diamond Arena');
+  expect(container.textContent).toContain('KINGS CLUB');
+  cleanup();
 });

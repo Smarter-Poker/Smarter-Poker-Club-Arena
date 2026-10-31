@@ -1,11 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
+  hasLiveGatewayReady,
+  type PrivateRecordObservation,
+} from '../e2e/support/privateRecordObservation';
+import {
   admitPrivateRecordClientProof,
   assertQualifiedGateway,
   readPrivateRecordClientPin,
   assertPrivateRecordClientProof,
   PRIVATE_RECORD_CLIENT_TITLE,
+  PRIVATE_RECORD_ROSTER_READ_MS,
+  PRIVATE_RECORD_CASE_MS,
+  PRIVATE_RECORD_OBSERVATION_LIMIT,
+  summarizePrivateRecordObservations,
+  snapshotPrivateRecordFixtureProfile,
+  readPrivateRecordFixturePlayerNumber,
+  assertPrivateRecordFixtureRoster,
 } from '../../scripts/ci/private-record-client-proof.mjs';
 import { installPrivateRecordEngineInterruption } from '../e2e/support/privateRecordEngineInterruption';
 const client = 'a'.repeat(40),
@@ -67,6 +78,8 @@ const browserEvidence = () => ({
   clientSha: client,
   gatewaySha: gateway,
   actualPublishedClient: true,
+  authoritativeFixtureIdentity: true,
+  rosterIdentityVerified: true,
   genuineSession: true,
   engineReadyBefore: true,
   isolatedEngineChannelFault: true,
@@ -75,10 +88,21 @@ const browserEvidence = () => ({
   readerReadback: true,
   visibleAvatarReadback: true,
   engineReadyAfterRestore: true,
-  engineRecordChangedAfterRestore: true,
+  gatewayRecordChangedAfterRestore: true,
   secondVisibleAvatarReadback: true,
   faultRestored: true,
-  cosmeticWrites: 2,
+  cosmeticWrites: 5,
+  rosterGatewayVerified: true,
+  rosterPaidVerified: true,
+  memberPaidVerified: true,
+  bothPreferredPathsInterrupted: true,
+  allFaultsRestored: true,
+  preferredReadyAfterPaid: true,
+  cosmeticRestoreVerified: true,
+  paidFallback: {
+    member: { confirmedJoins: 1, receivedChanges: 1 },
+    roster: { confirmedJoins: 1, receivedChanges: 1 },
+  },
   syntheticFrames: 0,
   paidIsolation: {
     activeAtStart: 0,
@@ -87,10 +111,10 @@ const browserEvidence = () => ({
     matchingChangedFrames: 0,
     observedFrames: 0,
   },
-  gatewayRetirement: {
-    openSocketsBeforeSecondWrite: 0,
-    openSocketsAfterSecondWrite: 0,
-    matchingSignalsAfterRetirement: 0,
+  gatewayRetention: {
+    openSocketsBeforeSecondWrite: 1,
+    openSocketsAfterSecondWrite: 1,
+    matchingChangesAfterRecovery: 1,
   },
   observationsOverflow: false,
   paidRetirementQualified: false,
@@ -133,6 +157,64 @@ function report(evidence = browserEvidence()) {
   };
 }
 describe('finite published record client proof admission and verdict', () => {
+  it('retains bounded diagnostics without exceeding the unchanged certificate cap', () => {
+    const frames = Array.from({ length: PRIVATE_RECORD_OBSERVATION_LIMIT }, (_, socket) => ({
+      socket,
+      endpoint: 'gateway',
+      topic: `member-record:${'a'.repeat(36)}:${'b'.repeat(36)}`,
+      type: 'PRIVATE_RECORD_STATUS',
+      ready: true,
+    }));
+    const summary = summarizePrivateRecordObservations(frames);
+    expect(summary.observedRecordFrames).toEqual(frames.slice(-64));
+    expect(summary.observedRecordFrameCount).toBe(PRIVATE_RECORD_OBSERVATION_LIMIT);
+    expect(frames).toHaveLength(PRIVATE_RECORD_OBSERVATION_LIMIT);
+    expect(Buffer.byteLength(JSON.stringify({ ...browserEvidence(), ...summary }))).toBeLessThan(
+      32768
+    );
+  });
+  it('fits both real roster refresh intervals and cleanup within the existing provider budget', () => {
+    const roster = readFileSync('src/pages/ClubMembersPage.tsx', 'utf8');
+    const interval = roster.match(/liveRosterRefreshPolicy = \{ minIntervalMs: ([\d_]+) \}/);
+    expect(interval).not.toBeNull();
+    const floor = Number(interval![1].replaceAll('_', ''));
+    expect(PRIVATE_RECORD_ROSTER_READ_MS).toBeGreaterThanOrEqual(floor + 45_000);
+    expect(PRIVATE_RECORD_CASE_MS).toBeGreaterThanOrEqual(
+      2 * PRIVATE_RECORD_ROSTER_READ_MS + 150_000
+    );
+    expect(PRIVATE_RECORD_CASE_MS).toBeLessThanOrEqual(600_000);
+    expect(PRIVATE_RECORD_OBSERVATION_LIMIT).toBeGreaterThan(
+      (127 * PRIVATE_RECORD_CASE_MS) / 60_000
+    );
+    expect(PRIVATE_RECORD_OBSERVATION_LIMIT).toBeLessThanOrEqual(2048);
+  });
+  it('accepts retained readiness only on an open gateway with no later refusal', () => {
+    const ready: PrivateRecordObservation = {
+      endpoint: 'gateway',
+      socket: 1,
+      topic: 'member-record:fixture',
+      type: 'PRIVATE_RECORD_STATUS',
+      ready: true,
+    };
+    const frames = [ready];
+    expect(hasLiveGatewayReady(frames, new Set([1]), ready.topic)).toBe(true);
+    expect(hasLiveGatewayReady(frames, new Set(), ready.topic)).toBe(false);
+    expect(hasLiveGatewayReady(frames, new Set([2]), ready.topic)).toBe(false);
+    expect(hasLiveGatewayReady(frames, new Set([1]), 'foreign')).toBe(false);
+    expect(hasLiveGatewayReady([{ ...ready, endpoint: 'engine' }], new Set([1]), ready.topic)).toBe(
+      false
+    );
+    expect(
+      hasLiveGatewayReady([...frames, { ...ready, ready: false }], new Set([1]), ready.topic)
+    ).toBe(false);
+    expect(
+      hasLiveGatewayReady(
+        [...frames, { ...ready, ready: false }, { ...ready, socket: 2 }],
+        new Set([2]),
+        ready.topic
+      )
+    ).toBe(true);
+  });
   it('accepts only the fixed protected event and exact identity-only payload', () => {
     expect(admitPrivateRecordClientProof(payload(), environment())).toEqual(input());
     for (const patch of [
@@ -219,7 +301,10 @@ describe('finite published record client proof admission and verdict', () => {
     });
     for (const patch of [
       { gatewayReadyAfterFault: false },
+      { gatewayRecordChangedAfterRestore: false },
       { genuineSession: false },
+      { authoritativeFixtureIdentity: false },
+      { rosterIdentityVerified: false },
       { readerReadback: false },
       { faultRestored: false },
       { syntheticFrames: 1 },
@@ -233,16 +318,43 @@ describe('finite published record client proof admission and verdict', () => {
           observedFrames: 0,
         },
       },
-      { gatewayRetirement: undefined },
+      { gatewayRetention: undefined },
       {
-        gatewayRetirement: {
+        gatewayRetention: {
+          openSocketsBeforeSecondWrite: 1,
+          openSocketsAfterSecondWrite: 1,
+          matchingChangesAfterRecovery: 0,
+        },
+      },
+      {
+        gatewayRetention: {
           openSocketsBeforeSecondWrite: 0,
           openSocketsAfterSecondWrite: 0,
-          matchingSignalsAfterRetirement: 1,
+          matchingChangesAfterRecovery: 1,
         },
       },
       { observationsOverflow: true },
       { cosmeticWrites: 1 },
+      { rosterGatewayVerified: false },
+      { rosterPaidVerified: false },
+      { memberPaidVerified: false },
+      { bothPreferredPathsInterrupted: false },
+      { allFaultsRestored: false },
+      { preferredReadyAfterPaid: false },
+      { cosmeticRestoreVerified: false },
+      { paidFallback: undefined },
+      {
+        paidFallback: {
+          member: { confirmedJoins: 1, receivedChanges: 0 },
+          roster: { confirmedJoins: 1, receivedChanges: 1 },
+        },
+      },
+      {
+        paidFallback: {
+          member: { confirmedJoins: 1, receivedChanges: 1 },
+          roster: { confirmedJoins: 0, receivedChanges: 1 },
+        },
+      },
     ])
       expect(() =>
         assertPrivateRecordClientProof(
@@ -274,48 +386,69 @@ describe('finite published record client proof admission and verdict', () => {
       assertPrivateRecordClientProof(retried, input(), pin(), pin(), { verified: true })
     ).toThrow();
   });
-  it('faults only this context private engine channel and restores normal connection creation', async () => {
-    let match!: (url: URL) => boolean, route!: (socket: any) => void;
-    const context = {
-      routeWebSocket: async (m: typeof match, r: typeof route) => {
-        match = m;
-        route = r;
-      },
-    };
-    const control = await installPrivateRecordEngineInterruption(context as any);
-    expect(match(new URL('wss://engine.smarter.poker/ws/channel'))).toBe(true);
-    for (const url of [
-      'wss://engine.smarter.poker/ws/multi',
-      'wss://engine.smarter.poker/ws/table/fixture',
-      'wss://ca-static.smarter.poker/private-record/ws/channel',
-      'https://engine.smarter.poker/ws/channel',
-    ])
-      expect(match(new URL(url))).toBe(false);
-    await expect(control.block()).rejects.toThrow(/No live/);
-    const server = { close: vi.fn(async () => {}) };
-    const socket = { connectToServer: vi.fn(() => server), close: vi.fn(async () => {}) };
-    route(socket);
-    expect(socket.connectToServer).toHaveBeenCalledTimes(1);
-    await control.block();
-    expect(server.close).toHaveBeenCalledWith({
-      code: 4000,
-      reason: 'Reserved Client Record Channel Qualification',
-    });
-    route(socket);
-    expect(socket.connectToServer).toHaveBeenCalledTimes(1);
-    expect(socket.close).toHaveBeenCalledTimes(1);
-    control.restore();
-    route(socket);
-    expect(socket.connectToServer).toHaveBeenCalledTimes(2);
-  });
-  it('the existing provider owns one explicit browser proof without enabling exposure', () => {
+  it.each(['engine', 'gateway'] as const)(
+    'faults only this context exact %s endpoint and restores normal connection creation',
+    async (endpoint) => {
+      let match!: (url: URL) => boolean, route!: (socket: any) => void;
+      const context = {
+        routeWebSocket: async (m: typeof match, r: typeof route) => {
+          match = m;
+          route = r;
+        },
+      };
+      const control = await installPrivateRecordEngineInterruption(context as any, endpoint);
+      const exact =
+        endpoint === 'engine'
+          ? 'wss://engine.smarter.poker/ws/channel'
+          : 'wss://ca-static.smarter.poker/private-record/ws/channel';
+      expect(match(new URL(exact))).toBe(true);
+      for (const url of [
+        'wss://engine.smarter.poker/ws/multi',
+        'wss://engine.smarter.poker/ws/table/fixture',
+        endpoint === 'engine'
+          ? 'wss://ca-static.smarter.poker/private-record/ws/channel'
+          : 'wss://engine.smarter.poker/ws/channel',
+        'wss://untrusted.invalid/ws/channel',
+        'wss://engine.smarter.poker:9443/ws/channel',
+        'https://engine.smarter.poker/ws/channel',
+      ])
+        expect(match(new URL(url))).toBe(false);
+      await expect(control.block()).rejects.toThrow(/No live/);
+      const server = { close: vi.fn(async () => {}) };
+      const socket = { connectToServer: vi.fn(() => server), close: vi.fn(async () => {}) };
+      route(socket);
+      expect(socket.connectToServer).toHaveBeenCalledTimes(1);
+      await control.block();
+      expect(server.close).toHaveBeenCalledWith({
+        code: 4000,
+        reason: 'Reserved Client Record Channel Qualification',
+      });
+      route(socket);
+      expect(socket.connectToServer).toHaveBeenCalledTimes(1);
+      expect(socket.close).toHaveBeenCalledTimes(1);
+      control.restore();
+      route(socket);
+      expect(socket.connectToServer).toHaveBeenCalledTimes(2);
+    }
+  );
+  it('the existing provider owns one explicit browser proof without enabling exposure', async () => {
     const workflow = readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8');
+    const { parse } = await import('yaml');
+    const job = parse(workflow).jobs['private-record-client-proof'];
+    expect(job.needs).toBe('certification-cleanup-safety');
+    expect(job.if).toBe(
+      "always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'"
+    );
     expect(workflow).toContain('private-record-client-proof:');
     expect(workflow).toContain(
       'npx playwright test tests/e2e/production-private-record-failover.spec.ts'
     );
     expect(workflow).toContain('node scripts/ci/private-record-client-proof.mjs verify');
     const source = readFileSync('tests/e2e/production-private-record-failover.spec.ts', 'utf8');
+    const roster = readFileSync('src/pages/ClubMembersPage.tsx', 'utf8');
+    expect(roster).toMatch(/<input\s+type="search"[\s\S]*?aria-label="Search Club Members"/);
+    expect(source).toContain("getByRole('searchbox', { name: 'Search Club Members' })");
+    expect(source).not.toContain("getByRole('textbox', { name: 'Search Club Members' })");
     expect(source).not.toMatch(/route\.fulfill|\.send\(|setContent\(/);
     expect(source).toContain('ca_club_member_detail');
     expect(source).toContain('arena_avatar_url');
@@ -340,4 +473,50 @@ it('selects the verified independent fallback in both actual client build inputs
       'https://ca-static.smarter.poker/private-record'
     );
   }
+});
+
+it('uses authorized player identity with a nullable alias and exact cosmetic snapshot', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const profile = { id, alias: null, avatar_url: null, arena_avatar_url: '/avatars/fixture.webp' };
+  expect(snapshotPrivateRecordFixtureProfile([profile], id)).toEqual({
+    id,
+    avatar_url: null,
+    arena_avatar_url: '/avatars/fixture.webp',
+  });
+  expect(
+    readPrivateRecordFixturePlayerNumber({ identity: { user_id: id, player_number: '001042' } }, id)
+  ).toBe('001042');
+  for (const rows of [
+    [],
+    [profile, profile],
+    [{ ...profile, id: 'foreign' }],
+    [{ id }],
+    [{ ...profile, avatar_url: 1 }],
+  ])
+    expect(() => snapshotPrivateRecordFixtureProfile(rows, id)).toThrow();
+  for (const identity of [
+    null,
+    { user_id: 'foreign', player_number: '001042' },
+    { user_id: id },
+    { user_id: id, player_number: '' },
+    { user_id: id, player_number: 1042 },
+    { user_id: id, player_number: '1'.repeat(21) },
+    { user_id: id, player_number: 'Alias Name' },
+  ])
+    expect(() => readPrivateRecordFixturePlayerNumber({ identity }, id)).toThrow();
+});
+it('requires one actual roster row for both the authoritative number and exact actor', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const row = { user_id: id, player_number: '001042', alias: null };
+  expect(assertPrivateRecordFixtureRoster({ items: [row] }, id, '001042')).toBe(row);
+  for (const items of [
+    [],
+    [row, row],
+    [{ ...row, user_id: 'foreign' }],
+    [{ ...row, player_number: '1042' }],
+    [row, { ...row, user_id: 'foreign' }],
+    [row, { ...row, player_number: '1043' }],
+  ])
+    expect(() => assertPrivateRecordFixtureRoster({ items }, id, '001042')).toThrow();
+  expect(() => assertPrivateRecordFixtureRoster({}, id, '001042')).toThrow();
 });

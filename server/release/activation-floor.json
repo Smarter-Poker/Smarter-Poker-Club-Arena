@@ -1,9 +1,9 @@
 {
   "schema": "engine-release-activation-floor/v2-owner-window",
-  "preparationAt": "2026-10-30T21:00:00Z",
-  "activationAt": "2026-10-30T21:00:00Z",
-  "expiresAt": "2026-10-31T01:00:00Z",
+  "preparationAt": "2026-10-31T06:00:00Z",
+  "activationAt": "2026-10-31T06:00:00Z",
+  "expiresAt": "2026-10-31T08:10:00Z",
   "timeZone": "America/Chicago",
-  "ownerWindowId": "2026-10-30-horse-host-retirement-receipt-recovery-next-55",
-  "clientPublicationAt": "2026-10-30T21:00:00Z"
+  "ownerWindowId": "2026-10-31-cashier-original-cohort-safe-census-cutover",
+  "clientPublicationAt": "2026-10-31T06:00:00Z"
 }

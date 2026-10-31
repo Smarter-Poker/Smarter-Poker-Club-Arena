@@ -105,15 +105,18 @@ class NativeLogReader(unittest.TestCase):
         events = [{'Action': 'die', 'timeNano': 1793228940000000000,
                    'Actor': {'Attributes': {'name': 'club-arena-engine', 'exitCode': '137', 'PRIVATE': 'SECRET'}}},
                   {'Action': 'die', 'timeNano': 1, 'Actor': {'Attributes': {'name': 'other'}}}]
-        sources = [json.dumps({'Running': True, 'OOMKilled': False, 'ExitCode': 0,
-                               'StartedAt': '2026-10-28T23:09:14Z', 'Error': 'SECRET'}).encode(),
+        sources = [json.dumps({'Id': 'a'*64, 'State': {'Running': True, 'OOMKilled': False, 'ExitCode': 0,
+                               'StartedAt': '2026-10-28T23:09:14Z', 'Error': 'SECRET'}}).encode(),
                    ('\n'.join(json.dumps(e) for e in events)).encode(),
                    (STAMP+'Container /club-arena-engine unhealthy - Restarting PRIVATE\n').encode(),
                    json.dumps({'MESSAGE': 'Out of memory: Killed process PRIVATE',
-                               '__REALTIME_TIMESTAMP': '1793228940000000'}).encode()]
+                               '__REALTIME_TIMESTAMP': '1793228940000000'}).encode(),
+                   json.dumps({'COREDUMP_TIMESTAMP': '1793228940000000', 'COREDUMP_SIGNAL': '11',
+                               'COREDUMP_COMM': 'node', 'COREDUMP_CGROUP': '/docker/'+('a'*64),
+                               'MESSAGE': 'PRIVATE'}).encode()]
         with patch.object(reader, 'capture', side_effect=sources) as capture:
             result = reader.read_restart_incident(window, b'')
-        self.assertEqual(len(capture.call_args_list), 4)
+        self.assertEqual(len(capture.call_args_list), 5)
         for call in capture.call_args_list:
             command = call.args[0]
             self.assertNotIn('restart', command)
@@ -122,11 +125,59 @@ class NativeLogReader(unittest.TestCase):
         self.assertEqual(result['sources']['events']['records'], [
             {'action': 'die', 'timeNano': 1793228940000000000, 'exitCode': 137}])
         self.assertEqual(result['sources']['kernel']['records'][0]['engineAttribution'], 'unproven')
+        self.assertEqual(result['sources']['coredump']['records'][0]['engineAttribution'], 'current_container_cgroup_match')
+        core_command = capture.call_args_list[-1].args[0]
+        self.assertEqual(core_command[-1], '--output-fields=COREDUMP_TIMESTAMP,COREDUMP_SIGNAL,COREDUMP_COMM,COREDUMP_CGROUP')
+        self.assertNotIn('a'*64, json.dumps(result))
         self.assertNotIn('SECRET', json.dumps(result))
         self.assertNotIn('PRIVATE', json.dumps(result))
         with patch.object(reader, 'capture', side_effect=OSError('SECRET')):
             failed = reader.read_restart_incident(window, b'')
         self.assertTrue(all(s == {'status': 'unavailable'} for s in failed['sources'].values()))
+
+    def test_coredump_metadata_attributes_exact_container_without_exposing_identity(self):
+        window = {'since': '2026-10-31T06:00:00Z', 'until': '2026-10-31T06:15:00Z'}
+        event = {'COREDUMP_TIMESTAMP': '1793427052000000', 'COREDUMP_SIGNAL': '11',
+                 'COREDUMP_COMM': 'node', 'COREDUMP_CGROUP': '/system.slice/docker-'+('a'*64)+'.scope',
+                 'MESSAGE': 'PRIVATE stack pointer', 'COREDUMP_CMDLINE': 'SECRET', 'COREDUMP': 'SECRET'}
+        def read(row, identity='a'*64):
+            return reader.coredump_restart_signs(json.dumps(row).encode(), identity, window)
+        result = read(event)
+        self.assertEqual(result[0]['engineAttribution'], 'current_container_cgroup_match')
+        self.assertEqual(result[0]['signal'], 11)
+        self.assertEqual(result[0]['rootCause'], 'unproven')
+        for secret in ['PRIVATE', 'SECRET', 'a'*64, '/system.slice']:
+            self.assertNotIn(secret, json.dumps(result))
+        self.assertEqual(read(event, 'b'*64)[0]['engineAttribution'], 'different_container')
+        self.assertEqual(read(event, None)[0]['engineAttribution'], 'unproven')
+        for group in [None, '/system.slice/docker-'+('a'*12)+'.scope', '/PRIVATE/'+('a'*64), ['PRIVATE']]:
+            self.assertEqual(read({**event, 'COREDUMP_CGROUP': group})[0]['engineAttribution'], 'unproven')
+        self.assertEqual(read({**event, 'COREDUMP_CGROUP': '/docker/'+('a'*64)})[0]['engineAttribution'], 'current_container_cgroup_match')
+        for patch in [{'COREDUMP_TIMESTAMP': '0'}, {'COREDUMP_TIMESTAMP': []},
+                      {'COREDUMP_SIGNAL': '65'}, {'COREDUMP_SIGNAL': 'PRIVATE'}]:
+            self.assertEqual(read({**event, **patch}), [])
+
+    def test_kernel_native_fault_is_classified_without_exporting_addresses_or_payload(self):
+        events = [
+            {'MESSAGE': 'node[123]: segfault at deadbeef ip 0000 sp 0000 error 4 in node[abcd+1234] PRIVATE', '__REALTIME_TIMESTAMP': '1793427054862585'},
+            {'MESSAGE': 'traps: node[123] general protection fault ip:abcd sp:1234 error:0 in libc.so.6[abc+def] PRIVATE'},
+            {'MESSAGE': 'PRIVATE[123]: segfault at 0 ip 0 sp 0 error 4 in PRIVATE[abc+123]'},
+            {'MESSAGE': 'Out of memory: Killed process PRIVATE'},
+            {'MESSAGE': 'unrelated PRIVATE text'},
+            {'MESSAGE': ['segfault']},
+        ]
+        rows = reader.kernel_restart_signs(('\n'.join(json.dumps(e) for e in events)).encode())
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0], {'timestampUs': '1793427054862585', 'kind': 'host_native_fault_observed',
+                                  'fault': 'segmentation_fault', 'processClass': 'node',
+                                  'moduleClass': 'node', 'engineAttribution': 'unproven'})
+        self.assertEqual(rows[1]['fault'], 'general_protection_fault')
+        self.assertEqual(rows[1]['moduleClass'], 'libc')
+        self.assertEqual(rows[2]['processClass'], 'other')
+        self.assertEqual(rows[2]['moduleClass'], 'unknown')
+        self.assertEqual(rows[3]['kind'], 'host_oom_observed')
+        for secret in ['PRIVATE', 'deadbeef', 'abcd', '1234']:
+            self.assertNotIn(secret, json.dumps(rows))
 
     def test_failure_diagnostics_never_export_exception_or_transport_text(self):
         cases = [(RuntimeError('PRIVATE host token query'), 'refused'),
@@ -177,6 +228,88 @@ class NativeLogReader(unittest.TestCase):
                          'stage': 'remote_admission', 'category': 'refused', 'readOnly': True})
         self.assertNotIn('PRIVATE', result.stderr)
         self.assertNotIn(encoded, result.stderr)
+
+    def test_historical_metrics_admission_preserves_log_age_and_strict_opt_in(self):
+        now = datetime.datetime(2026, 10, 31, 13, tzinfo=datetime.timezone.utc)
+        old = '2026-10-27T09:05:00Z'
+        request = {'scopes': SCOPES, 'windowStart': old,
+                   'leaseIncidentMetrics': True, 'leaseHistoricalMetricsOnly': True}
+        selected = reader.observation_request(request, now)
+        self.assertEqual(selected[1], {'since': old, 'until': '2026-10-27T09:20:00Z'})
+        self.assertTrue(selected[-1])
+        boundary = (now-datetime.timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        self.assertEqual(reader.observation_request({**request, 'windowStart': boundary}, now)[1]['since'], boundary)
+        for invalid in [None, False, 1, 'true', {}, []]:
+            with self.subTest(flag=invalid), self.assertRaises(ValueError):
+                reader.observation_request({**request, 'leaseHistoricalMetricsOnly': invalid}, now)
+        for invalid in [None, False, 1, 'true']:
+            with self.subTest(metrics=invalid), self.assertRaises(ValueError):
+                reader.observation_request({**request, 'leaseIncidentMetrics': invalid}, now)
+        for start in [None, 1, [], '2026-10-27', '2026-10-24T12:59:59Z',
+                      '2026-10-31T12:50:00Z', '2026-10-31T13:01:00Z']:
+            with self.subTest(start=start), self.assertRaises(ValueError):
+                reader.observation_request({**request, 'windowStart': start}, now)
+        for extra in ['muxTiming', 'lightningFoldTiming', 'restartIncident', 'query', 'url']:
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                reader.observation_request({**request, extra: True}, now)
+        ordinary = {k: v for k, v in request.items() if k != 'leaseHistoricalMetricsOnly'}
+        with self.assertRaises(ValueError):
+            reader.observation_request(ordinary, now)
+        for hours in [1, 48]:
+            start = (now-datetime.timedelta(hours=hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
+            self.assertFalse(reader.observation_request({**ordinary, 'windowStart': start}, now)[-1])
+        with self.assertRaises(ValueError):
+            reader.log_window(old, now)
+
+    def test_historical_metrics_invalid_dispatch_and_host_refuse_before_transport(self):
+        import base64
+        old = (datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=4)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        good = {'scopes': SCOPES, 'windowStart': old, 'leaseIncidentMetrics': True,
+                'leaseHistoricalMetricsOnly': True}
+        invalid = [{**good, 'leaseHistoricalMetricsOnly': value} for value in [None, False, 1, 'true']]
+        invalid += [{k: v for k, v in good.items() if k != key}
+                    for key in ['leaseIncidentMetrics', 'leaseHistoricalMetricsOnly']]
+        invalid += [{**good, 'windowStart': None}, {**good, 'query': 'PRIVATE'},
+                    {**good, 'muxTiming': None}]
+        aliases = {'scopes': 'tournament_log_observation', 'windowStart': 'tournament_log_window_start',
+                   'muxTiming': 'mux_subscription_timing'}
+        for request in invalid:
+            with self.subTest(request=request), tempfile.TemporaryDirectory() as name:
+                event = Path(name)/'event.json'
+                payload = {aliases.get(k, k): v for k, v in request.items()}
+                event.write_text(json.dumps({'action': 'audit-production-integrity', 'client_payload': payload}))
+                encoded = base64.b64encode(json.dumps(request).encode()).decode()
+                for args in [['reader'], ['reader', '--remote', encoded]]:
+                    with patch.dict(os.environ, {'GITHUB_EVENT_NAME': 'repository_dispatch', 'GITHUB_EVENT_PATH': str(event)}), patch.object(sys, 'argv', args), patch.object(reader, 'health') as health, patch.object(reader, 'capture') as capture, patch.object(reader.subprocess, 'run') as transport:
+                        with self.assertRaises(ValueError):
+                            reader.main()
+                    health.assert_not_called()
+                    capture.assert_not_called()
+                    transport.assert_not_called()
+
+    def test_historical_metrics_remote_entry_never_reads_logs(self):
+        import base64
+        import io
+        old = (datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=4)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        request = {'scopes': SCOPES, 'windowStart': old,
+                   'leaseIncidentMetrics': True, 'leaseHistoricalMetricsOnly': True}
+        identity = {'version': 'abcdef012345', 'instanceId': 'fixture'}
+        for status in ['no_series', 'partial', 'unavailable']:
+            output = io.StringIO()
+            evidence = {'status': status, 'series': [], 'unknownSamples': 0}
+            encoded = base64.b64encode(json.dumps(request).encode()).decode()
+            with patch.object(reader, 'capture', side_effect=AssertionError('logs forbidden')) as capture, patch.object(reader, 'archived_window', side_effect=AssertionError('archives forbidden')) as archives, patch.object(reader, 'extract_sources', side_effect=AssertionError('log parsing forbidden')) as extract, patch.object(reader, 'health', return_value=identity), patch.object(reader, 'read_lease_metrics', return_value=evidence) as metrics, patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(sys, 'stdout', output):
+                reader.main()
+            capture.assert_not_called()
+            archives.assert_not_called()
+            extract.assert_not_called()
+            metrics.assert_called_once_with({'since': old, 'until': (datetime.datetime.strptime(old, '%Y-%m-%dT%H:%M:%SZ')+datetime.timedelta(minutes=15)).strftime('%Y-%m-%dT%H:%M:%SZ')})
+            result = json.loads(output.getvalue())
+            self.assertEqual(result['leaseIncidentMetrics'], evidence)
+            self.assertTrue(result['leaseHistoricalMetricsOnly'])
+            self.assertEqual(result['logRead'], 'not_requested')
+            self.assertEqual(result['records'], [])
+            self.assertIn('unknown', result['absenceMeans'])
 
     def test_lease_metrics_accepts_and_strips_deployed_target_labels(self):
         config = (ROOT/'infra/monitoring/prometheus.yml').read_text()
@@ -1015,7 +1148,7 @@ class NativeLogReader(unittest.TestCase):
 
     def test_transport_admission_ephemeral_permissions_and_failure_cleanup(self):
         original_run = subprocess.run
-        for fail in ['none', 'transport', 'identity', 'host_identity', 'window', 'mux', 'missing_mux', 'extra_mux', 'lease', 'missing_lease', 'extra_lease']:
+        for fail in ['none', 'transport', 'identity', 'host_identity', 'window', 'mux', 'missing_mux', 'extra_mux', 'lease', 'missing_lease', 'extra_lease', 'historical', 'missing_historical', 'extra_historical', 'historical_logs']:
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as name:
                 directory = Path(name)
                 generated = directory/'fixture_key'
@@ -1025,9 +1158,14 @@ class NativeLogReader(unittest.TestCase):
                 event = directory/'event.json'
                 payload = {'tournament_log_observation': SCOPES}
                 mux = fail in ['mux', 'missing_mux']
-                lease = fail in ['lease', 'missing_lease']
+                historical = fail in ['historical', 'missing_historical', 'historical_logs']
+                lease = fail in ['lease', 'missing_lease'] or historical
                 start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ') if mux or lease else None
-                window = reader.log_window(start)
+                if historical:
+                    start = (datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=4)).strftime('%Y-%m-%dT%H:%M:%SZ')
+                window = reader.completed_window(start, reader.MAX_METRICS_WINDOW_AGE) if historical else reader.log_window(start)
+                if historical:
+                    payload['leaseHistoricalMetricsOnly'] = True
                 if mux:
                     payload.update(tournament_log_window_start=start, mux_subscription_timing=True)
                 if lease:
@@ -1054,12 +1192,18 @@ class NativeLogReader(unittest.TestCase):
                     self.assertEqual(kwargs['input'], (ROOT/'scripts/ci/read-scoped-runtime-errors.py').read_bytes())
                     import base64
                     request = json.loads(base64.b64decode(args[-1].split("'")[1]))
-                    self.assertEqual(request, {'scopes': SCOPES, 'windowStart': start, **({'muxTiming': True} if mux else {}), **({'leaseIncidentMetrics': True} if lease else {})})
+                    self.assertEqual(request, {'scopes': SCOPES, 'windowStart': start, **({'muxTiming': True} if mux else {}), **({'leaseIncidentMetrics': True} if lease else {}), **({'leaseHistoricalMetricsOnly': True} if historical else {})})
                     host = {**identity, 'instanceId': 'other-host'} if fail == 'host_identity' else identity
-                    output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'window': reader.window_description(window), 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
+                    output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'window': reader.observation_window_description(window, historical), 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
                     if fail in ['mux', 'extra_mux']:
                         output['muxSubscriptionTimings'] = reader.extract_mux_timings(self.mux_line(self.mux_record()).encode())
-                    if fail in ['lease', 'extra_lease']:
+                    if historical:
+                        output.update(inputBytes=0, archiveRead={'status': 'not_requested'}, logRead='not_requested')
+                    if fail in ['historical', 'extra_historical', 'historical_logs']:
+                        output['leaseHistoricalMetricsOnly'] = True
+                    if fail == 'historical_logs':
+                        output['logRead'] = 'read'
+                    if fail in ['lease', 'extra_lease'] or historical:
                         output['leaseIncidentMetrics'] = {'status': 'no_series', 'series': []}
                     if fail == 'window':
                         output['window'] = {'since': 'unrequested'}
@@ -1071,7 +1215,7 @@ class NativeLogReader(unittest.TestCase):
                     env = {'GITHUB_EVENT_NAME': 'repository_dispatch', 'GITHUB_EVENT_PATH': str(event), 'RUNNER_TEMP': str(directory), 'HETZNER_HOST': 'fixture.example', 'HETZNER_SSH_PRIVATE_KEY': private, 'HETZNER_HOST_KEY': pin}
                     after = {**identity, 'instanceId': '2-changed'} if fail == 'identity' else identity
                     with patch.dict(os.environ, env), patch.object(sys, 'argv', [str(ROOT/'scripts/ci/read-scoped-runtime-errors.py')]), patch.object(reader, 'health', side_effect=[identity, after]), patch.object(subprocess, 'run', side_effect=transport):
-                        if fail in ['none', 'mux', 'lease']:
+                        if fail in ['none', 'mux', 'lease', 'historical']:
                             reader.main()
                         else:
                             with self.assertRaises(RuntimeError):
@@ -1079,7 +1223,7 @@ class NativeLogReader(unittest.TestCase):
                     self.assertEqual(len(calls), 1)
                     self.assertFalse(list(directory.glob('scoped-engine-read-*')))
                     output = directory/'artifacts/scoped-runtime-errors/observation.json'
-                    self.assertEqual(output.exists(), fail in ['none', 'mux', 'lease'])
+                    self.assertEqual(output.exists(), fail in ['none', 'mux', 'lease', 'historical'])
                     if output.exists():
                         saved = json.loads(output.read_text())
                         self.assertEqual('muxSubscriptionTimings' in saved, mux)

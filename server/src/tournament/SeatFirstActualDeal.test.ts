@@ -190,6 +190,9 @@ function fixture(
         }
         let value: any;
         switch (relation) {
+          case 'tournament_stage_plans':
+            value = null;
+            break;
           case 'tournaments':
             value = structuredClone(row);
             break;

@@ -586,9 +586,10 @@ describe('a bust is ranked by when it happened', () => {
 
     it('refuses a generations read PostgREST cut short', () => {
       expect(ELIM).toContain("count: 'exact'");
-      expect(ELIM).toContain(
-        'if (bustHandsErr || !knockoutCandidateReadIsComplete(bustHands, bustHandsCount))'
-      );
+      expect(ELIM).toContain('if (!bustHistory.complete)');
+      expect(ELIM).toContain('knockoutCandidateReadIsComplete(data, expected)');
+      expect(ELIM).toContain('Math.min(count, pageSize)');
+      expect(ELIM).toContain("if (cursor) query = query.gt('id', cursor)");
       expect(ORDER).toContain('exactCount === rows.length');
     });
 

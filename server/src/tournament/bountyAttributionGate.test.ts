@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { persistedKnockoutEvidence, planBountyRecovery } from './bountyAttributionGate.js';
+import {
+  acceptedZeroStackSettlement,
+  persistedKnockoutEvidence,
+  planBountyRecovery,
+} from './bountyAttributionGate.js';
 
 const busted = '00000000-0000-4000-8000-000000000001';
 const winner = '00000000-0000-4000-8000-000000000002';
@@ -26,6 +30,30 @@ const history = (handNumber = HAND, stack = 0): any => ({
 });
 
 describe('bounty attribution persistence gate', () => {
+  it.each([null, false, '', ' ', '0', [], [0], -1])(
+    'does not turn malformed accepted stack %j into proof of zero',
+    (stack) => {
+      const receipt = settlement();
+      receipt.written[busted] = stack;
+      expect(acceptedZeroStackSettlement(receipt, busted)).toBeNull();
+      expect(persistedKnockoutEvidence(receipt, history(), busted)).toEqual({
+        ready: false,
+        reason: 'settlement_not_zero',
+      });
+    }
+  );
+  it.each([null, false, '', ' ', '0', [], [0], -1])(
+    'requires an independently numeric zero in history, not %j',
+    (stack) => {
+      const hand = history();
+      hand.players[0].stack = stack;
+      expect(persistedKnockoutEvidence(settlement(), hand, busted)).toEqual({
+        ready: false,
+        reason: 'player_not_in_hand',
+      });
+    }
+  );
+
   it('does not authorize elimination while the exact knockout history is still pending', () => {
     expect(persistedKnockoutEvidence(settlement(), null, busted)).toEqual({
       ready: false,

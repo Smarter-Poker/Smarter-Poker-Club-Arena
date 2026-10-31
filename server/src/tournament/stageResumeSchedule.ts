@@ -22,7 +22,7 @@
  * every pass. Readable from the board alone; nothing here writes.
  */
 import { supabase } from '../services/supabase.js';
-import { fetchAllRows } from '../services/supabase/pagination.js';
+import { fetchAllRows, POSTGREST_PAGE } from '../services/supabase/pagination.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
 import { reportError } from '../services/errorReporter.js';
 import { resumeTargetStage, type MultiDayStageRow } from './multiDayStages.js';
@@ -38,6 +38,9 @@ export interface StageResumeDue {
 
 /** setTimeout's ceiling; a later wake re-arms from the next board read. */
 const MAX_TIMER_MS = 2 ** 31 - 1;
+// multi-day-v1 seals at most 14 stages per event (the installed plan CHECK).
+// Bound result rows as well as URL IDs; one 200-ID batch can contain 2800 stages.
+const STAGE_EVENTS_PER_READ = Math.floor(POSTGREST_PAGE / 14);
 export const STAGE_RESUME_BACKOFF_BASE_MS = 30_000;
 export const STAGE_RESUME_BACKOFF_MAX_MS = 15 * 60_000;
 
@@ -173,13 +176,25 @@ export async function readStageResumeBoard(): Promise<StageResumeDue[] | null> {
 
   const stages = await selectInChunks<Record<string, unknown>>(
     board.rows.map((row) => row.id),
-    (batch) =>
-      supabase
+    async (batch) => {
+      const result = await supabase
         .from('tournament_stages')
-        .select('tournament_id, stage_no, scheduled_start_utc, schedule_generation, state')
+        .select('tournament_id, stage_no, scheduled_start_utc, schedule_generation, state', {
+          count: 'exact',
+        })
         .in('tournament_id', batch)
-        .in('state', ['bagged', 'scheduled', 'resuming']),
-    'GameServer.stageResumeStages'
+        .in('state', ['bagged', 'scheduled', 'resuming'])
+        .limit(POSTGREST_PAGE);
+      // Count and rows belong to the same response. If the server cap or plan
+      // contract changes, uncertainty preserves existing wakes instead of
+      // silently deleting the events that fell outside the returned page.
+      if (!result.error && (!Array.isArray(result.data) || result.count !== result.data.length)) {
+        return { data: null, error: { message: 'stage resume rows are incomplete or uncounted' } };
+      }
+      return result;
+    },
+    'GameServer.stageResumeStages',
+    STAGE_EVENTS_PER_READ
   );
   if (!stages.complete) return null;
 

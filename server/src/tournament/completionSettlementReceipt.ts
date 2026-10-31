@@ -94,6 +94,7 @@ export interface VerifiedTournamentCompletionReceipt {
 }
 
 function nonNegativeInteger(value: unknown): number | null {
+  if (typeof value === 'string' && !/^[0-9]+$/.test(value)) return null;
   const parsed = typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN;
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
@@ -311,7 +312,8 @@ export function verifyTournamentCompletionReceipt(
     (!custodyVersion && receipt.fully_settled !== true) ||
     (custodyVersion && !exactCustody) ||
     receipt.status !== 'COMPLETED' ||
-    ![1, 2, 3].includes(Number(receipt.receipt_version)) ||
+    typeof receipt.receipt_version !== 'number' ||
+    ![1, 2, 3].includes(receipt.receipt_version) ||
     tournamentId !== expectedTournamentId ||
     winnerId === null ||
     (expectedWinnerId != null && winnerId !== expectedWinnerId) ||
@@ -475,7 +477,7 @@ export function verifyTournamentCompletionReceipt(
   const attributedUsers = nonNegativeInteger(rake.attributed_users);
   const rakeSettledAt = validTimestamp(rake.settled_at);
   const rakeAttributedAt = validTimestamp(rake.attributed_at);
-  const receiptVersion = Number(receipt.receipt_version);
+  const receiptVersion = receipt.receipt_version;
   const accounting = parseObject(rake.accounting);
   const accountingState = receiptVersion === 1 ? 'legacy' : accounting.status;
   const isDeferred = accountingState === 'banked_accrual_deferred';

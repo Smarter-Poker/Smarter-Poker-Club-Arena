@@ -11,8 +11,9 @@
  * INERT UNLESS BOTH ARE TRUE: a sealed stage plan exists for the tournament,
  * AND `fn_capability_available('tournament.multi_day.single_flight')` answers
  * true. A missing table or function (42P01, 42883, PGRST202, PGRST205) reads
- * as "no multi-day", so this engine is safe to run before the migrations are
- * installed. Any OTHER failure is UNKNOWN and is reported as such - it is
+ * as "no multi-day" during plan/capability discovery, so this engine is safe
+ * before installation. Once both exist, every stage-read failure is UNKNOWN.
+ * Other discovery failures are also UNKNOWN and reported as such - each is
  * never folded into "no plan" (CLAUDE.md 10.86 rule 2).
  *
  * Only a format the seal accepts is ever asked: an MTT that is not a Spin or
@@ -26,6 +27,7 @@
  * entitlement together.
  */
 import { supabase } from '../services/supabase.js';
+import { isRolledBackStatementError } from './settlementRefusal.js';
 import { fetchAllRows } from '../services/supabase/pagination.js';
 import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 
@@ -139,9 +141,9 @@ export async function readMultiDayStagePlan(tournamentId: string): Promise<Multi
       .eq('tournament_id', tournamentId)
       .order('stage_no', { ascending: true });
     if (stages.error) {
-      return isMissingMultiDaySchema(stages.error)
-        ? { kind: 'none' }
-        : { kind: 'unknown', error: stages.error };
+      // The sealed plan and enabled capability already establish this event's
+      // contract. A missing stage relation/cache cannot erase its day boundary.
+      return { kind: 'unknown', error: stages.error };
     }
     if (!Array.isArray(stages.data)) {
       return { kind: 'unknown', error: new Error('stage rows were unreadable') };
@@ -205,8 +207,7 @@ export function resumeTargetStage(stages: readonly MultiDayStageRow[]): MultiDay
  * Four outcomes, each with its own name (CLAUDE.md 10.86 rule 1):
  *   ok       - the RPC answered ok:true (a replay included);
  *   refused  - the RPC answered ok:false with a reason; nothing was written;
- *   failed   - the database raised (it carries a SQLSTATE): rolled back, and
- *              the same call will raise again until its cause is fixed;
+ *   failed   - a statement error proves rollback; its cause needs correction;
  *   unknown  - no readable answer (transport failure, malformed body): the
  *              call may have committed. Only the durable record can say.
  */
@@ -220,8 +221,10 @@ async function callStageRpc(name: string, args: Record<string, unknown>): Promis
   try {
     const { data, error } = await supabase.rpc(name, args);
     if (error) {
-      const code = (error as { code?: unknown }).code;
-      return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) && !code.startsWith('PGRST')
+      // Connection loss and server intervention can race COMMIT. Preserve the
+      // original stage's unknown-outcome recovery instead of holding it as a
+      // known rollback merely because the reply carries five characters.
+      return isRolledBackStatementError(error)
         ? { kind: 'failed', error }
         : { kind: 'unknown', error };
     }

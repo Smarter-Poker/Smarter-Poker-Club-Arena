@@ -145,6 +145,9 @@ describe('a refusal cannot corrupt the global bust order', () => {
       ELIM.indexOf('const bustRank =')
     );
     expect(orderRead).not.toContain(".eq('state', 'pending')");
+    expect(ELIM).toContain('knockoutCandidateReadIsComplete(data, expected)');
+    expect(ELIM).toContain('Math.min(count, pageSize)');
+    expect(ELIM).toContain("if (cursor) query = query.gt('id', cursor)");
     expect(orderRead).toContain('bindLatestKnockoutCandidates(bustHands ?? [])');
     expect(orderRead, 'the earliest-pending rule is gone').not.toMatch(/hand < seen/);
     const orderReadAt = ELIM.indexOf('const bustHandNumbers = new Map<string, number>()');
@@ -152,9 +155,7 @@ describe('a refusal cannot corrupt the global bust order', () => {
     expect(orderReadAt).toBeGreaterThan(0);
     expect(orderReadAt).toBeLessThan(sliceAt);
     const readFailure = ELIM.slice(
-      ELIM.indexOf(
-        'if (bustHandsErr || !knockoutCandidateReadIsComplete(bustHands, bustHandsCount))'
-      ),
+      ELIM.indexOf('if (!bustHistory.complete)'),
       ELIM.indexOf('const bustRank =')
     );
     expect(readFailure.length).toBeGreaterThan(0);

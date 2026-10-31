@@ -32,3 +32,5 @@ test('no installed migration or approved row is rewritten; schema declaration ch
  assert.notEqual(hash({...legacy,policy_export_schema:'smarter-poker.pio-policy.v4'}),hash(legacy));
  for(const signature of ['fn_gto_v31_source_node_valid(jsonb)','fn_gto_v31_build_cell(uuid,jsonb)','fn_gto_v31_heldout_metrics(uuid,text)','fn_gto_v31_seal_build(uuid)'])assert.ok(!sql.includes(signature));
 });
+
+import '../../tests/v31-seal-model-validation.test.mjs';

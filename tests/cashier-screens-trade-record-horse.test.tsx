@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from '../src/lib/supabase';
 import CashierTradePage from '../src/pages/CashierTradePage';
+import { engineChannelClient } from '../src/services/EngineStateClient';
 
 /**
  * A TREASURY-FUNDED SEAT READS EXACTLY LIKE A HUMAN CLUB BANK SEND ON THE
@@ -23,6 +24,9 @@ vi.mock('../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: OWNER_ID }, isHydrating: false }),
 }));
 vi.mock('../src/components/common/Toast', () => ({ useToast: () => toastMocks }));
+// This rendering fixture supplies its authority reads; keep the shared live
+// channel outside the fixture, as in cashier-history-recovery.test.tsx.
+vi.mock('../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: () => {} }));
 
 function mockClub(rows: Array<Record<string, unknown>>) {
   vi.mocked(supabase.from).mockImplementation((table: string) => {
@@ -118,6 +122,7 @@ async function openRecord() {
 }
 
 describe('the Trade record prints a treasury-funded seat as a Club Bank send', () => {
+  afterEach(() => engineChannelClient.disconnect());
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Linux-only isolated qualification of the loaded masked-unit stop boundary."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -29,7 +30,7 @@ def wait_for(predicate, seconds=8):
 
 def main():
     assert os.getuid() == 0
-    run(['systemctl', 'show', '--property=Version'])  # Missing real systemd fails qualification.
+    print('Isolated systemd version: ' + run(['systemctl', 'show', '--property=Version']), flush=True)  # Missing real systemd fails qualification.
     key = '17-1'
     prefix = 'mtt-withdrawal-fixture-' + uuid.uuid4().hex
     template = Path('/etc/systemd/system') / (prefix + '@.service')
@@ -53,7 +54,13 @@ def main():
             # Normalize only the unique fixture template name. All real loaded
             # commands, flags, drop-ins and stop-propagation fields are unchanged.
             def command(args, timeout=5):
-                return run(args, timeout).replace(str(template), str(template.parent / 'club-arena-engine-release-v1@.service'))
+                raw = run(args, timeout)
+                if args[:2] == ['systemctl', 'show'] and '-p' in args:
+                    wanted = {args[i + 1] for i, value in enumerate(args[:-1]) if value == '-p'}
+                    returned = {line.split('=', 1)[0] for line in raw.splitlines() if '=' in line}
+                    safe = lambda values: sorted(value for value in values if value.isascii() and value.isalnum() and len(value) <= 64)
+                    print('Isolated loaded-property keys: ' + json.dumps({'requested': safe(wanted), 'returned': safe(returned), 'missing': safe(wanted - returned), 'extra': safe(returned - wanted)}), flush=True)
+                return raw.replace(str(template), str(template.parent / 'club-arena-engine-release-v1@.service'))
             with patch.object(m, 'PARENT', parent), patch.object(m, 'command', side_effect=command):
                 m.loaded_stop_contract(unit, key)
                 mask.symlink_to('/dev/null'); m.fsync_directory(mask.parent)

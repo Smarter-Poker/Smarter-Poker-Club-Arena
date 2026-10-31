@@ -1854,6 +1854,18 @@
       "issue": "Owner incident cpu-freeze-01a18fed: ongoing 99% CPU, freezing MTTs and explicit immediate safe Diamond closure without refunds. PUBLISHING.md active production outage exception.",
       "refusedBy": [],
       "liveVerdict": "Read back exact six function postimage hashes, postgres owner, SECURITY DEFINER, pinned search_path and unchanged private ACLs; all matched. Closure row closed=true for Diamond only, operation01a18fed-2211-7a62-9416-611dd6e4d96d, requested_at2026-10-31T03:29:15.709103Z. No financial mutations added. Explicit PUBLIC/anon/authenticated revokes preserve original private grants. Installation followed private PostgreSQL boundary, replay, funding-refusal and ACL-drift qualification. Normal protected source integration remains required; no migration replay."
+    },
+    {
+      "version": "20261031034048",
+      "name": "diamond_closure_parks_retained_originals_without_disposing_t",
+      "file": "supabase/migrations/20261031034048_diamond_closure_parks_retained_originals_without_disposing_t.sql",
+      "md5": "fa6f8191cbaab28b12272e894f0ca42b",
+      "appliedToProductionAt": "2026-10-31T03:40:48Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "Owner cpu-freeze-01a18fed urgent full Diamond shutdown before resize; active-outage exception PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "Exact floor-state function postimage hash2b435ae83349dd87fa926caf79ff8236, postgres owner, private postgres/service_role ACL and search_pathpublic,pg_temp verified. Diamond cash_games_enabled=false and tournaments_enabled=false. All98still-running table records return the explicit owner hold. No money, seat, snapshot, permit, continuation or result was deleted or mutated. Private PG17 native test confirms all original state and wallets unchanged. No replay."
     }
   ]
 }

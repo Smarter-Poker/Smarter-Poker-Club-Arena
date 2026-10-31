@@ -101,6 +101,20 @@ ROLLBACK;
 """,label='new-funding-refused-original-receipt-preserved')
   code,_,err=e.sql(db,sql,label='closure-replay-refused',check=False)
   if not code or 'already exists' not in err:raise RuntimeError('migration replay was not refused')
+  park=module(ROOT/'scripts/ci/build-diamond-complete-park.py','diamond_complete_park')
+  parked_sql=park.render();assert parked_sql==(ROOT/park.MIGRATION).read_text()
+  for name in (park.MIGRATION,'scripts/ci/build-diamond-complete-park.py'):
+   e.report['source_sha256'][name]=n.sha(ROOT/name)
+  e.sql(db,"INSERT INTO smarter_private.f06_hand_permits VALUES('50000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000002',1,1,'60000000-0000-0000-0000-000000000001','40000000-0000-0000-0000-000000000001','reserved');INSERT INTO public.hand_state_snapshots VALUES('10000000-0000-0000-0000-000000000001',false);",label='old-originals-remain-intact')
+  preserved="SELECT jsonb_build_object('permits',(SELECT jsonb_agg(to_jsonb(p)) FROM smarter_private.f06_hand_permits p),'snapshots',(SELECT jsonb_agg(to_jsonb(s)) FROM public.hand_state_snapshots s),'wallets',(SELECT jsonb_agg(to_jsonb(p)) FROM public.profiles p),'movements',(SELECT jsonb_agg(to_jsonb(m)) FROM public.poker_diamond_movements m))::text;"
+  before=e.sql(db,preserved,label='park-original-state-before')[1]
+  e.sql(db,'ALTER TABLE public.ca_arena_settings ADD COLUMN cash_games_enabled boolean DEFAULT true;',label='master-cash-switch-fixture')
+  e.sql(db,parked_sql,label='complete-park-install')
+  e.sql(db,"""DO $$DECLARE x jsonb;BEGIN
+   IF public.fn_ca_operator_floor_state('10000000-0000-0000-0000-000000000001')->'hold'='null'::jsonb OR public.fn_ca_operator_floor_state('10000000-0000-0000-0000-000000000002')->'hold'='null'::jsonb OR public.fn_ca_operator_floor_state('10000000-0000-0000-0000-000000000003')->'hold'<>'null'::jsonb THEN RAISE EXCEPTION 'retained_original_not_parked_or_scope_changed';END IF;
+   x:=public.fn_f06_begin_hand('20000000-0000-0000-0000-000000000001','40000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000002',1,'50000000-0000-0000-0000-000000000001',1,'60000000-0000-0000-0000-000000000001');IF x->>'ok'<>'true' THEN RAISE EXCEPTION 'original_receipt_lost';END IF;
+  END$$;""",label='retained-originals-parked-without-disposition')
+  if before!=e.sql(db,preserved,label='park-original-state-after')[1]:raise RuntimeError('parking changed originals or money')
   if any(n.sha(ROOT/x)!=h for x,h in e.report['source_sha256'].items()):raise RuntimeError('qualification source changed')
   e.report.update(status='passed',scope='Exact installed functions, boundary/admission routing and original permit replay. No production writes or financial simulation.')
  except BaseException as err:e.report['failure']=repr(err)

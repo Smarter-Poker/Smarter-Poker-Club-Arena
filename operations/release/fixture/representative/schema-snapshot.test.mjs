@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES } from '../schema-snapshot.mjs';
+import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES, connectionFailureCode } from '../schema-snapshot.mjs';
 import { assertSchemaOnly, composeSchema, dumpObjects, schemaHash } from '../schema-compose.mjs';
 import { schemaCatalogue, schemaCataloguePayload } from '../../native/component-semantic-observations.mjs';
 import { APPLICATION_TRIGGER_WITNESSES } from '../schema-application-hooks.mjs';
@@ -24,6 +24,18 @@ const managed = [...['email()', 'jwt()', 'role()', 'uid()'].map((name) =>
 const ordinary = object('application()', 'public', `CREATE FUNCTION public.application() RETURNS text LANGUAGE sql AS $body$\n-- Name: impostor(); Type: FUNCTION; Schema: auth; Owner: postgres\nSELECT 'kept';\n$body$;`);
 const prefix = '-- PostgreSQL database dump\n\\restrict safeToken\nSET standard_conforming_strings = on;\n';
 const footer = '-- PostgreSQL database dump complete\n\\unrestrict safeToken\n';
+
+test('connection diagnostics retain only fixed codes across causes and aggregate failures', () => {
+  const privateError = Object.assign(Error('postgres://private:secret@private.invalid'), {code:'ENETUNREACH'});
+  assert.equal(connectionFailureCode(new AggregateError([privateError])), 'ENETUNREACH');
+  assert.equal(connectionFailureCode(Error('outer', {cause:privateError})), 'ENETUNREACH');
+  assert.equal(connectionFailureCode({code:'secret-provider-code', message:'secret'}), 'UNKNOWN');
+  assert.equal(connectionFailureCode(new AggregateError([privateError, {code:'ECONNREFUSED'}])), 'MULTIPLE_KNOWN_FAILURES');
+  const cycle = {}; cycle.cause = cycle;
+  assert.equal(connectionFailureCode(cycle), 'UNKNOWN');
+  let deep = privateError; for (let i=0;i<20;i++) deep = {cause:deep};
+  assert.equal(connectionFailureCode(deep), 'UNKNOWN');
+});
 
 test('only the exact canonical manual main caller can capture', () => {
   assert.equal(captureContext(context).source_sha, context.GITHUB_SHA);
@@ -136,6 +148,24 @@ async function workspace(run) {
   const root = await mkdtemp(path.join(process.env.RUNNER_TEMP ?? process.env.TMPDIR,'schema-source-test-'));
   try { await run(root); } finally { await rm(root,{recursive:true,force:true}); }
 }
+
+test('failed actual connection closes once and exposes no raw cause, message or endpoint', async () => workspace(async (root) => {
+  const {Client,calls} = fakeClient();
+  Client.prototype.connect = async () => { throw Object.assign(Error('private-provider-secret'), {code:'28P01'}); };
+  await assert.rejects(captureSchema({output:path.join(root,'isolated-schema-fail'),
+    env:{...context,RUNNER_TEMP:root,DATABASE_URL:fixtureURL},Client}), (error) => {
+      assert.equal(error.message,'ISOLATED_SCHEMA_CAPTURE_FAILED');
+      assert.equal(error.captureStage,'connection');
+      assert.equal(error.connectionFailure,'28P01');
+      assert.equal(error.connectionRoute,'direct');
+      assert.equal(error.cause,undefined);
+      assert.ok(!JSON.stringify(error).includes('private-provider-secret'));
+      assert.ok(!JSON.stringify(error).includes('kuklfnapbkmacvwxktbh'));
+      return true;
+    });
+  assert.deepEqual(calls,['END']);
+  assert.deepEqual(await readdir(root),[]);
+}));
 
 test('one read-only snapshot owns dump/catalogue, closes before publishing exactly six private files', async () => workspace(async (root) => {
   const {Client,calls} = fakeClient();

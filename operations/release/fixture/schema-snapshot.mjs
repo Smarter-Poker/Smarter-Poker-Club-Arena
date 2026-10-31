@@ -15,6 +15,26 @@ const MAX_METADATA_BYTES = 32 * 1024 * 1024;
 const DEADLINE_MS = 45000;
 const safeFailures = new Set(['ISOLATED_SCHEMA_CAPTURE_REFUSED', 'ISOLATED_SCHEMA_DUMP_FAILED',
   'SCHEMA_COMPOSITION_PREIMAGE_REQUIRED', 'SCHEMA_CATALOGUE_BYTES_REQUIRED']);
+const connectionFailures = new Set(['ENETUNREACH', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN',
+  'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'CERT_HAS_EXPIRED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'ERR_TLS_CERT_ALTNAME_INVALID',
+  '28P01', '28000', '53300', '57P03', '08001', '08006']);
+
+// Driver messages, addresses and nested errors stay private. Bounded traversal
+// handles Node's AggregateError connection failures without publishing them.
+export function connectionFailureCode(error) {
+  const pending = [error], seen = new Set(), codes = new Set();
+  for (let inspected = 0; pending.length && inspected < 16; inspected++) {
+    const item = pending.shift();
+    if (!item || typeof item !== 'object' || seen.has(item)) continue;
+    seen.add(item);
+    if (connectionFailures.has(item.code)) codes.add(item.code);
+    if (item.cause) pending.push(item.cause);
+    if (Array.isArray(item.errors)) pending.push(...item.errors.slice(0, 8));
+  }
+  return codes.size === 1 ? [...codes][0] : codes.size > 1 ? 'MULTIPLE_KNOWN_FAILURES' : 'UNKNOWN';
+}
 
 export function captureContext(env) {
   requireCapture(env.GITHUB_REPOSITORY_ID === '1132369872' &&
@@ -220,6 +240,8 @@ export async function captureSchema({ output, env = process.env, Client, dump = 
   } catch (error) {
     const safe = new Error(safeFailures.has(error?.message) ? error.message : 'ISOLATED_SCHEMA_CAPTURE_FAILED');
     safe.captureStage = stage;
+    safe.connectionFailure = stage === 'connection' ? connectionFailureCode(error) : 'NOT_CONNECTION';
+    safe.connectionRoute = config.host === 'db.kuklfnapbkmacvwxktbh.supabase.co' ? 'direct' : 'session-pooler';
     throw safe;
   } finally {
     clearTimeout(timer);
@@ -237,6 +259,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       const stages = new Set(['connection','metadata-preflight','catalogue','schema-only-dump','private-output']);
       console.error(JSON.stringify({scope:'same-job-private-schema-capture',status:'failed',
         stage:stages.has(error?.captureStage) ? error.captureStage : 'context',
+        connection_failure: connectionFailures.has(error?.connectionFailure) ||
+          ['MULTIPLE_KNOWN_FAILURES','UNKNOWN','NOT_CONNECTION'].includes(error?.connectionFailure)
+          ? error.connectionFailure : 'UNKNOWN',
+        connection_route: ['direct','session-pooler'].includes(error?.connectionRoute) ? error.connectionRoute : 'UNKNOWN',
         code:safeFailures.has(error?.message) ? error.message : 'ISOLATED_SCHEMA_CAPTURE_FAILED'}));
       process.exitCode = 1;
     });

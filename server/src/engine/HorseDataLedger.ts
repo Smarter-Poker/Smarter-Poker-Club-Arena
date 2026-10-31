@@ -192,6 +192,20 @@ const PHASE13_TELEMETRY_PREFIXES = [
 ] as const;
 
 export const RETIRED_RECEIPTS: LedgerEntry[] = [
+  ...['horse_mind_mirror_learned', 'horse_mind_mirror_nothing_to_learn'].map((key) =>
+    retiredReceipt(
+      key,
+      'source',
+      'the pooled cross-shard mirror learner stopped on 2026-10-26 when live decisions moved to independent observer memory (2026-10-25-horse-observer-independent-memory); workerRuntime never invokes learnMirroredHand for live hands, so horse_mind_mirror_shed/_unavailable remain the only live mirror receipts',
+      'V50'
+    )
+  ),
+  retiredReceipt(
+    'horse_opponent_memory_snapshot_applied',
+    'source',
+    'the pooled durable-profile snapshot import was removed on 2026-10-26 with independent observer memory; accepted public profiles now enter through the bounded worker cache (2026-10-26-horses-share-accepted-public-opponent-notes) and report under horse_opponent_memory_read_*',
+    'V50'
+  ),
   ...['horse_winner_read_hand', 'horse_winner_read_refused'].map((key) =>
     retiredReceipt(
       key,

@@ -4,7 +4,7 @@
 -- Alerts (source weekly-payout; no owner page kind matches it). Recording is
 -- best effort and never changes the payout outcome, the slot, the receipts or
 -- the owned pause. No rate, ledger, receipt, report, generation or schedule change.
--- @live-proof: md5(pg_get_functiondef('smarter_private.weekly_payout_due()'::regprocedure))='73531859ae1e4261bd9de6e3be3bea13' AND md5(pg_get_functiondef('smarter_private.weekly_payout_prepare_due()'::regprocedure))='a5fb54fb9709f191d065ccae4fc75d15'
+-- @live-proof: md5(pg_get_functiondef('smarter_private.weekly_payout_due()'::regprocedure))='0dbbd9d129658483c1699faf0bf0ef7b' AND md5(pg_get_functiondef('smarter_private.weekly_payout_prepare_due()'::regprocedure))='8b87258de81fd2429ab72dc614ac4982'
 BEGIN;
 SET LOCAL transaction_timeout='15s';
 SET LOCAL statement_timeout='5s';
@@ -70,7 +70,7 @@ BEGIN
    PERFORM public.fn_record_operational_alert('weekly-payout',
     CASE WHEN answer->>'stage'='weekly_payout_financial_refused' THEN 'refused:' ELSE 'deferred:' END||r.run_id::text,
     CASE WHEN answer->>'stage'='weekly_payout_financial_refused' THEN 'WeeklyPayoutSlotRefused' ELSE 'WeeklyPayoutScopeDeferred' END,
-    'firing','warning',jsonb_build_object('period_start',r.period_start,'period_end',r.period_end,'attempt_no',r.attempt_no,
+    'firing','warning',jsonb_build_object('target_task_id','01a09b86-5ba8-7290-8657-1041f13dd3ca','period_start',r.period_start,'period_end',r.period_end,'attempt_no',r.attempt_no,
      'scheduled_for',r.money_starts_at,'reason',answer->>'reason','deferred_scopes',COALESCE(answer->'deferred_scopes','[]'::jsonb),
      'next','owed scopes are prepared for the next owned hourly slot'));
   EXCEPTION WHEN OTHERS THEN NULL;
@@ -117,7 +117,7 @@ BEGIN
   IF jsonb_array_length(smarter_private.weekly_payout_scope_plan(e,n))>0 THEN
    BEGIN
     PERFORM public.fn_record_operational_alert('weekly-payout','unpaid-after-last-slot:'||e::text,'WeeklyPayoutUnpaidAfterLastSlot','firing','critical',
-     jsonb_build_object('period_end',e,'owed',smarter_private.weekly_payout_scope_plan(e,n),'observed_at',n));
+     jsonb_build_object('target_task_id','01a09b86-5ba8-7290-8657-1041f13dd3ca','period_end',e,'owed',smarter_private.weekly_payout_scope_plan(e,n),'observed_at',n));
    EXCEPTION WHEN OTHERS THEN NULL;
    END;
   END IF;
@@ -190,7 +190,7 @@ BEGIN
  IF jsonb_array_length(problems)>0 THEN
   BEGIN
    PERFORM public.fn_record_operational_alert('weekly-payout','deferred-at-preparation:'||r.run_id::text,'WeeklyPayoutScopeDeferred','firing','warning',
-    jsonb_build_object('period_start',r.period_start,'period_end',r.period_end,'attempt_no',attempt,'scheduled_for',slot,'deferred_scopes',problems,
+    jsonb_build_object('target_task_id','01a09b86-5ba8-7290-8657-1041f13dd3ca','period_start',r.period_start,'period_end',r.period_end,'attempt_no',attempt,'scheduled_for',slot,'deferred_scopes',problems,
      'next','still-preparing scopes are prepared for the next owned hourly slot'));
   EXCEPTION WHEN OTHERS THEN NULL;
   END;
@@ -203,8 +203,8 @@ REVOKE ALL ON FUNCTION smarter_private.weekly_payout_prepare_due() FROM PUBLIC,a
 -- native:end
 DO $weekly_payout_alerts_installed$
 BEGIN
- IF md5(pg_get_functiondef('smarter_private.weekly_payout_due()'::regprocedure))IS DISTINCT FROM '73531859ae1e4261bd9de6e3be3bea13'
-  OR md5(pg_get_functiondef('smarter_private.weekly_payout_prepare_due()'::regprocedure))IS DISTINCT FROM 'a5fb54fb9709f191d065ccae4fc75d15'
+ IF md5(pg_get_functiondef('smarter_private.weekly_payout_due()'::regprocedure))IS DISTINCT FROM '0dbbd9d129658483c1699faf0bf0ef7b'
+  OR md5(pg_get_functiondef('smarter_private.weekly_payout_prepare_due()'::regprocedure))IS DISTINCT FROM '8b87258de81fd2429ab72dc614ac4982'
   OR EXISTS(SELECT FROM pg_proc WHERE oid IN('smarter_private.weekly_payout_due()'::regprocedure,'smarter_private.weekly_payout_prepare_due()'::regprocedure)
    AND proacl IS DISTINCT FROM '{postgres=X/postgres}'::aclitem[])
  THEN RAISE EXCEPTION 'weekly_payout_alerts_install_mismatch';END IF;

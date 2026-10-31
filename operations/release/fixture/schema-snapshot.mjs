@@ -275,6 +275,9 @@ export async function verifyNativeSnapshotTransport(config, snapshot, {spawnProc
       // Only this validated original snapshot and constant read-only facts go
       // to stdin. No snapshot, URL, credential or SQL text enters argv/logs.
       child.stdin.end(`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout='5s';
+SET LOCAL lock_timeout='1s';
+SET LOCAL application_name='isolated-schema-readonly-native-transport';
 SET TRANSACTION SNAPSHOT '${snapshot}';
 SET LOCAL search_path=pg_catalog;
 SELECT current_database()='postgres'

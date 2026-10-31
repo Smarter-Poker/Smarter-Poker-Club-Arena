@@ -253,6 +253,15 @@ test('native psql imports the original snapshot over strict fixed transport with
   assert.ok(!JSON.stringify(observed.args).includes('00000003'));assert.ok(!JSON.stringify(observed.args).includes('synthetic-only'));
   assert.match(sql,/BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;/);assert.match(sql,/SET TRANSACTION SNAPSHOT '00000003-0000001B-1';/);
   assert.match(sql,/current_setting\('statement_timeout'\)='5s'/);assert.match(sql,/current_setting\('lock_timeout'\)='1s'/);assert.ok(sql.endsWith('ROLLBACK;\n'));
+  // Startup options are not proof of pooler forwarding. Establish each fact
+  // explicitly before the first snapshot-dependent query, then verify it.
+  const snapshotAt=sql.indexOf('SET TRANSACTION SNAPSHOT');
+  for(const setting of ["SET LOCAL statement_timeout='5s';","SET LOCAL lock_timeout='1s';","SET LOCAL application_name='isolated-schema-readonly-native-transport';"]) {
+    assert.ok(sql.indexOf(setting)>sql.indexOf('BEGIN ISOLATION LEVEL'));
+    assert.ok(sql.indexOf(setting)<snapshotAt);
+    assert.equal(sql.split(setting).length,2);
+  }
+  assert.ok(snapshotAt<sql.indexOf('SELECT current_database()'));
   assert.match(sql,/SET LOCAL search_path=pg_catalog;/);assert.match(sql,/current_setting\('application_name'\)='isolated-schema-readonly-native-transport'/);
   assert.equal(observed.options.env.PGSSLMODE,'verify-full');assert.equal(observed.options.env.PGSSLROOTCERT,path.resolve('scripts/ci/certificates/supabase-prod-ca-2021.crt'));
   assert.ok(!('DATABASE_URL' in observed.options.env));assert.ok(!('PGPASSWORD' in observed.options.env));

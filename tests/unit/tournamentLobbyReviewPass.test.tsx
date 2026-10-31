@@ -22,7 +22,7 @@
  *  13. Previous Hand's empty panel held no focus and trapped no Tab.
  *  14. Previous Hand's foot sat under the phone's home indicator.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -86,10 +86,14 @@ vi.mock('../../src/services/tableWarmup', () => ({
   warmTable: vi.fn(),
   observeLobbyTableWarmups: () => () => {},
 }));
-const channel = vi.hoisted(() => ({ keys: [] as string[] }));
+const channel = vi.hoisted(() => ({
+  keys: [] as string[],
+  handlers: [] as Array<(payload: unknown) => void>,
+}));
 vi.mock('../../src/core/MasterBus', () => {
   const fake = {
-    on() {
+    on(_type: string, _filter: unknown, handler: (payload: unknown) => void) {
+      channel.handlers.push(handler);
       return fake;
     },
     subscribe() {
@@ -133,6 +137,8 @@ import { HandDetailModal } from '../../src/components/table/HandDetailModal';
 afterEach(() => {
   cleanup();
   channel.keys.length = 0;
+  channel.handlers.length = 0;
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -383,9 +389,11 @@ describe('6. a table is named by what differs from row to row', () => {
     expect(shortTableName(null, EVENT)).toBe('');
   });
 
-  it('Ranking prints the short name under a seated player', () => {
+  it('Ranking prints the table beside a seated player', () => {
     const { container } = render(<RankingTab {...props()} />);
-    const subs = Array.from(container.querySelectorAll('.rk-sub')).map((el) => el.textContent);
+    const subs = Array.from(container.querySelectorAll('.rk-table-number')).map(
+      (el) => el.textContent
+    );
     expect(subs).toContain('Table 1');
     expect(subs).toContain('Table 2');
     expect(subs.join(' ')).not.toContain(EVENT);
@@ -579,6 +587,67 @@ describe('a pending Watch confirmation uses the current event and seat', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Watch Player4,/ }));
     view.rerender(<RankingTab {...initial} tournament={{ ...initial.tournament, id: 't-2' }} />);
     expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onWatchPlayer).not.toHaveBeenCalled();
+  });
+});
+
+describe('MTT table identity and current observe destination', () => {
+  it('labels every seated row and makes the observe gesture visible', () => {
+    const { container } = render(<RankingTab {...props()} />);
+    expect(container.querySelectorAll('.rk-table-number')).toHaveLength(6);
+    expect(screen.getAllByText('Tap To Observe Table')).toHaveLength(6);
+  });
+
+  it('observes the latest realtime assignment even before parent props catch up', () => {
+    vi.useFakeTimers();
+    const onWatchPlayer = vi.fn();
+    render(<RankingTab {...props({ onWatchPlayer })} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Watch Player4,/ }));
+    act(() => {
+      for (const handler of channel.handlers)
+        handler({ eventType: 'UPDATE', new: { user_id: 'u4', table_id: 'tbl-2' } });
+      vi.advanceTimersByTime(250);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
+    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2');
+  });
+
+  it('uses a move received before the display batch flushes', () => {
+    vi.useFakeTimers();
+    const onWatchPlayer = vi.fn();
+    render(<RankingTab {...props({ onWatchPlayer })} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Watch Player4,/ }));
+    act(() => {
+      for (const handler of channel.handlers)
+        handler({ eventType: 'UPDATE', new: { user_id: 'u4', table_id: 'tbl-2' } });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
+    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2');
+  });
+
+  it('does not offer an observe link for a closed table or an unseated player', () => {
+    render(
+      <RankingTab
+        {...props({
+          entries: [entry(0), entry(1, { table_id: null })],
+          tables: TABLES.map((t) => ({ ...t, status: 'closed' })),
+        })}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /^Watch Player/ })).toBeNull();
+    expect(screen.getByText('Not Seated Yet')).toBeInTheDocument();
+  });
+
+  it('refuses a table that closes while the confirmation is open', () => {
+    const onWatchPlayer = vi.fn();
+    const { rerender } = render(<RankingTab {...props({ onWatchPlayer })} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Watch Player4,/ }));
+    rerender(
+      <RankingTab
+        {...props({ onWatchPlayer, tables: TABLES.map((t) => ({ ...t, status: 'closed' })) })}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
     expect(onWatchPlayer).not.toHaveBeenCalled();
   });
 });

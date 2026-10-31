@@ -69,11 +69,27 @@ describe('the build typechecks where it ships', () => {
     expect(publisher).not.toMatch(/run:\s*npm run build:ci/);
   });
 
-  it("CI's two throwaway builds use build:ci", () => {
+  it("CI's production check and exclusive harness paths use build:ci", () => {
     const ci = read('.github/workflows/ci.yml');
     const plain = ci.match(/run:\s*npm run build\s*$/gm) ?? [];
     const ciBuilds = ci.match(/run:\s*npm run build:ci\s*$/gm) ?? [];
-    expect(ciBuilds).toHaveLength(2);
+    expect(ciBuilds).toHaveLength(3);
+    const jobs = parse(ci).jobs;
+    const buildOwners = Object.entries(jobs)
+      .filter(([, job]) =>
+        (job as { steps?: { run?: string }[] }).steps?.some(
+          (step) => step.run === 'npm run build:ci'
+        )
+      )
+      .map(([name]) => name);
+    expect(buildOwners).toEqual(['build', 'css-beats-build', 'css-beats-e2e']);
+    expect(jobs['css-beats-build'].if).toBe(
+      `${jobs['css-beats-e2e'].if} && needs.changes.outputs.server == 'true'`
+    );
+    expect(
+      jobs['css-beats-e2e'].steps.find((step: { run?: string }) => step.run === 'npm run build:ci')
+        .if
+    ).toBe("needs.changes.outputs.server != 'true'");
     expect(plain).toHaveLength(0);
   });
 

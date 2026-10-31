@@ -77,8 +77,21 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
     );
   });
 
+  it('runs the unchanged Daily Mission broadcast regression through native PostgreSQL', () => {
+    expect(wrapper.split('scripts/dev/test-daily-revision-noop-postgres.sh')).toHaveLength(2);
+    const native = read('scripts/dev/test-daily-revision-noop-postgres.sh');
+    expect(native).toContain('Identical mission row produced revision work');
+    expect(native).toContain('DAILY_REVISION_NOOP_PREIMAGE_CHANGED');
+    expect(native).toContain(
+      'daily-mission-outbox-lock/bump_daily_challenge_dashboard_revision.sql'
+    );
+    expect(native).toContain('quiet.sql');
+    expect(native).toContain('changed.sql');
+  });
+
   it.each([
     'scripts/ci/test-data-console-postgres-contracts.sh',
+    'scripts/dev/test-daily-revision-noop-postgres.sh',
     'scripts/dev/test-player-throwable-favorites-postgres.sh',
     'tests/fixtures/player-throwable-favorites/assertions.sql',
     'tests/fixtures/player-throwable-favorites/bootstrap.sql',

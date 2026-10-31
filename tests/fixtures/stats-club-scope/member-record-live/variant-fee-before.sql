@@ -1,14 +1,26 @@
--- The earlier money fixture uses current_date for its six cash hands. Pin
--- only those existing fixture hands inside these fixed UTC receipt bounds;
--- otherwise UTC midnight moves cash rake outside October 26..29.
-DO $$ DECLARE changed integer; BEGIN
- UPDATE public.ca_hand_facts SET played_at='2026-10-29 03:00:00Z'::timestamptz
- WHERE club_id='60000000-0000-0000-0000-000000000001'
+-- Earlier money cases deliberately use relative dates. This independent fee
+-- case uses fixed receipt boundaries, so anchor only its six reused cash facts
+-- before capturing the baseline. No production clock or reader is changed.
+DO $$ DECLARE affected integer;
+BEGIN
+ IF (SELECT count(*)=6 AND count(*) FILTER (WHERE game_variant='nlh')=3
+       AND count(*) FILTER (WHERE game_variant='plo4')=3
+       AND sum(rake_paid)=6 AND sum(net)=15
+     FROM ca_hand_facts
+     WHERE hand_id IN (SELECT ('60000000-0000-0000-0002-'||lpad(n::text,12,'0'))::uuid FROM generate_series(1,6) n)
+       AND club_id='60000000-0000-0000-0000-000000000001'
+       AND user_id='60000000-0000-0000-0000-000000000002'
+       AND table_id='60000000-0000-0000-0000-000000000005'
+       AND tournament_id IS NULL) IS NOT TRUE THEN
+   RAISE EXCEPTION 'Variant fixed cash cohort changed'; END IF;
+ UPDATE ca_hand_facts SET played_at='2026-10-29 03:00Z'::timestamptz
+ WHERE hand_id IN (SELECT ('60000000-0000-0000-0002-'||lpad(n::text,12,'0'))::uuid FROM generate_series(1,6) n)
+   AND club_id='60000000-0000-0000-0000-000000000001'
    AND user_id='60000000-0000-0000-0000-000000000002'
-   AND hand_id::text LIKE '60000000-0000-0000-0002-%'
+   AND table_id='60000000-0000-0000-0000-000000000005'
    AND tournament_id IS NULL;
- GET DIAGNOSTICS changed=ROW_COUNT;
- IF changed<>6 THEN RAISE EXCEPTION 'Variant cash fixture must contain exactly six hands'; END IF;
+ GET DIAGNOSTICS affected=ROW_COUNT;
+ IF affected<>6 THEN RAISE EXCEPTION 'Variant cash date anchor changed % rows',affected; END IF;
 END $$;
 CREATE TABLE accounting_tournament_fee_sources(club_id uuid,player_id uuid,tournament_id uuid,charged_at timestamptz,rake_credit numeric);
 CREATE INDEX ON accounting_tournament_fee_sources(club_id,player_id);

@@ -56,22 +56,15 @@
  *     talking over a hand. It is not resumed on return; the player presses
  *     play, like any paused player.
  *
- *  7. IDLE UNLOAD. A frame left behind other tabs for HUB_FRAME_IDLE_SUSPEND_MS
- *     is unloaded to about:blank (its page remembered) and reloaded the moment
- *     its tab is opened again - each hub tab is a whole running app with its
- *     own realtime socket, and the felt needs that memory more than a page
- *     nobody has looked at for fifteen minutes does.
+ *  7. Pages remain mounted until the player closes their tab. Background
+ *     inactivity never unloads the page or discards its in-page state.
  *
- * `src` is read ONCE, at mount. The container updates `hubUrl` as the frame
- * moves, and feeding that back into the `src` attribute would reload the page
- * the player is already on, every 250ms. The idle unload/reload above sets
- * `iframe.src` imperatively for exactly that reason.
+ * `src` is read once at mount so location updates do not reload the page.
  */
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import './HubFrame.css';
 import {
-  HUB_FRAME_IDLE_SUSPEND_MS,
   HUB_FRAME_POLL_MS,
   HUB_FRAME_STALL_MS,
   clubArenaPathFromHubUrl,
@@ -101,8 +94,6 @@ export interface HubFrameProps {
   onLocationChange: (tabId: string, path: string) => void;
   /** The frame is heading into Club Arena; `caPath` is relative to the SPA basename. */
   onClubArenaTarget: (tabId: string, caPath: string) => void;
-  /** Test seam: how long an inactive frame waits before unloading. */
-  idleSuspendMs?: number;
 }
 
 /** Pause everything playing in a document. Exported for the unit test. */
@@ -130,19 +121,17 @@ export function HubFrame({
   keys,
   onLocationChange,
   onClubArenaTarget,
-  idleSuspendMs = HUB_FRAME_IDLE_SUSPEND_MS,
 }: HubFrameProps) {
   const ref = useRef<HTMLIFrameElement>(null);
   const initialSrc = useRef(src).current;
   /* Latest callbacks, so the one-time effect below never calls a stale one. */
   const cbRef = useRef({ onLocationChange, onClubArenaTarget });
   cbRef.current = { onLocationChange, onClubArenaTarget };
-  /* The last same-origin page the frame was on: what an idle unload restores. */
+  /* The last same-origin page the frame was on: what an explicit Reload restores. */
   const lastPathRef = useRef(src);
-  const suspendedRef = useRef(false);
   /* A frame does not LOAD until its tab has been on screen once. Tabs restored
      after a reload arrive inactive, and three Next.js apps booting behind a
-     live hand on a phone is exactly the cost the idle unload exists to avoid.
+     live hand on a phone wastes resources before a page is requested.
      Latches true on first activation and never resets. */
   const [armed, setArmed] = useState(active);
   if (active && !armed) setArmed(true);
@@ -289,19 +278,12 @@ export function HubFrame({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* 6 + 7: what happens to a frame the player is not looking at. */
+  /* Background media pauses without unloading the page. */
   useEffect(() => {
     const iframe = ref.current;
     if (!iframe) return;
 
-    if (active) {
-      if (suspendedRef.current) {
-        suspendedRef.current = false;
-        setLoading(true);
-        iframe.src = lastPathRef.current;
-      }
-      return;
-    }
+    if (active) return;
     // Never loaded: nothing to quiet and nothing to unload.
     if (!armed) return;
 
@@ -311,14 +293,7 @@ export function HubFrame({
     } catch {
       /* cross-origin frame: nothing we can quiet */
     }
-
-    const timer = window.setTimeout(() => {
-      if (suspendedRef.current) return;
-      suspendedRef.current = true;
-      iframe.src = 'about:blank';
-    }, idleSuspendMs);
-    return () => window.clearTimeout(timer);
-  }, [active, armed, idleSuspendMs]);
+  }, [active, armed]);
 
   /* The stall clock: armed, still loading, on screen. */
   useEffect(() => {

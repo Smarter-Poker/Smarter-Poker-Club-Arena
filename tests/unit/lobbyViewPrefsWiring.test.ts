@@ -96,3 +96,11 @@ describe('every control that changes the view goes through the one door', () => 
     );
   });
 });
+
+describe('returning to the lobby restores the visible game family', () => {
+  it('opens Cash Games or Tournaments from the saved tab during hydration', () => {
+    expect(HYDRATOR).toContain(
+      "setGameSection(TOURNAMENT_TYPES.includes(shown) ? 'tournaments' : 'cash')"
+    );
+  });
+});

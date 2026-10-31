@@ -137,7 +137,17 @@ test.describe('the mobile lobby chrome on production', () => {
       if (ownerId && documentOwner !== ownerId) throw new Error('Lobby preference account changed');
       ownerId = documentOwner;
       const saved = await proof.ready(ownerId);
-      await openLobbyGameSection(document, saved ? lobbyTabLabel(saved) : 'ALL');
+      if (saved) {
+        const section = ['MTT', 'SNG', 'SPIN', 'SATELLITE'].includes(saved)
+          ? 'Tournaments'
+          : 'Cash Games';
+        await expect(document.getByRole('button', { name: section, exact: true })).toHaveAttribute(
+          'aria-expanded',
+          'true'
+        );
+      } else {
+        await openLobbyGameSection(document, 'ALL');
+      }
       if (saved) {
         await expect(
           document
@@ -150,7 +160,7 @@ test.describe('the mobile lobby chrome on production', () => {
     const certificateOwner = await openPreferenceLobby(page, 'original-open');
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
-    const target = original === 'PLO' ? 'NLH' : 'PLO';
+    const target = ['MTT', 'SPINS', 'HEADS UP'].includes(original) ? 'PLO' : 'MTT';
     let returningPage: Page | undefined;
     let returningReady = false;
     const failures: unknown[] = [];

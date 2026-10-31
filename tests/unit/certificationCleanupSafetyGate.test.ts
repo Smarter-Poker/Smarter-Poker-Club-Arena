@@ -16,7 +16,29 @@ describe('production fixtures require installed scoped cleanup', () => {
     (name) => {
       const job = workflow.jobs[name];
       expect([job.needs].flat()).toContain('certification-cleanup-safety');
-      expect(job.if || '').not.toMatch(/always\(|!cancelled\(|failure\(/);
+      const condition = job.if || '';
+      if (/\b(?:always|cancelled|failure|success)\s*\(/.test(condition)) {
+        // An explicit status function removes Actions' implicit success().
+        // Such a lane must itself refuse unsafe cleanup and cancellation,
+        // including when another ancestor intentionally did not run.
+        expect(condition).toContain("needs.certification-cleanup-safety.result == 'success'");
+        expect(condition).toContain('!cancelled()');
+        const admits = (cleanup: string, cancelled: boolean) => {
+          const expression = condition
+            .replaceAll('always()', 'true')
+            .replaceAll('cancelled()', JSON.stringify(cancelled))
+            .replaceAll('needs.certification-cleanup-safety.result', JSON.stringify(cleanup))
+            .replaceAll('github.event_name', JSON.stringify('repository_dispatch'))
+            .replaceAll('github.event.action', JSON.stringify('run-stats-pagination-proof'));
+          return Function(`"use strict"; return (${expression});`)();
+        };
+        for (const cleanup of ['failure', 'skipped', 'cancelled', 'unknown'])
+          expect(admits(cleanup, false), `${name}: ${cleanup} cleanup`).toBe(false);
+        expect(admits('success', true), `${name}: cancelled run`).toBe(false);
+      } else {
+        // Unchanged lanes retain the dependency's default status protection.
+        expect(condition).not.toMatch(/always\(|!cancelled\(|failure\(/);
+      }
     }
   );
   it('keeps dependency failure visible in the terminal verdict', () => {

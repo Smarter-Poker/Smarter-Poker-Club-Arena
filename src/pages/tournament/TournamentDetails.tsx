@@ -1,3 +1,4 @@
+import type { FollowTournamentPlayer } from '../../utils/followTournamentPlayer';
 import { useSatelliteAwards } from '../../components/tournament/details/useSatelliteAwards';
 import { satelliteStartsWhenFull } from '../../utils/satelliteQualification';
 import { readTournamentStandings } from '../../services/readTournamentStandings';
@@ -1423,12 +1424,12 @@ export default function TournamentDetails({
    * new screen's tab is labelled before the engine reports its own name.
    */
   const watchTable = useCallback(
-    (tableId: string, tableName?: string) => {
-      if (onClose && currentTableId && tableId === currentTableId) {
+    (tableId: string, tableName?: string, followPlayer?: FollowTournamentPlayer) => {
+      if (!followPlayer && onClose && currentTableId && tableId === currentTableId) {
         onClose();
         return;
       }
-      if (!openTableAsObserver(navigate, { tableId, tableName })) {
+      if (!openTableAsObserver(navigate, { tableId, tableName, followPlayer })) {
         toast.error('That Table Is Not Available To Watch');
         return;
       }

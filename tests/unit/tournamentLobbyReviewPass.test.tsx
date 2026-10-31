@@ -310,7 +310,7 @@ describe('3 and 4. a watch made inside the popup puts the popup away', () => {
 
   it('closes instead of asking for the table the popup is already covering', () => {
     expect(watch).toMatch(
-      /if \(onClose && currentTableId && tableId === currentTableId\) \{\s*onClose\(\);\s*return;/
+      /if \(!followPlayer && onClose && currentTableId && tableId === currentTableId\) \{\s*onClose\(\);\s*return;/
     );
   });
 
@@ -349,7 +349,11 @@ describe('3 and 4. a watch made inside the popup puts the popup away', () => {
     render(<RankingTab {...props({ onWatchPlayer })} />);
     fireEvent.click(screen.getByRole('button', { name: /^Watch Player4,/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
-    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-1', 'Table 1');
+    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-1', 'Table 1', {
+      tournamentId: props().tournament.id,
+      userId: 'u4',
+      username: 'Player4',
+    });
   });
 });
 
@@ -561,7 +565,11 @@ describe('a pending Watch confirmation uses the current event and seat', () => {
       />
     );
     fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
-    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2');
+    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2', {
+      tournamentId: props().tournament.id,
+      userId: 'u4',
+      username: 'Player4',
+    });
   });
   it('does not open an eliminated player’s former table', () => {
     const onWatchPlayer = vi.fn();
@@ -609,7 +617,11 @@ describe('MTT table identity and current observe destination', () => {
       vi.advanceTimersByTime(250);
     });
     fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
-    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2');
+    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2', {
+      tournamentId: props().tournament.id,
+      userId: 'u4',
+      username: 'Player4',
+    });
   });
 
   it('uses a move received before the display batch flushes', () => {
@@ -622,7 +634,11 @@ describe('MTT table identity and current observe destination', () => {
         handler({ eventType: 'UPDATE', new: { user_id: 'u4', table_id: 'tbl-2' } });
     });
     fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
-    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2');
+    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2', {
+      tournamentId: props().tournament.id,
+      userId: 'u4',
+      username: 'Player4',
+    });
   });
 
   it('does not offer an observe link for a closed table or an unseated player', () => {

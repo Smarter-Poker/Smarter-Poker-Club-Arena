@@ -283,7 +283,13 @@ export default function EntriesTab({
                 className={`tl-row tl-row--interactive et-row et-row--watch${
                   isHero ? ' tl-row--hero' : ''
                 }`}
-                onClick={() => onWatchPlayer?.(entry.table_id as string)}
+                onClick={() =>
+                  onWatchPlayer?.(entry.table_id as string, undefined, {
+                    tournamentId: tournament.id,
+                    userId: entry.user_id,
+                    username: entry.username,
+                  })
+                }
                 aria-label={isHero ? 'Go To Your Table' : `Watch ${entry.username} At Their Table`}
               >
                 {body}

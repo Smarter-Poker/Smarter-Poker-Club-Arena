@@ -55,6 +55,19 @@ describe('observer entry preparation', () => {
     expect(calls.warm).toHaveBeenCalledWith('actual-table');
     expect(navigate).toHaveBeenCalledWith('/table/actual-table');
   });
+  it('passes the player follow identity through both warm and cold entry routes', async () => {
+    const { openTableAsObserver } = await import('../src/utils/observeTable');
+    const navigate = vi.fn();
+    const followPlayer = { tournamentId: 'event', userId: 'player', username: 'Player Four' };
+    openTableAsObserver(navigate, { tableId: 'actual-table', followPlayer });
+    expect(calls.emit).toHaveBeenCalledWith(
+      'OPEN_OBSERVE_TABLE',
+      expect.objectContaining({ followPlayer })
+    );
+    const params = new URL(navigate.mock.calls[0][0], 'https://example.test').searchParams;
+    expect(params.get('followPlayer')).toBe('player');
+    expect(params.get('followTournament')).toBe('event');
+  });
   it('does not warm or navigate an absent table', async () => {
     const { openTableAsObserver, requestObserveTable } = await import('../src/utils/observeTable');
     const navigate = vi.fn();

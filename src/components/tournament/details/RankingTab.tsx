@@ -447,7 +447,7 @@ function WatchModal({ entry, tableName, bigBlind, onCancel, onConfirm }: WatchMo
         </div>
 
         <p className="rk-modal__note">
-          This Opens A New Screen. Every Table You Already Have Open Keeps Playing.
+          Continue Watching When This Player Moves Tables. Every Table You Are Playing Stays Open.
         </p>
 
         <div className="rk-modal__actions">
@@ -938,8 +938,12 @@ export default function RankingTab({
     /* Through the page's one door, not a navigate of this tab's own: the page
        knows whether it is the in-game popup, and there a watch has to put the
        popup away or the table it opens stays hidden behind it. */
-    onWatchPlayer(entry.table_id, tableNameById.get(entry.table_id) || entry.username);
-  }, [picked, merged, onWatchPlayer, tableNameById, openTableIds, toast]);
+    onWatchPlayer(entry.table_id, tableNameById.get(entry.table_id) || entry.username, {
+      tournamentId,
+      userId: entry.user_id,
+      username: entry.username,
+    });
+  }, [picked, merged, onWatchPlayer, tableNameById, openTableIds, toast, tournamentId]);
 
   const pickedCurrent = picked
     ? merged.find((entry) => entry.user_id === picked.user_id)

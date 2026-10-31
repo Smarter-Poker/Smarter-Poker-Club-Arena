@@ -1,3 +1,6 @@
+vi.mock('../../src/services/ThrowableFavoritesService', () => ({
+  getThrowableFavorites: vi.fn().mockResolvedValue([{ id: 'beer', name: 'Beer' }]),
+}));
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({

@@ -1,0 +1,8 @@
+[
+  {
+    "proname": "fn_ca_cashier_ticket_target_in_club",
+    "args": "p_tournament_id uuid, p_club_id uuid",
+    "source_md5": "bb720387f5639d8f9439c988b1beb56b",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_cashier_ticket_target_in_club(p_tournament_id uuid, p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  /* The scope the ticket finder already uses: the club's own event, or an\n     event of a union this club belongs to (the host club of a union event is\n     in its own union without a union_clubs row). */\n  SELECT COALESCE((\n    SELECT (t.union_id IS NULL AND t.club_id = p_club_id)\n        OR (t.union_id IS NOT NULL\n            AND (t.club_id = p_club_id OR EXISTS (\n                  SELECT 1 FROM public.union_clubs uc\n                   WHERE uc.union_id = t.union_id AND uc.club_id = p_club_id)))\n      FROM public.tournaments t WHERE t.id = p_tournament_id), false);\n$function$\n"
+  }
+]

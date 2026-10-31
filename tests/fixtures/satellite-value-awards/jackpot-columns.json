@@ -1,0 +1,72 @@
+[
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "id",
+    "type": "bigint"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "pool_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "bank",
+    "type": "text"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "kind",
+    "type": "text"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "amount",
+    "type": "bigint"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "table_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "hand_number",
+    "type": "bigint"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "payer_user_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "recipient_user_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "recipient_role",
+    "type": "text"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "wallet_journal_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "ref",
+    "type": "text"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "note",
+    "type": "text"
+  },
+  {
+    "table_name": "poker_diamond_jackpot_ledger",
+    "column_name": "created_at",
+    "type": "timestamp with time zone"
+  }
+]

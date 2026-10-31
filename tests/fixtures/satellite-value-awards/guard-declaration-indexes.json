@@ -1,0 +1,5 @@
+[
+  {
+    "definition": "CREATE UNIQUE INDEX ca_guard_def_history_proname_hash_idx ON public.ca_guard_def_history USING btree (proname, def_hash)"
+  }
+]

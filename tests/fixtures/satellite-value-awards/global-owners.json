@@ -1,0 +1,14 @@
+[
+  {
+    "proname": "fn_ca_arena_diamonds",
+    "args": "",
+    "source_md5": "0af17301960fd0ebb5c2c4be3f184361",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_arena_diamonds()\n RETURNS numeric\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT (SELECT COALESCE(sum(balance),0)::numeric FROM public.poker_diamond_custody)\n   +(SELECT COALESCE(sum(pending_diamonds),0)::numeric FROM public.diamond_spin_days WHERE status='open')\n   +(SELECT COALESCE(sum(amount),0)::numeric FROM public.ca_diamond_rake_accrual WHERE swept_at IS NULL)\n   +public.fn_poker_diamond_jackpot_diamonds();\n$function$\n"
+  },
+  {
+    "proname": "fn_poker_diamond_custody_balance",
+    "args": "",
+    "source_md5": "bb6b6b7266a06d149e4dac5bc34a4ed7",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_custody_balance()\n RETURNS jsonb\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT jsonb_build_object('available',p.diamonds,'in_play',\n (SELECT COALESCE(sum(c.balance),0) FROM public.poker_diamond_custody c WHERE c.user_id=p.id))\n FROM public.profiles p WHERE p.id=auth.uid();\n$function$\n"
+  }
+]

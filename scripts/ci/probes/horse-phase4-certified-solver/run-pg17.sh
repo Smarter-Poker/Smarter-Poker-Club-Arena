@@ -23,6 +23,7 @@ else
 fi
 # New admission wrapper only: controlled existing-helper fixtures, real SECDEF/ACLs.
 PG17_BIN="$PG_BIN" python3 -B "$HERE/test-heldout-physics-wrapper.py"
+PG17_BIN="$PG_BIN" python3 -B "$HERE/test-preparation-key-page.py"
 # The hosted parity reader admits only this runner's own private fixture socket.
 # Local runs retain their explicit external-SSD TMPDIR.
 WORK_ROOT="${TMPDIR:-/tmp}"

@@ -16,6 +16,41 @@ const jobs = [
   ['native-smoke', native.jobs['native-smoke'], 'ubuntu-24.04'],
 ] as const;
 
+const frameCoverSteps = [
+  {
+    name: 'Weekly cash boundaries keep original rows and use the frame cover',
+    if: 'matrix.shard == 2',
+    env: { PG_BIN: '/usr/lib/postgresql/17/bin' },
+    run: 'python3 -B scripts/ci/test-weekly-pending-funding-index-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --candidate supabase/migrations/20261031081522_cover_original_cash_boundary_transaction_frames.sql --output "${{ runner.temp }}/weekly-pending-funding-index.json"',
+  },
+  {
+    name: 'Retain weekly pending funding index qualification',
+    if: 'always() && matrix.shard == 2',
+    uses: 'actions/upload-artifact@v4',
+    with: {
+      name: 'weekly-pending-funding-index-${{ github.run_id }}-${{ github.run_attempt }}',
+      path: '${{ runner.temp }}/weekly-pending-funding-index.json',
+      'if-no-files-found': 'error',
+    },
+  },
+];
+
+const normalizeFrameCoverAddition = (job: { steps: Array<Record<string, unknown>> }) => {
+  const start = job.steps.findIndex((step) => step.name === frameCoverSteps[0].name);
+  for (const step of frameCoverSteps) {
+    expect(job.steps.filter((actual) => actual.name === step.name)).toHaveLength(1);
+  }
+  expect(job.steps[start - 1]?.name).toBe(
+    'Weekly linked proofs preserve original windows and paid books'
+  );
+  expect(job.steps.slice(start, start + 2)).toStrictEqual(frameCoverSteps);
+  expect(job.steps[start + 2]?.name).toBe(
+    'Cash horses use bankroll eligibility and table closure preserves seats'
+  );
+  // Strip only the exact, separately enforced addition; retain every prior pin.
+  job.steps.splice(start, 2);
+};
+
 describe('required CI uses a closed standard hosted capacity recovery', () => {
   for (const [name, job, standard] of jobs) {
     it(name + ' permits only its fixed standard hosted OS', () => {
@@ -26,6 +61,7 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
+    normalizeFrameCoverAddition(normalized.jobs.accounting_postgres);
     const formerClientRoute = '$' + '{{ ' + trusted + " && 'ca-linux-4core' || 'ubuntu-latest' }}";
     const intendedRoutes = {
       typecheck: 'ubuntu-latest',
@@ -96,6 +132,33 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
         Object.entries(normalized.jobs).map(([name, job]) => [name, fingerprint(job)])
       )
     ).toEqual(expectedJobs);
+  });
+  it('rejects missing, duplicate, displaced or weakened frame cover qualification steps', () => {
+    const mutations = [
+      (steps: Array<Record<string, unknown>>, start: number) => steps.splice(start, 1),
+      (steps: Array<Record<string, unknown>>, start: number) =>
+        steps.push(structuredClone(steps[start])),
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        [steps[start - 1], steps[start]] = [steps[start], steps[start - 1]];
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start].if = 'matrix.shard == 1';
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start].run = String(steps[start].run) + ' || true';
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        (steps[start + 1].with as Record<string, unknown>)['if-no-files-found'] = 'ignore';
+      },
+    ];
+    for (const mutate of mutations) {
+      const job = structuredClone(ci.jobs.accounting_postgres);
+      const start = job.steps.findIndex(
+        (step: Record<string, unknown>) => step.name === frameCoverSteps[0].name
+      );
+      mutate(job.steps, start);
+      expect(() => normalizeFrameCoverAddition(job)).toThrow();
+    }
   });
   it('preserves every native qualification stage and cleanup requirement', () => {
     const normalized = structuredClone(native);

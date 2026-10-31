@@ -130,7 +130,7 @@ describe('global Club Arena footer mounting and clearance', () => {
    * channel, and nothing behind it may paint a colour back in.
    */
   it('ships an alpha channel and paints nothing opaque behind it', () => {
-    const art = readFileSync(join(ROOT, 'public/images/club-footer/club-arena-footer-v4.webp'));
+    const art = readFileSync(join(ROOT, 'public/images/club-footer/club-arena-footer-v5.webp'));
     expect(art.subarray(0, 4).toString('ascii')).toBe('RIFF');
     expect(art.subarray(8, 12).toString('ascii')).toBe('WEBP');
     // Lossless WebP: 'VP8L', a 0x2f signature byte, then 14 bits of width-1,
@@ -164,7 +164,7 @@ describe('phone chrome keeps its larger native artwork and role-specific doors',
     const runtime = readFileSync(join(ROOT, 'src/styles/club-engine.css'), 'utf8');
     expect(header).toContain('global-header-mobile-v1.png');
     expect(header).toContain('media="(max-width: 600px)"');
-    expect(footer).toContain('club-arena-footer-mobile-v2.webp');
+    expect(footer).toContain('club-arena-footer-mobile-v3.webp');
     expect(footer).toContain('media="(max-width: 600px)"');
     expect(headerCss).toMatch(/@media \(max-width: 600px\)[\s\S]*?aspect-ratio: 1435 \/ 168/);
     expect(footerCss).toMatch(/@media \(max-width: 600px\)[\s\S]*?aspect-ratio: 1481 \/ 230/);

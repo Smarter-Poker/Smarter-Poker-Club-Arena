@@ -241,8 +241,8 @@ describe('ClubBottomNav approved footer contract', () => {
 
     const artwork = screen
       .getAllByRole('presentation')
-      .find((img) => img.getAttribute('src') === '/images/club-footer/club-arena-footer-v4.webp');
-    expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v4.webp');
+      .find((img) => img.getAttribute('src') === '/images/club-footer/club-arena-footer-v5.webp');
+    expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v5.webp');
     expect(artwork).toHaveAttribute('width', '1916');
     expect(artwork).toHaveAttribute('height', '256');
   });
@@ -262,7 +262,7 @@ describe('ClubBottomNav approved footer contract', () => {
       const art = screen
         .getAllByRole('presentation')
         .find((img) => img.getAttribute('src')?.includes('club-arena-footer'));
-      expect(art).toHaveAttribute('src', '/images/club-footer/club-arena-footer-player-v2.webp');
+      expect(art).toHaveAttribute('src', '/images/club-footer/club-arena-footer-player-v3.webp');
       expect(document.querySelector('[data-footer-doors]')).toHaveAttribute(
         'data-footer-doors',
         'member'

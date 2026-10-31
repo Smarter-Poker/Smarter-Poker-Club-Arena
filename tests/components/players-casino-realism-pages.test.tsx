@@ -653,21 +653,74 @@ describe('the member record survives a failed background refresh', () => {
   });
 
   it('refreshes downline fee rows on the committed record event without a range change', async () => {
-    render(<MemberManagementPage />);
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
     expect(await screen.findByText('Cyan Rail')).toBeVisible();
-    state.getDownline.mockResolvedValueOnce([
+    await act(async () => {});
+    const detailReads = state.getMemberDetail.mock.calls.length;
+    const downlineReads = state.getDownline.mock.calls.length;
+    const activeRange = state.getDownline.mock.calls.at(-1)![3];
+    let resolveAuthority!: (value: typeof memberDetail) => void;
+    const authorityRead = new Promise<typeof memberDetail>((resolve) => {
+      resolveAuthority = resolve;
+    });
+    const updated = [
       { user_id: 'child', alias: 'Updated Downline', role: 'player', total_fees: 7.22 },
-    ]);
+    ];
+    let resolveDownline!: (value: typeof updated) => void;
+    const downlineRead = new Promise<typeof updated>((resolve) => {
+      resolveDownline = resolve;
+    });
+    state.getMemberDetail.mockReturnValueOnce(authorityRead);
+    state.getDownline.mockReturnValueOnce(downlineRead);
     await authorityEvent();
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(detailReads + 1));
+    expect(state.getMemberDetail.mock.calls.at(-1)![2]).toEqual(activeRange);
+    expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+    expect(screen.getByText('Cyan Rail')).toBeVisible();
+    await act(async () => resolveAuthority(memberDetail));
+    await waitFor(() => expect(state.getDownline).toHaveBeenCalledTimes(downlineReads + 1));
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual(activeRange);
+    expect(screen.getByText('Cyan Rail')).toBeVisible();
+    expect(screen.queryByText('Updated Downline')).not.toBeInTheDocument();
+    await act(async () => resolveDownline(updated));
     expect(await screen.findByText('Updated Downline')).toBeVisible();
     expect(state.getDownline.mock.calls.at(-1)![3]).toEqual({ from: null, to: null });
   });
 
   it('keeps a shown downline when only its refresh fails', async () => {
-    render(<MemberManagementPage />);
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
     expect(await screen.findByText('Cyan Rail')).toBeVisible();
-    state.getDownline.mockRejectedValueOnce(new Error('downline down'));
+    await act(async () => {});
+    const detailReads = state.getMemberDetail.mock.calls.length;
+    const downlineReads = state.getDownline.mock.calls.length;
+    const activeRange = state.getDownline.mock.calls.at(-1)![3];
+    let resolveAuthority!: (value: typeof memberDetail) => void;
+    const authorityRead = new Promise<typeof memberDetail>((resolve) => {
+      resolveAuthority = resolve;
+    });
+    let failDownline!: (error: Error) => void;
+    const downlineRead = new Promise<never>((_, reject) => {
+      failDownline = reject;
+    });
+    // The committed event first validates this record's authority. Own both
+    // reads so only its subsequent downline refresh can consume the failure.
+    state.getMemberDetail.mockReturnValueOnce(authorityRead);
+    state.getDownline.mockReturnValueOnce(downlineRead);
     await authorityEvent();
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(detailReads + 1));
+    expect(state.getMemberDetail.mock.calls.at(-1)![2]).toEqual(activeRange);
+    expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+    expect(screen.getByText('Cyan Rail')).toBeVisible();
+    await act(async () => resolveAuthority(memberDetail));
+    await waitFor(() => expect(state.getDownline).toHaveBeenCalledTimes(downlineReads + 1));
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual(activeRange);
+    expect(screen.getByText('Cyan Rail')).toBeVisible();
+    expect(screen.queryByText('Member Connection Interrupted')).not.toBeInTheDocument();
+    await act(async () => failDownline(new Error('downline down')));
     expect(
       await screen.findByText(
         'Could Not Refresh The Downline. Showing The Previous Successful Read.'
@@ -675,6 +728,7 @@ describe('the member record survives a failed background refresh', () => {
     ).toBeVisible();
     expect(screen.getByText('Cyan Rail')).toBeVisible();
     expect(screen.queryByText('Member Connection Interrupted')).not.toBeInTheDocument();
+    expect(state.toast.error).not.toHaveBeenCalled();
   });
 
   it('subscribes to the lower-case record topic for an upper-case URL id', async () => {

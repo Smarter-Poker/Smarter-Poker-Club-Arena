@@ -8,6 +8,7 @@ import {
   riverOnePairCalls,
   riverOnePairFromRpc,
   RIVER_ONE_PAIR_RPC_SCHEMA,
+  samplesFromPrometheus,
   sizeClassOf,
   threeBetShares,
   MIN_SLOPE_SAMPLES,
@@ -290,5 +291,40 @@ describe('the database function answer', () => {
     expect(fromRows.source).toBe('rows');
     const md = renderMarkdown({ generatedAt: 'x', servingReleaseSha: null, heap: [], threeBet: [], riverOnePair: riverOnePairFromRpc(good)!, receipts: [] });
     expect(md).toContain('computed by fn_horse_river_one_pair_calls in the database');
+  });
+});
+
+describe('samples from Prometheus', () => {
+  const range = (metric: Record<string, string>, values: Array<[number, number]>) => ({
+    status: 'success',
+    data: { resultType: 'matrix', result: [{ metric, values: values.map(([t, v]) => [t, String(v)] as [number, string]) }] },
+  });
+
+  it('labels each heap point with the instance serving at that instant and drops unknown instants', () => {
+    const t0 = 1_793_400_000;
+    const heap = range({ __name__: 'poker_engine_heap_used_bytes' }, [[t0, 3.0e9], [t0 + 60, 3.1e9], [t0 + 120, 0.4e9], [t0 + 180, 0.45e9], [t0 + 240, 0.5e9]]);
+    const rss = range({}, [[t0, 15e9], [t0 + 60, 15.2e9], [t0 + 120, 2e9], [t0 + 180, 2.1e9], [t0 + 240, 2.2e9]]);
+    const info = {
+      status: 'success',
+      data: {
+        resultType: 'matrix',
+        result: [
+          { metric: { instance_id: '1-old', version: 'eed06fe5' }, values: [[t0, '1'], [t0 + 60, '1']] as Array<[number, string]> },
+          { metric: { instance_id: '2-new', version: '034e2a21' }, values: [[t0 + 120, '1'], [t0 + 180, '1']] as Array<[number, string]> },
+        ],
+      },
+    };
+    const samples = samplesFromPrometheus(heap, rss, info);
+    // t0+240 has no presence point within 30 s: dropped, never guessed.
+    expect(samples.map((s) => s.instanceId)).toEqual(['1-old', '1-old', '2-new', '2-new']);
+    expect(samples[2]).toEqual({ at: (t0 + 120) * 1000, instanceId: '2-new', releaseSha: '034e2a21', heapUsedMb: 400, rssMb: 2000 });
+    const slopes = heapSlopes(samples);
+    expect(slopes.map((s) => s.instanceId)).toEqual(['1-old', '2-new']);
+    expect(slopes[0].reason).toContain('needed'); // two points per instance: not enough
+  });
+
+  it('is empty on a non-success or malformed answer', () => {
+    expect(samplesFromPrometheus({ status: 'error' }, { status: 'error' }, { status: 'error' })).toEqual([]);
+    expect(samplesFromPrometheus({} as never, {} as never, {} as never)).toEqual([]);
   });
 });

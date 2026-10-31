@@ -130,6 +130,65 @@ export function heapSlopes(samples: HealthSample[]): HeapSlope[] {
   return out;
 }
 
+/**
+ * Prometheus on engine-01 scrapes the engine every 15 s and keeps
+ * poker_engine_heap_used_bytes, poker_engine_process_rss_bytes and
+ * poker_engine_info{instance_id, version} (infra/monitoring/prometheus.yml,
+ * job engine_game_server). Three query_range results over the same window
+ * become HealthSamples - one per heap point, labelled with the instance that
+ * was serving at that instant - so a slope needs no sampler loop and survives
+ * the session that started one. A heap point with no serving instance known
+ * at that instant is dropped rather than guessed.
+ */
+export interface PrometheusRange {
+  status?: unknown;
+  data?: { resultType?: unknown; result?: Array<{ metric?: Record<string, string>; values?: Array<[number | string, string]> }> };
+}
+
+export function samplesFromPrometheus(heap: PrometheusRange, rss: PrometheusRange, info: PrometheusRange): HealthSample[] {
+  const series = (r: PrometheusRange): Array<{ metric: Record<string, string>; values: Array<[number, number]> }> => {
+    if (!r || r.status !== 'success' || !r.data || !Array.isArray(r.data.result)) return [];
+    return r.data.result.map((s) => ({
+      metric: s.metric ?? {},
+      values: (s.values ?? [])
+        .map(([ts, v]) => [Number(ts), Number(v)] as [number, number])
+        .filter(([ts, v]) => Number.isFinite(ts) && Number.isFinite(v)),
+    }));
+  };
+  // The serving instance over time: info series carry instance_id/version and
+  // a value of 1 while that instance is scraped.
+  const presence: Array<{ at: number; instanceId: string; version: string }> = [];
+  for (const s of series(info)) {
+    const instanceId = s.metric.instance_id;
+    const version = s.metric.version ?? '';
+    if (!instanceId) continue;
+    for (const [ts, v] of s.values) if (v === 1) presence.push({ at: ts, instanceId, version });
+  }
+  presence.sort((a, b) => a.at - b.at);
+  const instanceAt = (ts: number): { instanceId: string; version: string } | null => {
+    // Nearest presence point within one scrape interval either side.
+    let best: { at: number; instanceId: string; version: string } | null = null;
+    for (const p of presence) {
+      const d = Math.abs(p.at - ts);
+      if (d <= 30 && (!best || d < Math.abs(best.at - ts))) best = p;
+    }
+    return best ? { instanceId: best.instanceId, version: best.version } : null;
+  };
+  const rssAt = new Map<number, number>();
+  for (const s of series(rss)) for (const [ts, v] of s.values) rssAt.set(ts, v);
+  const out: HealthSample[] = [];
+  for (const s of series(heap)) {
+    for (const [ts, v] of s.values) {
+      const who = instanceAt(ts);
+      const r = rssAt.get(ts);
+      if (!who || r === undefined) continue;
+      out.push({ at: ts * 1000, instanceId: who.instanceId, releaseSha: who.version, heapUsedMb: Math.round(v / 1e6), rssMb: Math.round(r / 1e6) });
+    }
+  }
+  out.sort((a, b) => a.at - b.at);
+  return out;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. 3-bet shares
 // ─────────────────────────────────────────────────────────────────────────────

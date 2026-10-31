@@ -11,6 +11,10 @@
  *     npx tsx scripts/holdem-live-measure.ts report --samples /tmp/health.jsonl \
  *         --since-hours 24 --out /tmp/holdem-live-measure
  *
+ *     # on engine-01, Prometheus already holds 15 s heap/RSS history per
+ *     # instance (poker_engine_* series): no sampler loop needed
+ *     ... report --prometheus http://127.0.0.1:9090 --since-hours 24 --out /tmp/holdem-live-measure
+ *
  * `report` writes <out>.json and <out>.md and prints the markdown. The
  * arithmetic lives in src/benchmark/HoldemLiveMeasure.ts (pure, unit-tested);
  * this file only fetches. Every query is a bounded SELECT over an indexed
@@ -29,11 +33,13 @@ import {
   renderMarkdown,
   riverOnePairCalls,
   riverOnePairFromRpc,
+  samplesFromPrometheus,
   threeBetShares,
   RECEIPT_FEATURES,
   type HealthSample,
   type LiveMeasureReport,
   type PlayRow,
+  type PrometheusRange,
   type ReviewRow,
   type TelemetryRow,
 } from '../src/benchmark/HoldemLiveMeasure.js';
@@ -77,6 +83,26 @@ function readSamples(path: string | undefined): HealthSample[] {
       }
     })
     .filter((s): s is HealthSample => s !== null);
+}
+
+/** Three query_range reads over the window from a local Prometheus (engine-01). */
+async function prometheusSamples(base: string, since: Date): Promise<HealthSample[]> {
+  const root = base.replace(/\/$/, '');
+  if (!/^https?:\/\//.test(root)) throw new Error('--prometheus must be an http(s) URL');
+  const start = Math.floor(since.getTime() / 1000);
+  const end = Math.floor(Date.now() / 1000);
+  const range = async (query: string): Promise<PrometheusRange> => {
+    const q = new URLSearchParams({ query, start: String(start), end: String(end), step: '60' });
+    const res = await fetch(`${root}/api/v1/query_range?${q}`, { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(`prometheus answered HTTP ${res.status} for ${query}`);
+    return (await res.json()) as PrometheusRange;
+  };
+  const [heap, rss, info] = await Promise.all([
+    range('poker_engine_heap_used_bytes'),
+    range('poker_engine_process_rss_bytes'),
+    range('poker_engine_info'),
+  ]);
+  return samplesFromPrometheus(heap, rss, info);
 }
 
 function database(): { url: string; key: string } {
@@ -130,6 +156,8 @@ async function report(): Promise<void> {
 
   const live = await fetchHealth().catch(() => null);
   const samples = readSamples(arg('--samples'));
+  const prometheus = arg('--prometheus');
+  if (prometheus) samples.push(...(await prometheusSamples(prometheus, since)));
   if (live) samples.push(live);
 
   // Unfloored tables only, as the tuner and fn_horse_frequency_leaks read
@@ -200,7 +228,7 @@ async function main(): Promise<void> {
     await report();
     return;
   }
-  throw new Error('usage: holdem-live-measure.ts sample-health --samples FILE | report [--samples FILE] [--since-hours N] [--out PATH]');
+  throw new Error('usage: holdem-live-measure.ts sample-health --samples FILE | report [--samples FILE] [--prometheus URL] [--since-hours N] [--out PATH]');
 }
 
 main().catch((err: unknown) => {

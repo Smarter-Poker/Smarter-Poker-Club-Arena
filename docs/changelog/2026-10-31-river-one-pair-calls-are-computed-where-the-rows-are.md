@@ -44,6 +44,19 @@ The ci.yml step changed the workflow's byte identity, so the six
 qualification manifests and the runner-recovery fingerprint were rebound with
 a source-only audit entry (`riverOnePairParitySourceAudit20261031`).
 
+## Heap slope from Prometheus, not a sampler loop
+
+`report --prometheus http://127.0.0.1:9090` (on engine-01) reads
+`poker_engine_heap_used_bytes`, `poker_engine_process_rss_bytes` and
+`poker_engine_info{instance_id,version}` over the window with `query_range`
+(60 s step) and turns them into the same `HealthSample`s the slope reads:
+each heap point is labelled with the instance serving at that instant
+(nearest presence point within 30 s) or dropped, never guessed. A sampler
+started by a session that then ends no longer loses the "after"
+measurement; Prometheus already holds 15 s history per instance.
+`samplesFromPrometheus` is unit-tested on a restart fixture (two instances,
+one unlabelled instant).
+
 ## Baseline the function reproduces (EED, 02:35 UTC, same arithmetic run as a pg_temp function)
 
 | size class faced | calls | won | won % |

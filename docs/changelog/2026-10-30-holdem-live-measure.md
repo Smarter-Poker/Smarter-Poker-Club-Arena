@@ -53,3 +53,13 @@ horses, the one-pair evaluator against sets / two pair / flush / straight,
 the river call faced with street-total amounts, raises and short all-in
 calls, the size-class table from fixture rows, card objects, receipt counts
 and the rendered report.
+
+## CI type-check gap (2026-10-31)
+
+`server/tsconfig.json` has `rootDir: src`, so no CI job ever compiled
+`server/scripts/*.ts` - this CLI and the five operator scripts before it were
+checked by hand. `server/tsconfig.scripts.json` now type-checks every script
+(the `scripts/qualification/**` vitest files are excluded by name; they
+carried 36 pre-existing errors and are run by their own harness), the Server
+Engine job runs it right after the server compile, and
+`tests/server-scripts-are-type-checked.law.test.ts` pins both.

@@ -65,14 +65,15 @@ describe('A Diamond seat tops up from the custody it sat with', () => {
     /* Every surface that opens the cashier reads the one decision, so none of
        them can drift from the others the way the lobby's three join controls
        did on 2026-09-11. */
-    /* THREE SINCE 2026-09-15, NOT FOUR. The fourth was the old side menu's
+    /* FOUR SINCE 2026-10-23. The fourth was the old side menu's
        own Cashier row, and that menu could not be opened - the only reference
        to its toggle was the overlay's own close handler - so the row was
        deleted with the rest of it. The rule this pins is unchanged: every
        surface that can open the cashier reads the one decision, and every
        remaining `setShowCashier(true)` sits behind `canTopUpSeat` or calls
        `seatCanAddFunds` itself. */
-    expect(TABLE_PAGE.match(/canTopUpSeat/g) ?? []).toHaveLength(3);
+    expect(TABLE_PAGE.match(/canTopUpSeat/g) ?? []).toHaveLength(4);
+    // The standalone Auto Top Up switch now shares the same funded-seat answer.
     /* And every surface that ASKS the question reads the same function. This
        is a census of a NAMED set rather than a ceiling on an unrelated one:
        six surfaces decide whether this seat can be funded, and each is listed,

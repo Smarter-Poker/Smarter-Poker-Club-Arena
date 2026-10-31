@@ -115,6 +115,30 @@ def policy(repo, target, control):
             'activationEpoch': int(activation.timestamp()), 'expiresEpoch': int(expiry.timestamp())}
 
 
+def effective(record, now):
+    """AN EXPIRED FLOOR IS NO FLOOR (2026-10-30).
+
+    A floor manifest is one-time: a v1 daily boundary or a v2 owner window names
+    one activation and one expiry. Until today an expired manifest kept refusing
+    EVERY later target that still carried it ("one-time activation window
+    expired"), so the day after an owner window lapsed nothing on protected main
+    could be released until a human edited the manifest - the routine 04:00
+    route was never consulted. The floor exists to hold a release back until
+    its boundary, never to strand every release after it; once its expiry has
+    passed, the target is read exactly as a target with no manifest, and the
+    routine daily maintenance route (the 04:00 America/Chicago certificate,
+    section 13) applies. Said out loud on stderr so a log shows which route ran.
+    A still-live window is untouched, and an entry or reservation already owned
+    inside a window keeps its exact record (callers that recover an in-flight
+    owner never go through here).
+    """
+    if record is None or type(now) is not int or now < record['expiresEpoch']:
+        return record
+    print('activation floor %s (%s) expired at epoch %d; the routine daily maintenance route applies'
+          % (record['schema'], record.get('ownerWindowId') or 'daily', record['expiresEpoch']), file=sys.stderr)
+    return None
+
+
 def check_window(record, now, deadline, mode):
     if type(now) is not int or type(deadline) is not int or now <= 0 or deadline <= now:
         raise ValueError('activation floor clock/deadline unavailable')
@@ -281,6 +305,10 @@ def main():
             print('announced' if prior.get('phase') == 'announcement' else 'entered')
             return
     record = policy(args.repo, args.target, args.control)
+    if args.mode not in ('checkpoint-no-action', 'reservation'):
+        # In-flight owner reads keep the exact record; every fresh admission,
+        # entry and publication read reads an expired floor as no floor.
+        record = effective(record, int(time.time()))
     if args.mode == 'checkpoint-no-action':
         print(checkpoint_no_action(record, args.request_root, args.state_root, args.run_id))
         return
@@ -300,7 +328,7 @@ def main():
         while int(time.time()) < record['activationEpoch']:
             check_window(record, int(time.time()), args.deadline, 'prepare')
             time.sleep(max(0, min(5, record['activationEpoch'] - int(time.time()))))
-        current = policy(args.repo, args.target, args.control)
+        current = effective(policy(args.repo, args.target, args.control), int(time.time()))
         if current != record:
             raise ValueError('activation policy changed while waiting')
         check_window(record, int(time.time()), args.deadline, 'admit')

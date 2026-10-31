@@ -655,7 +655,47 @@ export async function retainedOriginalCheckpointGuard(
       );
     const captures = [],
       shadows = [];
+    const permitWitnesses = new Map();
     const noWork = (e) => {
+      // A completed hand number and an empty bank do not dispose the next
+      // permit. Read the fixed EED owner, retain its identity across awaits,
+      // and let only an exact native-attested original cover a held permit.
+      const permit = e.f06CurrentPermit;
+      need(
+        permit === null ||
+          (record(permit) &&
+            modules.permit?.F06HandPermit &&
+            Object.getPrototypeOf(permit) === modules.permit.F06HandPermit.prototype),
+        'retained_held_permit_unproven'
+      );
+      const phase =
+        permit === null ? null : modules.permit.F06HandPermit.prototype.recoveryState.call(permit);
+      need(
+        permit === null ||
+          ['reserved', 'attempted', 'unknown', 'terminated', 'new', 'number_refused'].includes(
+            phase
+          ),
+        'retained_held_permit_unproven'
+      );
+      const binding = permit === null ? null : encode(permit.binding);
+      const prior = permitWitnesses.get(e);
+      if (prior)
+        need(
+          prior.permit === permit &&
+            prior.binding === binding &&
+            prior.phase === phase &&
+            (stage === 'preflight'
+              ? prior.preparation === e.f06HandPreparation
+              : e.f06HandPreparation === null),
+          'retained_held_permit_changed'
+        );
+      else {
+        need(
+          e.f06HandPreparation === null || record(e.f06HandPreparation),
+          'retained_preparation_unproven'
+        );
+        permitWitnesses.set(e, { permit, binding, phase, preparation: e.f06HandPreparation });
+      }
       for (const n of [
         'settlementInFlight',
         'tournamentMoveOperations',
@@ -722,6 +762,7 @@ export async function retainedOriginalCheckpointGuard(
           'retained_detached_owner_unproven'
         );
         noWork(e);
+        need(e.f06HandPreparation === null, 'retained_preparation_unproven');
         shadows.push({
           e,
           original: e.pendingOriginalContinuation,
@@ -764,6 +805,14 @@ export async function retainedOriginalCheckpointGuard(
         a.generation
       );
       const original = e.pendingOriginalContinuation;
+      need(
+        e.f06CurrentPermit === null ||
+          (record(original) &&
+            ['reserved', 'attempted'].includes(permitWitnesses.get(e).phase) &&
+            equal(e.f06CurrentPermit.binding, original.original)),
+        'retained_held_permit_unproven'
+      );
+      if (!original) need(e.f06HandPreparation === null, 'retained_preparation_unproven');
       if (e.handController !== null || original !== null || e.handContinuation !== null) {
         need(
           a.scope === 'tournament' &&
@@ -963,14 +1012,6 @@ export async function retainedOriginalCheckpointGuard(
               s.lane.retentionWaiters.length === 0)),
         'retained_shadow_work_changed'
       );
-      if (
-        s.handNumber === 0 &&
-        s.original === null &&
-        s.lane === null &&
-        s.e.timeBankMeta.size === 0 &&
-        Object.keys(s.e.parkedTimeBanks).length === 0
-      )
-        return;
       const successor =
         s.original &&
         captures.find(
@@ -979,6 +1020,24 @@ export async function retainedOriginalCheckpointGuard(
             equal(c.original.original, s.original.original) &&
             c.original.batch.sequence >= Math.max(s.original.batch.sequence, s.lane?.sequence ?? 0)
         );
+      need(
+        s.e.f06CurrentPermit === null ||
+          (successor &&
+            ['reserved', 'attempted'].includes(permitWitnesses.get(s.e).phase) &&
+            equal(s.e.f06CurrentPermit.binding, s.original.original)),
+        'retained_held_permit_unproven'
+      );
+      // A permit at N+1 cannot borrow either the empty-hand shortcut or N's
+      // atomic/history receipt. Covered retained succession keeps its original
+      // packet semantics and the positively attested successor above.
+      if (
+        s.handNumber === 0 &&
+        s.original === null &&
+        s.lane === null &&
+        s.e.timeBankMeta.size === 0 &&
+        Object.keys(s.e.parkedTimeBanks).length === 0
+      )
+        return;
       if (successor) return; // Its current native capsule was positively attested above.
       const commit = await modules.client.supabase
         .from('hand_atomic_commits')
@@ -1101,6 +1160,7 @@ export async function retainedOriginalCheckpointGuard(
       proveRetiredManager(m);
     }
     await all(captures, async (c) => {
+      noWork(c.e);
       need(
         c.e.terminalTeardownComplete === true && c.e.hasReleasedProcessOwnership() === true,
         'retained_stop_custody_unproven'
@@ -1136,11 +1196,13 @@ export async function retainedOriginalCheckpointGuard(
       verifiedTables++;
     });
     checkMaintenance();
+    for (const s of shadows) noWork(s.e);
     need(
       base.liveEngines.size === 0 &&
-        captures.every(
-          (c) => c.e.terminalTeardownComplete === true && !c.e.hasUnretiredStoppedTimeBankCustody()
-        ),
+        captures.every((c) => {
+          noWork(c.e);
+          return c.e.terminalTeardownComplete === true && !c.e.hasUnretiredStoppedTimeBankCustody();
+        }),
       'retained_final_census_unproven'
     );
     stage = 'complete';

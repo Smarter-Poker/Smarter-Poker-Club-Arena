@@ -187,9 +187,8 @@ describe('every lobby filter change reaches the row, in order', () => {
   it('the lobby writes no filter change to the cache alone, and reads the row on open', () => {
     const page = readFileSync(join(__dirname, '..', '..', 'src/pages/ClubHomePage.tsx'), 'utf8');
     expect(page).not.toMatch(/if \(resolvedClubId\) saveFilters\(resolvedClubId, next\)/);
-    expect(
-      page.match(/persistAdvFilters\(resolvedClubId, next\)/g)?.length ?? 0
-    ).toBeGreaterThanOrEqual(5);
+    expect(page.match(/persistAdvFilters\(resolvedClubId, next\)/g)?.length ?? 0).toBe(3);
+    expect(page).not.toMatch(/onVariantsChange|onStylesChange/);
     const hydrate = page.slice(
       page.indexOf('const cached = loadFilters(resolvedClubId'),
       page.indexOf(

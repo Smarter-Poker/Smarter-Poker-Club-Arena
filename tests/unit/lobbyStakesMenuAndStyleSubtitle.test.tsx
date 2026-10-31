@@ -151,10 +151,7 @@ describe('the Game Style filter', () => {
   it('the club home hands the row its template and the sheet has a Game Style section', () => {
     const page = read('src/pages/ClubHomePage.tsx');
     expect(page).toMatch(/style: cashStyleKeyOf\(table as unknown as LobbyTableRow\),/);
-    expect(page).toMatch(/styleChoices: sSpec\.styles,/);
-    expect(page).toMatch(
-      /gameType === 'HOLDEM' \|\| gameType === 'OMAHA' \|\| gameType === 'LIMIT'/
-    );
+    expect(page).not.toContain('onStylesChange:');
     const sheet = read('src/components/lobby/AdvancedFilters.tsx');
     expect(sheet).toMatch(/<h3>Game Style<\/h3>/);
     expect(sheet).toMatch(/chipRow\(spec\.styles, 'styles', value\.styles \?\? \[\]\)/);
@@ -224,143 +221,30 @@ describe('Lightning Games lobby identity', () => {
   });
 });
 
-describe('the Stakes heading on the phone sort bar', () => {
-  it('is a menu trigger, closed until pressed', () => {
-    const { chip, menu } = renderLobby();
-    expect(chip).toHaveAttribute('aria-haspopup', 'menu');
-    expect(chip).toHaveAttribute('aria-expanded', 'false');
-    expect(menu()).toBeNull();
-  });
-
-  it('opens to All, the two styles in order, then High To Low and Low To High', () => {
-    const { chip, menu } = renderLobby();
-    fireEvent.click(chip);
-    const m = menu();
-    expect(m).not.toBeNull();
-    const items = within(m!)
-      .getAllByRole('button')
-      .map((b) => b.textContent?.trim());
-    expect(items).toEqual([
-      'All',
-      'Classic',
-      'Lightning Games',
-      'Madness',
-      'High To Low',
-      'Low To High',
-    ]);
-    expect(within(m!).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  it('a style toggles into the saved selection; All clears it and closes', () => {
-    const { chip, menu, onStylesChange } = renderLobby(['classic']);
-    fireEvent.click(chip);
-    fireEvent.click(within(menu()!).getByRole('button', { name: 'Lightning Games' }));
-    expect(onStylesChange).toHaveBeenLastCalledWith(['classic', 'madness']);
-    fireEvent.click(within(menu()!).getByRole('button', { name: 'Classic' }));
-    expect(onStylesChange).toHaveBeenLastCalledWith([]);
-    expect(menu()).not.toBeNull();
-    fireEvent.click(within(menu()!).getByRole('button', { name: 'All' }));
-    expect(onStylesChange).toHaveBeenLastCalledWith([]);
-    expect(menu()).toBeNull();
-  });
-
-  it('High To Low sorts the board by stakes descending, Low To High ascending, and closes', () => {
-    const { chip, menu, bar } = renderLobby();
-    const rowsInOrder = () =>
-      Array.from(document.querySelectorAll('.lobby-table-wrap .lt-name__line1')).map((el) =>
-        el.textContent?.trim()
-      );
-    fireEvent.click(chip);
-    fireEvent.click(within(menu()!).getByRole('button', { name: 'High To Low' }));
-    expect(menu()).toBeNull();
-    expect(within(bar).getByRole('status').textContent).toMatch(/Sorted By Stakes, Descending/);
-    expect(rowsInOrder()[0]).toMatch(/2\/5/);
-    fireEvent.click(chip);
-    expect(within(menu()!).getByRole('button', { name: 'High To Low' })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    );
-    fireEvent.click(within(menu()!).getByRole('button', { name: 'Low To High' }));
-    expect(within(bar).getByRole('status').textContent).toMatch(/Sorted By Stakes, Ascending/);
-    expect(rowsInOrder()[0]).toMatch(/1\/2/);
-  });
-
-  it('closes on Escape and on a tap outside', () => {
-    const { chip, menu } = renderLobby();
-    fireEvent.click(chip);
-    expect(menu()).not.toBeNull();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(menu()).toBeNull();
-    fireEvent.click(chip);
-    expect(menu()).not.toBeNull();
-    fireEvent.pointerDown(document.body);
-    expect(menu()).toBeNull();
-  });
-
-  /*
-   * THE BUG THIS CATCHES (Dan 2026-09-05: "when you open STAKES or VARIATIONS
-   * and get the dropdowns, they aren't clickable. It's like it isn't there, and
-   * you click what's behind the page or behind the buttons").
-   *
-   * A real tap is pointerdown THEN click. Every other test in this file uses
-   * `fireEvent.click`, which emits only the second half - so the outside-tap
-   * handler on `document` never ran, and a handler that closed the menu on
-   * pointerdown could not be seen from here. On a phone it unmounted the button
-   * under the finger before its click could fire, and the click landed on the
-   * game card the menu had been covering.
-   *
-   * The cause was one ref serving two mounted copies of the menu (the phone
-   * bar's and the desktop heading's), so containment was measured against the
-   * wrong node. Any future test of these items must send pointerDown first, or
-   * it is testing a gesture no user makes.
-   */
-  it('survives a real tap: pointerdown then click still applies the choice', () => {
+describe('Stakes headings directly adjust the same board without popups', () => {
+  it('toggles the compact sort and never opens a menu or changes style filters', () => {
     const { chip, menu, onStylesChange } = renderLobby();
-    fireEvent.pointerDown(chip);
+    const rows = () =>
+      Array.from(document.querySelectorAll('.compact-lobby tbody tr[data-id]')).map((el) =>
+        el.getAttribute('data-id')
+      );
+    expect(rows()).toEqual(['a', 'b']);
     fireEvent.click(chip);
-    expect(menu()).not.toBeNull();
-
-    const action = within(menu()!).getByRole('button', { name: 'Lightning Games' });
-    fireEvent.pointerDown(action);
-    expect(
-      menu(),
-      'the menu must survive the pointerdown that precedes its own click'
-    ).not.toBeNull();
-    fireEvent.click(action);
-    expect(onStylesChange).toHaveBeenLastCalledWith(['madness']);
-  });
-
-  it('without style choices the Stakes chip is a plain sort toggle, as before', () => {
-    render(
-      <MemoryRouter>
-        <LobbyTable
-          entries={[cashEntry(table({ id: 'a' }))]}
-          category="HOLDEM"
-          selectedId={null}
-          onSelect={() => {}}
-          onActivate={() => {}}
-          ctx={ctx}
-        />
-      </MemoryRouter>
-    );
-    const bar = document.querySelector<HTMLElement>('.arena-lobby-card-list')!;
-    const chip = within(bar).getByRole('button', { name: /stakes/i });
+    expect(rows()).toEqual(['b', 'a']);
+    expect(menu()).toBeNull();
     expect(chip).not.toHaveAttribute('aria-haspopup');
+    expect(onStylesChange).not.toHaveBeenCalled();
+    fireEvent.click(chip);
+    expect(rows()).toEqual(['a', 'b']);
   });
-});
-
-describe('the desktop Stakes heading carries the same menu', () => {
-  it('is wired to the same open state, the same items and the same sort', () => {
-    const src = read('src/components/lobby/LobbyTable.tsx');
-    const th = src.slice(src.indexOf('<thead'), src.indexOf('<tbody'));
-    expect(th).toMatch(/col\.key === 'stakes' && hasStakesMenu && stakesMenuOpen/);
-    expect(th).toMatch(/onSort=\{\(dir\) => applySort\(COL_STAKES, dir\)\}/);
-    expect(src).toContain('setHeadingSort({ ...next, chosen: true })');
-    expect(src).toMatch(/const applySort = \(col: ColumnDef, dir: SortDir\)/);
-    // Persisted through the shared account setter, then reported so the filter sheet's chip
-    // follows the heading (lobbySortBridge, 2026-10-24).
-    expect(src).toMatch(
-      /setSort\(next\);\s*onHeadingSort\?\.\(next\.key, next\.dir\);\s*\};\s*\n\s*const handleHeaderClick/
-    );
+  it('supports desktop pointer and keyboard sorting with no popup', () => {
+    renderLobby();
+    const head = document.querySelector('.lobby-table-wrap thead') as HTMLElement;
+    const stakes = within(head).getByRole('columnheader', { name: /stakes/i });
+    fireEvent.click(stakes);
+    expect(stakes).toHaveAttribute('aria-sort', 'descending');
+    fireEvent.keyDown(stakes, { key: 'Enter' });
+    expect(stakes).toHaveAttribute('aria-sort', 'ascending');
+    expect(document.querySelector('.lt-stakes-menu')).toBeNull();
   });
 });

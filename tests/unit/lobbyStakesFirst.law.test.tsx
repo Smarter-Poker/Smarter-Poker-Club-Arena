@@ -59,15 +59,14 @@ function mount(entries = variants.flatMap((v) => [entry(v, 2), entry(v, 1)]).rev
     const scope = desktop
       ? document.querySelector('.lobby-table-wrap thead')!
       : document.querySelector('.arena-lobby-card-list thead')!;
-    fireEvent.click(
-      within(scope as HTMLElement).getByRole(desktop ? 'columnheader' : 'button', {
-        name: /stakes/i,
-      })
-    );
-    const menu = within(scope as HTMLElement).getByRole('group', { name: 'Stakes' });
-    const option = within(menu).getByRole('button', { name: direction });
-    fireEvent.pointerDown(option);
-    fireEvent.click(option);
+    const trigger = within(scope as HTMLElement).getByRole(desktop ? 'columnheader' : 'button', {
+      name: /stakes/i,
+    });
+    const heading = trigger.closest('th')!;
+    const wanted = direction === 'High To Low' ? 'descending' : 'ascending';
+    if (heading.getAttribute('aria-sort') !== wanted) fireEvent.click(trigger);
+    expect(heading.getAttribute('aria-sort')).toBe(wanted);
+    expect(within(scope as HTMLElement).queryByRole('group', { name: 'Stakes' })).toBeNull();
   };
   const ids = () =>
     Array.from(document.querySelectorAll('.lobby-table-wrap tbody tr[id]')).map((el) =>
@@ -173,31 +172,24 @@ describe('every stakes order keeps one price together in canonical variant order
     ]);
   });
 
-  it('Sort By Variant lists each variant by stakes, and the second tap reverses the stakes only', () => {
-    const entries = [
-      entry('plo5', 1, '', 6),
-      entry('plo', 4, '', 6),
-      entry('plo', 1, '', 1),
-      entry('plo5', 4, '', 1),
-      entry('plo', 2, '', 3),
-    ];
+  it('Game is static and preserves the canonical stakes order', () => {
     const ids = rendered({
-      entries,
+      entries: [
+        entry('plo5', 1),
+        entry('plo', 4),
+        entry('plo', 1),
+        entry('plo5', 4),
+        entry('plo', 2),
+      ],
       category: 'OMAHA',
-      variantChoices: omahaGames,
-      selectedVariants: [],
-      onVariantsChange: vi.fn(),
     });
+    const before = ids();
     const bar = document.querySelector('.arena-lobby-card-list') as HTMLElement;
-    const sortByVariant = () => {
-      fireEvent.click(within(bar).getByRole('button', { name: /^game$/i }));
-      const menu = within(bar).getByRole('group', { name: 'Game Variant' });
-      fireEvent.click(within(menu).getByRole('button', { name: 'Sort By Variant' }));
-    };
-    sortByVariant();
-    expect(ids()).toEqual(['plo-1', 'plo-2', 'plo-4', 'plo5-1', 'plo5-4']);
-    sortByVariant();
-    expect(ids()).toEqual(['plo-4', 'plo-2', 'plo-1', 'plo5-4', 'plo5-1']);
+    const game = within(bar).getByRole('columnheader', { name: /^game$/i });
+    expect(within(game).queryByRole('button')).toBeNull();
+    fireEvent.click(game);
+    expect(ids()).toEqual(before);
+    expect(before).toEqual(['plo-1', 'plo5-1', 'plo-2', 'plo-4', 'plo5-4']);
   });
 });
 

@@ -1,0 +1,2 @@
+SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'ca-table-stall-watch-10s';
+SELECT cron.schedule('ca-table-stall-watch-10s', '10 seconds', 'SELECT public.fn_ca_table_stall_watch_tick(60000)');

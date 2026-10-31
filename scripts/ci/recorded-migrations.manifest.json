@@ -1878,6 +1878,217 @@
       "issue": "Active production outage: original2026-10-31T19:55:05.002Z maintenance frozen because broad bomb-pot thaw UPDATE hit retired-club guard55000; PUBLISHING.md active-outage exception.",
       "refusedBy": [],
       "liveVerdict": "ROOT installed exact PG17-qualified three-helper eligibility correction once in one bounded transaction with atomic exact history, 1s lock/5s statement/8s transaction bounds, same expired owned-window admission and documented transaction-local migration override. Installed20:19:33.621225Z; independent20:19:37.623381Z catalog read matched all three postimage bodies cc06d1cd3c4431387ad898c986b272d0/d88e7a1fef47d20d060a7e100599e2fe/3f5859bd21f9e7b35e59ed5337e2afab, postgres owner, SECURITY DEFINER, original search_path and postgres-only ACLs. Retirement guard19b9ffb6dc97e019ac47cb73c70fe93d and outerv3f7540547dbea11a05e4bdc5b33162986 unchanged; original freeze retained. Native PG17 reproduced actual old55000 then passed15 clock families/fullcredit/retiredunchanged/nullsystem/ownership/partial/replay/changed-target refusal. No payout, seat, roster or runtime operation. Installation is not thaw completion or live recovery proof; those remain separate."
+    },
+    {
+      "version": "20261031172116",
+      "name": "operational_alerts_route_to_production_alerts_not_phone",
+      "file": "supabase/migrations/20261031172116_operational_alerts_route_to_production_alerts_not_phone.sql",
+      "md5": "ee91f46b07e3b06bf368563c1360c82b",
+      "appliedToProductionAt": "2026-10-31T17:21:16Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031172116 with md5(array_to_string(statements, chr(10))) ee91f46b07e3b06bf368563c1360c82b, equal to public.fn_ca_migration_text('20261031172116') and to this file (1154 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031172724",
+      "name": "closed_diamond_arena_alerts_are_intended_state",
+      "file": "supabase/migrations/20261031172724_closed_diamond_arena_alerts_are_intended_state.sql",
+      "md5": "f4ff1f96f5d73514e0eff2440b53e436",
+      "appliedToProductionAt": "2026-10-31T17:27:24Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031172724 with md5(array_to_string(statements, chr(10))) f4ff1f96f5d73514e0eff2440b53e436, equal to public.fn_ca_migration_text('20261031172724') and to this file (2282 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031172826",
+      "name": "closed_arena_intent_covers_liveness_findings_only",
+      "file": "supabase/migrations/20261031172826_closed_arena_intent_covers_liveness_findings_only.sql",
+      "md5": "682ea9c87a364fda21806bfd53fe06ef",
+      "appliedToProductionAt": "2026-10-31T17:28:26Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031172826 with md5(array_to_string(statements, chr(10))) 682ea9c87a364fda21806bfd53fe06ef, equal to public.fn_ca_migration_text('20261031172826') and to this file (2141 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031182341",
+      "name": "a_stopped_table_is_caught_in_sixty_seconds",
+      "file": "supabase/migrations/20261031182341_a_stopped_table_is_caught_in_sixty_seconds.sql",
+      "md5": "057c884857ea58056ee60f05f85a6e5e",
+      "appliedToProductionAt": "2026-10-31T18:23:41Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [
+        "check-unqualified-writes: UPDATE on smarter_private.ca_table_stall_watch_state with no WHERE clause (x2)"
+      ],
+      "liveVerdict": "Read 2026-10-31 20:55 UTC: the finding is FALSE of production. The two singleton-state UPDATEs in this file were superseded by 20261031190452 and 20261031202225; every live UPDATE of smarter_private.ca_table_stall_watch_state in fn_ca_table_stall_watch_ingest (md5(prosrc) 1cbcbda5e09a7fa03ddefe9244537edb) and fn_ca_table_stall_watch_failed (md5(prosrc) fda6b2541e03a386531d42afff546309) carries WHERE singleton, and smarter_private is not exposed through PostREST. supabase_migrations.schema_migrations holds version 20261031182341 with md5(array_to_string(statements, chr(10))) 057c884857ea58056ee60f05f85a6e5e, equal to public.fn_ca_migration_text('20261031182341') and to this file (14384 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031182400",
+      "name": "owner_holds_are_not_overdue_or_stopped_play",
+      "file": "supabase/migrations/20261031182400_owner_holds_are_not_overdue_or_stopped_play.sql",
+      "md5": "032fcbf5a23b9f714af04e2b9f63f440",
+      "appliedToProductionAt": "2026-10-31T18:24:00Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [
+        "check-definer-authorization: fn_tournament_metrics SECURITY DEFINER reachable by anon without an auth check",
+        "check-definer-authorization: fn_tournament_progress_metrics SECURITY DEFINER reachable by anon without an auth check"
+      ],
+      "liveVerdict": "Read 2026-10-31 20:55 UTC: the finding is FALSE of production. has_function_privilege('anon', ...,'EXECUTE') is false and has_function_privilege('authenticated', ...,'EXECUTE') is false for both public.fn_tournament_metrics(integer,integer,integer) (md5(prosrc) bce2b6e33c9677cc90848a0176ef9304) and public.fn_tournament_progress_metrics(integer,integer) (md5(prosrc) 7d02ecccfc62cc006e3791fc81161961); this migration only replaced their bodies and the existing restricted ACL was preserved. supabase_migrations.schema_migrations holds version 20261031182400 with md5(array_to_string(statements, chr(10))) 032fcbf5a23b9f714af04e2b9f63f440, equal to public.fn_ca_migration_text('20261031182400') and to this file (5116 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031182445",
+      "name": "schedule_table_stall_watch_every_ten_seconds",
+      "file": "supabase/migrations/20261031182445_schedule_table_stall_watch_every_ten_seconds.sql",
+      "md5": "d2a80adcd3e1cf0b4cc9e9a48ccc2c75",
+      "appliedToProductionAt": "2026-10-31T18:24:45Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [
+        "check-no-new-band-aids: periodic work ca-table-stall-watch-10s without a periodic-work reason"
+      ],
+      "liveVerdict": "Read 2026-10-31 20:55 UTC: the finding is TRUE of production - pg_cron job 509 ca-table-stall-watch-10s runs public.fn_ca_table_stall_watch_tick(60000) every 10 seconds. It is a read-only detector of the engine's /metrics per-table progress samples: it writes only its own smarter_private watch rows and operational_alert_events (TableStoppedDealing, StallWatchBlind, TournamentStopNotSettled). It moves no money, seats or chips and repairs nothing; it replaced Alertmanager's 15-minute stall page (owner ruling 2026-10-31: 'AFTER 60 SECONDS, IT SHOULD TRIGGER') and gates the legacy SLOTableHasStalled/MttPlayStopped/MttFleetNotDealing pages on its own confirmation. The root-cause engine fixes ship separately (fleet stall gauge measures only tables that should be dealing; paused label). supabase_migrations.schema_migrations holds version 20261031182445 with md5(array_to_string(statements, chr(10))) d2a80adcd3e1cf0b4cc9e9a48ccc2c75, equal to public.fn_ca_migration_text('20261031182445') and to this file (204 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031183410",
+      "name": "lightning_latency_alerts_resolve_with_hysteresis",
+      "file": "supabase/migrations/20261031183410_lightning_latency_alerts_resolve_with_hysteresis.sql",
+      "md5": "b2bdd23df9e04a49c560f18e0133733c",
+      "appliedToProductionAt": "2026-10-31T18:34:10Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031183410 with md5(array_to_string(statements, chr(10))) b2bdd23df9e04a49c560f18e0133733c, equal to public.fn_ca_migration_text('20261031183410') and to this file (2910 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031184258",
+      "name": "informational_diamond_journal_and_adjustment_approval_notices_arrive_closed",
+      "file": "supabase/migrations/20261031184258_informational_diamond_journal_and_adjustment_approval_notices_arrive_closed.sql",
+      "md5": "30718687ec30bdfefd07675f238813cd",
+      "appliedToProductionAt": "2026-10-31T18:42:58Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031184258 with md5(array_to_string(statements, chr(10))) 30718687ec30bdfefd07675f238813cd, equal to public.fn_ca_migration_text('20261031184258') and to this file (4082 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031190452",
+      "name": "stall_watch_knows_waits_staleness_and_custody",
+      "file": "supabase/migrations/20261031190452_stall_watch_knows_waits_staleness_and_custody.sql",
+      "md5": "eff4b0b52527b7e6aab6cc5ffed58bc4",
+      "appliedToProductionAt": "2026-10-31T19:04:52Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031190452 with md5(array_to_string(statements, chr(10))) eff4b0b52527b7e6aab6cc5ffed58bc4, equal to public.fn_ca_migration_text('20261031190452') and to this file (20704 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031190637",
+      "name": "stall_watch_restart_is_not_stale",
+      "file": "supabase/migrations/20261031190637_stall_watch_restart_is_not_stale.sql",
+      "md5": "9a4c1246748abc4651ac12a8012b399d",
+      "appliedToProductionAt": "2026-10-31T19:06:37Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031190637 with md5(array_to_string(statements, chr(10))) 9a4c1246748abc4651ac12a8012b399d, equal to public.fn_ca_migration_text('20261031190637') and to this file (519 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031191120",
+      "name": "mirror_alert_receipts_and_resolved_twins_are_informational",
+      "file": "supabase/migrations/20261031191120_mirror_alert_receipts_and_resolved_twins_are_informational.sql",
+      "md5": "ed7a764adb06cf456b7a4e3fa301709a",
+      "appliedToProductionAt": "2026-10-31T19:11:20Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031191120 with md5(array_to_string(statements, chr(10))) ed7a764adb06cf456b7a4e3fa301709a, equal to public.fn_ca_migration_text('20261031191120') and to this file (6469 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031191337",
+      "name": "signup_audit_checks_auth_triggers_by_name",
+      "file": "supabase/migrations/20261031191337_signup_audit_checks_auth_triggers_by_name.sql",
+      "md5": "c54426235d4580292b4286ed8cae3fcb",
+      "appliedToProductionAt": "2026-10-31T19:13:37Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031191337 with md5(array_to_string(statements, chr(10))) c54426235d4580292b4286ed8cae3fcb, equal to public.fn_ca_migration_text('20261031191337') and to this file (3242 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031192524",
+      "name": "digest_phase4_health_and_security_keys",
+      "file": "supabase/migrations/20261031192524_digest_phase4_health_and_security_keys.sql",
+      "md5": "0701106733ffe04837c049e780b00c4d",
+      "appliedToProductionAt": "2026-10-31T19:25:24Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031192524 with md5(array_to_string(statements, chr(10))) 0701106733ffe04837c049e780b00c4d, equal to public.fn_ca_migration_text('20261031192524') and to this file (4177 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031202221",
+      "name": "restart_gate_records_breaks_since_restart_certified_and_second_break",
+      "file": "supabase/migrations/20261031202221_restart_gate_records_breaks_since_restart_certified_and_second_break.sql",
+      "md5": "afcbc6ece51c3ab30f82c6a7f080d219",
+      "appliedToProductionAt": "2026-10-31T20:22:21Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031202221 with md5(array_to_string(statements, chr(10))) afcbc6ece51c3ab30f82c6a7f080d219, equal to public.fn_ca_migration_text('20261031202221') and to this file (1150 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031202222",
+      "name": "engine_deploy_exit_paths_are_recorded_for_every_run",
+      "file": "supabase/migrations/20261031202222_engine_deploy_exit_paths_are_recorded_for_every_run.sql",
+      "md5": "45edf42e78f73f08d9e905722b984cff",
+      "appliedToProductionAt": "2026-10-31T20:22:22Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031202222 with md5(array_to_string(statements, chr(10))) 45edf42e78f73f08d9e905722b984cff, equal to public.fn_ca_migration_text('20261031202222') and to this file (2317 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031202225",
+      "name": "stall_watch_maintenance_is_bounded",
+      "file": "supabase/migrations/20261031202225_stall_watch_maintenance_is_bounded.sql",
+      "md5": "3f19278edf0899546ded1ae4c97180f1",
+      "appliedToProductionAt": "2026-10-31T20:22:25Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031202225 with md5(array_to_string(statements, chr(10))) 3f19278edf0899546ded1ae4c97180f1, equal to public.fn_ca_migration_text('20261031202225') and to this file (1943 bytes). Already installed; nothing is replayed."
+    },
+    {
+      "version": "20261031203954",
+      "name": "close_proven_street_integrity_false_positives_2026_10_31",
+      "file": "supabase/migrations/20261031203954_close_proven_street_integrity_false_positives_2026_10_31.sql",
+      "md5": "6a668f1d52c466b0cb2d6b47146a0b35",
+      "appliedToProductionAt": "2026-10-31T20:39:54Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "issue": "Applied directly through the Supabase MCP on 2026-10-31 during the owner-directed platform-health programme (owner: 'YOU HAVE PERMISSION AND FULL ACCESS TO THE SUPABASE. STOP ASKING ME AND GET IT DONE') while false 'Tables Have Stopped Dealing' owner pages, an unbounded maintenance blind spot and mis-classified Production Alerts were live; this byte-exact recording is the committed next step required by PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "supabase_migrations.schema_migrations holds version 20261031203954 with md5(array_to_string(statements, chr(10))) 6a668f1d52c466b0cb2d6b47146a0b35, equal to public.fn_ca_migration_text('20261031203954') and to this file (1943 bytes). Already installed; nothing is replayed."
     }
   ]
 }

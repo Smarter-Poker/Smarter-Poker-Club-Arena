@@ -17,6 +17,7 @@
  * the applier, and a bounded wait for a refusal that releases on its own.
  */
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
@@ -61,6 +62,35 @@ const INSTALLED_BEFORE_THE_CHECK = new Set([
   '20261024223153_woowoo_half_earned_rake_credited_to_kingfish.sql',
 ]);
 
+/**
+ * Byte-exact RECORDINGS of SQL production already ran (2026-10-31). These were
+ * installed through the Supabase MCP during the platform-health programme with
+ * statements that carried no BEGIN/COMMIT, and a recording must hash to the
+ * ledger's own bytes (scripts/ci/recording-only.mjs), so wrapping the file would
+ * make it a different migration. Each is pinned to its manifest row below; none
+ * is ever dispatched to the applier - production answers ALREADY-APPLIED. This
+ * set is closed: a new migration is wrapped, never added here.
+ */
+const RECORDED_UNWRAPPED_2026_10_31 = new Set([
+  '20261031172116_operational_alerts_route_to_production_alerts_not_phone.sql',
+  '20261031172724_closed_diamond_arena_alerts_are_intended_state.sql',
+  '20261031172826_closed_arena_intent_covers_liveness_findings_only.sql',
+  '20261031182341_a_stopped_table_is_caught_in_sixty_seconds.sql',
+  '20261031182400_owner_holds_are_not_overdue_or_stopped_play.sql',
+  '20261031182445_schedule_table_stall_watch_every_ten_seconds.sql',
+  '20261031183410_lightning_latency_alerts_resolve_with_hysteresis.sql',
+  '20261031184258_informational_diamond_journal_and_adjustment_approval_notices_arrive_closed.sql',
+  '20261031190452_stall_watch_knows_waits_staleness_and_custody.sql',
+  '20261031190637_stall_watch_restart_is_not_stale.sql',
+  '20261031191120_mirror_alert_receipts_and_resolved_twins_are_informational.sql',
+  '20261031191337_signup_audit_checks_auth_triggers_by_name.sql',
+  '20261031192524_digest_phase4_health_and_security_keys.sql',
+  '20261031202221_restart_gate_records_breaks_since_restart_certified_and_second_break.sql',
+  '20261031202222_engine_deploy_exit_paths_are_recorded_for_every_run.sql',
+  '20261031202225_stall_watch_maintenance_is_bounded.sql',
+  '20261031203954_close_proven_street_integrity_false_positives_2026_10_31.sql',
+]);
+
 describe('a merged migration is one the applier will take', () => {
   const files = readdirSync(DIR)
     .filter((f) => f.endsWith('.sql') && f.slice(0, 14) >= CHECKED_FROM)
@@ -70,9 +100,28 @@ describe('a merged migration is one the applier will take', () => {
     expect(files.length).toBeGreaterThan(100);
   });
 
-  it.each(files.filter((f) => !INSTALLED_BEFORE_THE_CHECK.has(f)))('%s', (file) => {
+  it.each(
+    files.filter((f) => !INSTALLED_BEFORE_THE_CHECK.has(f) && !RECORDED_UNWRAPPED_2026_10_31.has(f))
+  )('%s', (file) => {
     const shape = migrationTransactionShape(file, read(file));
     expect(shape.ok ? 'installable' : shape.reason).toBe('installable');
+  });
+
+  it('pins every 2026-10-31 unwrapped recording to its byte-exact manifest row', () => {
+    const manifest = JSON.parse(
+      readFileSync(join(ROOT, 'scripts/ci/recorded-migrations.manifest.json'), 'utf8')
+    ) as { recordings: Array<{ file: string; md5: string }> };
+    for (const file of RECORDED_UNWRAPPED_2026_10_31) {
+      const row = manifest.recordings.find((r) => r.file === `supabase/migrations/${file}`);
+      expect(row, file).toBeDefined();
+      expect(
+        createHash('md5')
+          .update(readFileSync(join(DIR, file)))
+          .digest('hex'),
+        file
+      ).toBe(row?.md5);
+      expect(migrationTransactionShape(file, read(file)).ok, file).toBe(false);
+    }
   });
 
   it('keeps the grandfathered list closed: every name is a real, unwrapped file', () => {

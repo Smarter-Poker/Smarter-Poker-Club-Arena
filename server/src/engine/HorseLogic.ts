@@ -7248,7 +7248,14 @@ export class HorseLogic {
       let bettor40: string | null = null;
       for (const a of gs.actionHistory) {
         if (a.stage !== street || a.userId === player.user_id) continue;
-        if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+        // HandController leaves an all-in CALL's raise flag undefined. Both
+        // true (full raise) and false (short raise) increase the price; a call
+        // must not replace the bettor whose earlier barrels we are reading.
+        if (
+          a.action === 'bet' ||
+          a.action === 'raise' ||
+          (a.action === 'all_in' && typeof a.isFullRaise === 'boolean')
+        )
           bettor40 = a.userId;
       }
       if (bettor40) {

@@ -321,7 +321,7 @@ export default function MemberManagementPage() {
         authorityRefreshRef.current();
     },
     onSubscriptionStatus: (status) => {
-      if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
+      if (status === 'SUBSCRIBED') authorityRefreshRef.current(true);
     },
     onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
   });
@@ -336,7 +336,7 @@ export default function MemberManagementPage() {
         walletUpdates.refresh(userId);
     },
     onSubscriptionStatus: (status) => {
-      if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
+      if (status === 'SUBSCRIBED') authorityRefreshRef.current(true);
     },
     onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
   });
@@ -607,6 +607,7 @@ export default function MemberManagementPage() {
       void (async () => {
         try {
           const accessRevision = accessDenialRef.current.revision;
+          const walletSnapshot = walletUpdatesRef.current.snapshot();
           const authority = await ClubRosterService.getMemberDetail(
             resolvedClubId,
             userId,
@@ -647,7 +648,14 @@ export default function MemberManagementPage() {
             const avatarUrl = authority.identity.avatar_url;
             setDetail((previous) => {
               if (!previous) return previous;
-              const refreshed = applyAccessDenial(previous, restricted);
+              // Lifecycle catchups share this read owner instead of opening
+              // an independent overall wallet read. Preserve absolute balances
+              // received after this snapshot and the authoritative denial fence.
+              const wallets = walletUpdatesRef.current.reconcile(
+                toWalletRow(authority),
+                walletSnapshot
+              );
+              const refreshed = applyAccessDenial(applyWalletRow(previous, wallets[0]), restricted);
               return {
                 ...refreshed,
                 // The read-only portrait follows the verified record; notes retain their owner.

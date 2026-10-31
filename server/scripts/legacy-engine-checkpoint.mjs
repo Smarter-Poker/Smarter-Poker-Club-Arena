@@ -1,3 +1,4 @@
+export const LEGACY_CENSUS_NATIVE_SOURCE_SHA256 = '4188fe96998d59bf5450d778a3a4f08f5bc3cd9dabc55ae1259e0066056f3ea6';
 // Concatenated after the exact guard by the owning release transaction.
 // Importing this module only exposes the isolated fixture seam.
 import { setTimeout as checkpointDelay } from 'node:timers/promises';
@@ -482,6 +483,52 @@ export function deferrableCheckpointRefusal(outcome) {
   );
 }
 
+// Serialized into the existing owned Inspector. The control wrapper binds the
+// descriptor source hash to its protected LEGACY_CENSUS_NATIVE_SOURCE_SHA256 pin.
+export function loadLegacyNativeCensus(descriptor) {
+  const fail = () => { throw new Error('native census artifact identity refused'); };
+  const fields = ['schema','path','manifestPath','binarySHA256','manifestSHA256','sourceSHA256',
+    'candidateSHA','candidateImageId','candidateSourceTree'];
+  if (!descriptor || typeof descriptor !== 'object' || descriptor.schema !== 'legacy-native-census-artifact/v1' ||
+      Object.keys(descriptor).length !== fields.length ||
+      !fields.every(k => typeof descriptor[k] === 'string') ||
+      !/^\/app\/\.legacy-census-checkpoint-[1-9][0-9]*(?:-[1-9][0-9]*)?\/legacy-census\.node$/.test(descriptor.path) ||
+      descriptor.manifestPath !== descriptor.path+'.json' ||
+      !['binarySHA256','manifestSHA256','sourceSHA256'].every(k => /^[0-9a-f]{64}$/.test(descriptor[k])) ||
+      !/^[0-9a-f]{40}$/.test(descriptor.candidateSHA) ||
+      !/^sha256:[0-9a-f]{64}$/.test(descriptor.candidateImageId) ||
+      !/^[0-9a-f]{40}$/.test(descriptor.candidateSourceTree)) fail();
+  const fs = process.getBuiltinModule('node:fs');
+  const crypto = process.getBuiltinModule('node:crypto');
+  const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+  const read = path => {
+    const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+      const before = fs.fstatSync(fd);
+      if (!before.isFile() || before.uid !== 0 || (before.mode & 0o022) !== 0 || before.size > 16*1024*1024) fail();
+      const bytes = fs.readFileSync(fd);
+      const after = fs.fstatSync(fd);
+      if (['dev','ino','size','mtimeMs','ctimeMs'].some(k=>before[k]!==after[k])) fail();
+      return bytes;
+    } finally { fs.closeSync(fd); }
+  };
+  const raw = read(descriptor.manifestPath);
+  if (sha(raw) !== descriptor.manifestSHA256) fail();
+  const m = JSON.parse(raw);
+  if (m.schema !== 'legacy-native-census-build/v1' || process.version !== 'v22.23.2' ||
+      process.versions.v8 !== '12.4.254.21-node.56' || process.versions.modules !== '127' ||
+      m.node !== process.version || m.v8 !== process.versions.v8 || m.modules !== process.versions.modules ||
+      m.platform !== process.platform || m.arch !== process.arch ||
+      m.pointerCompression !== process.config.variables.v8_enable_pointer_compression ||
+      m.sourceSHA256 !== descriptor.sourceSHA256 || m.binarySHA256 !== descriptor.binarySHA256 ||
+      m.maxMatches !== 22096 || m.managedOutputBytes !== 772608 ||
+      sha(read(descriptor.path)) !== descriptor.binarySHA256) fail();
+  const addon = process.getBuiltinModule('node:module').createRequire('/app/native/legacy-census-loader.cjs')(descriptor.path);
+  if (typeof addon.collect !== 'function' || addon.sourceSHA256 !== descriptor.sourceSHA256 || addon.maxMatches !== 22096 || addon.managedOutputBytes !== 772608 ||
+      sha(read(descriptor.path)) !== descriptor.binarySHA256) fail();
+  return addon;
+}
+
 // Serialized into the existing owned inspector, with no ambient application inputs.
 export function readLegacyCensusMemory() {
   const heap = process.getBuiltinModule('node:v8').getHeapStatistics();
@@ -549,7 +596,7 @@ export function legacyCensusRoot() {
 
 // Bind only cached modules before the synchronous census. No application
 // prototype changes cross an Inspector request or an async boundary.
-export function bindLegacyCensusModules(holderKey, workDeadlineMs) {
+export function bindLegacyCensusModules(holderKey, workDeadlineMs, nativeCensus = null) {
   if (
     typeof holderKey !== 'string' ||
     !/^__legacyEngineCensus_[0-9a-f]{32}$/.test(holderKey) ||
@@ -562,6 +609,7 @@ export function bindLegacyCensusModules(holderKey, workDeadlineMs) {
   const holder = Object.create(null);
   Object.defineProperties(holder, {
     modules: { value: this },
+    nativeCensus: { value: nativeCensus },
     deadline: { value: workDeadlineMs },
     schema: { value: 'legacy-marked-census/v1' },
   });
@@ -666,7 +714,8 @@ export function collectMarkedLegacyCensus(holderKey, workDeadlineMs) {
     if (!markerHandle?.result?.objectId) throw new Error('native census marker unavailable');
     if (Date.now() >= workDeadlineMs) throw new Error('native census deadline exhausted');
     const changed = [];
-    let census;
+    let census, nativeObjects;
+    const native = getOwnPropertyDescriptor(holder, 'nativeCensus')?.value;
     try {
       for (const top of tops) {
         setPrototypeOf(top, marker);
@@ -675,10 +724,14 @@ export function collectMarkedLegacyCensus(holderKey, workDeadlineMs) {
       // The outer Runtime.evaluate has disableBreaks:true. The same native
       // dispatch owns insertion, this synchronous query and exact restoration;
       // queued remote cleanup and application callbacks cannot observe a marker.
-      census = post('Runtime.queryObjects', {
-        prototypeObjectId: markerHandle.result.objectId,
-        objectGroup: 'legacy-marked-native-census',
-      });
+      if (native) {
+        nativeObjects = native.collect(marker, workDeadlineMs, process.availableMemory());
+      } else {
+        census = post('Runtime.queryObjects', {
+          prototypeObjectId: markerHandle.result.objectId,
+          objectGroup: 'legacy-marked-native-census',
+        });
+      }
     } finally {
       let failed = false;
       for (let index = changed.length - 1; index >= 0; index--) {
@@ -692,6 +745,11 @@ export function collectMarkedLegacyCensus(holderKey, workDeadlineMs) {
       if (failed) throw new Error('native census prototype restoration refused');
     }
     if (Date.now() >= workDeadlineMs) throw new Error('native census deadline exhausted');
+    if (native) {
+      if (!Array.isArray(nativeObjects)) throw new Error('native census unavailable');
+      defineProperty(holder, 'objects', { value: nativeObjects });
+      return nativeObjects;
+    }
     if (!census?.objects?.objectId) throw new Error('native census unavailable');
     post('Runtime.callFunctionOn', {
       objectId: census.objects.objectId,
@@ -922,6 +980,17 @@ export async function runLegacyEngineCheckpoint({
       lightningWorkerObjects = null,
       lightningHostObjects = null;
     if (discoverEngines) {
+      let nativeArtifact = null;
+      if (custodyIntent?.nativeCensus) {
+        if (custodyIntent.nativeCensus.sourceSHA256 !== LEGACY_CENSUS_NATIVE_SOURCE_SHA256)
+          throw refused('native census source identity refused');
+        operation = 'loadNativeCensus';
+        nativeArtifact = remoteValue(await connection.request('Runtime.evaluate', {
+          expression: `(${loadLegacyNativeCensus.toString()})(${JSON.stringify(custodyIntent.nativeCensus)})`,
+          objectGroup: 'legacy-checkpoint',
+        }, deadline, operation));
+        if (!nativeArtifact?.objectId) throw refused('native census artifact unavailable');
+      }
       operation = 'censusMemoryAdmission';
       const memory = remoteValue(
         await connection.request(
@@ -935,6 +1004,12 @@ export async function runLegacyEngineCheckpoint({
         )
       );
       censusMemory = legacyCensusMemoryAdmission(memory?.value);
+      if (nativeArtifact && censusMemory) {
+        censusMemory.requiredHeapBytes = 32 * 1024 * 1024 + 772608;
+        censusMemory.ok = censusMemory.availableHeapBytes >= censusMemory.requiredHeapBytes &&
+          censusMemory.availableProcessBytes >= censusMemory.requiredProcessBytes;
+        censusMemory.path = 'abi-pinned-bounded-native';
+      }
       if (!censusMemory?.ok) throw refused('native census memory headroom refused');
       operation = 'broadPrototype';
       const prototype = remoteValue(
@@ -959,7 +1034,8 @@ export async function runLegacyEngineCheckpoint({
           {
             objectId: modules.objectId,
             functionDeclaration: bindLegacyCensusModules.toString(),
-            arguments: [{ value: holderKey }, { value: deadline }],
+            arguments: [{ value: holderKey }, { value: deadline },
+              ...(nativeArtifact ? [{ objectId: nativeArtifact.objectId }] : [])],
             returnByValue: true,
           },
           deadline,

@@ -16,6 +16,11 @@ vi.setConfig({ testTimeout: 90_000 });
 import { sliceBetween } from './helpers/sourceWindow';
 import { parse } from 'yaml';
 
+// Valid immutable-artifact input supplied by the original preparation stage.
+// These cases isolate intent/deadline semantics; packaging has its own real fixture.
+const nativeDescriptor =
+  '{"schema":"legacy-native-census-artifact/v1","path":"/app/.legacy-census-checkpoint-123/legacy-census.node","manifestPath":"/app/.legacy-census-checkpoint-123/legacy-census.node.json","binarySHA256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","manifestSHA256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","sourceSHA256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","candidateSHA":"dddddddddddddddddddddddddddddddddddddddd","candidateImageId":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","candidateSourceTree":"ffffffffffffffffffffffffffffffffffffffff"}';
+
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
 const entryRead = transaction.slice(
@@ -105,6 +110,9 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
         '40948063249-1',
         String(now + offset),
         String(Math.floor(now / 1000) + 299),
+        'd'.repeat(40),
+        'sha256:' + 'e'.repeat(64),
+        'f'.repeat(40),
       ],
       {
         encoding: 'utf8',
@@ -167,7 +175,7 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
       try {
         const block = checkpointShell.slice(
           checkpointShell.indexOf('# Installed SQL is a prerequisite'),
-          checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
+          checkpointShell.indexOf('# Staging is inside the original one-shot intent')
         );
         expect(block).toContain('--mixed-custody-contract');
         const result = spawnSync(
@@ -191,6 +199,7 @@ RUN_ID=35405450271-1
 date() { if [ "$1" = +%s%3N ]; then "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; else command date "$@"; fi; }
 CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
 CHECKPOINT_BREAK_END_EPOCH="$CHECKPOINT_TEST_BREAK_END"
+NATIVE_DESCRIPTOR='${nativeDescriptor}'
 REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
 CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
 STARTED_AT=2026-09-18T21:55:50.88305198Z

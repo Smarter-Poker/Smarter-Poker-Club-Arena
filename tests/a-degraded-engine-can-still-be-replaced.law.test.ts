@@ -170,6 +170,12 @@ mapfile() {
         readFileSync(resolve(root, 'server/scripts/prewarm-engine-image.sh'))
       );
       chmodSync(join(generation, 'prewarm-engine-image.sh'), 0o755);
+      // This sandbox proves the original HTTP503 transaction boundary, not
+      // provider-only native scale. Its dependency is independently qualified.
+      writeFileSync(
+        join(generation, 'legacy-census-scale-preflight.py'),
+        'import sys\nassert len(sys.argv) == 4\n'
+      );
       writeFileSync(
         join(generation, 'engine-release-activation-floor.py'),
         readFileSync(resolve(root, 'server/scripts/engine-release-activation-floor.py'))

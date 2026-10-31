@@ -2160,8 +2160,16 @@ PY
 
 validate_candidate_image() {
   local identity
-  identity="$(bounded_break_command 10 docker image inspect --format '{{json .}}' "$IMAGE_REF")" \
-    || die 'candidate image tag is absent'
+  if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
+    identity="$(bounded_break_command 10 docker image inspect --format '{{json .}}' "$IMAGE_REF")" \
+      || die 'candidate image tag is absent'
+  else
+    local remaining
+    remaining="$(remaining_seconds)" || die 'candidate image verification deadline expired'
+    [ "$remaining" -le 10 ] || remaining=10
+    identity="$(timeout --signal=KILL "${remaining}s" docker image inspect --format '{{json .}}' "$IMAGE_REF")" \
+      || die 'candidate image tag is absent before maintenance'
+  fi
   mapfile -t IMAGE_FIELDS < <(printf '%s' "$identity" \
     | EXPECTED_SHA="$SHA" EXPECTED_TREE="$EXPECTED_SERVER_TREE" python3 -c '
 import json, os, re, sys
@@ -2195,6 +2203,16 @@ prewarm_candidate_image() {
     || die 'candidate image preparation identity is unavailable'
   "$CONTROL_DIR/prewarm-engine-image.sh" "$image_id" "$RUN_ID" "$MUTATION_DEADLINE_EPOCH" \
     || die 'candidate filesystem warm-up did not finish before maintenance'
+  validate_candidate_image
+  [ "$TARGET_IMAGE_ID" = "$image_id" ] || die 'candidate changed during filesystem warm-up'
+  local predecessor
+  predecessor="$(timeout --signal=KILL 5s "$RELEASE_SEAL" get desired-sha)" \
+    || die 'checkpoint preparation predecessor is unreadable'
+  case "$predecessor" in
+    "$LEGACY_CHECKPOINT_SHA"|"$CHECKPOINT_758_SHA"|"$CHECKPOINT_A0_SHA"|"$CHECKPOINT_8825_SHA"|"$CHECKPOINT_EED_SHA")
+      "$LEGACY_CHECKPOINT" --prepare-native-census "$RUN_ID" "$SHA" "$TARGET_IMAGE_ID" "$EXPECTED_SERVER_TREE" "$MUTATION_DEADLINE_EPOCH" \
+        || die 'immutable native checkpoint artifact preparation failed before maintenance' ;;
+  esac
 }
 
 read_pending_owner() {
@@ -2610,7 +2628,7 @@ while :; do
     LEGACY_CHECKPOINT_ATTEMPTED=1
     legacy_entry_trace checkpoint verified
     set +e
-    "$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))" "$LEGACY_ENTRY_BREAK_END_EPOCH"
+    "$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))" "$LEGACY_ENTRY_BREAK_END_EPOCH" "$SHA" "$TARGET_IMAGE_ID" "$EXPECTED_SERVER_TREE"
     LEGACY_CHECKPOINT_RC=$?
     set -e
     if [ "$LEGACY_CHECKPOINT_RC" = 0 ]; then

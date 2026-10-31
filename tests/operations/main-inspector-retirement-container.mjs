@@ -333,7 +333,11 @@ process.once('exit', () => process.getBuiltinModule('node:fs').writeSync(2, 'fix
       try {
         proposalLine = output.slice(0, output.indexOf('\n'));
         const proposal = JSON.parse(proposalLine);
-        assert.equal(proposal.schema, 'main-inspector-retirement/v1');
+        assert.equal(
+          proposal.schema,
+          'main-inspector-retirement/v1',
+          'unexpected MAIN Inspector proposal: ' + JSON.stringify(proposal).slice(0, 4096)
+        );
         assert.match(proposal.endpoint, /^ws:\/\/127\.0\.0\.1:9229\/[a-f0-9-]{36}$/i);
         assert.equal(proposal.binding.pid, 1);
         assert.equal(proposal.binding.schema, 'main-inspector-socket-binding/v1');

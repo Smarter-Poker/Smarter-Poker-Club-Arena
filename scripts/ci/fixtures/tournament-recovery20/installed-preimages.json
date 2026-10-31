@@ -1,0 +1,181 @@
+{
+  "columns": [
+    {
+      "type": "boolean",
+      "table": "engine_leader",
+      "column": "id"
+    },
+    {
+      "type": "text",
+      "table": "engine_leader",
+      "column": "instance_id"
+    },
+    {
+      "type": "text",
+      "table": "engine_leader",
+      "column": "engine_version"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_leader",
+      "column": "acquired_at"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_leader",
+      "column": "heartbeat_at"
+    },
+    {
+      "type": "boolean",
+      "table": "engine_maintenance_break",
+      "column": "id"
+    },
+    {
+      "type": "text",
+      "table": "engine_maintenance_break",
+      "column": "phase"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_break",
+      "column": "announced_at"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_break",
+      "column": "break_started_at"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_break",
+      "column": "break_ends_at"
+    },
+    {
+      "type": "text",
+      "table": "engine_maintenance_break",
+      "column": "reason"
+    },
+    {
+      "type": "text",
+      "table": "engine_maintenance_break",
+      "column": "declared_by"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_break",
+      "column": "updated_at"
+    },
+    {
+      "type": "boolean",
+      "table": "engine_maintenance_break",
+      "column": "enforce_freeze"
+    },
+    {
+      "type": "uuid",
+      "table": "engine_maintenance_break",
+      "column": "ownership_token"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_thaws",
+      "column": "freeze_started_at"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_thaws",
+      "column": "thawed_at"
+    },
+    {
+      "type": "numeric",
+      "table": "engine_maintenance_thaws",
+      "column": "frozen_seconds"
+    },
+    {
+      "type": "jsonb",
+      "table": "engine_maintenance_thaws",
+      "column": "shifted"
+    },
+    {
+      "type": "text",
+      "table": "engine_maintenance_thaws",
+      "column": "thawed_by"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_thaws",
+      "column": "announced_at"
+    },
+    {
+      "type": "uuid",
+      "table": "engine_maintenance_thaws",
+      "column": "ownership_token"
+    },
+    {
+      "type": "integer",
+      "table": "engine_maintenance_thaws",
+      "column": "contract_version"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_thaws",
+      "column": "release_target_at"
+    },
+    {
+      "type": "integer",
+      "table": "engine_maintenance_thaws",
+      "column": "release_generation"
+    }
+  ],
+  "functions": [
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "md5": "7f0baf610a409fb665a9a773db60d9bd",
+      "owner": "postgres",
+      "signature": "fn_ca_ack_tournament_abort_boundary(uuid,uuid,uuid,uuid,bigint,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_ack_tournament_abort_boundary(p_operation_id uuid, p_tournament_id uuid, p_table_id uuid, p_lease_generation uuid, p_hand_number bigint, p_evidence jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE a smarter_private.tournament_abort_targets; t public.tables; snapshot jsonb;\nBEGIN\n -- The only producer is the explicit engine abort request, after its own\n -- physical park, all bank/private writers, and manager callback tails JOIN.\n -- floor_state remains a read and can never manufacture this certificate.\n PERFORM smarter_private.cancellation_lane(p_tournament_id);\n PERFORM smarter_private.f06_authority(p_tournament_id,p_lease_generation);\n SELECT * INTO a FROM smarter_private.tournament_abort_targets WHERE operation_id=p_operation_id AND tournament_id=p_tournament_id FOR UPDATE;\n IF NOT FOUND OR a.state='settled' THEN RAISE EXCEPTION 'operator_abort_target_not_acknowledgeable' USING ERRCODE='55000';END IF;\n SELECT * INTO t FROM public.tables WHERE id=p_table_id AND tournament_id=p_tournament_id FOR UPDATE;\n IF NOT FOUND OR p_hand_number IS NULL OR p_hand_number<0 OR p_evidence IS NULL\n OR p_evidence->>'kind' IS DISTINCT FROM 'tournament_abort_boundary_v1'\n OR p_evidence->>'certificate_version' IS DISTINCT FROM '1'\n OR p_evidence->>'physical_stopped' IS DISTINCT FROM 'true'\n OR p_evidence->>'parked_before_retirement' IS DISTINCT FROM 'true'\n OR p_evidence->>'drained' IS DISTINCT FROM 'true'\n OR p_evidence->>'manager_tail_joined' IS DISTINCT FROM 'true'\n OR p_evidence->>'pending_writers' IS DISTINCT FROM '0'\n OR p_evidence->>'bank_state_write_pending' IS DISTINCT FROM 'false'\n OR (p_evidence->>'lifecycle')::bigint IS DISTINCT FROM t.f06_lifecycle\n OR (p_evidence->>'hand_number')::bigint IS DISTINCT FROM p_hand_number THEN\n  RAISE EXCEPTION 'operator_abort_physical_boundary_unverified' USING ERRCODE='P0404';END IF;\n IF jsonb_typeof(p_evidence->'source_table_ids') IS DISTINCT FROM 'array' OR EXISTS(SELECT 1 FROM public.tables x WHERE x.tournament_id=p_tournament_id AND lower(x.status)<>'closed' AND NOT coalesce(x.is_deleted,false) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(p_evidence->'source_table_ids') z WHERE z.value::uuid=x.id))\n OR EXISTS(SELECT 1 FROM jsonb_array_elements_text(p_evidence->'source_table_ids') z WHERE NOT EXISTS(SELECT 1 FROM public.tables x WHERE x.id=z.value::uuid AND x.tournament_id=p_tournament_id)) THEN\n  RAISE EXCEPTION 'operator_abort_physical_roster_incomplete' USING ERRCODE='P0404';END IF;\n IF smarter_private.tournament_abort_pending(p_tournament_id) THEN\n  RAISE EXCEPTION 'operator_abort_accepted_hand_or_award_pending' USING ERRCODE='55000';END IF;\n INSERT INTO smarter_private.tournament_abort_boundaries(operation_id,tournament_id,table_id,lifecycle,required,request_generation,existing_permits,acknowledged_generation,acknowledgement,acknowledged_at)\n VALUES(p_operation_id,p_tournament_id,p_table_id,t.f06_lifecycle,lower(t.status)<>'closed' AND NOT coalesce(t.is_deleted,false),a.requested_generation,'[]'::jsonb,p_lease_generation,p_evidence,clock_timestamp())\n ON CONFLICT(table_id) DO UPDATE SET lifecycle=EXCLUDED.lifecycle,required=EXCLUDED.required,\n acknowledged_generation=EXCLUDED.acknowledged_generation,acknowledgement=EXCLUDED.acknowledgement,acknowledged_at=EXCLUDED.acknowledged_at\n WHERE smarter_private.tournament_abort_boundaries.operation_id=p_operation_id AND smarter_private.tournament_abort_boundaries.tournament_id=p_tournament_id;\n IF NOT FOUND THEN RAISE EXCEPTION 'operator_abort_boundary_owned' USING ERRCODE='55000';END IF;\n IF NOT EXISTS(SELECT 1 FROM public.tables tb WHERE tb.tournament_id=p_tournament_id AND lower(tb.status)<>'closed' AND NOT coalesce(tb.is_deleted,false)\n  AND NOT EXISTS(SELECT 1 FROM smarter_private.tournament_abort_boundaries b WHERE b.operation_id=p_operation_id AND b.table_id=tb.id\n    AND b.lifecycle=tb.f06_lifecycle AND b.acknowledged_generation=p_lease_generation AND b.acknowledged_at IS NOT NULL)) THEN\n  snapshot:=smarter_private.tournament_abort_money_snapshot(p_tournament_id);\n  UPDATE smarter_private.tournament_abort_targets SET state='quiesced',money_snapshot=snapshot,\n   quiescence=jsonb_build_object('generation',p_lease_generation,'money_hash',md5(snapshot::text),'certified_at',clock_timestamp())\n  WHERE tournament_id=p_tournament_id AND operation_id=p_operation_id;\n END IF;\n RETURN jsonb_build_object('ok',true,'operation_id',p_operation_id,'tournament_id',p_tournament_id,'table_id',p_table_id,\n 'generation',p_lease_generation,'state',(SELECT state FROM smarter_private.tournament_abort_targets WHERE tournament_id=p_tournament_id));\nEND $function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "md5": "2b435ae83349dd87fa926caf79ff8236",
+      "owner": "postgres",
+      "signature": "fn_ca_operator_floor_state(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_operator_floor_state(p_table_id uuid)\n RETURNS jsonb\n LANGUAGE sql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT jsonb_build_object(\n 'hold',coalesce(\n  (SELECT jsonb_build_object('operation_id',c.operation_id,'mode','park','reason',c.reason)\n   FROM public.ca_diamond_arena_owner_closure c JOIN public.tables t ON t.club_id=c.club_id\n   -- Park at the existing engine boundary, including old retained originals.\n   -- Their persisted permits, continuations, snapshots and money remain intact.\n   -- Recovery must wait for a separately authorized reopening.\n   WHERE t.id=p_table_id AND c.closed),\n  (SELECT to_jsonb(h) FROM public.ca_operator_floor_hold h WHERE NOT EXISTS(SELECT 1 FROM public.ca_launch_operator_scopes m WHERE m.operation_id=h.operation_id) OR EXISTS(SELECT 1 FROM public.ca_launch_operator_scopes m WHERE m.operation_id=h.operation_id AND EXISTS(SELECT 1 FROM public.tables st WHERE st.id=p_table_id AND st.tournament_id IS NULL AND (st.club_id=ANY(m.club_ids) OR st.union_id=ANY(m.club_ids))))),\n  (SELECT jsonb_build_object('operation_id',a.operation_id,'mode','park','reason',op.reason,'tournament_abort',true,'tournament_id',a.tournament_id)\n   FROM smarter_private.tournament_abort_targets a JOIN public.tables t ON t.tournament_id=a.tournament_id\n   JOIN smarter_private.tournament_abort_operations op ON op.operation_id=a.operation_id\n   WHERE t.id=p_table_id\n    -- Startup asks before it restores an original hand. An unfinished original\n    -- is allowed through this READ so its existing permit can finish; the new\n    -- permit door above is already stopped. Never mistake this read for ACK.\n    AND NOT EXISTS(SELECT 1 FROM smarter_private.f06_hand_permits h WHERE h.table_id=t.id AND h.state='reserved')\n    AND NOT EXISTS(SELECT 1 FROM public.hand_state_snapshots s WHERE s.table_id=t.id AND NOT s.is_complete))),\n 'close',(SELECT to_jsonb(c) FROM public.ca_operator_table_closes c WHERE c.table_id=p_table_id AND c.status='pending'));\n$function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "md5": "4fc62beaf628ed3531b4de8c48165d57",
+      "owner": "postgres",
+      "signature": "fn_ca_settle_tournament_abort(uuid,uuid,text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_settle_tournament_abort(p_operation_id uuid, p_tournament_id uuid, p_expected_money_hash text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE a smarter_private.tournament_abort_targets;t public.tournaments; financial jsonb; v_receipt jsonb; pre_roster jsonb; pre_seats jsonb; before_history jsonb; after_history jsonb;\n player_ids uuid[];refunded_ids uuid[];zero_ids uuid[];table_ids uuid[];seat_ids uuid[];released_ids uuid[];fee_ids uuid[]:='{}';\n fee record;fee_id uuid; rake_before numeric;rake_after numeric;fees_reversed numeric:=0; settled timestamptz:=clock_timestamp();\n actor constant uuid:='2d1cd6c3-5700-4af9-a271-d4863fdab20d'; v_close_note constant text:='Explicit operator started-event abort after generation-bound physical and manager drain';\nBEGIN\n IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'operator_abort_service_required' USING ERRCODE='42501';END IF;\n PERFORM smarter_private.cancellation_lane(p_tournament_id);\n SELECT * INTO t FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;\n SELECT * INTO a FROM smarter_private.tournament_abort_targets WHERE operation_id=p_operation_id AND tournament_id=p_tournament_id FOR UPDATE;\n IF NOT FOUND THEN RAISE EXCEPTION 'operator_abort_target_not_owned';END IF;\n IF a.state='settled' THEN RETURN public.fn_ca_tournament_cancellation_receipt(p_tournament_id);END IF;\n PERFORM smarter_private.assert_tournament_abort_quiesced(p_operation_id,p_tournament_id);\n IF p_expected_money_hash IS NULL OR p_expected_money_hash IS DISTINCT FROM a.quiescence->>'money_hash' THEN RAISE EXCEPTION 'operator_abort_review_hash_mismatch' USING ERRCODE='55000';END IF;\n IF t.started_at IS NULL OR upper(t.status) NOT IN('RUNNING','BREAK','LATE_REG') THEN RAISE EXCEPTION 'operator_abort_parent_not_running';END IF;\n PERFORM 1 FROM public.tournament_players WHERE tournament_id=p_tournament_id ORDER BY id FOR UPDATE;\n PERFORM 1 FROM public.tables WHERE tournament_id=p_tournament_id ORDER BY id FOR UPDATE;\n PERFORM 1 FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id WHERE tb.tournament_id=p_tournament_id ORDER BY s.id FOR UPDATE OF s;\n SELECT coalesce(array_agg(id ORDER BY id),'{}'),coalesce(jsonb_agg(to_jsonb(p) ORDER BY id),'[]') INTO player_ids,pre_roster FROM public.tournament_players p WHERE tournament_id=p_tournament_id;\n SELECT coalesce(array_agg(id ORDER BY id),'{}') INTO table_ids FROM public.tables WHERE tournament_id=p_tournament_id;\n SELECT coalesce(array_agg(s.id ORDER BY s.id),'{}') INTO seat_ids FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id WHERE tb.tournament_id=p_tournament_id;\n SELECT coalesce(jsonb_agg(jsonb_build_object('id',s.id,'table_id',s.table_id,'user_id',s.user_id,'seat_number',s.seat_number,'stack',s.stack,'status',s.status,'left_at',s.left_at,'occupancy_id',to_jsonb(s)->'occupancy_id') ORDER BY s.id),'[]'::jsonb) INTO pre_seats FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id WHERE tb.tournament_id=p_tournament_id;\n SELECT coalesce(array_agg(s.id ORDER BY s.id),'{}') INTO released_ids FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id WHERE tb.tournament_id=p_tournament_id AND s.left_at IS NULL;\n before_history:=jsonb_build_object('awards',a.money_snapshot->'awards','bounty_awards',a.money_snapshot->'bounty_awards','satellite_awards',a.money_snapshot->'satellite_awards',\n  'hands',(SELECT md5(coalesce(jsonb_agg(to_jsonb(h) ORDER BY h.id)::text,'[]')) FROM public.hand_history h WHERE h.tournament_id=p_tournament_id));\n IF a.asset='diamonds' THEN financial:=smarter_private.diamond_tournament_abort_refunds(p_operation_id,p_tournament_id);\n ELSE financial:=smarter_private.chip_tournament_abort_refunds(p_operation_id,p_tournament_id);END IF;\n IF financial->>'fully_settled' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'operator_abort_financial_receipt_incomplete';END IF;\n SELECT coalesce(sum(rake_amount),0) INTO rake_before FROM public.rake_records WHERE tournament_id=p_tournament_id AND is_tournament;\n IF rake_before<0 OR rake_before::text IN('NaN','Infinity','-Infinity') OR round(coalesce(t.total_rake,0),2) IS DISTINCT FROM rake_before THEN RAISE EXCEPTION 'operator_abort_rake_cache_mismatch';END IF;\n FOR fee IN SELECT club_id,metadata->>'user_id' user_id,sum(rake_amount) amount,jsonb_agg(id ORDER BY id) source_ids FROM public.rake_records\n  WHERE tournament_id=p_tournament_id AND is_tournament GROUP BY club_id,metadata->>'user_id' HAVING sum(rake_amount)>0 ORDER BY club_id,metadata->>'user_id' LOOP\n  IF fee.club_id IS NULL OR fee.user_id IS NULL THEN RAISE EXCEPTION 'operator_abort_unattributed_rake_source';END IF;\n  INSERT INTO public.rake_records(club_id,rake_amount,pot_size,num_players,bbj_contribution,is_tournament,tournament_id,source,metadata)\n  VALUES(fee.club_id,-fee.amount,fee.amount,1,0,true,p_tournament_id,'operator_abort_tournament',jsonb_build_object('kind','tournament_fee_refund','operation_id',p_operation_id,'user_id',fee.user_id,'original_rake_record_ids',fee.source_ids)) RETURNING id INTO fee_id;\n  fee_ids:=array_append(fee_ids,fee_id);fees_reversed:=fees_reversed+fee.amount;\n END LOOP;\n SELECT coalesce(sum(rake_amount),0) INTO rake_after FROM public.rake_records WHERE tournament_id=p_tournament_id AND is_tournament;\n IF rake_after<>0 OR fees_reversed IS DISTINCT FROM rake_before THEN RAISE EXCEPTION 'operator_abort_rake_not_exactly_closed';END IF;\n IF NOT EXISTS(SELECT 1 FROM public.tournament_escrow WHERE tournament_id=p_tournament_id AND enforced AND closed_at IS NULL AND prize_balance=0 AND bounty_balance=0 AND fee_balance=0) THEN RAISE EXCEPTION 'operator_abort_escrow_not_exact_zero';END IF;\n UPDATE public.tournament_escrow SET closed_at=settled,close_note=v_close_note,updated_at=now() WHERE tournament_id=p_tournament_id;\n -- Keep original eliminated_at, elimination sequence, finish position and prize.\n -- Active remaining virtual stacks are administrative retirements, not results.\n UPDATE public.tournament_players SET status='eliminated',chips=0,current_bounty=0 WHERE tournament_id=p_tournament_id AND status::text<>'eliminated';\n UPDATE public.table_seats s SET left_at=coalesce(s.left_at,settled),status='left',stack=0,leave_pending=false,is_sitting_out=false,is_away=false,sit_out_at=NULL,scheduled_leave_hands=NULL\n  FROM public.tables tb WHERE tb.id=s.table_id AND tb.tournament_id=p_tournament_id;\n UPDATE public.tournaments SET status='CANCELLED',ended_at=settled,updated_at=now(),prize_pool=0,bounty_pool=0,total_rake=0,current_players=0,on_break=false,break_started_at=NULL,break_ends_at=NULL WHERE id=p_tournament_id;\n UPDATE public.tables SET status='closed',lifecycle='closed',current_players=0,terminal_closed_at=settled,updated_at=now() WHERE tournament_id=p_tournament_id;\n after_history:=jsonb_build_object('awards',smarter_private.tournament_abort_money_snapshot(p_tournament_id)->'awards','bounty_awards',smarter_private.tournament_abort_money_snapshot(p_tournament_id)->'bounty_awards','satellite_awards',smarter_private.tournament_abort_money_snapshot(p_tournament_id)->'satellite_awards',\n  'hands',(SELECT md5(coalesce(jsonb_agg(to_jsonb(h) ORDER BY h.id)::text,'[]')) FROM public.hand_history h WHERE h.tournament_id=p_tournament_id));\n IF before_history IS DISTINCT FROM after_history THEN RAISE EXCEPTION 'operator_abort_earned_results_or_original_hands_changed:%:%:%:%',before_history,after_history,financial->'prior_awards_preserved',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM public.tournament_obligations o WHERE tournament_id=p_tournament_id AND kind<>'refund');END IF;\n SELECT coalesce(array_agg(id ORDER BY id),'{}') INTO refunded_ids FROM public.tournament_players p WHERE p.tournament_id=p_tournament_id AND EXISTS(SELECT 1 FROM jsonb_array_elements(financial->'refunds') r WHERE (r->>'user_id')::uuid=p.user_id);\n SELECT coalesce(array_agg(id ORDER BY id),'{}') INTO zero_ids FROM unnest(player_ids) id WHERE NOT id=ANY(refunded_ids);\n v_receipt:=jsonb_build_object('ok',true,'success',true,'fully_settled',true,'receipt_version',3,'mode','started_operator_abort','operation_id',p_operation_id,'tournament_id',p_tournament_id,'actor_id',actor,'status','CANCELLED',\n 'source_player_count',cardinality(player_ids),'refunded_count',cardinality(refunded_ids),'refund_line_count',jsonb_array_length(financial->'refunds'),'ticket_return_count',0,'ticket_returns','[]'::jsonb,'total_ticket_returned',0,\n 'total_refunded',(financial->>'total_refunded')::numeric,'fees_reversed',fees_reversed,'closed_table_count',cardinality(table_ids),'source_seat_count',cardinality(seat_ids),'released_seat_count',cardinality(released_ids),'refunds',financial->'refunds','settled_at',settled,\n 'original_started_at',t.started_at,'financial',financial,'pre_abort_roster',pre_roster,'pre_abort_seats',pre_seats,'preserved_history',before_history,'quiescence',a.quiescence,'terminal_snapshot',smarter_private.tournament_abort_terminal_snapshot(p_tournament_id));\n UPDATE smarter_private.tournament_abort_targets SET state='settled',receipt=v_receipt,settled_at=settled WHERE tournament_id=p_tournament_id AND operation_id=p_operation_id;\n INSERT INTO public.tournament_cancellation_receipts(tournament_id,actor_id,receipt_version,source_player_count,source_player_ids,refunded_count,refunded_registration_ids,refund_line_count,ticket_return_count,ticket_return_ids,total_ticket_returned,zero_refund_count,zero_refund_registration_ids,total_refunded,fees_reversed,total_rake_before,total_rake_after,closed_table_count,closed_table_ids,source_seat_count,source_seat_ids,released_seat_count,released_seat_ids,fee_reversal_ids,escrow_closed_at,escrow_close_note,spin_unwind_tournament_id,receipt,settled_at)\n VALUES(p_tournament_id,actor,3,cardinality(player_ids),player_ids,cardinality(refunded_ids),refunded_ids,jsonb_array_length(financial->'refunds'),0,'{}',0,cardinality(zero_ids),zero_ids,(financial->>'total_refunded')::numeric,fees_reversed,rake_before,rake_after,cardinality(table_ids),table_ids,cardinality(seat_ids),seat_ids,cardinality(released_ids),released_ids,fee_ids,settled,v_close_note,NULL,v_receipt,settled);\n IF a.asset='chips' THEN PERFORM public.fn_record_accounting_tournament_cancellation(p_tournament_id);END IF;\n RETURN public.fn_ca_tournament_cancellation_receipt(p_tournament_id);\nEND $function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "md5": "7ea88407cc10cbb625fcae9d16c70c30",
+      "owner": "postgres",
+      "signature": "fn_ca_tournament_abort_stop_state(uuid,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_abort_stop_state(p_operation_id uuid, p_tournament_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE a smarter_private.tournament_abort_targets; g uuid;\nBEGIN\n IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'operator_abort_service_required' USING ERRCODE='42501';END IF;\n SELECT * INTO a FROM smarter_private.tournament_abort_targets WHERE operation_id=p_operation_id AND tournament_id=p_tournament_id;\n IF NOT FOUND THEN RAISE EXCEPTION 'operator_abort_target_not_owned' USING ERRCODE='55000';END IF;\n SELECT lease_generation INTO g FROM public.engine_tournament_leases WHERE tournament_id=p_tournament_id AND protocol_version=2 AND heartbeat_at>=clock_timestamp()-interval '30 seconds';\n RETURN jsonb_build_object('ok',true,'operation_id',a.operation_id,'tournament_id',a.tournament_id,'state',a.state,\n  'requested_generation',a.requested_generation,'current_generation',g,'quiescence_generation',a.quiescence->>'generation',\n  'current_boundary_valid',(a.state='quiesced' AND g IS NOT NULL AND a.quiescence->>'generation'=g::text AND a.money_snapshot=smarter_private.tournament_abort_money_snapshot(p_tournament_id) AND a.quiescence->>'money_hash'=md5(a.money_snapshot::text) AND NOT smarter_private.tournament_abort_pending(p_tournament_id) AND NOT EXISTS(SELECT 1 FROM public.tables tb WHERE tb.tournament_id=p_tournament_id AND lower(tb.status)<>'closed' AND NOT coalesce(tb.is_deleted,false) AND NOT EXISTS(SELECT 1 FROM smarter_private.tournament_abort_boundaries b WHERE b.operation_id=p_operation_id AND b.table_id=tb.id AND b.lifecycle=tb.f06_lifecycle AND b.acknowledged_generation=g AND b.acknowledged_at IS NOT NULL))),'receipt',a.receipt,'tournament_status',(SELECT status FROM public.tournaments WHERE id=p_tournament_id),'money_snapshot',a.money_snapshot,'money_hash',a.quiescence->>'money_hash','pending',smarter_private.tournament_abort_pending(p_tournament_id),\n  'tables',coalesce((SELECT jsonb_agg(jsonb_build_object('table_id',t.id,'lifecycle',t.f06_lifecycle::text,'required',lower(t.status)<>'closed' AND NOT coalesce(t.is_deleted,false),'requested_generation',a.requested_generation,'current_generation',g) ORDER BY t.id) FROM public.tables t WHERE t.tournament_id=p_tournament_id),'[]'::jsonb));\nEND $function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "md5": "1469a8f499a4669d893863d129b1bb0d",
+      "owner": "postgres",
+      "signature": "fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_f06_begin_hand(p_tournament_id uuid, p_lease_generation uuid, p_table_id uuid, p_lifecycle bigint, p_permit_id uuid, p_hand_number bigint, p_custody_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE h smarter_private.f06_hand_permits;\nBEGIN\n /* A TABLE'S HAND DOES NOT WAIT FOR ITS SIBLING TABLES (2026-10-03): the\n    tournament lane T(id) shared, then this table and its seats FOR\n    UPDATE. See fn_ca_f06_share_table_lane. */\n PERFORM public.fn_ca_f06_share_table_lane(p_tournament_id,p_lease_generation,p_table_id);\n SELECT * INTO h FROM smarter_private.f06_hand_permits WHERE permit_id=p_permit_id;\n IF FOUND THEN\n IF (h.tournament_id,h.table_id,h.lifecycle,h.hand_number,h.custody_id,h.generation) IS DISTINCT FROM(p_tournament_id,p_table_id,p_lifecycle,p_hand_number,p_custody_id,p_lease_generation) THEN\n RAISE EXCEPTION 'F06_CHANGED_HAND_PERMIT' USING ERRCODE='22023'; END IF;\n RETURN to_jsonb(h)||jsonb_build_object('ok',h.state='reserved','lifecycle',h.lifecycle::text,'hand_number',h.hand_number::text); END IF;\n -- Exact existing permit replay above stays lawful; only new hands stop.\n IF EXISTS(SELECT 1 FROM public.ca_diamond_arena_owner_closure c JOIN public.tables t ON t.club_id=c.club_id WHERE t.id=p_table_id AND c.closed) THEN\n  RETURN jsonb_build_object('ok',false,'reason','diamond_arena_closed');\n END IF;\n -- A permit its engine attested absent (fn_park_stopped_time_bank_custody, 2026-09-27)\n -- can never be begun afterwards: the absence was recorded under this same lane.\n IF EXISTS(SELECT 1 FROM smarter_private.f06_absent_permit_releases WHERE permit_id=p_permit_id) THEN\n RETURN jsonb_build_object('ok',false,'reason','permit_released_absent'); END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.f06_operations WHERE source_table_id=p_table_id AND state NOT IN ('acknowledged','withdrawn_before_manifest')) THEN\n RETURN jsonb_build_object('ok',false,'reason','source_excluded'); END IF;\n IF NOT EXISTS(SELECT 1 FROM public.tables tb JOIN public.tournaments t ON t.id=tb.tournament_id WHERE tb.id=p_table_id AND t.id=p_tournament_id AND upper(t.status)='RUNNING' AND tb.f06_lifecycle=p_lifecycle\n AND lower(tb.status)<>'closed' AND NOT COALESCE(tb.is_deleted,false)) THEN RAISE EXCEPTION 'F06_HAND_LIFECYCLE' USING ERRCODE='55000'; END IF;\n IF p_hand_number IS NULL OR p_hand_number<1 OR p_custody_id IS NULL THEN RAISE EXCEPTION 'F06_HAND_IDENTITY' USING ERRCODE='22023'; END IF;\n -- Hand numbers are permanently unique for the physical table, across every lifecycle.\n -- Exact permit replay above is lawful; a new permit cannot adopt historical evidence.\n IF EXISTS(SELECT 1 FROM smarter_private.f06_hand_permits WHERE table_id=p_table_id AND hand_number=p_hand_number)\n OR EXISTS(SELECT 1 FROM public.hand_atomic_commits WHERE table_id=p_table_id AND hand_number=p_hand_number)\n OR EXISTS(SELECT 1 FROM public.hand_history WHERE table_id=p_table_id AND hand_number=p_hand_number) THEN\n RETURN jsonb_build_object('ok',false,'reason','hand_number_already_used'); END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.f06_hand_permits WHERE table_id=p_table_id AND state='reserved') THEN\n RETURN jsonb_build_object('ok',false,'reason','hand_permit_unresolved'); END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.tournament_abort_targets a WHERE a.tournament_id=p_tournament_id) THEN\n  RETURN jsonb_build_object('ok',false,'reason','operator_abort_stopped');\n END IF;\n INSERT INTO smarter_private.f06_hand_permits(permit_id,tournament_id,table_id,lifecycle,hand_number,custody_id,generation)\n VALUES(p_permit_id,p_tournament_id,p_table_id,p_lifecycle,p_hand_number,p_custody_id,p_lease_generation) RETURNING * INTO h;\n RETURN to_jsonb(h)||jsonb_build_object('ok',true,'lifecycle',h.lifecycle::text,'hand_number',h.hand_number::text);\nEND $function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "md5": "cd958a8d0c527752b0301be577efb952",
+      "owner": "postgres",
+      "signature": "smarter_private.assert_tournament_abort_quiesced(uuid,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.assert_tournament_abort_quiesced(p_operation_id uuid, p_tournament_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE a smarter_private.tournament_abort_targets; g uuid;\nBEGIN\n SELECT * INTO a FROM smarter_private.tournament_abort_targets WHERE operation_id=p_operation_id AND tournament_id=p_tournament_id FOR UPDATE;\n IF NOT FOUND OR a.state IS DISTINCT FROM 'quiesced' THEN RAISE EXCEPTION 'operator_abort_not_quiesced' USING ERRCODE='55000';END IF;\n SELECT lease_generation INTO g FROM public.engine_tournament_leases WHERE tournament_id=p_tournament_id AND protocol_version=2 AND heartbeat_at>=clock_timestamp()-interval '30 seconds' FOR KEY SHARE;\n IF g IS NULL OR a.quiescence->>'generation' IS DISTINCT FROM g::text\n OR smarter_private.tournament_abort_pending(p_tournament_id)\n OR EXISTS(SELECT 1 FROM public.tables t WHERE t.tournament_id=p_tournament_id AND lower(t.status)<>'closed' AND NOT coalesce(t.is_deleted,false)\n  AND NOT EXISTS(SELECT 1 FROM smarter_private.tournament_abort_boundaries b WHERE b.operation_id=p_operation_id AND b.table_id=t.id\n   AND b.lifecycle=t.f06_lifecycle AND b.acknowledged_generation=g AND b.acknowledged_at IS NOT NULL)) THEN\n  RAISE EXCEPTION 'operator_abort_current_owner_or_boundary_changed' USING ERRCODE='55000';END IF;\n IF a.money_snapshot IS DISTINCT FROM smarter_private.tournament_abort_money_snapshot(p_tournament_id) THEN\n  RAISE EXCEPTION 'operator_abort_money_review_changed' USING ERRCODE='55000';END IF;\nEND $function$\n"
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "md5": "c84b394b07220ef06c7221114773d338",
+      "owner": "postgres",
+      "signature": "smarter_private.tournament_abort_ingress(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.tournament_abort_ingress(p_tournament_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nBEGIN\n IF EXISTS(SELECT 1 FROM smarter_private.tournament_abort_targets a WHERE a.tournament_id=p_tournament_id) THEN\n  RAISE EXCEPTION 'TOURNAMENT_OPERATOR_ABORT: new entry, rebuy or add-on is stopped' USING ERRCODE='55000';\n END IF;\nEND $function$\n"
+    }
+  ],
+  "observed_at": "2026-10-31T16:14:58.83425+00:00"
+}

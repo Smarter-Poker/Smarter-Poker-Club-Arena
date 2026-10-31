@@ -8,13 +8,23 @@
  *
  * These drive the REAL handleAllInRunout / consent engine / settlement.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import type { DeadlineScheduler } from './DeadlineScheduler.js';
 import type { Card, HandConfig, HandEvent, SeatPlayer } from '../types.js';
 import { waitForEvent } from '../testing/waitBudget.js';
+
+const ownedEngineFixtures: Array<Record<string, any>> = [];
+afterEach(() => {
+  // Destroy isolated fixture registration, not a runtime retirement certificate.
+  for (const fixture of ownedEngineFixtures.splice(0)) {
+    fixture.running = false;
+    fixture.weeklyHandTimers.stop();
+    (fixture.constructor as any).releaseCurrentEngine(fixture.tableId, fixture);
+  }
+});
 
 const TABLE = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 const c = (rank: string, suit: string) => ({ rank, suit }) as Card;
@@ -39,6 +49,8 @@ function mkPlayers(stacks: number[]): SeatPlayer[] {
 
 function mkEngine(players: SeatPlayer[], hc: HandController | null) {
   const engine = new ServerTableEngine(TABLE) as any;
+  expect(engine.claimProcessOwnership()).toBe(true);
+  ownedEngineFixtures.push(engine);
   engine.running = true;
   engine.handCount = 1;
   engine.handController = hc;

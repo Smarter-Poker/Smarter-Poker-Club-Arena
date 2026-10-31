@@ -3941,6 +3941,11 @@ export class HandController {
   /** Private durable continuation. Never attach this string to a public frame. */
   private riverRecoveryWithoutDeck = false;
 
+  /** Lifecycle facts only; this is not a private continuation or a receipt. */
+  getLifecyclePhase(): Readonly<{ handStarted: boolean; handCompleted: boolean }> {
+    return { handStarted: this.handStarted, handCompleted: this.handCompleted };
+  }
+
   serializeRecoveryState(): string {
     if (this.boardDealtOutsideState)
       throw new Error('Hand Recovery Requires The External Runout Original');

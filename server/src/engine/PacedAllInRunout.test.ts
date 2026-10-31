@@ -15,13 +15,24 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 
+const ownedEngineFixtures: Array<Record<string, any>> = [];
 const TABLE = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  // Destroy isolated fixture registration, not a runtime retirement certificate.
+  for (const fixture of ownedEngineFixtures.splice(0)) {
+    fixture.running = false;
+    fixture.weeklyHandTimers.stop();
+    (fixture.constructor as any).releaseCurrentEngine(fixture.tableId, fixture);
+  }
+  vi.restoreAllMocks();
+});
 
 /** A controller parked on a preflop all-in: empty board, five cards to come. */
 function harness(startingBoardLength = 0) {
   const engine = new ServerTableEngine(TABLE) as any;
+  expect(engine.claimProcessOwnership()).toBe(true);
+  ownedEngineFixtures.push(engine);
   const timeline: Array<{ what: string; at: number }> = [];
   const t0 = Date.now();
   const stamp = (what: string) => timeline.push({ what, at: Date.now() - t0 });

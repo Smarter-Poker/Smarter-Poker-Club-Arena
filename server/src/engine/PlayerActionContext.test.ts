@@ -191,7 +191,27 @@ describe('HTTP retries preserve the decision boundary', () => {
 describe('decision context delivery', () => {
   const engines: ServerTableEngine[] = [];
   afterEach(async () => {
-    for (const engine of engines.splice(0)) await engine.stop();
+    for (const engine of engines.splice(0)) {
+      const fixture = engine as any;
+      const original = fixture.handController;
+      const permit = fixture.f06CurrentPermit;
+      expect(original.getLifecyclePhase()).toEqual({ handStarted: true, handCompleted: false });
+      await expect(engine.stop()).rejects.toMatchObject({
+        message: expect.stringContaining('retains unproven original hand custody'),
+        errors: [expect.objectContaining({ message: 'Stopped Original Hand Custody Is Unproven' })],
+      });
+      expect(fixture.handController).toBe(original);
+      expect(fixture.f06CurrentPermit).toBe(permit);
+      expect(engine.hasReleasedProcessOwnership()).toBe(false);
+      // Physical stop joined; explicitly destroy only this isolated fixture.
+      // This registry cleanup is not a runtime retirement certificate.
+      fixture.clearLooseHandTimers();
+      fixture.clearTurnTimer();
+      fixture.preciseTimer.dispose();
+      fixture.actionValidator.dispose();
+      fixture.timeBankEngine.disposeAll();
+      (fixture.constructor as any).releaseCurrentEngine(fixture.tableId, fixture);
+    }
   });
   function delivery() {
     const engine = new ServerTableEngine('context-delivery') as any;

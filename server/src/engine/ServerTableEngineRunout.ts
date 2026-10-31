@@ -317,8 +317,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   protected activeHandWaitRelease: {
     controller: HandController;
-    release: (reason: string) => void;
+    release: (reason: string, preserveController?: boolean) => void;
   } | null = null;
+
+  protected override releaseStoppedHandWait(): void {
+    const owned = this.activeHandWaitRelease;
+    if (!owned) return;
+    this.activeHandWaitRelease = null;
+    owned.release('engine_stopped', true);
+  }
 
   protected releaseActiveHandWaitForTerminalRecovery(
     controller: HandController,
@@ -1675,6 +1682,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * criticals, 32 live hands. A stale continuation is dropped, loudly.
    */
   protected safeContinueRunout(reason: string, controller: HandController | null): void {
+    // A stopped owner can retain this exact controller for snapshot/custody.
+    // Identity alone cannot authorize a late async catch to run out its hand.
+    if (!this.lifecycleCanMutate()) return;
     if (this.weeklyHandPause.held()) {
       void this.weeklyHandPause
         .checkpoint()
@@ -1863,6 +1873,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         );
         return;
       }
+      if (!this.lifecycleCanMutate()) return;
       // onComplete drives dealAndResolveRIT / continueRunout / finalizeRunout —
       // the whole settlement cascade — inside a bare timer callback. A throw
       // escaped to the process handler with the interval and timeout ALREADY
@@ -1876,6 +1887,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     };
 
     const checkInterval = setInterval(() => {
+      if (!this.running || !this.isCurrentEngine()) {
+        finish();
+        return;
+      }
       const state = this.runItTwiceEngine.getState(this.tableId);
       // Complete when status is no longer 'offered' (accepted, declined, or resolved)
       if (!state || state.status !== 'offered') {
@@ -3801,6 +3816,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         );
         return;
       }
+      if (!this.lifecycleCanMutate()) return;
       try {
         onComplete();
       } catch (err) {
@@ -3810,6 +3826,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     };
 
     const checkInterval = setInterval(() => {
+      if (!this.running || !this.isCurrentEngine()) {
+        finish();
+        return;
+      }
       if (this.insuranceEngine.allResponded(this.tableId)) {
         finish();
       }

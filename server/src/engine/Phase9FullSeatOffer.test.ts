@@ -46,6 +46,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const engine of engines.splice(0)) {
     engine.running = false;
+    (engine.constructor as any).releaseCurrentEngine(engine.tableId, engine);
     engine.runItTwiceEngine.disposeAll();
     engine.insuranceEngine.disposeAll();
     engine.preciseTimer.dispose();
@@ -133,6 +134,7 @@ describe('PLO5 seven-seat accepted offer-to-payout with actual rake and BBJ conf
     const physical = initialDeck(prefix);
     const engine = new ServerTableEngine(TABLE) as unknown as Record<string, any>;
     engines.push(engine);
+    expect(engine.claimProcessOwnership()).toBe(true);
     Object.assign(engine, {
       running: true,
       handCount: handNumber,

@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
-import { runInNewContext } from 'node:vm';
 
 const ci = YAML.parse(readFileSync(resolve('.github/workflows/ci.yml'), 'utf8'));
 const browser = ci.jobs['css-beats-e2e'];
@@ -13,85 +12,35 @@ const step = (name: string) =>
   browser.steps.find((value: { name?: string }) => value.name === name);
 
 describe('browser qualification parallel delivery', () => {
-  it('uses exact approved paid client routes without moving financial qualification', () => {
-    const paid = (label: string) =>
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
-      label +
-      "' || 'ubuntu-latest' }}";
+  it('uses only standard hosted runners across CI and publication', () => {
+    for (const file of [
+      'ci.yml',
+      'publish-club-arena.yml',
+      'publish-club-arena-client.yml',
+      'publish-club-arena-transaction.yml',
+    ]) {
+      const workflow = YAML.parse(readFileSync('.github/workflows/' + file, 'utf8'));
+      const jobs = Object.values(workflow.jobs) as Array<Record<string, any>>;
+      expect(jobs.filter((job) => job['runs-on']).length).toBeGreaterThan(0);
+      for (const job of jobs.filter((job) => job['runs-on'])) {
+        expect(job['runs-on']).toBe('ubuntu-latest');
+        expect(job['runs-on']).not.toMatch(/ca-linux|self-hosted|vars\./);
+      }
+    }
     const publishing = YAML.parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
     const client = YAML.parse(
       readFileSync('.github/workflows/publish-club-arena-client.yml', 'utf8')
     );
-    const transaction = YAML.parse(
-      readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
-    );
-    for (const key of ['changes', 'source_windows', 'stub_gate'])
-      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
-    for (const key of ['typecheck_compile', 'unit_shards', 'build'])
-      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
     for (const job of [
       ci.jobs.typecheck_compile,
       ci.jobs.unit_shards,
       ci.jobs.build,
       client.jobs['client-tests'],
       client.jobs['build-and-store'],
-    ]) {
-      for (const [owner, id, expected] of [
-        ['Smarter-Software-PIQ', '1132369872', 'ca-linux-8core'],
-        ['other', '1132369872', 'ubuntu-latest'],
-        ['Smarter-Software-PIQ', '42', 'ubuntu-latest'],
-      ]) {
-        expect(
-          runInNewContext(
-            job['runs-on'].slice(3, -2),
-            {
-              github: { repository_owner: owner, repository_id: id },
-            },
-            { timeout: 1000 }
-          )
-        ).toBe(expected);
-      }
+    ])
       expect(job['continue-on-error']).toBeUndefined();
-    }
-    for (const key of ['typecheck', 'unit', 'server', 'css-beats-gate', 'verdict'])
-      expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
-    for (const key of ['css-beats-e2e', 'diamond-playfield-e2e']) {
-      const expression = ci.jobs[key]['runs-on'];
-      expect(expression).toBe(paid('ca-linux-delivery'));
-      const select = (owner: string, id: string) =>
-        runInNewContext(
-          expression.slice(3, -2),
-          {
-            github: { repository_owner: owner, repository_id: id },
-          },
-          { timeout: 1000 }
-        );
-      expect(select('Smarter-Software-PIQ', '1132369872')).toBe('ca-linux-delivery');
-      expect(select('foreign', '1132369872')).toBe('ubuntu-latest');
-      expect(select('Smarter-Software-PIQ', '42')).toBe('ubuntu-latest');
-    }
-    for (const key of ['accounting_postgres', 'server_shards'])
-      expect(ci.jobs[key]['runs-on']).toBe(
-        "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
-      );
-    expect(publishing.jobs['publish-needed']['runs-on']).toBe(paid('ca-linux-4core'));
-    expect(client.jobs.admit['runs-on']).toBe(paid('ca-linux-4core'));
-    for (const key of ['client-tests', 'build-and-store'])
-      expect(client.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
-    expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
-    for (const key of ['retain-runtime', 'publish-to-app', 'publish-to-origin'])
-      expect(transaction.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
     expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(8);
     expect(client.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(8);
-    for (const key of [
-      'publish-record-gateway',
-      'bootstrap-record-gateway',
-      'install-record-gateway-credentials',
-      'inspect-record-gateway-host',
-    ])
-      expect(transaction.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
-    for (const key of ['live-e2e', 'post-deploy-check'])
-      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
     expect(publishing.jobs.production.concurrency).toEqual({
       group: 'publish-club-arena-production',
       'cancel-in-progress': false,
@@ -100,21 +49,7 @@ describe('browser qualification parallel delivery', () => {
 
   it('defaults required native qualification to the approved standard hosted profile', () => {
     for (const job of ['accounting_postgres', 'server_shards']) {
-      const expression = ci.jobs[job]['runs-on'];
-      const evaluate = (owner: string, id: string, profile?: string) =>
-        runInNewContext(
-          expression.slice(3, -2),
-          {
-            github: { repository_owner: owner, repository_id: id },
-            vars: { CA_REQUIRED_NATIVE_PROFILE: profile ?? '' },
-          },
-          { timeout: 1000 }
-        );
-      for (const profile of [undefined, '', 'standard', 'self-hosted', 'arbitrary-runner'])
-        expect(evaluate('Smarter-Software-PIQ', '1132369872', profile)).toBe('ubuntu-latest');
-      expect(evaluate('Smarter-Software-PIQ', '1132369872', 'large')).toBe('ca-linux-8core');
-      expect(evaluate('other', '1132369872', 'large')).toBe('ubuntu-latest');
-      expect(evaluate('Smarter-Software-PIQ', '42', 'large')).toBe('ubuntu-latest');
+      expect(ci.jobs[job]['runs-on']).toBe('ubuntu-latest');
       expect(ci.jobs[job]['continue-on-error']).toBeUndefined();
       expect(ci.jobs[job].strategy.matrix.shard).toEqual([1, 2, 3, 4]);
       expect(ci.jobs[job].strategy['fail-fast']).toBe(false);
@@ -129,20 +64,7 @@ describe('browser qualification parallel delivery', () => {
     const job = YAML.parse(
       readFileSync('.github/workflows/component-fixture-native-smoke.yml', 'utf8')
     ).jobs['native-smoke'];
-    const evaluate = (owner: string, id: string, profile?: string) =>
-      runInNewContext(
-        job['runs-on'].slice(3, -2),
-        {
-          github: { repository_owner: owner, repository_id: id },
-          vars: { CA_REQUIRED_NATIVE_PROFILE: profile ?? '' },
-        },
-        { timeout: 1000 }
-      );
-    for (const profile of [undefined, '', 'standard', 'self-hosted', 'arbitrary-runner'])
-      expect(evaluate('Smarter-Software-PIQ', '1132369872', profile)).toBe('ubuntu-24.04');
-    expect(evaluate('Smarter-Software-PIQ', '1132369872', 'large')).toBe('ca-linux-8core');
-    expect(evaluate('foreign', '1132369872', 'large')).toBe('ubuntu-24.04');
-    expect(evaluate('Smarter-Software-PIQ', '42', 'large')).toBe('ubuntu-24.04');
+    expect(job['runs-on']).toBe('ubuntu-24.04');
     expect(job['timeout-minutes']).toBe(55);
     expect(job['continue-on-error']).toBeUndefined();
     expect(ci.jobs.fixture_native.uses).toBe(
@@ -346,7 +268,7 @@ it('does not turn failed SDK cleanup into a successful capacity reservation', ()
 });
 
 describe('eight client shards retain the required verdict and unchanged safeguards', () => {
-  it('partitions the same selector inventory across eight distinct paid runners', () => {
+  it('partitions the same selector inventory across eight distinct standard hosted runners', () => {
     const shards = ci.jobs.unit_shards;
     expect(shards.strategy).toEqual({
       'fail-fast': true,

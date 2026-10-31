@@ -10,14 +10,12 @@
  * same job for /clubs/<slug>.
  *
  * Contract: a UUID is returned as-is with no network; a slug is looked up once
- * and cached for the session. An unknown slug returns the param unchanged, as
- * the club resolver does, so the page's own "not found" path fires on the
- * query rather than the resolver inventing an error the page cannot render.
+ * and cached for the session. An unknown slug returns null; a failed lookup
+ * throws. Neither result may become a slug in a UUID-only query.
  */
 
 import { supabase } from '../lib/supabase';
 import { isUUID } from './clubIdResolver';
-import { reportError } from './errorReporter';
 
 const cache = new Map<string, string>();
 /** id -> slug, learned from any union row that passed through mapUnion. */
@@ -42,7 +40,7 @@ export function unionRouteRef(id: string): string {
   return slugById.get(id) || id;
 }
 
-export async function resolveUnionUUID(param: string): Promise<string> {
+export async function resolveUnionUUID(param: string): Promise<string | null> {
   const sync = resolveUnionUUIDSync(param);
   if (sync) return sync;
   const { data, error } = await supabase
@@ -50,13 +48,12 @@ export async function resolveUnionUUID(param: string): Promise<string> {
     .select('id')
     .eq('slug', param)
     .maybeSingle();
-  if (error) reportError(error, 'unionIdResolver.resolveUnionUUID', { param });
+  if (error) throw error;
   if (data?.id) {
     cache.set(param, data.id);
     return data.id;
   }
-  console.warn(`[unionIdResolver] Could not resolve union for: ${param}`);
-  return param;
+  return null;
 }
 
 /** Remember a slug -> id pair learned from a row already in hand. */

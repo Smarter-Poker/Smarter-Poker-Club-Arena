@@ -31,7 +31,7 @@ def wait_for(predicate, seconds=8):
 def main():
     assert os.getuid() == 0
     print('Isolated systemd version: ' + run(['systemctl', 'show', '--property=Version']), flush=True)  # Missing real systemd fails qualification.
-    key = '17-1'
+    key = '41177442979-1'
     prefix = 'mtt-withdrawal-fixture-' + uuid.uuid4().hex
     template = Path('/etc/systemd/system') / (prefix + '@.service')
     unit = prefix + '@' + key + '.service'
@@ -40,7 +40,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix=prefix + '-', dir=os.environ.get('RUNNER_TEMP') or os.environ.get('TMPDIR')) as directory:
         parent = Path(directory)
         wrapper = parent / 'engine-release-unit-wrapper-v1.sh'
-        wrapper.write_text('#!/bin/bash\nif [ "$1" = start ]; then exec /bin/sleep 90; fi\nexit 0\n')
+        generation = parent / 'engine-control-generations' / m.CANCEL_CONTROL
+        generation.mkdir(parents=True)
+        recovery = generation / 'engine-release-recover.sh'
+        recovery.write_text('#!/bin/bash\nsleep 90\nexit 0\n')
+        recovery.chmod(0o755)
+        wrapper.write_text('#!/bin/bash\nif [ "$1" = start ]; then /bin/bash '+str(recovery)+' --run-id "$2" --mode retryable; fi\nexit 0\n')
         wrapper.chmod(0o755)
         template.write_text('[Unit]\nDescription=Isolated withdrawal qualification\n[Service]\nType=oneshot\n'
                             + 'ExecStart=' + str(wrapper) + ' start %i\n'
@@ -63,6 +68,15 @@ def main():
                 return raw.replace(str(template), str(template.parent / 'club-arena-engine-release-v1@.service'))
             with patch.object(m, 'PARENT', parent), patch.object(m, 'command', side_effect=command):
                 m.loaded_stop_contract(unit, key)
+                main_pid = int(run(['systemctl', 'show', unit, '-p', 'MainPID', '--value']))
+                children_path = Path('/proc') / str(main_pid) / 'task' / str(main_pid) / 'children'
+                wait_for(lambda: bool(children_path.read_text().strip()))
+                children = children_path.read_text().split()
+                assert len(children) == 1
+                child = m.process(int(children[0]))
+                assert child['parent'] == main_pid
+                assert m.cancellation_child_class(child['argv'], key, {'originals': {}}) == 'pinned_announcement_recovery'
+                assert m.cancellation_child_class(child['argv'], key, {'originals': {'engine-release-requests/'+key+'.awaiting-certificate':'present'}}) == 'unproven'
                 mask.symlink_to('/dev/null'); m.fsync_directory(mask.parent)
                 run(['systemctl', 'daemon-reload'])
                 assert run(['systemctl', 'show', unit, '-p', 'LoadState', '--value']) == 'masked'

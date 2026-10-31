@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -261,6 +262,16 @@ class Withdrawal(unittest.TestCase):
 
 
 class AnnouncedCancellation(unittest.TestCase):
+    def test_child_recovery_is_only_admitted_for_expired_markerless_original(self):
+        key = '41177442979-1'
+        generation = module.PARENT / 'engine-control-generations' / module.CANCEL_CONTROL
+        args = ['bash', str(generation / 'engine-release-recover.sh'), '--run-id', key, '--mode', 'retryable']
+        self.assertEqual(module.cancellation_child_class(args, key, {'originals': {}}), 'pinned_announcement_recovery')
+        marker = 'engine-release-requests/'+key+'.awaiting-certificate'
+        self.assertEqual(module.cancellation_child_class(args, key, {'originals': {marker: 'hash'}}), 'unproven')
+        for bad in [args[:-1]+['terminal'], args+['extra'], ['python3']+args[1:], args[:1]+['/other/recover.sh']+args[2:]]:
+            self.assertEqual(module.cancellation_child_class(bad, key, {'originals': {}}), 'unproven')
+
     def test_thaw_requires_exact_complete_owned_release(self):
         stamp = 1793429586934
         iso = lambda ms: module.datetime.datetime.fromtimestamp(ms / 1000, module.datetime.timezone.utc).isoformat()
@@ -439,7 +450,7 @@ class AnnouncedCancellation(unittest.TestCase):
             self.assertFalse(lock.exists())
 
     def test_admission_checks_real_announcement_files_and_refuses_changed_custody(self):
-        for failure in [None, 'runtime', 'foreign', 'manifest', 'checkpoint', 'hold', 'pending', 'source']:
+        for failure in [None, 'runtime', 'foreign', 'manifest', 'checkpoint', 'hold', 'pending', 'source', 'missing_expired', 'missing_unexpired', 'missing_wrong_disposition']:
             with self.subTest(failure=failure), tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
                 root = Path(folder); state = root / 'state'; state.mkdir(); parent = root / 'parent'; parent.mkdir()
                 generation = parent / 'engine-control-generations' / module.CANCEL_CONTROL; generation.mkdir(parents=True)
@@ -449,6 +460,8 @@ class AnnouncedCancellation(unittest.TestCase):
                 lines = '\n'.join([module.CANCEL_CONTROL, 'url', 'actor', str(generation), module.CANCEL_CONTROL, '1793440868']) + '\n'
                 for suffix, raw in [('request', lines), ('intent', lines), ('awaiting-certificate', module.CANCEL_CONTROL + '\n')]:
                     (reqroot / (key + '.' + suffix)).write_text(raw)
+                if failure and failure.startswith('missing_'):
+                    (reqroot / (key + '.awaiting-certificate')).unlink()
                 # The expected manifest is derived from the exact retained source blob.
                 manifest = subprocess.check_output(['git', 'show', module.CANCEL_CONTROL + ':server/release/activation-floor.json'], cwd=ROOT)
                 entry = {'schema': 'engine-release-activation-floor/v2-owner-window', 'runId': key,
@@ -466,6 +479,7 @@ class AnnouncedCancellation(unittest.TestCase):
                 if failure in {'checkpoint', 'hold'}:
                     (reqroot / (key + ('.legacy-checkpoint-intent' if failure == 'checkpoint' else '.lightning-hold.json'))).write_text('present')
                 def command(args, timeout=5):
+                    if 'disposition' in args: return 'entered' if failure == 'missing_wrong_disposition' else 'announced'
                     if 'reservation' in args: return str(stamp)
                     if 'pending-owner' in args: return 'other' if failure == 'pending' else 'none'
                     return request['desiredSha']
@@ -474,10 +488,48 @@ class AnnouncedCancellation(unittest.TestCase):
                 patches.enter_context(patch.object(module, 'source_hash', side_effect=lambda p: '0' * 64 if failure == 'source' else module.WRAPPER_HASH if p.name == 'engine-release-unit-wrapper-v1.sh' else module.CANCEL_HASHES[p.name]))
                 patches.enter_context(patch.object(module, 'command', side_effect=command))
                 patches.enter_context(patch.object(module, 'own_thaw', return_value={'verified': True}))
-                patches.enter_context(patch.object(module.time, 'time', return_value=stamp / 1000 + 500))
-                if failure:
+                patches.enter_context(patch.object(module.time, 'time', return_value=(1793440868 - 1 if failure == 'missing_unexpired' else 1793440868 + 1)))
+                if failure and failure != 'missing_expired':
                     with self.assertRaises(ValueError): module.announcement_evidence(request)
                 else: self.assertEqual(module.announcement_evidence(request)['thaw'], {'verified': True})
+
+    def test_expired_retry_after_intent_masks_without_signalling_new_invocation(self):
+        for outcome in ['absent', 'reused', 'unreadable']:
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
+                request, control, state, _, _, units = self.harness(folder, patches)
+                marker = 'engine-release-requests/'+request['runKey']+'.awaiting-certificate'
+                evidence = module.announcement_evidence(request)
+                evidence['originals'].pop(marker)
+                (state/marker).unlink()
+                save = module.save_once
+                def saved_then_exit(path, value):
+                    save(path, value)
+                    if path.name.endswith('.intent.json'): raise OSError('original invocation ended')
+                with patch.object(module, 'save_once', side_effect=saved_then_exit), self.assertRaises(OSError):
+                    module.cancel_announced(request)
+                snapshot = module.unit_snapshot.side_effect
+                def changed(unit):
+                    value = snapshot(unit)
+                    if unit == units[0] and not control['stopped']:
+                        return value | {'InvocationID': 'e'*32, 'MainPID': '22'}
+                    return value
+                def old_process(pid):
+                    if outcome == 'absent': raise FileNotFoundError()
+                    if outcome == 'unreadable': raise PermissionError()
+                    return {'pid': pid, 'parent': 99, 'start':'999', 'argv':['foreign']}
+                if outcome == 'absent':
+                    for pid in [12,13]: shutil.rmtree(module.PROC / str(pid))
+                with patch.object(module, 'unit_snapshot', side_effect=changed), patch.object(module, 'process', side_effect=old_process):
+                    with self.assertRaises((ValueError, PermissionError)):
+                        module.cancel_announced(request)
+                    self.assertEqual(control['stopCount'], 0)
+                    self.assertFalse((state/'engine-release-cancellations'/(request['runKey']+'.stop-issued.json')).exists())
+                    self.assertEqual(all((module.SYSTEMD/unit).is_symlink() for unit in units), outcome == 'absent')
+                    if outcome == 'absent':
+                        control['stopped'] = True
+                        answer = module.cancel_announced(request)
+                        self.assertEqual(answer['stopDisposition'],'not-needed-already-quiescent')
+                        self.assertEqual(control['stopCount'], 0)
 
     def test_partial_retirement_resumes_without_another_stop(self):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:

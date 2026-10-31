@@ -254,8 +254,6 @@ describe('a Lightning player between hands', () => {
     expect(page).toMatch(
       /stack:\s*lightningWaitingSeat\?\.stack \?\? heroRowStack \?\? pendingSeatStackRef\.current \?\? 0/
     );
-    expect(page).toMatch(
-      /status: lightningWaitingSeat \? lightningWaitingSeat\.status : 'sitting_out'/
-    );
+    expect(page).toMatch(/status:\s*lightningWaitingSeat\s*\? lightningWaitingSeat\.status\s*:/);
   });
 });

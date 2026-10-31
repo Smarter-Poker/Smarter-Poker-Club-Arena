@@ -104,5 +104,7 @@ BEGIN
     'sequence', p_sequence::text, 'sha256', p_sha256, 'writer_generation', p_lease_generation);
 END $function$
 ;
+REVOKE ALL ON FUNCTION public.fn_f06_retain_hand_continuation(uuid,uuid,uuid,bigint,bigint,text,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_f06_retain_hand_continuation(uuid,uuid,uuid,bigint,bigint,text,text) TO service_role;
 DO $post$ BEGIN IF NOT (EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid='public.fn_f06_retain_hand_continuation(uuid,uuid,uuid,bigint,bigint,text,text)'::regprocedure AND md5(pg_get_functiondef(p.oid))='64833fbf30f5e2011550f6f59f8a7fab' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=pg_catalog, public, smarter_private'])) THEN RAISE EXCEPTION 'RETAIN_PERMIT_READER_POSTIMAGE_CHANGED';END IF;END $post$;
 COMMIT;

@@ -3102,6 +3102,13 @@ export abstract class TournamentManagerBase {
         // before user code can reach its first await (or initiate stop).
         const operation = Promise.resolve().then(async () => {
           if (!this.lifecycleIsCurrent(lifecycle)) return;
+          // A failed admission read is UNKNOWN, not a permanent cache entry.
+          // This existing sweep owns every place/reprice and mystery decision;
+          // retry its missing input here before any of those consumers run.
+          if (this.tournamentClub === undefined && this.tournamentCache) {
+            await this.readTournamentClub(this.tournamentCache.club_id, lifecycle ?? undefined);
+            if (!this.lifecycleIsCurrent(lifecycle)) return;
+          }
           await run(signal);
         });
         let tracked!: Promise<void>;
@@ -4358,7 +4365,14 @@ export abstract class TournamentManagerBase {
    * authority on what is paid (`fn_settle_tournament_places` stamps
    * `tournament_players.prize` from its own unit-aware ladder).
    */
-  protected async readTournamentClub(clubId: unknown): Promise<void> {
+  protected async readTournamentClub(
+    clubId: unknown,
+    lifecycle?: TournamentLifecycleToken
+  ): Promise<void> {
+    const current = () =>
+      !lifecycle ||
+      (this.lifecycleIsCurrent(lifecycle) && this.tournamentCache?.club_id === clubId);
+    if (!current()) return;
     if (clubId == null) {
       this.tournamentClub = null;
       return;
@@ -4370,8 +4384,10 @@ export abstract class TournamentManagerBase {
         .eq('id', clubId)
         .maybeSingle();
       if (error) throw error;
+      if (!current()) return;
       this.tournamentClub = (data as TournamentUnitClubRow | null) ?? null;
     } catch (err) {
+      if (!current()) return;
       this.tournamentClub = undefined;
       reportError(err, 'TournamentManagerBase.readTournamentClub');
     }
@@ -6678,7 +6694,7 @@ export abstract class TournamentManagerBase {
 
       this.tournamentCache = tournament;
       noteTerminalFinishClub(this.tournamentId, tournament.club_id);
-      await this.readTournamentClub(tournament.club_id);
+      await this.readTournamentClub(tournament.club_id, lifecycle);
       this.assertLifecycleCurrent(lifecycle);
 
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
@@ -8177,7 +8193,7 @@ export abstract class TournamentManagerBase {
       // Restore the durable hold before admitting replacement dealers. Even
       // an expired countdown remains paused until its release is acknowledged.
       this.onBreak = tournament.on_break === true;
-      await this.readTournamentClub(tournament.club_id);
+      await this.readTournamentClub(tournament.club_id, lifecycle);
       this.assertLifecycleCurrent(lifecycle);
       /**
        * A DAY THAT WAS ENDING IS STILL ENDING (multi-day, 2026-09-24).

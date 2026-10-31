@@ -9,7 +9,7 @@ import {
 import { buildInventoryAtUnit, poolCentsFromNumeric } from './mysteryBountyPool.js';
 import { shuffleChests } from './mysteryBountyDraw.js';
 import { mysteryPoolCents, shouldActivateMysteryBounty } from './mysteryBountyActivation.js';
-import { CHIP_UNIT_CENTS, DIAMOND_UNIT_CENTS } from './tournamentUnit.js';
+import { CHIP_UNIT_CENTS, DIAMOND_UNIT_CENTS, tournamentUnitCents } from './tournamentUnit.js';
 
 // Execute the production method and production inventory/predicate helpers.
 // The database transport is controlled; this is not a PostgreSQL funding proof.
@@ -28,8 +28,20 @@ const count = ast.statements.find(
     ts.isFunctionDeclaration(node) && node.name?.text === 'countPaidPlaces'
 );
 if (!method || !count) throw new Error('Production mystery activation methods missing');
+const lifecycleMethods = [
+  'readTournamentClub',
+  'tournamentUnit',
+  'registerEliminationScheduler',
+].map((name) => {
+  const member = manager?.members.find(
+    (node): node is ts.MethodDeclaration =>
+      ts.isMethodDeclaration(node) && node.name.getText(ast) === name
+  );
+  if (!member) throw new Error(`Production ${name} method missing`);
+  return member.getText(ast);
+});
 const compiled = ts.transpileModule(
-  `${count.getText(ast)}\nclass Subject { ${method.getText(ast)} }\nreturn Subject;`,
+  `${count.getText(ast)}\nclass Subject { ${method.getText(ast)}\n${lifecycleMethods.join('\n')} }\nreturn Subject;`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
 
@@ -90,6 +102,10 @@ function fixture(
   const seedCalls = () =>
     rpc.mock.calls.filter((call) => (call as unknown[])[0] === 'fn_mystery_bounty_seed');
   const reportError = vi.fn();
+  const from = vi.fn((_relation: string) => query);
+  const scheduler = {
+    register: vi.fn((_entry: { run: (signal: AbortSignal) => Promise<void> }) => vi.fn()),
+  };
   const Subject = new Function(
     'supabase',
     'reportError',
@@ -101,9 +117,12 @@ function fixture(
     'DEFAULT_TOP_BOUNTY_PERCENT',
     'buildInventoryAtUnit',
     'shuffleChests',
+    'tournamentUnitCents',
+    'tournamentEliminationScheduler',
+    'nodeCrypto',
     compiled
   )(
-    { from: vi.fn(() => query), rpc },
+    { from, rpc },
     reportError,
     { log: vi.fn() },
     mysteryPoolCents,
@@ -112,7 +131,10 @@ function fixture(
     resolveMysteryBountyProfile,
     DEFAULT_TOP_BOUNTY_PERCENT,
     buildInventoryAtUnit,
-    shuffleChests
+    shuffleChests,
+    tournamentUnitCents,
+    scheduler,
+    { randomUUID: () => 'fixture-scheduler-operation' }
   );
   const subject = Object.assign(new Subject(), {
     tournamentId: 'activation-fixture',
@@ -134,8 +156,139 @@ function fixture(
       options.unrecordedKnockouts === undefined ? 0 : options.unrecordedKnockouts
     ),
   });
-  return { subject, rpc, query, reportError, seedCalls };
+  return { subject, rpc, query, from, scheduler, reportError, seedCalls };
 }
+
+function schedulerSubject(f: ReturnType<typeof fixture>) {
+  const token = { generation: 1, signal: new AbortController().signal };
+  Object.assign(f.subject, {
+    running: true,
+    tournamentLeaseGeneration: 'fixture-generation',
+    tournamentCache: { is_mystery_bounty: true, club_id: 'exact-club' },
+    tournamentClub: undefined,
+    lifecycleEpoch: { current: () => token },
+    lifecycleIsCurrent: vi.fn((observed) => f.subject.running && observed === token),
+    managerLifecycleDiagnostics: { instanceId: 'fixture-manager' },
+    schedulerDiagnosticIds: new WeakMap(),
+    eliminationSchedulerJobs: new Set(),
+    recordManagerDiagnostic: vi.fn(),
+    askForConsolidationIfSpread: vi.fn(),
+    getLifecycleDiagnosticSnapshot: vi.fn(),
+    declareConsolidationOutstanding: vi.fn(),
+  });
+  delete f.subject.tournamentUnit;
+  let registration: { run: (signal: AbortSignal) => Promise<void> } | undefined;
+  f.scheduler.register.mockImplementation((entry) => {
+    registration = entry;
+    return vi.fn();
+  });
+  const run = vi.fn(async () => f.subject.maybeActivateMysteryBounty(27));
+  f.subject.registerEliminationScheduler(run);
+  return { token, run, sweep: () => registration!.run(new AbortController().signal) };
+}
+
+describe('an existing sweep recovers an unread club without guessing its asset', () => {
+  it.each([
+    ['diamonds', 100],
+    ['chips', 1],
+  ])('recovers a held %s mystery transition after a failed admission read', async (asset, unit) => {
+    const f = fixture({ finalized: true });
+    const h = schedulerSubject(f);
+    const club = { asset, is_platform: true, union_id: null };
+    const clubRead = vi
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'temporary club outage' } })
+      .mockResolvedValue({ data: club, error: null });
+    const clubQuery: any = {
+      select: vi.fn(() => clubQuery),
+      eq: vi.fn(() => clubQuery),
+      maybeSingle: clubRead,
+    };
+    f.from.mockImplementation((relation: string) => (relation === 'clubs' ? clubQuery : f.query));
+    await f.subject.readTournamentClub('exact-club', h.token);
+    expect(f.subject.tournamentClub).toBeUndefined();
+    expect(await f.subject.maybeActivateMysteryBounty(27)).toBe(true);
+    expect(f.seedCalls()).toHaveLength(0);
+
+    await h.sweep();
+    expect(clubRead).toHaveBeenCalledTimes(2);
+    expect(clubQuery.eq).toHaveBeenLastCalledWith('id', 'exact-club');
+    expect(f.subject.tournamentClub).toEqual(club);
+    expect(f.subject.tournamentUnit()).toBe(unit);
+    expect(f.subject.mysteryBountyStage).toBe('active');
+    expect(f.seedCalls()).toHaveLength(1);
+    for (const chest of (f.seedCalls()[0] as any)[1].p_chests)
+      expect(chest.amount_cents % Math.max(100, Number(unit))).toBe(0);
+    await h.sweep();
+    expect(clubRead).toHaveBeenCalledTimes(2);
+    expect(f.seedCalls()).toHaveLength(1);
+  });
+
+  it('retains UNKNOWN on another failed read while the existing sweep still runs', async () => {
+    const f = fixture({ finalized: true });
+    const h = schedulerSubject(f);
+    const clubQuery: any = {
+      select: () => clubQuery,
+      eq: () => clubQuery,
+      maybeSingle: vi.fn(async () => ({ data: null, error: { message: 'still unavailable' } })),
+    };
+    f.from.mockImplementation((relation: string) => (relation === 'clubs' ? clubQuery : f.query));
+    await h.sweep();
+    expect(clubQuery.maybeSingle).toHaveBeenCalledOnce();
+    expect(h.run).toHaveBeenCalledOnce();
+    expect(f.subject.tournamentClub).toBeUndefined();
+    expect(f.seedCalls()).toHaveLength(0);
+    expect(f.subject.mysteryBountyStage).toBe('pending');
+  });
+
+  it.each([
+    ['stop', false],
+    ['replace', false],
+    ['stop', true],
+    ['replace', true],
+  ])('a delayed club reply cannot mutate or seed after %s (failed=%s)', async (change, failed) => {
+    const f = fixture({ finalized: true });
+    const h = schedulerSubject(f);
+    let answer!: (value: unknown) => void;
+    const clubQuery: any = {
+      select: () => clubQuery,
+      eq: () => clubQuery,
+      maybeSingle: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          })
+      ),
+    };
+    f.from.mockImplementation((relation: string) => (relation === 'clubs' ? clubQuery : f.query));
+    const sweeping = h.sweep();
+    await Promise.resolve();
+    expect(clubQuery.maybeSingle).toHaveBeenCalledOnce();
+    if (change === 'stop') f.subject.running = false;
+    else f.subject.lifecycleIsCurrent.mockReturnValue(false);
+    // A retired failure cannot erase a successor's newly established unit either.
+    if (failed) f.subject.tournamentClub = { asset: 'chips', is_platform: true, union_id: null };
+    const before = f.subject.tournamentClub;
+    answer(
+      failed
+        ? { data: null, error: { message: 'late failed read' } }
+        : { data: { asset: 'diamonds', is_platform: true, union_id: null }, error: null }
+    );
+    await sweeping;
+    expect(f.subject.tournamentClub).toBe(before);
+    expect(h.run).not.toHaveBeenCalled();
+    expect(f.seedCalls()).toHaveLength(0);
+  });
+
+  it('does not reread a club whose absent join was already established', async () => {
+    const f = fixture({ finalized: true });
+    const h = schedulerSubject(f);
+    f.subject.tournamentClub = null;
+    await h.sweep();
+    expect(f.from).not.toHaveBeenCalledWith('clubs');
+    expect(f.subject.tournamentUnit()).toBe(CHIP_UNIT_CENTS);
+  });
+});
 
 describe('mystery activation uses the closed entry pool', () => {
   it('uses the final 21-place ladder instead of a stale 20-place cache', async () => {

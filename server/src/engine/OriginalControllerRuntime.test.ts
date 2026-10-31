@@ -1440,11 +1440,54 @@ it('refuses an unfunded post-claim stack change before original controller mutat
   expect(e.killForRestart).not.toHaveBeenCalled();
 });
 
+function expectAllInConservation(controller: any) {
+  const state = controller.getState();
+  expect(
+    state.players.reduce((sum: number, player: SeatPlayer) => sum + player.stack, 0) + state.pot
+  ).toBe(2000);
+  expect(state.players.filter((player: SeatPlayer) => player.is_all_in)).toHaveLength(1);
+}
+async function expectAllInReplay(e: any, controller: any, decision: string, key: string) {
+  expectAllInConservation(controller);
+  const before = controller.serializeRecoveryState();
+  let status = 0;
+  let body = '';
+  const res = {
+    writeHead(code: number) {
+      status = code;
+      return res;
+    },
+    end(value = '') {
+      body = value;
+    },
+  };
+  __resetRateLimiterForTests();
+  await handleAction(
+    {
+      __body: JSON.stringify({
+        tableId: config.tableId,
+        action: 'all_in',
+        actionContext: decision,
+        idempotencyKey: key,
+      }),
+    } as never,
+    res as never,
+    { gameServer: { getTableEngine: () => e } }
+  );
+  expect({ status, body: JSON.parse(body) }).toMatchObject({
+    status: 200,
+    body: { success: true, replayed: true },
+  });
+  await e.handContinuation.join();
+  expect(controller.serializeRecoveryState()).toBe(before);
+}
+
 it.each([
   'ready',
   'action_fold',
   'action_call',
   'action_raise',
+  'action_all_in',
   'peer_resync',
   'publish_failed',
   'superseded',
@@ -1529,7 +1572,12 @@ it.each([
         .getState()
         .actionHistory.filter((a: any) => !['sb', 'bb', 'ante'].includes(a.action))
     ).toEqual([]);
-    if (mode === 'action_fold' || mode === 'action_call' || mode === 'action_raise') {
+    if (
+      mode === 'action_fold' ||
+      mode === 'action_call' ||
+      mode === 'action_raise' ||
+      mode === 'action_all_in'
+    ) {
       const action = mode.slice('action_'.length);
       originalAuth.userId = 'u' + controller.getState().currentPlayerSeat;
       const request = async () => {
@@ -1572,6 +1620,7 @@ it.each([
         .actionHistory.filter((entry: any) => !['sb', 'bb', 'ante'].includes(entry.action));
       expect(actions).toHaveLength(1);
       expect(actions[0].action).toBe(action);
+      if (action === 'all_in') expectAllInConservation(controller);
       expect(emitted.filter((event: HandEvent) => event.type === 'PLAYER_ACTION')).toHaveLength(1);
       const replay = await request();
       expect(replay.status).toBe(200);
@@ -1596,6 +1645,7 @@ it.each([
   'delayed_fold',
   'delayed_call',
   'delayed_raise',
+  'delayed_all_in',
   'delayed_changed',
   'delayed_stopped',
 ] as const)('preserves turn ownership across a control checkpoint: %s', async (mode) => {
@@ -1702,7 +1752,14 @@ it.each([
       .filter((frame: any) => frame.type === 'turn_change');
     expect(turnFrames).toHaveLength(1);
     expect(turnFrames[0].action_context).toBe(decision);
-    const action = mode === 'delayed_fold' ? 'fold' : mode === 'delayed_raise' ? 'raise' : 'call';
+    const action =
+      mode === 'delayed_all_in'
+        ? 'all_in'
+        : mode === 'delayed_fold'
+          ? 'fold'
+          : mode === 'delayed_raise'
+            ? 'raise'
+            : 'call';
     originalAuth.userId = 'u' + controller.getState().currentPlayerSeat;
     expect(e.preciseTimer.getRemainingMs(e.tableId, originalAuth.userId)).toBeGreaterThanOrEqual(
       e.playerTurnDuration * 1000
@@ -1740,6 +1797,8 @@ it.each([
     expect(
       controller.getState().actionHistory.filter((entry: any) => entry.action === action)
     ).toHaveLength(1);
+    if (action === 'all_in')
+      await expectAllInReplay(e, controller, decision, `settle-retained-${mode}`);
   } finally {
     delayRetention = false;
     releaseRetention?.();
@@ -1754,6 +1813,7 @@ it.each([
   'ready_fold',
   'ready_call',
   'ready_raise',
+  'ready_all_in',
   'weekly_first',
   'retention_first',
   'changed',
@@ -1894,6 +1954,7 @@ it.each([
       if (mode.startsWith('ready_')) {
         const action = mode.slice(6);
         originalAuth.userId = user;
+        const decision = e.getActionContext();
         let status = 0;
         let body = '';
         const res = {
@@ -1912,7 +1973,7 @@ it.each([
               tableId: config.tableId,
               action,
               ...(action === 'raise' ? { amount: 40 } : {}),
-              actionContext: e.getActionContext(),
+              actionContext: decision,
               idempotencyKey: `bank-retained-${mode}`,
             }),
           } as never,
@@ -1927,6 +1988,8 @@ it.each([
         expect(
           controller.getState().actionHistory.filter((entry: any) => entry.action === action)
         ).toHaveLength(1);
+        if (action === 'all_in')
+          await expectAllInReplay(e, controller, decision, `bank-retained-${mode}`);
       }
     } finally {
       blocked = false;

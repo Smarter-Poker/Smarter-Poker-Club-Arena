@@ -4592,13 +4592,8 @@ export default function MultiTablePage() {
       pot: 0,
       kind: 'table',
     };
-    const lobbyIdx = prev.findIndex(isLobbyTab);
-    if (lobbyIdx !== -1) {
-      const next = [...prev];
-      next[lobbyIdx] = fromUrl;
-      setTables(next);
-      setActiveIndex(lobbyIdx); // focus the table they just picked
-    } else if (prev.length < MAX_TABLES) {
+    // Opening a game adds its tab; the page stays open until manually closed.
+    if (prev.length < MAX_TABLES) {
       setTables([...prev, fromUrl]);
       setActiveIndex(prev.length); // Switch to new table
     } else {

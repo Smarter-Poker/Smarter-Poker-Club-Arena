@@ -25,4 +25,12 @@ describe('plus pages remain owned by the player', () => {
     );
     expect(seat).not.toContain('prev.findIndex(isLobbyTab)');
   });
+  it('opening a routed game cannot consume the lobby tab', () => {
+    const route = source.slice(
+      source.indexOf('// ─── Handle route-based table ID changes'),
+      source.indexOf('THE BACKSTOP: A TOURNAMENT ROUTE')
+    );
+    expect(route).not.toContain('prev.findIndex(isLobbyTab)');
+    expect(route).toContain('setTables([...prev, fromUrl])');
+  });
 });

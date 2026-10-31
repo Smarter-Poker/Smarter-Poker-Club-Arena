@@ -272,6 +272,50 @@ class AnnouncedCancellation(unittest.TestCase):
         for bad in [args[:-1]+['terminal'], args+['extra'], ['python3']+args[1:], args[:1]+['/other/recover.sh']+args[2:]]:
             self.assertEqual(module.cancellation_child_class(bad, key, {'originals': {}}), 'unproven')
 
+    def test_observation_reuses_collector_without_creating_state_or_locks(self):
+        request={'runKey':'41177442979-1','releaseSha':module.CANCEL_CONTROL,'controlSha':module.CANCEL_CONTROL,
+                 'desiredSha':'c'*40,'instanceId':'1-1234abcd','mode':'observe_expired_announcement'}
+        with patch.object(os,'getuid',return_value=0), patch.object(module,'own_wants_edge'), patch.object(module,'health_pair'), \
+             patch.object(module,'container_identity',return_value={'id':'known'}), patch.object(module,'collect_cancellation_admission',return_value={}) as collect, \
+             patch.object(module,'cancellation_directory',side_effect=AssertionError('must not create')), patch.object(module.os,'open',side_effect=AssertionError('must not lock')):
+            answer=module.remote(request)
+            self.assertEqual(answer['result'],'predicates_passed_at_read')
+            self.assertTrue(answer['readOnly']); self.assertFalse(answer['retryAllowed'])
+            self.assertEqual(collect.call_args.args[0]['mode'],'cancel_expired_announcement')
+
+    def test_observation_reads_pinned_seal_without_locks_directories_or_bytecode(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder:
+            root=Path(folder); generation=root/'generation';generation.mkdir()
+            source=subprocess.run(['git','show',module.CANCEL_CONTROL+':server/scripts/engine-release-seal.py'],cwd=ROOT,capture_output=True,text=True,check=True).stdout
+            (generation/'engine-release-seal.py').write_text(source)
+            seal=root/'engine-release-seal.json'
+            seal.write_text(json.dumps({'schema':1,'desired':{'sha':'c'*40,'imageId':'sha256:'+'d'*64},'highWaterSha':'c'*40,'generation':1,'pending':None}))
+            seal.chmod(0o600)
+            original_exec=importlib.machinery.SourceFileLoader.exec_module
+            def execute(loader, loaded):
+                original_exec(loader,loaded)
+                if loaded.__name__=='qualified_withdrawal_seal_observer':
+                    def forbidden(*args,**kwargs): raise AssertionError('Read-only seal tried to create or lock')
+                    loaded.SealLock=forbidden;loaded.ensure_dirs=forbidden
+            before={str(path.relative_to(root)):path.read_bytes() for path in root.rglob('*') if path.is_file()}
+            with patch.object(module,'ROOT',root), patch.object(module,'regular',side_effect=lambda path,mode=None:Path(path).read_text()), \
+                 patch.object(importlib.machinery.SourceFileLoader,'exec_module',execute):
+                value=module.observe_seal_state(generation)
+            self.assertEqual(value['desired']['sha'],'c'*40)
+            after={str(path.relative_to(root)):path.read_bytes() for path in root.rglob('*') if path.is_file()}
+            self.assertEqual(before,after)
+            self.assertFalse((generation/'__pycache__').exists())
+
+    def test_observation_failure_exports_only_closed_provenance(self):
+        request={'runKey':'41177442979-1','releaseSha':module.CANCEL_CONTROL,'controlSha':module.CANCEL_CONTROL,
+                 'desiredSha':'c'*40,'instanceId':'1-1234abcd','mode':'observe_expired_announcement'}
+        with patch.object(os,'getuid',return_value=0), patch.object(module,'own_wants_edge'), patch.object(module,'health_pair',side_effect=ValueError('SECRET token /private/path')):
+            answer=module.observe_cancellation(request)
+        self.assertEqual(answer['result'],'unproved')
+        self.assertNotIn('SECRET',json.dumps(answer)); self.assertNotIn('/private',json.dumps(answer))
+        module.validate_diagnostic(answer,request)
+        with self.assertRaises(ValueError): module.validate_diagnostic(answer|{'raw':'secret'},request)
+
     def test_thaw_requires_exact_complete_owned_release(self):
         stamp = 1793429586934
         iso = lambda ms: module.datetime.datetime.fromtimestamp(ms / 1000, module.datetime.timezone.utc).isoformat()

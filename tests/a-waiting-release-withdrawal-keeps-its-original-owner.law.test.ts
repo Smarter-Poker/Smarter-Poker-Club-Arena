@@ -16,7 +16,7 @@ it('qualifies exact waiting attempt admission and its original terminal signal b
     }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 34 tests');
+  expect(result.stderr).toContain('Ran 37 tests');
 }, 75000);
 
 it('keeps the revoked off-cycle owner order closed', () => {
@@ -49,6 +49,13 @@ it('withdrawal qualification reads its pinned original generation from full prot
   );
   const steps = workflow.jobs['withdraw-waiting-release'].steps;
   const checkout = steps.find((step: { uses?: string }) => step.uses === 'actions/checkout@v4');
+  const artifact = steps.find(
+    (step: { uses?: string }) => step.uses === 'actions/upload-artifact@v4'
+  );
+  expect(artifact.if).toBe('always()');
+  expect(artifact.with.path).toContain('artifacts/engine-withdrawal/receipt.json');
+  expect(artifact.with.path).toContain('artifacts/engine-withdrawal/diagnostic.json');
+  expect(artifact.with['if-no-files-found']).toBe('error');
   expect(checkout.with.ref).toBe('${{ github.sha }}');
   expect(checkout.with['fetch-depth']).toBe(0);
   expect(checkout.with['persist-credentials']).toBe(false);

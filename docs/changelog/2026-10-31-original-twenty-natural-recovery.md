@@ -24,3 +24,10 @@ identity bookends/canonical readback. Unknown acknowledgements never retry.
 Actual service values are never extracted, printed or copied. Original abort
 control functions require read-committed visibility so an old repeatable snapshot
 cannot miss the new append-only disposition. Weekly accounting is unaffected.
+
+The hosted credential-before-act law exposed an ingress spelling mismatch in
+the new handler. It now reads the configured authorization header in the same
+canonical bracket form as the existing abort handler, preserving the real
+constant-time service check before any platform access. The unchanged law fails
+on the prior source and passes with the correction; behavioral unauthorized
+requests still never reach preparation.

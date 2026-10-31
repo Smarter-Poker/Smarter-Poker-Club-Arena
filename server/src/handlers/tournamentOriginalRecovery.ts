@@ -51,7 +51,7 @@ export async function handleTournamentOriginalRecoveryPrepare(
   }
 ) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!hasTournamentAbortServiceAuthority(req.headers.authorization))
+  if (!hasTournamentAbortServiceAuthority(req.headers['authorization']))
     return sendJSON(res, 401, { success: false, error: 'Service Authority Required' });
   if (req.method !== 'POST')
     return sendJSON(res, 405, { success: false, error: 'Method Not Allowed' });

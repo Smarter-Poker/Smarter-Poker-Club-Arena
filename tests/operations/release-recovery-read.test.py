@@ -2154,5 +2154,161 @@ class CancellationRecordsTests(unittest.TestCase):
             with self.assertRaises(ValueError):R.validate_reply(answer|{'raw':'SECRET'},self.request)
 
 
+class NativeScaleRecordsTests(unittest.TestCase):
+    def setUp(self):
+        self.request=dict(R.SCALE_REQUEST)
+        self.serving={'container':'c'*64,'image':'sha256:'+'d'*64,'revision':R.EED,
+            'startedAt':'2026-10-31T16:33:49.000Z','instanceId':'1-12e48c04'}
+        self.intent={'binding':R.SCALE_BINDING,'container':R.SCALE_NAME,'runId':self.request['runKey'],'private':'SECRET'}
+        self.result={'schema':'legacy-native-scale-fixture/v1','ok':True,'count':35000000,
+            'queryMs':1234,'prototypeRestored':True,'private':'SECRET',
+            'before':{'used':3913011648,'available':320000000,'private':'SECRET'}}
+        self.receipt={'binding':R.SCALE_BINDING,'runId':self.request['runKey'],
+            'candidate':{'image':R.SCALE_IMAGE,'revision':self.request['releaseSha'],
+                'serverTree':R.SCALE_TREE,'buildContract':'clean-server-archive-v1'},
+            'status':'refused','cleanupProved':False,'executionAcknowledged':True,
+            'observedOwnedContainer':False,'elapsedMs':37000,'hostAvailableBytes':48000000000,
+            'servingBefore':self.serving,'servingAfter':self.serving,
+            'result':self.result,'error':'owned disposable container state unknown; SECRET',
+            'private':{'capsule':'SECRET'}}
+        self.absent={'status':'absent_at_read','code':'exact_container_missing','exitCode':1,
+            'stderrBytes':12,'stderrSHA256':'b'*64}
+
+    @contextlib.contextmanager
+    def fixture(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)
+            for suffix,value in [('intent',self.intent),('json',self.receipt),('output',self.result)]:
+                file=path/(R.SCALE_KEY+'.'+suffix);file.write_text(json.dumps(value));file.chmod(0o600)
+            fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                with patch.object(R,'scale_serving',return_value=self.serving),patch.object(R,'scale_docker',return_value=self.absent): yield path,fd
+            finally:os.close(fd)
+
+    def test_exact_selector_and_source_derived_key(self):
+        self.assertEqual(R.selection(self.request),self.request)
+        self.assertEqual(R.SCALE_KEY,'41dc67789de090a39d2100b275b5127668b70573bc2b184692d9f8f15d001e17')
+        for key in self.request:
+            with self.assertRaises(ValueError):R.selection(self.request|{key:'other'})
+        with self.assertRaises(ValueError):R.selection(self.request|{'command':'docker rm'})
+
+    def test_bound_receipt_preserves_failed_cleanup_and_actual_result_without_private_data(self):
+        with self.fixture() as (_,fd):answer=R.scale_records(self.request,fd)
+        self.assertEqual(answer['bindingStatus'],'bound_original_records')
+        self.assertTrue(answer['receipt']['result']['ok']);self.assertFalse(answer['receipt']['cleanupProved'])
+        self.assertEqual(answer['receipt']['error']['categories'],['owned disposable container state unknown'])
+        self.assertFalse(answer['retryAllowed']);self.assertNotIn('SECRET',json.dumps(answer))
+        self.assertEqual(R.validate_reply(answer,self.request),answer)
+        self.assertLess(len(json.dumps(answer)),8192)
+
+    def test_wrong_run_binding_candidate_or_intent_refuses_result(self):
+        mutations=[(self.intent,'runId','other'),(self.intent,'container','other'),
+            (self.receipt,'binding',{}),(self.receipt,'candidate',{}),(self.receipt,'runId','other')]
+        for record,key,value in mutations:
+            old=record[key];record[key]=value
+            with self.fixture() as (_,fd):answer=R.scale_records(self.request,fd)
+            self.assertEqual(answer['bindingStatus'],'unknown');self.assertIsNone(answer['receipt'])
+            record[key]=old
+
+    def test_absent_intent_never_certifies_cleanup_or_retry(self):
+        with self.fixture() as (path,fd):
+            (path/(R.SCALE_KEY+'.intent')).unlink();answer=R.scale_records(self.request,fd)
+        self.assertEqual(answer['bindingStatus'],'unknown');self.assertIsNone(answer['receipt']);self.assertFalse(answer['retryAllowed'])
+
+    def test_no_follow_fifo_permissions_and_oversize(self):
+        with self.fixture() as (path,fd):
+            file=path/(R.SCALE_KEY+'.json');file.unlink();file.symlink_to(path/(R.SCALE_KEY+'.intent'))
+            self.assertEqual(R.scale_snapshot(fd)['json'][0],'unknown');file.unlink();os.mkfifo(file)
+            self.assertEqual(R.scale_snapshot(fd)['json'][0],'unknown');file.unlink();file.write_bytes(b'x'*131073)
+            self.assertEqual(R.scale_snapshot(fd)['json'][0],'unknown');file.write_text('{}');file.chmod(0o666)
+            self.assertEqual(R.scale_snapshot(fd)['json'][0],'unknown')
+
+    def test_duplicate_json_and_non_json_output_do_not_leak(self):
+        with self.fixture() as (path,fd):
+            (path/(R.SCALE_KEY+'.output')).write_text('SECRET traceback')
+            answer=R.scale_records(self.request,fd);self.assertEqual(answer['output']['format'],'non_json_or_unqualified')
+            self.assertNotIn('SECRET',json.dumps(answer));(path/(R.SCALE_KEY+'.json')).write_text('{"status":1,"status":2}')
+            self.assertEqual(R.scale_records(self.request,fd)['bindingStatus'],'unknown')
+
+    def test_changed_files_container_or_production_tuple_remain_unknown(self):
+        with self.fixture() as (_,fd):
+            before=R.scale_snapshot(fd);after=dict(before);after['output']=('unknown',None,None)
+            for helper,values in [('scale_snapshot',[before,after]),('scale_docker',[self.absent,{'status':'unknown','code':'metadata_unbound'}]),('scale_serving',[self.serving,self.serving|{'instanceId':'1-11ea1175'}])]:
+                with patch.object(R,helper,side_effect=values):answer=R.scale_records(self.request,fd)
+                self.assertEqual(answer['bindingStatus'],'changed_or_deadline');self.assertIsNone(answer['receipt'])
+
+    def test_selected_docker_missing_daemon_permission_and_unknown_stderr(self):
+        rows=[('Error: No such object: '+R.SCALE_NAME,'exact_container_missing','absent_at_read'),
+            ('Cannot connect to the Docker daemon','daemon_unavailable','unknown'),
+            ('permission denied SECRET','permission_denied','unknown'),('SECRET','unclassified_nonzero','unknown')]
+        for stderr,code,status in rows:
+            with patch.object(R,'_inspector_command',return_value=subprocess.CompletedProcess([],1,b'',stderr.encode())) as call:
+                answer=R.scale_docker(R.time.monotonic()+5)
+            self.assertEqual(answer['code'],code);self.assertEqual(answer['status'],status);self.assertNotIn('SECRET',json.dumps(answer))
+            args=call.call_args.args[0];self.assertEqual(args[:4],['docker','inspect','--type','container']);self.assertEqual(args[-1],R.SCALE_NAME)
+            self.assertNotIn('Env',' '.join(args));self.assertNotIn('exec',args)
+
+    def test_selected_docker_exact_metadata_and_binding(self):
+        values=['a'*64,R.SCALE_IMAGE,'exited',False,0,False,38654705664,38654705664,1000000000,32,True,'none',R.SCALE_KEY]
+        with patch.object(R,'_inspector_command',return_value=subprocess.CompletedProcess([],0,' '.join(map(json.dumps,values)).encode(),b'')):
+            answer=R.scale_docker(R.time.monotonic()+5)
+        self.assertEqual(answer['status'],'bound_container_at_read');self.assertEqual(answer['memoryBytes'],38654705664)
+        values[-1]='other'
+        with patch.object(R,'_inspector_command',return_value=subprocess.CompletedProcess([],0,' '.join(map(json.dumps,values)).encode(),b'')):
+            self.assertEqual(R.scale_docker(R.time.monotonic()+5)['code'],'metadata_unbound')
+
+    def test_every_export_branch_refuses_unknown_fields_and_private_values(self):
+        with self.fixture() as (_,fd):answer=R.scale_records(self.request,fd)
+        for key in ('receipt','output','container'):
+            changed=json.loads(json.dumps(answer));changed[key]['capsule']='SECRET'
+            with self.assertRaises(ValueError):R.validate_reply(changed,self.request)
+        for key,value in [('state','SECRET'),('code','SECRET')]:
+            changed=json.loads(json.dumps(answer));changed['container'][key]=value
+            with self.assertRaises(ValueError):R.validate_reply(changed,self.request)
+        changed=json.loads(json.dumps(answer));changed['receipt']['result']['private']='SECRET'
+        with self.assertRaises(ValueError):R.validate_reply(changed,self.request)
+
+    def test_bounded_native_returncode_stderr_and_size_preserve_old_fail_closed_behavior(self):
+        args=[R.sys.executable,'-c','import sys;sys.stderr.write("fixture");sys.exit(7)']
+        reply=R._inspector_command(args,R.time.monotonic()+2,limit=256,return_result=True)
+        self.assertEqual(reply.returncode,7);self.assertEqual(reply.stderr,b'fixture')
+        with self.assertRaises(ValueError):R._inspector_command(args,R.time.monotonic()+2,limit=256)
+        with self.assertRaises(ValueError):
+            R._inspector_command([R.sys.executable,'-c','print("x"*4096)'],R.time.monotonic()+2,limit=256,return_result=True)
+        with self.assertRaises(ValueError):R._inspector_command(args,R.time.monotonic()-1,return_result=True)
+
+    def test_absent_directory_and_expired_shared_read_never_grant_authority(self):
+        with patch.object(R,'scale_serving',return_value=self.serving),patch.object(R,'scale_docker',return_value=self.absent):
+            answer=R.scale_records(self.request,None)
+        self.assertTrue(all(row['status']=='absent_at_read' for row in answer['records'].values()))
+        self.assertEqual(answer['bindingStatus'],'unknown');self.assertFalse(answer['retryAllowed'])
+        with self.fixture() as (_,fd),patch.object(R.time,'monotonic',side_effect=[10,19]):
+            answer=R.scale_records(self.request,fd)
+        self.assertEqual(answer['bindingStatus'],'changed_or_deadline');self.assertIsNone(answer['receipt'])
+
+    def test_current_scale_identity_accepts_200_or_degraded503_only_without_business_export(self):
+        identity={'container':self.serving['container'],'image':self.serving['image'],
+            'startedAt':self.serving['startedAt'],'hostPid':'123','restarts':'0','running':'true'}
+        payload={'running':True,'releaseSha':R.EED,'version':R.EED[:8],
+            'instanceId':self.serving['instanceId'],'business':{'capsule':'SECRET'}}
+        for status in (b'200',b'503',b'404',b'500'):
+            with patch.object(R,'inspector_identity',return_value=identity),patch.object(R,'inspector_health',side_effect=AssertionError('old200onlyhelper')), \
+                 patch.object(R,'_inspector_command',side_effect=[json.dumps(payload).encode()+b'\n'+status,(R.EED+'\n').encode()]) as read:
+                answer=R.scale_serving(R.time.monotonic()+3)
+            if status in (b'200',b'503'):
+                self.assertEqual(answer,self.serving);self.assertNotIn('SECRET',json.dumps(answer))
+                self.assertNotIn('--fail',read.call_args_list[0].args[0])
+            else:self.assertIsNone(answer)
+        for field,value in [('running',False),('releaseSha','a'*40),('version','wrong'),('instanceId','wrong')]:
+            with patch.object(R,'inspector_identity',return_value=identity),patch.object(R,'_inspector_command',return_value=json.dumps(payload|{field:value}).encode()+b'\n503'):
+                self.assertIsNone(R.scale_serving(R.time.monotonic()+3))
+
+    def test_native_mode_routes_without_sealed_or_inspector_requirements(self):
+        with self.fixture() as (_,fd):answer=R.scale_records(self.request,fd)
+        with patch.object(R,'scale_remote',return_value=answer) as read,patch.object(R.os,'open',side_effect=AssertionError('other files')):
+            self.assertEqual(R.remote(self.request),answer)
+        read.assert_called_once_with(self.request)
+
+
 if __name__ == '__main__':
     unittest.main()

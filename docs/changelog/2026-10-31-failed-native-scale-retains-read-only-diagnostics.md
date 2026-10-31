@@ -1,0 +1,7 @@
+# Failed native scale qualification has an exact read-only evidence route
+
+The original53c599 receiver stopped before intake because disposable-container cleanup returned an unclassified Docker error. That message does not prove whether the synthetic scale fixture passed or cleanup completed. The existing explicit production-integrity release reader now supports only that fixed historical run/image/controller/fixture/profile binding. It reads stable root-owned receipt, intent and output files, reports typed synthetic measurements and allowlisted error categories, and observes only selected disposable Docker metadata with explicit missing/daemon/permission/unknown classifications.
+
+Minimal current production container/image/revision/start/instance bookends and retained before/after tuples expose identity changes without reading private capsules or exporting health/business/environment data. Files, container or serving identity changing during the shared finite read stay unknown. This route cannot start, stop, clean, retry, certify or publish anything. Root must obtain the actual host result before diagnosing or fixing the controller; this source change claims no live scale success or cleanup.
+
+Native regression exercises exact binding, file custody, links/FIFO/size, duplicate and malformed records, private canaries, synthetic-result projection, Docker error and metadata branches, identity changes and transport export rejection. Existing modes retain their tests.

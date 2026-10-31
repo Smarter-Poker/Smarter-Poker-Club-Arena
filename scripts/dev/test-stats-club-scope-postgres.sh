@@ -72,6 +72,10 @@ PY
 "${psql[@]}" -f "$fixture/coverage-bootstrap.sql" \
  -f "$repo/supabase/migrations/20261029065040_recorded_hand_coverage_supplies_aggression_and_elapsed_hours.sql" \
  -f "$fixture/coverage-assertions.sql"
+"${psql[@]}" -f "$repo/tests/fixtures/stats-game-mode/bootstrap.sql" \
+ -f "$repo/tests/fixtures/stats-game-mode/archive-predecessor.sql" \
+ -f "$repo/supabase/migrations/20261031161532_separate_cash_and_tournament_statistics_and_histories.sql" \
+ -f "$repo/tests/fixtures/stats-game-mode/assertions.sql"
 if [[ -n "${STATS_FUNDED_EXPORT:-}" ]]; then
  "${psql[@]}" -Atc "SELECT pg_get_functiondef('public.ca_player_stats_overview_v2_by_club(uuid,integer,text,text,uuid)'::regprocedure)" >"$STATS_FUNDED_EXPORT"
 fi

@@ -42,8 +42,8 @@ What changed, all inside `server/src/engine/HorseLogic.ts`:
 - In the class, a hand that clears `valueRaiseThresh` no longer enters the
   value-raise branch; the scare-card check-raise bluff and the blocker
   bluff-raise are closed too. All three fall through to the existing V38
-  `riverCallVerdict` with the V61 shade (and the V63 shape once #8851
-  serves). Each redirect fires `v64_river_raise_needs_two_pair`.
+  `riverCallVerdict` with the V61 shade in its V63 shape (#8851, merged
+  before this). Each redirect fires `v64_river_raise_needs_two_pair`.
 - `overFolder64 = exploit.bluffMod > 1.05` keeps the two bluff-raises alive
   against a measured over-folder: HorseMind raises `bluffMod` to 1.45 only
   after 8+ observed fold-to-aggression spots at a 62%+ fold rate, a read of

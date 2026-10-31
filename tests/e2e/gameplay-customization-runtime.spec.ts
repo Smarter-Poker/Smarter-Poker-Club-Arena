@@ -39,7 +39,7 @@ import {
 
 const CERTIFICATION_ENABLED = process.env.GAMEPLAY_CUSTOMIZATION_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
-const VILLAIN_ID = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+let VILLAIN_ID = '66666666-7777-4888-8999-aaaaaaaaaaaa';
 const HERO_AVATAR = '/avatars/table/free_samurai@2x.webp';
 const VILLAIN_AVATAR = '/avatars/table/free_rival@2x.webp';
 const RESPONSE_TIMEOUT = 60_000;
@@ -630,6 +630,7 @@ test.describe('production routed gameplay customization', () => {
 
     const environment = requireCustomizationCertificationEnvironment();
     let account: TemporaryCustomizationAccount | undefined;
+    let notesOpponent: TemporaryCustomizationAccount | undefined;
     let writerContext: BrowserContext | undefined;
     let readerContext: BrowserContext | undefined;
     let journeyFailure: unknown;
@@ -638,6 +639,8 @@ test.describe('production routed gameplay customization', () => {
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'gameplay-runtime', 0);
+      notesOpponent = await createTemporaryCustomizationAccount(environment, 'gameplay-notes', 0);
+      VILLAIN_ID = notesOpponent.id;
       const joined = await account.client.rpc('fn_join_club', { p_club_id: CLUB_ID });
       if (joined.error) throw joined.error;
       if (joined.data && typeof joined.data === 'object' && 'error' in joined.data) {
@@ -902,6 +905,74 @@ test.describe('production routed gameplay customization', () => {
       });
       await expect(writerCardBack).toBeVisible();
       await expect(writerFaceCard).toBeVisible();
+
+      // Real private note persistence over the deployed opponent-click menu.
+      // Only the two isolated certification accounts own these rows. No throw
+      // is consumed and the projected table never buys in or changes live play.
+      const rivalAvatar = writerRoot.locator('[data-seat-wrapper="2"] .seat__avatar');
+      await tapReady(rivalAvatar);
+      const picker = writer.locator('.throwable-selector');
+      await expect(picker.locator('.throwable-selector__tabs button')).toHaveText([
+        'Favorites',
+        'Food',
+        'Sports',
+        'Reactions',
+        'VIP',
+      ]);
+      const ranking = await account.client.rpc('fn_player_throwable_favorites');
+      if (ranking.error) throw ranking.error;
+      await expect(picker.locator('[data-throwable-id]')).toHaveCount(10);
+      expect(
+        await picker
+          .locator('[data-throwable-id]')
+          .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-throwable-id')))
+      ).toEqual(ranking.data.map((row: { throwable_id: string }) => row.throwable_id));
+      await test.info().attach('opponent-favorites', {
+        body: await writer.screenshot(),
+        contentType: 'image/png',
+      });
+      await tapReady(picker.getByRole('button', { name: 'Notes', exact: true }));
+      const notes = writer.getByRole('dialog', { name: 'Player Notes', exact: true });
+      const noteInput = notes.getByRole('textbox', { name: 'Notes About This Player' });
+      await expect(noteInput).toBeEnabled();
+      await noteInput.fill('Certification Read: Raises Small With Strong Hands.');
+      await tapReady(notes.getByRole('button', { name: 'Save Note', exact: true }));
+      await expect(notes).toHaveCount(0);
+      const ownNote = await account.client
+        .from('player_notes')
+        .select('notes')
+        .eq('user_id', account.id)
+        .eq('target_user_id', notesOpponent.id)
+        .maybeSingle();
+      if (ownNote.error) throw ownNote.error;
+      expect(ownNote.data?.notes).toBe('Certification Read: Raises Small With Strong Hands.');
+      const privateRead = await notesOpponent.client
+        .from('player_notes')
+        .select('notes')
+        .eq('user_id', account.id);
+      if (privateRead.error) throw privateRead.error;
+      expect(privateRead.data).toEqual([]);
+      await tapReady(rivalAvatar);
+      await tapReady(picker.getByRole('button', { name: 'Notes', exact: true }));
+      await expect(noteInput).toHaveValue('Certification Read: Raises Small With Strong Hands.');
+      await test.info().attach('opponent-notes-persisted', {
+        body: await writer.screenshot(),
+        contentType: 'image/png',
+      });
+      await noteInput.fill('');
+      await tapReady(notes.getByRole('button', { name: 'Save Note', exact: true }));
+      await expect(notes).toHaveCount(0);
+      const cleared = await account.client
+        .from('player_notes')
+        .select('notes')
+        .eq('user_id', account.id)
+        .eq('target_user_id', notesOpponent.id)
+        .maybeSingle();
+      if (cleared.error) throw cleared.error;
+      expect(cleared.data?.notes).toBe('');
+      console.log(
+        '[player-notes-favorites] opponent menu, ten popular defaults, persisted edit/clear, reopen and private RLS passed'
+      );
 
       const firstTableArt = await writerTableArt.getAttribute('src');
       const firstRoomPaint = await writerRoot.evaluate(
@@ -1175,6 +1246,11 @@ test.describe('production routed gameplay customization', () => {
         .catch((error) => cleanupFailures.push(error));
       await writerContext?.close().catch((error) => cleanupFailures.push(error));
       await readerContext?.close().catch((error) => cleanupFailures.push(error));
+      if (notesOpponent) {
+        await cleanupTemporaryCustomizationAccount(environment, notesOpponent).catch((error) =>
+          cleanupFailures.push(error)
+        );
+      }
       if (account) {
         await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>
           cleanupFailures.push(error)

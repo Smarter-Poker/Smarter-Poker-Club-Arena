@@ -8,9 +8,9 @@ DO $migration$
 DECLARE p regprocedure := 'public.fn_lightning_operator_control(uuid,text,text,jsonb)'::regprocedure;
  d text; old text; new text;
 BEGIN
- IF NOT (SELECT prosecdef AND proconfig=ARRAY['search_path=public, pg_temp'] AND pg_get_userbyid(proowner)='postgres'
+ IF NOT coalesce((SELECT prosecdef AND proconfig=ARRAY['search_path=public, pg_temp'] AND pg_get_userbyid(proowner)='postgres'
   AND proacl @> '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'::aclitem[]
-  AND proacl <@ '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'::aclitem[] FROM pg_proc WHERE oid=p) THEN
+  AND proacl <@ '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'::aclitem[] FROM pg_proc WHERE oid=p), false) THEN
   RAISE EXCEPTION 'Unexpected Lightning operator security configuration';
  END IF;
  SELECT pg_get_functiondef(p) INTO d;
@@ -96,9 +96,9 @@ BEGIN
  d:=replace(d,old,new);
  IF md5(d)<>'8ee8d46e5e8045ca727ea7684a3474c3' THEN RAISE EXCEPTION 'Unexpected Lightning operator transformed image'; END IF;
  EXECUTE d;
- IF NOT (SELECT prosecdef AND proconfig=ARRAY['search_path=public, pg_temp'] AND pg_get_userbyid(proowner)='postgres'
+ IF NOT coalesce((SELECT prosecdef AND proconfig=ARRAY['search_path=public, pg_temp'] AND pg_get_userbyid(proowner)='postgres'
   AND proacl @> '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'::aclitem[]
-  AND proacl <@ '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'::aclitem[] FROM pg_proc WHERE oid=p) THEN
+  AND proacl <@ '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'::aclitem[] FROM pg_proc WHERE oid=p), false) THEN
   RAISE EXCEPTION 'Unexpected Lightning operator security configuration';
  END IF;
  IF md5(pg_get_functiondef(p))<>'8ee8d46e5e8045ca727ea7684a3474c3' THEN RAISE EXCEPTION 'Unexpected Lightning operator postimage'; END IF;

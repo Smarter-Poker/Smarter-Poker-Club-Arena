@@ -47,7 +47,21 @@ try:
     migration=next((ROOT/'supabase/migrations').glob('*_lightning_release_hold_outcome_ownership.sql'))
     acl=sql(f"SELECT proacl::text||proowner::text||proconfig::text FROM pg_proc WHERE oid={sig}")
     load(ROOT/'scripts/dev/fixtures/lightning-release-hold-ddl-guards.sql')
+    def refuse_null_acl(expected_definition):
+        # NULL ACL defaults to PUBLIC EXECUTE. Change only the isolated catalog,
+        # then execute the actual migration and require rollback of that change.
+        try:
+            sql(f"BEGIN; UPDATE pg_proc SET proacl=NULL WHERE oid={sig};\n"+migration.read_text())
+        except RuntimeError as exc:
+            assert 'Unexpected Lightning operator security configuration' in str(exc), str(exc)
+        else:
+            raise AssertionError('NULL ACL security drift unexpectedly admitted')
+        assert acl==sql(f"SELECT proacl::text||proowner::text||proconfig::text FROM pg_proc WHERE oid={sig}")
+        check(f"md5(pg_get_functiondef({sig}))='{expected_definition}'",'NULL ACL refusal rolls back metadata and body')
+        print('PASS NULL ACL drift refused and rollback restored exact ACL/body '+expected_definition)
+    refuse_null_acl('e99c43433703d45dac01948de8ef77d8')
     load(migration);load(migration)
+    refuse_null_acl('8ee8d46e5e8045ca727ea7684a3474c3')
     print('Native PostgreSQL: '+run([pg/'postgres','--version']).stdout.strip())
     print('Installed metadata: '+sql(f"SELECT jsonb_build_object('definition_md5',md5(pg_get_functiondef(oid)),'owner',pg_get_userbyid(proowner),'acl',proacl::text,'config',proconfig,'security_definer',prosecdef) FROM pg_proc WHERE oid={sig}"))
     assert acl==sql(f"SELECT proacl::text||proowner::text||proconfig::text FROM pg_proc WHERE oid={sig}")

@@ -1,4 +1,10 @@
 {
+  "mttApprovalCompleteReadAudit20261029": {
+    "reason": "Reviewed one-line tightening of MembershipService discarded-error baseline from 2 to 1 after complete member reads now reject errors. All other assertions, source pins, historical audits and qualification statuses remain unchanged. Current test identity only, not financial or live recertification.",
+    "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+    "previousSHA256": "79ac20b530ab8adf76b7821f83db486e9218c24a1dcd03d000fb4bd44b2cd4bc",
+    "currentSHA256": "79deae1f4f7751b8544ba0fa28e0e72e851a6759f90d423a367620fc3beae912"
+  },
   "accountPreferenceFixtureAudit20261029": {
     "reason": "Reviewed exact fixture-only diff: replace the empty useUserStore mock with its selector bound to the existing synthetic auth identity. Preserve every cashout receipt, ABA, financial invariant and assertion. Connected 34-case fixture run passed; no production financial mutation or certificate restamp.",
     "path": "tests/components/cashout-own-event-acknowledgment.test.tsx",

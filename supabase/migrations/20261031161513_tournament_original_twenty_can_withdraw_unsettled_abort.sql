@@ -447,4 +447,16 @@ END $function$
 $owner_c84b394b07220ef06c7221114773d338$;
  IF md5(pg_get_functiondef('smarter_private.tournament_abort_ingress(uuid)'::regprocedure)) IS DISTINCT FROM 'efaf998fc4e268f748060da2806b9764' THEN RAISE EXCEPTION 'recovery_source_postimage_changed';END IF;
 END $patch$;
+REVOKE ALL ON FUNCTION fn_ca_ack_tournament_abort_boundary(uuid,uuid,uuid,uuid,bigint,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION fn_ca_ack_tournament_abort_boundary(uuid,uuid,uuid,uuid,bigint,jsonb) TO service_role;
+REVOKE ALL ON FUNCTION fn_ca_operator_floor_state(uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION fn_ca_operator_floor_state(uuid) TO service_role;
+REVOKE ALL ON FUNCTION fn_ca_settle_tournament_abort(uuid,uuid,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION fn_ca_settle_tournament_abort(uuid,uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION fn_ca_tournament_abort_stop_state(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION fn_ca_tournament_abort_stop_state(uuid,uuid) TO service_role;
+REVOKE ALL ON FUNCTION fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid) TO service_role;
+REVOKE ALL ON FUNCTION smarter_private.assert_tournament_abort_quiesced(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION smarter_private.tournament_abort_ingress(uuid) FROM PUBLIC,anon,authenticated,service_role;
 COMMIT;

@@ -408,7 +408,9 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       { timeout: 45_000 }
     );
     void initialRosterRead.catch(() => {});
-    await page.getByRole('textbox', { name: 'Search Club Members' }).fill(playerNumber);
+    await page
+      .getByRole('searchbox', { name: 'Search Club Members' })
+      .fill(playerNumber, { timeout: 45_000 });
     assertPrivateRecordFixtureRoster(await (await initialRosterRead).json(), userId, playerNumber);
     const rosterRow = page.getByRole('listitem').filter({
       has: page

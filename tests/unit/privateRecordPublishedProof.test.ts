@@ -410,6 +410,10 @@ describe('finite published record client proof admission and verdict', () => {
     );
     expect(workflow).toContain('node scripts/ci/private-record-client-proof.mjs verify');
     const source = readFileSync('tests/e2e/production-private-record-failover.spec.ts', 'utf8');
+    const roster = readFileSync('src/pages/ClubMembersPage.tsx', 'utf8');
+    expect(roster).toMatch(/<input\s+type="search"[\s\S]*?aria-label="Search Club Members"/);
+    expect(source).toContain("getByRole('searchbox', { name: 'Search Club Members' })");
+    expect(source).not.toContain("getByRole('textbox', { name: 'Search Club Members' })");
     expect(source).not.toMatch(/route\.fulfill|\.send\(|setContent\(/);
     expect(source).toContain('ca_club_member_detail');
     expect(source).toContain('arena_avatar_url');

@@ -733,8 +733,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'v63LargeRiverBetShade',
-    '2026-10-31 the V61 one-pair river shade keeps its slope past half the pot and caps at 20 points from 0.7 pot; measured over the latest 19,933 NLH review hands large-wager one-pair calls won 13.3% (119/897) against a 29-41% price; mirror and human-field leagues inert because league horses never wager 0.7 pot on the river; explicit off arm retained',
+    '2026-10-31 the V61 one-pair river shade steepens past a half-pot wager and caps at 20 points from a pot-sized wager (0.7-pot: 12, V61 8); measured over the latest 19,933 NLH review hands large-wager one-pair calls won 13.3% (119/897) against a 41%+ price and medium 20.7% against 29-41%; league cards positive at 100-200bb, noise at 25-40bb; explicit off arm retained',
     'V63'
+  ),
+  flag(
+    'v63RiverShadeShapeOverride',
+    'league calibration arm (2026-10-31): overrides the V63 shade shape (slope, cap, knee) for a league card; inert unless set; production never sets it',
+    'V63-league'
   ),
   flag(
     'v62RiverBettorPolarity',
@@ -2143,6 +2148,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V61',
     'decide',
     0.001
+  ),
+  receipt(
+    'v63_large_river_bet_shade',
+    'HorseLogic (V63)',
+    'Hold em one-pair river call shaded more than the V61 shape would have (steeper past a half-pot wager, cap 0.20)',
+    'V63',
+    'decide',
+    0.0005
   ),
   receipt(
     'v38_river_fold',

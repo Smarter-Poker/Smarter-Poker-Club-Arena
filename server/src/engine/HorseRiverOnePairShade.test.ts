@@ -14,10 +14,8 @@ import * as EvEngine from './HorseEvEngine.js';
 import {
   HorseLogic,
   v61RiverOnePairShade,
-  V61_RIVER_SHADE_CAP,
-  V61_RIVER_SHADE_SLOPE,
-  V63_RIVER_SHADE_CAP,
-  V63_RIVER_SHADE_SLOPE,
+  V61_RIVER_SHADE_SHAPE,
+  V63_RIVER_SHADE_SHAPE,
 } from './HorseLogic.js';
 import { HorseMind } from './HorseMind.js';
 import { seedFastRandom } from './HorseEval.js';
@@ -180,16 +178,16 @@ describe('V61 yields to the V62 polar bettor model', () => {
 
 describe('V61 shade shape', () => {
   it('is zero at a quarter-pot wager (r = 0.2) and twelve points from a pot-sized wager (r = 0.5)', () => {
-    expect(v61RiverOnePairShade(10, 100, V61_RIVER_SHADE_CAP)).toBe(0);
-    expect(v61RiverOnePairShade(20, 100, V61_RIVER_SHADE_CAP)).toBe(0);
-    expect(v61RiverOnePairShade(35, 100, V61_RIVER_SHADE_CAP)).toBeCloseTo(0.06, 6);
-    expect(v61RiverOnePairShade(50, 100, V61_RIVER_SHADE_CAP)).toBeCloseTo(0.12, 6);
-    expect(v61RiverOnePairShade(500, 600, V61_RIVER_SHADE_CAP)).toBeCloseTo(0.12, 6);
-    expect(v61RiverOnePairShade(0, 100, V61_RIVER_SHADE_CAP)).toBe(0);
+    expect(v61RiverOnePairShade(10, 100, V61_RIVER_SHADE_SHAPE)).toBe(0);
+    expect(v61RiverOnePairShade(20, 100, V61_RIVER_SHADE_SHAPE)).toBe(0);
+    expect(v61RiverOnePairShade(35, 100, V61_RIVER_SHADE_SHAPE)).toBeCloseTo(0.06, 6);
+    expect(v61RiverOnePairShade(50, 100, V61_RIVER_SHADE_SHAPE)).toBeCloseTo(0.12, 6);
+    expect(v61RiverOnePairShade(500, 600, V61_RIVER_SHADE_SHAPE)).toBeCloseTo(0.12, 6);
+    expect(v61RiverOnePairShade(0, 100, V61_RIVER_SHADE_SHAPE)).toBe(0);
   });
 });
 
-describe('V63: the shade climbs twice as fast with the price and caps at twenty points', () => {
+describe('V63: the shade steepens past a half-pot wager and caps at twenty points', () => {
   beforeEach(() => {
     seedFastRandom(0x5eed63);
     HorseMind.reset();
@@ -198,30 +196,39 @@ describe('V63: the shade climbs twice as fast with the price and caps at twenty 
   });
 
   // The price r is toCall / (pot after the wager): a 0.4-pot wager is
-  // r = 0.286, 0.7-pot r = 0.41, pot-sized r = 0.5, a 2x overbet r = 0.67.
-  const v63 = (toCall: number, pot: number) =>
-    v61RiverOnePairShade(toCall, pot, V63_RIVER_SHADE_CAP, V63_RIVER_SHADE_SLOPE);
-  const v61 = (toCall: number, pot: number) =>
-    v61RiverOnePairShade(toCall, pot, V61_RIVER_SHADE_CAP, V61_RIVER_SHADE_SLOPE);
+  // r = 0.286, a half-pot wager r = 0.333, 0.7-pot r = 0.41, pot-sized
+  // r = 0.5, a 2x overbet r = 0.67.
+  const v63 = (toCall: number, pot: number) => v61RiverOnePairShade(toCall, pot, V63_RIVER_SHADE_SHAPE);
+  const v61 = (toCall: number, pot: number) => v61RiverOnePairShade(toCall, pot, V61_RIVER_SHADE_SHAPE);
 
-  it('shape: zero at a quarter-pot wager, 7 points at 0.4 pot, 17 at 0.7 pot, 20 from a pot-sized wager', () => {
-    expect(V63_RIVER_SHADE_SLOPE).toBe(0.8);
-    expect(V63_RIVER_SHADE_CAP).toBe(0.2);
-    expect(v63(25, 125)).toBeCloseTo(0, 9);
-    expect(v63(40, 140)).toBeCloseTo(0.0686, 3);
-    expect(v63(70, 170)).toBeCloseTo(0.1694, 3);
-    expect(v63(100, 200)).toBeCloseTo(0.2, 6);
-    expect(v63(200, 300)).toBeCloseTo(0.2, 6);
-    // V61 for the same wagers: 3.4, 8.4 and 12 points
-    expect(v61(40, 140)).toBeCloseTo(0.0343, 3);
+  it('shape: V61 up to a half-pot wager, then 12 points at 0.7 pot and 20 from a pot-sized wager', () => {
+    expect(V63_RIVER_SHADE_SHAPE).toEqual({ slope: 0.4, cap: 0.2, kneeR: 1 / 3, kneeSlope: 0.88 });
+    expect(V61_RIVER_SHADE_SHAPE).toEqual({ slope: 0.4, cap: 0.12 });
+    // up to the knee the two shapes agree
+    for (const [toCall, pot] of [[10, 100], [25, 125], [40, 140], [50, 150]] as const) {
+      expect(v63(toCall, pot)).toBeCloseTo(v61(toCall, pot), 9);
+    }
+    expect(v63(50, 150)).toBeCloseTo(0.0533, 3);
+    // past it V63 steepens: 0.7 pot 12 points, pot-sized 20, overbets 20
+    expect(v63(70, 170)).toBeCloseTo(0.12, 2);
     expect(v61(70, 170)).toBeCloseTo(0.0847, 3);
+    expect(v63(100, 200)).toBeCloseTo(0.2, 6);
     expect(v61(100, 200)).toBeCloseTo(0.12, 6);
+    expect(v63(200, 300)).toBeCloseTo(0.2, 6);
+    expect(v63(500, 600)).toBeCloseTo(0.2, 6);
+    // continuous at the knee
+    expect(v63(1 / 3 + 1e-9, 1)).toBeCloseTo(v63(1 / 3 - 1e-9, 1), 6);
     // the bare function keeps the V61 shape; the decide options select V63's
     expect(v61RiverOnePairShade(100, 200)).toBeCloseTo(0.12, 6);
     expect(v61RiverOnePairShade(0, 100)).toBe(0);
   });
 
-  it('third pair facing a 0.7-pot wager is priced 17 points below the unshaded read by default, 8 with V63 off', () => {
+  it('a short stack calling a covering jam reads as a small price and keeps the V61 shade', () => {
+    // 50 behind, pot 100 before a 500 jam: contestable pot 150, r = 1/3
+    expect(v63(50, 150)).toBeCloseTo(v61(50, 150), 9);
+  });
+
+  it('third pair facing a 0.7-pot wager is priced 12 points below the unshaded read by default, 8 with V63 off', () => {
     // bet 28 into 40: toCall 28, pot after the wager 68 -> r = 0.41. Third
     // pair: second pair raises this wager in the fixture and never reaches
     // the call verdict.
@@ -242,7 +249,7 @@ describe('V63: the shade climbs twice as fast with the price and caps at twenty 
     expect(f['v63_large_river_bet_shade']).toBeUndefined();
     expect(off - on).toBeCloseTo(v63(28, 68), 3);
     expect(off - v61only).toBeCloseTo(v61(28, 68), 3);
-    expect(off - on).toBeGreaterThan(0.16);
+    expect(off - on).toBeGreaterThan(0.11);
   });
 
   it('a pot-sized wager is priced 20 points below the unshaded read, and a quarter-pot wager is not shaded at all', () => {

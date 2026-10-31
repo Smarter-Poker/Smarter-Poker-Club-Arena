@@ -1,4 +1,4 @@
-# 2026-10-31: V63, the one-pair river shade climbs twice as fast and caps at 20 points
+# 2026-10-31: V63, the one-pair river shade steepens past a half-pot wager and caps at 20 points
 
 ## What was measured
 
@@ -32,47 +32,55 @@ inert and the coordinate was corrected before anything merged.
 
 ## What changed
 
-- `v61RiverOnePairShade(toCall, pot, cap, slope)`; `V61_RIVER_SHADE_SLOPE`
-  0.4 / `V61_RIVER_SHADE_CAP` 0.12 and `V63_RIVER_SHADE_SLOPE` 0.8 /
-  `V63_RIVER_SHADE_CAP` 0.20. Both start at r = 0.2 (a quarter-pot wager).
-  V63 shades a 0.4-pot wager 7 points (V61: 3), a 0.7-pot wager 17 (V61: 8)
-  and a pot-sized wager or larger 20 (V61: 12).
+- `v61RiverOnePairShade(toCall, pot, shape)` takes a `RiverOnePairShadeShape`
+  ({slope, cap, kneeR?, kneeSlope?}). `V61_RIVER_SHADE_SHAPE` is slope 0.4,
+  cap 0.12 (zero at r = 0.2, cap at a pot-sized wager). `V63_RIVER_SHADE_SHAPE`
+  keeps V61's slope up to a half-pot wager (r = 1/3, 5.3 points), then
+  climbs 0.88 per unit of r to a 0.20 cap at a pot-sized wager: a 0.7-pot
+  wager is shaded 12 points (V61: 8), a pot-sized wager or larger 20 (V61:
+  12), and nothing up to half the pot changes. The small class already
+  beats its price, and a short stack's call of a covering jam reads as a
+  small price in r (50 behind, pot 100, jam 500: contestable pot 150,
+  r = 1/3) and stays callable (`HorseV28Postflop` A1 pins it).
 - `HorseDecideOpts.v63LargeRiverBetShade` (default on; explicit false keeps
   the V61 shape) selects the shape through `riverOnePairShadeShape(opts)`
   at both V61 sites: the main river call verdict and the committed branch
   after hero bet and was raised. It lives inside V61's gates (hold'em single
   board, no bomb pot, no measured over-bluffer read, bluff-catch class only,
-  off when V61 is off). `v63RiverShadeCapOverride` / `v63RiverShadeSlopeOverride`
-  exist for league cards only; production never sets them.
+  off when V61 is off). `v63RiverShadeShapeOverride` exists for league
+  cards only; production never sets it.
 - Telemetry `v63_large_river_bet_shade` fires whenever the shade exceeds
   what V61 would have given; `HoldemLiveMeasure.RECEIPT_FEATURES` counts it.
-- Ledger flag `v63LargeRiverBetShade` (V63) in `HorseDataLedger.ts`.
+- Ledger: flag `v63LargeRiverBetShade` (V63), flag
+  `v63RiverShadeShapeOverride` (V63-league), receipt
+  `v63_large_river_bet_shade`.
 
 ## League evidence
 
 Paired-deal leagues, 8,000 pairs (16,000 hands) per card, V63 shape against
-the V61 shape (`v63LargeRiverBetShade: false`), seeds 2026103101 (mirror)
+the V61 shape (`v63LargeRiverBetShade: false`), seed 2026103101 (mirror)
 and 2026103102 (human field):
 
-| card                        | mirror bb/100   | human-field bb/100 |
-| --------------------------- | --------------- | ------------------ |
-| nlh 100bb, slope 0.8 cap 0.20 | +0.84 +/- 0.52  | +1.94 +/- 1.02     |
-| nlh 100bb, slope 0.6 cap 0.20 | +0.76 +/- 0.45  | +1.33 +/- 0.90     |
-| nlh 100bb, slope 1.2 cap 0.24 | +1.02 +/- 0.61  | +1.67 +/- 1.59     |
-| nlh 40bb, slope 0.8           | +0.16 +/- 0.17  | +0.38 +/- 0.22     |
-| nlh 200bb, slope 0.8          | +0.85 +/- 0.58  | +2.36 +/- 1.23     |
-| mtt 40bb (180 left / 30 paid) | -0.08 +/- 0.23  | +0.67 +/- 0.33     |
-| mtt 25bb (60 left / 30 paid)  | +0.08 +/- 0.16  | +0.35 +/- 0.20     |
+| card                                  | mirror bb/100  | human field    |
+| ------------------------------------- | -------------- | -------------- |
+| nlh 100bb, committed knee shape       | +0.68 +/- 0.43 | inert          |
+| nlh 100bb, knee slope 0.66            | +0.37 +/- 0.40 | inert          |
+| nlh 100bb, knee slope 1.2 / cap 0.24  | +0.69 +/- 0.48 | inert          |
+| nlh 40bb                              | +0.07 +/- 0.09 | inert          |
+| nlh 200bb                             | +0.45 +/- 0.47 | inert          |
+| mtt 40bb (180 left / 30 paid)         | -0.03 +/- 0.16 | +0.15 +/- 0.15 |
+| mtt 25bb (60 left / 30 paid)          | (not run)      | inert          |
 
-Thirteen of fourteen cards resolved positive and the fourteenth (mirror
-mtt 40bb, -0.08 +/- 0.23) is noise around zero; the steeper slope 1.2 was
-not taken because its human-field error bar is the widest and the live
-classes it would touch most (small wagers) already win more than their
-price. Divergent pairs are few
-(league horses rarely wager a pot or more on the river, so most of the
-corrected class never arises against horses) and the live review rows above
-are the primary evidence; the before/after is read on the same subset with
-the same function.
+An earlier uniform-slope cut (slope 0.8 from r = 0.2, no knee) measured
++0.84 +/- 0.52 mirror / +1.94 +/- 1.02 human field at 100bb and positive on
+every other card, but it also shaded half-pot wagers 10.7 points and
+turned a short stack's TPTK call of a covering jam into a fold; the knee
+keeps the gain where the evidence is and leaves the small class alone.
+Mirror cards are positive at 100-200bb and noise at 25-40bb; the human-field
+twin never wagers more than half the pot on the river against a one-pair
+caller, so it cannot see the class. The live review rows above are the
+primary evidence; the before/after is read on the same subset with the same
+function.
 
 ## Found on the way (not changed here)
 
@@ -89,11 +97,14 @@ the same function.
 
 ## Tests
 
-- `server/src/engine/HorseRiverOnePairShade.test.ts`: the shape in r (0 at a
-  quarter-pot wager, 7 at 0.4 pot, 17 at 0.7 pot, 20 from a pot-sized
-  wager; V61 3/8/12 for the same wagers), third pair facing a 0.7-pot wager
-  priced 17 points under the unshaded read by default and 8 with V63 off, a
-  pot-sized wager 20 points, a quarter-pot wager unshaded, a set unshaded.
+- `server/src/engine/HorseRiverOnePairShade.test.ts`: the shape in r
+  (identical to V61 up to a half-pot wager, 12 at 0.7 pot, 20 from a
+  pot-sized wager, continuous at the knee), the covering-jam price, third
+  pair facing a 0.7-pot wager priced 12 points under the unshaded read by
+  default and 8 with V63 off, a pot-sized wager 20 points, a quarter-pot
+  wager unshaded, a set unshaded.
+- `server/src/engine/HorseV28Postflop.test.ts` A1 (short stack calls a
+  covering jam) stays green; the uniform-slope cut turned it red.
 - `server/src/benchmark/HoldemLiveMeasure.test.ts`: five receipt features.
 
 ## How to read the effect live

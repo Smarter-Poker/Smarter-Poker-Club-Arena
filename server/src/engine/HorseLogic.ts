@@ -2053,15 +2053,14 @@ export interface HorseDecideOpts {
    * points against the price unless the bettor's read says they over-bluff.
    * Default on; explicit false keeps the unshaded V38 verdict. */
   v61RiverOnePairShade?: boolean;
-  /** V63 (2026-10-31): the V61 one-pair river shade climbs twice as fast
-   * with the price and caps at 20 points from a pot-sized wager, so a
-   * medium or large river wager demands more from a bluff-catcher. Default
-   * on; explicit false keeps the V61 slope and cap. Inside V61's gates: off
-   * when V61 is off. */
+  /** V63 (2026-10-31): past a half-pot wager the V61 one-pair river shade
+   * steepens and caps at 20 points from a pot-sized wager, so a medium or
+   * large river wager demands more from a bluff-catcher. Default on;
+   * explicit false keeps the V61 shape. Inside V61's gates: off when V61 is
+   * off. */
   v63LargeRiverBetShade?: boolean;
-  /** League-only overrides of the V63 shape; production never sets them. */
-  v63RiverShadeCapOverride?: number;
-  v63RiverShadeSlopeOverride?: number;
+  /** League-only override of the V63 shape; production never sets it. */
+  v63RiverShadeShapeOverride?: RiverOnePairShadeShape;
   /** V55: river Omaha sets/trips on a board permitting stronger hands do
    * not turn a qualified call into a raise. Opt-in until the separate
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
@@ -3822,40 +3821,56 @@ function v54OpponentProfile(
  */
 /** The V61 shade is a function of the price r = toCall / (pot after the
  * wager), the same figure the pot odds read. A pot-sized wager is r = 0.5, a
- * 0.7-pot wager r = 0.41, a 0.4-pot wager r = 0.29 and a 2x overbet r = 0.67.
- * V61: zero at r = 0.2 (a quarter-pot wager), slope 0.4, cap 0.12 reached at
- * a pot-sized wager. */
-export const V61_RIVER_SHADE_SLOPE = 0.4;
-export const V61_RIVER_SHADE_CAP = 0.12;
-/** V63 (2026-10-31): slope 0.8 and cap 0.20, so a 0.4-pot wager is shaded
- * 7 points, 0.7-pot 17 and a pot-sized wager or larger 20. Measured over
- * the most recent 19,933 NLH review hands (`fn_horse_river_one_pair_calls`,
+ * 0.7-pot wager r = 0.41, a half-pot wager r = 0.33, a 0.4-pot wager r = 0.29
+ * and a 2x overbet r = 0.67. */
+export interface RiverOnePairShadeShape {
+  /** Points per unit of r above 0.2 (a quarter-pot wager). */
+  slope: number;
+  /** The most the shade reaches. */
+  cap: number;
+  /** Optional knee: from this r the slope steepens to kneeSlope. */
+  kneeR?: number;
+  kneeSlope?: number;
+}
+/** V61: zero at r = 0.2, slope 0.4, cap 0.12 reached at a pot-sized wager. */
+export const V61_RIVER_SHADE_SHAPE: RiverOnePairShadeShape = { slope: 0.4, cap: 0.12 };
+export const V61_RIVER_SHADE_CAP = V61_RIVER_SHADE_SHAPE.cap;
+/** V63 (2026-10-31): V61's slope up to a half-pot wager (r = 1/3, 5.3
+ * points), then 0.88 per unit of r, so a 0.7-pot wager is shaded 12 points
+ * (V61: 8) and a pot-sized wager or larger 20 (V61: 12). Measured over the
+ * most recent 19,933 NLH review hands (`fn_horse_river_one_pair_calls`,
  * 14-day window, |net| >= 20bb; classes are wager / pot BEFORE the wager):
  * one-pair calls of a wager at or above 0.7 pot won 119 of 897 (13.3%)
  * against the 41%+ the price demands, 0.4-0.7 pot won 99 of 479 (20.7%)
- * against 29-41%, under 0.4 pot won 64 of 197 (32.5%) against 20-29%.
- * V61 gave the large class 8-12 points and the medium class 3-8. */
-export const V63_RIVER_SHADE_SLOPE = 0.8;
-export const V63_RIVER_SHADE_CAP = 0.2;
+ * against 29-41%, and under 0.4 pot won 64 of 197 (32.5%) against 20-29%,
+ * so wagers up to half the pot keep V61's shade: those calls already beat
+ * their price, and a short stack's call of a covering jam reads as a
+ * small price in r and stays callable. */
+export const V63_RIVER_SHADE_SHAPE: RiverOnePairShadeShape = {
+  slope: 0.4,
+  cap: 0.2,
+  kneeR: 1 / 3,
+  kneeSlope: 0.88,
+};
+export const V63_RIVER_SHADE_CAP = V63_RIVER_SHADE_SHAPE.cap;
 export function v61RiverOnePairShade(
   toCall: number,
   pot: number,
-  cap: number = V61_RIVER_SHADE_CAP,
-  slope: number = V61_RIVER_SHADE_SLOPE
+  shape: RiverOnePairShadeShape = V61_RIVER_SHADE_SHAPE
 ): number {
   if (!(toCall > 0) || !(pot > 0)) return 0;
-  return Math.min(cap, Math.max(0, (toCall / pot - 0.2) * slope));
+  const r = toCall / pot;
+  let shade = Math.max(0, (r - 0.2) * shape.slope);
+  if (shape.kneeR != null && shape.kneeSlope != null && r > shape.kneeR) {
+    shade = Math.max(0, (shape.kneeR - 0.2) * shape.slope) + (r - shape.kneeR) * shape.kneeSlope;
+  }
+  return Math.min(shape.cap, shade);
 }
 /** V63 (2026-10-31): the shade shape the options select. Default on;
- * explicit false keeps the V61 slope and cap. */
-export function riverOnePairShadeShape(opts: HorseDecideOpts): { cap: number; slope: number } {
-  if ((opts.v63LargeRiverBetShade ?? true) === false) {
-    return { cap: V61_RIVER_SHADE_CAP, slope: V61_RIVER_SHADE_SLOPE };
-  }
-  return {
-    cap: opts.v63RiverShadeCapOverride ?? V63_RIVER_SHADE_CAP,
-    slope: opts.v63RiverShadeSlopeOverride ?? V63_RIVER_SHADE_SLOPE,
-  };
+ * explicit false keeps the V61 shape. */
+export function riverOnePairShadeShape(opts: HorseDecideOpts): RiverOnePairShadeShape {
+  if ((opts.v63LargeRiverBetShade ?? true) === false) return V61_RIVER_SHADE_SHAPE;
+  return opts.v63RiverShadeShapeOverride ?? V63_RIVER_SHADE_SHAPE;
 }
 
 export class HorseLogic {
@@ -9777,8 +9792,7 @@ export class HorseLogic {
         pot > 0
       ) {
         {
-          const shape63 = riverOnePairShadeShape(opts);
-          shade61c = v61RiverOnePairShade(toCall, pot, shape63.cap, shape63.slope);
+          shade61c = v61RiverOnePairShade(toCall, pot, riverOnePairShadeShape(opts));
         }
         if (shade61c > 0 && tele15) noteFire('v61_river_one_pair_shade');
         if (shade61c > v61RiverOnePairShade(toCall, pot) && tele15) noteFire('v63_large_river_bet_shade');
@@ -10419,8 +10433,7 @@ export class HorseLogic {
           pot > 0
         ) {
           {
-          const shape63 = riverOnePairShadeShape(opts);
-          shade61 = v61RiverOnePairShade(toCall, pot, shape63.cap, shape63.slope);
+          shade61 = v61RiverOnePairShade(toCall, pot, riverOnePairShadeShape(opts));
         }
           if (shade61 > 0 && tele15) noteFire('v61_river_one_pair_shade');
           if (shade61 > v61RiverOnePairShade(toCall, pot) && tele15) noteFire('v63_large_river_bet_shade');

@@ -52,3 +52,20 @@ A single current identity read at 2026-10-31T15:53:46.847961Z still served EED,
 instance `1-40a4a692`. Original table `8aea2cc5-e05a-4aa2-9404-ffa34a9fb33e`
 was running, four seated/three dealable, hand 52945731, without the new timing
 field. This read does not certify latency or instrument adoption.
+
+## Change 3: retain the existing pause/progress source contract
+
+**File:** `tests/a-parked-table-is-not-a-stalled-one.law.test.ts`.
+**Lines before:** the liveness-snapshot method locator, line 233.
+**What existed:** the declaration locator required the old no-argument method
+signature and therefore could not locate its new optional observation scope.
+**What changed:** use the existing line-start/access-modifier anchored declaration
+prefix, `tableLivenessSnapshot(`. All 12 existing assertions remain unchanged.
+**Why:** verify the actual same method's `isPausedByDesign` and progress-clock
+facts, preserving every stall/pause assertion after the signature extension.
+**Verified:** YES, actual extracted private method body reread; the locator
+cannot match the earlier `this.tableLivenessSnapshot(...)` call. Affected
+12-case contract PASS. Initial hook correctly refused this locator mismatch;
+no remote source was admitted by that attempt. Related server checks passed
+317 files/4241 tests with 166 existing conditional skips, not full-suite proof.
+**TypeScript:** unchanged runtime/header inputs retain root/server PASS.

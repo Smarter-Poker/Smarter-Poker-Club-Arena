@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { Worker } from 'node:worker_threads';
+import * as inspector from 'node:inspector';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as crypto from 'node:crypto';
@@ -653,7 +655,66 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     const deadline = Date.now() + 30000;
     const imported = { gameServer, engine, manager, lightningWorker, lightningHost };
     transport.bindLegacyCensusModules.call(imported, key, deadline, native);
-    const physical = transport.collectMarkedLegacyCensus(key, deadline);
+    // Exercise the actual external CDP -> marked collector -> nested Inspector
+    // -> native callback path. The worker is only the external loopback client;
+    // all original owners and the unchanged guard stay on this main isolate.
+    expect(inspector.url()).toBeUndefined();
+    inspector.open(0, '127.0.0.1');
+    const resultKey = key + '_qualification';
+    let client: Worker | undefined;
+    let physical: any;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        client = new Worker(
+          `
+          const {parentPort,workerData}=require('node:worker_threads');
+          const socket=new WebSocket(workerData.url);
+          let id=0,pending;
+          const timer=setTimeout(()=>{socket.close();parentPort.postMessage({ok:false,reason:'external CDP deadline'});},Math.max(1,workerData.deadline-Date.now()));
+          function request(method,params){return new Promise((resolve,reject)=>{
+            pending={id:++id,resolve,reject};socket.send(JSON.stringify({id,method,params}));
+          });}
+          socket.addEventListener('message',event=>{
+            const answer=JSON.parse(String(event.data));
+            if(answer.id!==pending?.id)return;
+            const current=pending;pending=null;
+            if(answer.error||answer.result?.exceptionDetails)current.reject(Error('external CDP evaluation refused'));
+            else current.resolve(answer.result);
+          });
+          socket.addEventListener('error',()=>{clearTimeout(timer);parentPort.postMessage({ok:false,reason:'external CDP transport'});});
+          socket.addEventListener('open',async()=>{
+            try {
+              await request('Runtime.evaluate',{expression:workerData.expression,disableBreaks:true,awaitPromise:false,objectGroup:'native-composition'});
+              await request('Runtime.releaseObjectGroup',{objectGroup:'native-composition'});
+              socket.addEventListener('close',()=>{clearTimeout(timer);parentPort.postMessage({ok:true});},{once:true});
+              socket.close();
+            }catch{clearTimeout(timer);socket.close();parentPort.postMessage({ok:false,reason:'external CDP refusal'});}
+          });
+        `,
+          {
+            eval: true,
+            workerData: {
+              url: inspector.url(),
+              deadline: deadline + 5000,
+              expression: `globalThis[${JSON.stringify(resultKey)}]=(${transport.collectMarkedLegacyCensus.toString()})(${JSON.stringify(key)},${deadline}); undefined`,
+            },
+          }
+        );
+        client.once('message', (message) =>
+          message.ok === true ? resolve() : reject(Error(message.reason))
+        );
+        client.once('error', reject);
+        client.once('exit', (code) => {
+          if (code !== 0) reject(Error('external CDP client exited'));
+        });
+      });
+      physical = (globalThis as any)[resultKey];
+    } finally {
+      await client?.terminate();
+      delete (globalThis as any)[resultKey];
+      inspector.close();
+    }
+    expect(inspector.url()).toBeUndefined();
     census = transport.projectLegacyCensus.call(physical, imported, deadline);
     const expected = [[server], objects, managers, [worker], detachedHosts];
     for (let group = 0; group < expected.length; group++) {

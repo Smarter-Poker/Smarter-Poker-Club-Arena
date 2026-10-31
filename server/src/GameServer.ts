@@ -10687,8 +10687,20 @@ export class GameServer {
       // The acknowledgement UPDATE is also published. It is completion, not a
       // new signal, and must never re-admit the generation it just consumed.
       if (!row || row.consumed_at != null) return;
+      const lifecycle = this.lifecycleGeneration;
       this.launchServerLifecycleJob(
-        this.admitTournamentManagerWake(row),
+        this.admitTournamentManagerWake(row).catch((error) => {
+          // A failed notification still has its exact unconsumed database
+          // receipt. Continue that cause through the existing bounded drain,
+          // even while the channel stays healthy and sends no further frame.
+          if (
+            this.running &&
+            this.lifecycleGeneration === lifecycle &&
+            this.tournamentManagerWakeChannel === channel
+          )
+            this.scheduleTournamentManagerWakeDrainRetry();
+          throw error;
+        }),
         'GameServer.tournament_manager_realtime_wake_failed'
       );
     }, 'GameServer.managerWakes.notification');
@@ -11034,6 +11046,7 @@ export class GameServer {
     const ownsRead = () => this.running && this.lifecycleGeneration === lifecycle;
     const pageSize = tournamentId ? 50 : 200;
     let afterId = 0;
+    let admissionFailed = false;
     for (;;) {
       if (!ownsRead()) return true;
       let query = supabase
@@ -11069,9 +11082,22 @@ export class GameServer {
       const rows = data;
       for (const row of rows) {
         if (!ownsRead()) return true;
-        await this.admitTournamentManagerWake(row as Record<string, unknown>);
+        try {
+          await this.admitTournamentManagerWake(row as Record<string, unknown>);
+        } catch (error) {
+          if (!ownsRead()) return true;
+          // The durable receipt still owns this request. Keep its failure for
+          // the existing drain backoff, but let independent rows proceed. A
+          // rejected admission must neither acknowledge work nor discard the
+          // boot/reconnect signal that was responsible for reading it.
+          admissionFailed = true;
+          reportError(error, 'GameServer.tournament_manager_wake_drain_admission_failed', {
+            tournamentId: row?.tournament_id,
+            wakeId: row?.id,
+          });
+        }
       }
-      if (rows.length < pageSize) return true;
+      if (rows.length < pageSize) return !admissionFailed;
       afterId = Number(rows[rows.length - 1]?.id ?? 0);
       if (!Number.isSafeInteger(afterId) || afterId <= 0) {
         reportError(

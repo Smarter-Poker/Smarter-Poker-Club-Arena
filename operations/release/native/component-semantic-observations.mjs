@@ -161,18 +161,23 @@ async function canonicalSchemaCatalogue(db, includePayload) {
       ORDER BY n.nspname,c.relname),'[]'::jsonb) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname IN ('public','auth') AND c.relkind IN ('r','p'))
     )::text AS catalogue`;
-  const { rows } = await db.query(includePayload ?
-    `SELECT CASE WHEN pg_catalog.octet_length(catalogue) <= 33554432
-      THEN catalogue END AS catalogue FROM (${query}) bounded_catalogue` : query);
+  const { rows } = await db.query(
+    includePayload
+      ? `SELECT CASE WHEN pg_catalog.octet_length(catalogue) <= 33554432
+      THEN catalogue END AS catalogue FROM (${query}) bounded_catalogue`
+      : query
+  );
   assert.ok(typeof rows[0]?.catalogue === 'string', 'SCHEMA_CATALOGUE_BYTES_REQUIRED');
   const catalogueDigest = digest(rows[0].catalogue);
-  return includePayload ? {
-    version: 1,
-    scope: 'complete-schema-catalogue',
-    encoding: 'postgres-jsonb-text-sha256/v1',
-    catalogue_text: rows[0].catalogue,
-    catalogue_digest: catalogueDigest,
-  } : catalogueDigest;
+  return includePayload
+    ? {
+        version: 1,
+        scope: 'complete-schema-catalogue',
+        encoding: 'postgres-jsonb-text-sha256/v1',
+        catalogue_text: rows[0].catalogue,
+        catalogue_digest: catalogueDigest,
+      }
+    : catalogueDigest;
 }
 
 // Called only by the private fixed-query bridge, never through oracle SQL.
@@ -226,7 +231,14 @@ export async function observeHandFacts(db, tableId, handNumber, spectatorId) {
     `SELECT count(*) OVER()::integer AS total, hand_number,
     pot_size::text,rake_amount::text,
     CASE WHEN jsonb_typeof(actions)='array' THEN jsonb_array_length(actions) END AS action_count,
-    CASE WHEN jsonb_typeof(players)='array' THEN jsonb_array_length(players) END AS player_count
+    CASE WHEN jsonb_typeof(players)='array' THEN jsonb_array_length(players) END AS player_count,
+    (SELECT coalesce(jsonb_agg(jsonb_build_object(
+      'ordinal',a.ordinality,'user_id',a.value->>'userId','seat',a.value->'seat',
+      'action',a.value->>'action','amount',coalesce(a.value->'amount','0'::jsonb),
+      'street',a.value->>'stage','origin',a.value->>'origin') ORDER BY a.ordinality),'[]'::jsonb)
+     FROM (SELECT value,ordinality FROM jsonb_array_elements(actions) WITH ORDINALITY
+       WHERE value->>'action' IN ('raise','call','all_in','fold')
+       ORDER BY ordinality LIMIT 129) a) AS public_actions
     FROM public.hand_history WHERE table_id=$1 AND hand_number=$2 LIMIT 2`,
     [tableId, handNumber]
   );

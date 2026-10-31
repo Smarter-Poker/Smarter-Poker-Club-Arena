@@ -49,7 +49,7 @@
      sub-pixel once a small phone's slot hits its own floor. */
   --sp-wrap-overlap: max(3px, calc(var(--seat-avatar-size, 84px) * 0.0714));
   --seat-avatar-base: var(--seat-avatar-full);
-  --seat-avatar-size: var(--seat-avatar-base, 84px);
+  --seat-avatar-size: calc(var(--seat-avatar-base, 84px) * 1.3333);
 
   /* ── THE TWO-CARD HAND SIZE — the hero row's base tokens ──────────────────
      Read by `.seat__cards--hero` (its 2-card baseline; the PLO :has() guards
@@ -231,7 +231,7 @@
      minimum follows the felt width; the avatar term uses the same scale.
      The corresponding marker keep-outs are in tableGeometry.ts. */
   --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
-  width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
+  width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7));
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition:
@@ -704,8 +704,8 @@
   flex-direction: column;
   align-items: center;
   box-sizing: border-box;
-  width: 100%;
-  min-height: 54px;
+  width: min(100%, max(100px, calc(var(--seat-avatar-size) * 0.95)));
+  min-height: max(54px, var(--sp-seat-panel-h, 0px));
   justify-content: center;
   padding: 8px 6px;
   background: var(--seat-bg, rgba(15, 20, 35, 0.92));
@@ -1091,56 +1091,9 @@
    wanted again it goes on a NEW element inside `.seat__avatar-wrap`, not on a
    wrap pseudo-element: rule 8 is a deliberate, twice-relitigated decision. */
 
-/* Dan 2026-08-15: "HERO avatar should always be 33% bigger than the villains."
-   Redeclaring the token on .seat--hero cascades to BOTH .seat__avatar-wrap and
-   .seat__avatar (they each read var(--seat-avatar-size)), so ring, mask and
-   photo scale together.
-
-   Dan 2026-08-20 (audit): this was a hardcoded 112px, and "always" was not
-   true. The three responsive blocks below used to set `.seat__avatar-wrap` and
-   `.seat__avatar` to literal px (75/66/57), which out-ordered this declaration
-   — later in the file, same specificity — so on EVERY phone the hero avatar
-   was exactly the same size as the villains'. Deriving from
-   --seat-avatar-base, which is now the only thing the responsive blocks touch,
-   makes the 1.33x hold at every breakpoint by construction. 84 * 1.3333 =
-   111.997 -> 112px, so desktop is unchanged to the pixel. */
-/* `.seat.seat--hero` (0,2,0), not `.seat--hero` (0,1,0): the responsive blocks
-   set `.seat { width: ... }` later in this file, which at equal specificity
-   would win and leave the hero's name box at villain width while its art is
-   1.33x — the desktop proportion (box 8/7 of the slot) would only hold above
-   641px. Deriving both from one token keeps it true everywhere. */
-.seat.seat--hero {
-  --seat-avatar-size: calc(var(--seat-avatar-base, 84px) * var(--seat-avatar-hero-ratio, 1.3333));
-  /* Must clear the wider avatar. 96/84 = 128/112 = 8/7, so deriving keeps the
-     name box in the same proportion to the art at every breakpoint. */
-  width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7)) !important;
-}
-
-/* ── 2026-08-28: THREE `!important` HERO RUNGS DELETED HERE ────────────────
-   `@media (max-width: 640|480|380px) .seat.seat--hero { --seat-avatar-size:
-   calc(66|58|52px * ratio) !important; width: ... !important }`.
-
-   THIS WAS THE LADDER, STILL RUNNING, INSIDE THE PASS THAT REMOVED IT. The base
-   rule above was converted to derive from --seat-avatar-base (now a fraction of
-   --table-w) and these three were missed, so on every viewport up to 640px the
-   HERO — the one seat the player is actually looking at — was still pinned to
-   66 / 58 / 52px. `!important` meant nothing could reach past them.
-
-   It was worse than a leftover, because --seat-avatar-size is not a leaf:
-   `.seat__avatar-wrap`, `.seat__avatar`, the initials glyph, the bust
-   anchoring, and --vh-card-h -> --vh-card-w — EVERY VILLAIN HOLE CARD — derive
-   from it. So a rung on the hero put the villains' cards back on a ladder too,
-   indirectly, after --sp-card2-w had been converted.
-
-   Nothing replaces them. The base `.seat.seat--hero` rule reads
-   --seat-avatar-base, which is proportional, so the 1.3333 hero ratio and the
-   8/7 name-box ratio now hold at every width by construction — which is what
-   the note above this rule already claimed they did.
-
-   WHY THE GUARD DID NOT CATCH IT, and what changed so it would:
-   tests/e2e/table-proportions.spec.ts measured `.seat`, the villain slot, and
-   these rules only ever matched `.seat--hero`. It measures both now. A guard
-   that checks one of two seats is a guard for one of two seats. */
+/* Owner update 2026-10-31: every occupied seat uses the former hero size.
+   Avatar, wrapper and panel sizing live on .seat; hero styling only identifies
+   the player's seat. Full mobile rings must be fitted, never shrink opponents. */
 
 .seat--hero .seat__avatar {
   border-color: #ffd700;
@@ -1151,9 +1104,6 @@
 }
 
 .seat--hero .seat__info {
-  /* Keep the taller plate wider than the old text box while preserving the
-     rotated-card corner clearance beside the larger hero avatar. */
-  width: min(100%, max(100px, calc(var(--seat-avatar-size) * 0.95)));
   border-color: rgba(255, 215, 0, 0.25);
 }
 
@@ -1948,9 +1898,9 @@
      test harness — the hero plate sat 26px off its true position, and the
      number looked deliberate enough that nobody would question it.
      A fallback that disagrees with every declared value is not a safety net. */
-  bottom: calc(
-    50% - var(--sp-hero-clear, 60px) - var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
-  );
+  /* The action reserve already includes the home-indicator inset. Counting it
+     again extends this card band into the action buttons on short phones. */
+  bottom: calc(50% - var(--sp-hero-clear, 60px));
   transform: none;
   display: flex;
   align-items: center;
@@ -2268,6 +2218,7 @@
   top: -26px;
   left: 50%;
   transform: translateX(-50%);
+  width: var(--sp-seat-action-w, max-content);
   height: var(--sp-tag-h, 20px);
   box-sizing: border-box;
   display: inline-flex;
@@ -3365,12 +3316,15 @@
      the felt because rem does not. */
   .seat {
     --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
-    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
+    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7));
   }
 
   .seat__info {
     min-width: 0;
-    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
+    min-height: max(
+      var(--sp-seat-panel-h, 0px),
+      clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px)
+    );
     padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
   }
   .seat__name {
@@ -3423,7 +3377,7 @@
      what it always rendered; it just no longer has to say so. */
   .seat {
     --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
-    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
+    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7));
   }
 
   /* The per-breakpoint --sp-wrap-overlap rung that was here is DELETED
@@ -3433,7 +3387,10 @@
 
   .seat__info {
     min-width: 0;
-    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
+    min-height: max(
+      var(--sp-seat-panel-h, 0px),
+      clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px)
+    );
     padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
   }
   .seat__name {
@@ -3485,12 +3442,15 @@
      overruled in the direction of the smallest screen. */
   .seat {
     --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
-    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
+    width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7));
   }
 
   .seat__info {
     min-width: 0;
-    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
+    min-height: max(
+      var(--sp-seat-panel-h, 0px),
+      clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px)
+    );
     padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
     border-radius: 6px;
   }
@@ -3690,98 +3650,16 @@
    untouched and keep the full 1.45x.
    ───────────────────────────────────────────────────────────────────────── */
 .seat-wrapper--top {
-  /* Dan 2026-08-19, bug list item 10, and his call on the trade-off: shrink the
-     top row rather than let the avatar climb into the BBJ banner or flip the
-     nameplate above it.
-
-     With the avatar ABOVE the nameplate, a full-size seat simply cannot put its
-     box on the rail. The box sits ~3.9% of the table below the seat's centre,
-     so anchoring the box on the rail band (~8.5%) needs a seat centre near
-     4.6%, which pushes the seat - and the bust art above it - off the top of
-     the table canvas and into the banner. Measured, not guessed.
-
-     A 56px avatar shortens the seat from 112px to 84px, which halves that
-     offset to ~2.5% and lets the box rest on the rail with the whole unit,
-     bust art included, still inside the canvas. The bust scale stays capped
-     because the art is drawn rising from its feet.
-
-     Dan 2026-08-25, item 7: "The top two players need to be moved up more.
-     Their action boxes should be on the rail, not on the table." The cap
-     drops from 1.15 to 1.05, and that is precisely what pays for the move.
-     The art is scaled about a point near the character's feet, so every 0.01
-     of scale lifts its crown ~0.56px above the avatar slot on the measured
-     1000px frame; the seats moved up 1.5 points of the table (top centre
-     6 -> 5, diagonals 8.5 -> 6) = 15px, and giving 0.10 of scale back buys
-     5.6px of it while the compact 56px slot and the shorter seat cover the
-     rest. At 1.15 the top-centre box could not clear the felt without the
-     crown crossing y 0 into the banner; at 1.05 it clears with 5px to spare.
-     Measured on the same harness the guard uses — tests/e2e/top-rail-seat.spec.ts. */
-  --sp-bust-scale: 1.05;
+  /* Owner 2026-10-31: top artwork shares the hero scale. The layout hook
+     moves the complete pod to clear the banner. */
+  --sp-bust-scale: 1.45;
 }
 
-/* Dan 2026-08-20 (audit): the cap above used to be `--seat-avatar-size: 56px`
-   declared on the WRAPPER. Two problems, one fix.
-
-   1. It set the wrong variable. The seat now derives its slot from
-      --seat-avatar-base, so a wrapper-level --seat-avatar-size was simply
-      ignored by `.seat--hero`.
-   2. It was declared on an ANCESTOR. The responsive blocks declare
-      --seat-avatar-base on `.seat` itself, and an element's own declaration
-      always beats an inherited one — so below 641px the top-row cap silently
-      stopped applying and the art was free to climb into the BBJ banner again
-      on exactly the screens with the least room for it.
-
-   Targeting `.seat` inside the wrapper (0,2,0) puts the cap above the
-   responsive `.seat` rules (0,1,0) at every width. */
+/* All top seats use the shared full avatar size. Banner clearance is handled
+   by useProtectedCardLayout moving the whole pod, without shrinking artwork. */
 .seat-wrapper--top .seat {
-  /* Centering the taller plate otherwise lifts the unchanged avatar into
-     the banner. Keep its crown at the previously clear top position. */
   top: 4px;
-  /* min(), not a ratio. This is a CLEARANCE against the BBJ banner, and the
-     banner does not scale with the viewport, so neither may its ceiling.
-     (It is no longer one number: since 2026-09-11 --sp-bbj-h is the nameplate
-     PLUS the mini row - 22px, or 36px on a phone showing a payable mini, and
-     48/64 above 768px. BadBeatJackpot.css publishes all of it. This rule uses
-     a literal min() rather than reading the variable, so the arithmetic below
-     is what to re-check if the plate grows again.) min() reproduces
-     today's behaviour exactly: on a phone the full slot is already under 56px
-     so nothing is capped, and on anything larger the cap binds at 56 just as
-     the literal did. A `* 0.667` here would have looked equivalent on a desktop
-     and shrunk the top row on every phone. */
-  /* ── 76, MEASURED (Dan 2026-09-05) ──────────────────────────────────────
-     Dan: "THE AVATARS AT THE TOP DON'T HAVE TO BE SHRUNK OR SQUISHED DOWN."
-
-     This was a flat 56px, and 56 was chosen when the avatar slot was itself a
-     flat 84px - i.e. the cap was 2/3 of full. The slot became PROPORTIONAL
-     (clamp(50px, --table-w * 0.158, 124px)) and the cap did not, so on a
-     720px-wide table the full slot is ~113.8px and this halved the top row
-     while every other seat kept its size. On a phone it is invisible (full is
-     ~56.9px, so the cap barely binds); on a desktop it is the whole
-     complaint.
-
-     Re-measured in Chromium against this stylesheet, 9-max top-cap seats at
-     y 6 on the 1000-unit canvas, bust art clearance above the canvas top:
-
-         cap 56 -> 14.2px      cap 76 -> 3.9px
-         cap 80 ->  1.9px      cap 84 -> -0.2px  (INSIDE the BBJ banner)
-
-     So 84 is the cliff and 76 is the last value with a margin comparable to
-     what the rest of the ring has always had. It is a 36% larger avatar on
-     every table wider than ~480px, and unchanged on a phone.
-
-     THE SMALL RINGS DO NOT GET IT - see the [data-seats] rule below. Their
-     canvas is shorter (960, TablePage.css) and their top seat sits higher
-     (y 5), so 76 there measures -8.1px: eight pixels inside the banner. Same
-     cap, different canvas, opposite answer, which is exactly why this is two
-     rules and not one literal. */
-  --seat-avatar-base: min(var(--seat-avatar-full), 76px);
-  /* `--sp-bust-gain-max: 1` was REMOVED here 2026-08-26. It capped the
-     PER-CHARACTER correction, so it did not shrink this row evenly — it
-     shrank only the characters that needed correcting, each by a different
-     amount, which is precisely how one avatar ends up visibly taller than its
-     neighbours. Banner clearance comes from the smaller slot on the line
-     above, which scales every character in the row by the same proportion.
-     Uniform in, uniform out. */
+  --seat-avatar-base: var(--seat-avatar-full);
 }
 
 /* ── THE SHORT RINGS' TOP SEAT IS FULL SIZE (Dan 2026-10-24) ────────────────
@@ -4001,9 +3879,9 @@
      test harness — the hero plate sat 26px off its true position, and the
      number looked deliberate enough that nobody would question it.
      A fallback that disagrees with every declared value is not a safety net. */
-  bottom: calc(
-    50% - var(--sp-hero-clear, 60px) - var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
-  );
+  /* The action reserve already includes the home-indicator inset. Counting it
+     again extends this card band into the action buttons on short phones. */
+  bottom: calc(50% - var(--sp-hero-clear, 60px));
   transform: none;
   align-items: center;
   justify-content: flex-start;
@@ -4604,27 +4482,6 @@
   }
 }
 
-/* The top pod clears Mini BBJ and spends less of the centre pot lane. */
-.seat-wrapper--top .seat {
-  --seat-plate-min-width: clamp(62px, calc(var(--table-w, 360px) * 0.2), 96px);
-}
-.seat-wrapper--top .seat__info {
-  min-height: clamp(30px, calc(var(--table-w, 360px) * 0.09), 42px);
-  padding-block: 3px;
-}
-
-/* The whole phone player pod matches: artwork, name and stack plate. Dense
-   rings further below apply the same compact plate to every villain. */
-@media (max-width: 480px) and (orientation: portrait) {
-  .table-page .seat-wrapper--top .seat {
-    --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
-  }
-  .table-page .seat-wrapper--top .seat__info {
-    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
-    padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
-  }
-}
-
 /* A top pod that drops below the jackpot frame takes its bet with it
    (Dan 2026-10-25: a bet is always in front of the player who made it). The
    bet used to be held back at the rail, and the dropped plate and its tag then
@@ -4674,65 +4531,9 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   DENSE RINGS ON A PHONE (Dan 2026-10-22, from a real phone)
-   ═══════════════════════════════════════════════════════════════════════════
-   "For 9 max games the avatars and frames are too large, they are still
-   overlapping each other, and there needs to be some space between them to
-   allow for 'action bar' and 'bounty amount' above their heads."
-
-   A side column on a 7-9 max ring holds three chairs about 0.29 of the felt's
-   height apart, and each chair now needs its whole pod PLUS the lane above the
-   head (tag 15px + bounty 17px + gaps). On a notched phone the felt is
-   ~450-520px tall, so a pod sized from the felt's WIDTH alone (0.158w) did not
-   fit. Here the avatar is the smaller of a width share and a HEIGHT share
-   (--table-h is the scaler's measured height, published by TablePage), so a
-   shorter felt draws proportionally smaller players instead of stacking them.
-   The plate keeps the readable name and stack at a slightly smaller size.
-   tableGeometry.ts `seatPodPx(..., { seats, canvasHeightPx })` mirrors these
-   numbers for chip and button clearance; change both together.
-   Production phones use a desktop-reference viewport near 600px. This same
-   portrait card-lane boundary must include them: the old 480px cutoff left
-   full-size normalized bust art over the community cards. */
-@media (max-width: 768px) and (orientation: portrait) {
-  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero)
-    .seat {
-    --seat-avatar-full: clamp(
-      34px,
-      min(calc(var(--table-w, 360px) * 0.14), calc(var(--table-h, 600px) * 0.085)),
-      52px
-    );
-    --seat-avatar-base: var(--seat-avatar-full);
-  }
-  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero)
-    .seat__info {
-    min-height: 36px;
-    padding: 2px 4px;
-  }
-  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero)
-    .seat__name {
-    font-size: 0.6875rem;
-  }
-  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero)
-    .seat__stack {
-    font-size: 0.8125rem;
-  }
-}
-
-/* Declared after the dense-ring rule so it wins it on source order.
-   Dan 2026-10-21: the smallest phones (an iPhone SE is 320 x 568) cannot fit a
-   nine-handed side column of full pods without one player's plate covering the
-   next. Below 620px of height the villain avatars shrink to the compact top-pod
-   size, so every player stays fully readable instead of overlapping. */
+/* Short phones put the bounty beside the avatar to preserve headroom.
+   Every occupied avatar and panel retains the same shared size. */
 @media (max-width: 480px) and (max-height: 620px) and (orientation: portrait) {
-  .table-page .seat-wrapper:not(.seat-wrapper--hero) .seat {
-    --seat-avatar-base: 40px;
-    --seat-avatar-full: 40px;
-  }
   /* There is not a whole lane of headroom per chair on a felt this short
      (an iPhone SE first generation), so the bounty moves beside the avatar,
      as it does on the top seats, and only the tag stands above the head. */
@@ -4754,42 +4555,12 @@
     left: auto;
     right: calc(100% - 8px);
   }
-  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero)
-    .seat {
-    --seat-avatar-full: 32px;
-    --seat-avatar-base: 32px;
-  }
-  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero)
-    .seat__info {
-    min-height: 32px;
-    padding: 1px 3px;
-  }
   /* Three all-in pucks have to share a very small felt. */
   .seat__allin-puck {
     --allin-puck-size: 20px;
   }
   .seat__bet-chips:has(.seat__allin-puck) {
     gap: 1px;
-  }
-}
-
-/* On a 320px nine-seat table the top actions use their own narrow lanes
-   between the side columns and the pot. Wrap the full label, never clip it. */
-@media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
-  .table-page[data-seats='9'] .seat-wrapper--top .seat__action {
-    width: 42px;
-    height: auto;
-    min-height: 13px;
-    min-width: 0;
-    white-space: nowrap;
-    line-height: 1;
-    padding: 2px;
-    left: calc(50% - 12px);
-  }
-  .table-page[data-seats='9'] .seat-wrapper--top .seat--cards-right .seat__action {
-    left: calc(50% + 12px);
   }
 }
 
@@ -4909,16 +4680,41 @@
   }
 }
 
-/* A 320px first-generation phone has no full-size avatar lane at any chair.
-   Apply the same artwork scale to every villain rather than singling out top. */
-@media (max-width: 340px) and (orientation: portrait) {
-  .table-page .seat-wrapper:not(.seat-wrapper--hero) {
-    --sp-bust-scale: 1.05;
+/* Short portrait screens have less vertical space for a full ring. Scale the
+   entire ring uniformly, including hero, instead of compacting opponents.
+   Normal-height phones retain the previous hero size at every chair. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .seat {
+    --seat-avatar-size: min(
+      calc(var(--seat-avatar-full) * 1.3333),
+      max(36px, calc(40px + (var(--table-h, 324px) - 324px) * 0.25))
+    );
   }
 }
+
 @media (max-width: 340px) and (orientation: portrait) {
-  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero) {
+  .table-page .seat {
+    --seat-avatar-size: min(
+      calc(var(--seat-avatar-full) * 1.3333),
+      max(32px, calc(32px + (var(--table-h, 324px) - 324px) * 0.75))
+    );
+  }
+}
+
+/* The first-generation 320px phone shares one compact, readable treatment at
+   every chair, including the hero. Captions keep their full text and size. */
+@media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
+  .table-page .seat-wrapper {
     --sp-bust-scale: 1.3;
+  }
+  .table-page .seat__info {
+    min-height: max(32px, var(--sp-seat-panel-h, 0px));
+    padding: 1px 3px;
+  }
+  .table-page .seat__name {
+    font-size: 0.6875rem;
+  }
+  .table-page .seat__stack {
+    font-size: 0.8125rem;
   }
 }

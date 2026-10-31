@@ -176,6 +176,12 @@ def bounded_native_facts(value):
                 'retirement_absence_timeout'}
     entry_stages = {'runtime', 'discovery', 'kernel', 'proposal', 'grant', 'transport', 'absence'}
     result = {'ok': False, 'retryAllowed': False}
+    kernel_steps = {'members', 'identities', 'namespace', 'socket_rows', 'listener',
+                    'descriptors', 'listener_owner', 'clients', 'identity_recheck',
+                    'snapshot_recheck', 'binding_recheck'}
+    if (value.get('reason') == 'main_inspector_socket_unproved'
+            and isinstance(value.get('kernelStep'), str) and value['kernelStep'] in kernel_steps):
+        result['kernelStep'] = value['kernelStep']
     result['entryStage'] = (value.get('entryStage') if isinstance(value.get('entryStage'), str)
                             and value.get('entryStage') in entry_stages else None)
     result['stage'] = value.get('stage') if isinstance(value.get('stage'), str) and value.get('stage') in stages else None

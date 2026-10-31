@@ -55,6 +55,7 @@ import ShareHand from './ShareHand';
 import AddOnModal from './AddOnModal';
 import RebuyModal from './RebuyModal';
 import TournamentBreakScreen from './TournamentBreakScreen';
+import { useTournamentAddOnBreak } from '../../hooks/useTournamentAddOnBreak';
 import TournamentAnnouncementOverlay from './TournamentAnnouncementOverlay';
 import TournamentWinnerOverlay from './TournamentWinnerOverlay';
 import HandHistoryPanel, { type HandRecord, type HandHistoryLoadState } from './HandHistoryPanel';
@@ -757,6 +758,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
   } = props;
 
   const toast = useToast();
+  const addOnBreakNotice = useTournamentAddOnBreak(isTournament ? tournamentId : null);
   /* THE GRID THIS TABLE'S TOURNAMENT PAYS ON (2026-09-21), for the two
      overlays below that print a tournament prize. Off the arena this table
      was read with; `null` until it has been, so neither overlay prints a
@@ -1406,8 +1408,13 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {isTournament && (
         <TournamentBreakScreen
           tableAnchorRef={tableAnchorRef}
-          isVisible={tournamentBreak.active}
-          breakTimeRemaining={tournamentBreak.timeRemaining}
+          isVisible={tournamentBreak.active || !!addOnBreakNotice}
+          addOnNotice={
+            addOnBreakNotice
+              ? { cost: addOnBreakNotice.cost, chips: addOnBreakNotice.chips, asset: arenaAsset }
+              : undefined
+          }
+          breakTimeRemaining={addOnBreakNotice ? 60 : tournamentBreak.timeRemaining}
           /* THE CLOCK DOES NOT RUN UNTIL THIS TOURNAMENT'S LAST HAND IS DONE
              (Dan 2026-10-25). The phase and the server's end time were set on
              the page and never handed over, so the screen fell back to its
@@ -1415,8 +1422,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
              while the last hand was still being played. Without the phase it
              now shows "Last Hand" until the server starts this tournament's
              countdown. */
-          phase={tournamentBreak.phase ?? 'last_hand'}
-          breakEndsAtMs={tournamentBreak.breakEndsAtMs ?? null}
+          phase={addOnBreakNotice ? 'counting_down' : (tournamentBreak.phase ?? 'last_hand')}
+          breakEndsAtMs={addOnBreakNotice?.endsAtMs ?? tournamentBreak.breakEndsAtMs ?? null}
           tournamentName={tableName}
           tournamentId={tournamentId ?? null}
           heroUserId={userId ?? null}

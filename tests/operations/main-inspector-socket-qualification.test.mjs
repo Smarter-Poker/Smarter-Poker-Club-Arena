@@ -336,3 +336,34 @@ test(
     assert.equal((await once(probe, 'error'))[0].code, 'ECONNREFUSED');
   }
 );
+
+test('kernel refusal identifies only the failed predicate, never native metadata', (t) => {
+  const f = fixture(t);
+  fs.appendFileSync(
+    join(f.root, String(main), 'net/tcp'),
+    row('0100007F:240D', '0100007F:C002', '01', 104)
+  );
+  assert.throws(
+    () => f.capture(),
+    (error) => {
+      assert.equal(error.message, 'main_inspector_socket_unproved');
+      assert.equal(error.kernelStep, 'clients');
+      assert.deepEqual(Object.keys(error), ['kernelStep']);
+      return true;
+    }
+  );
+});
+
+test('kernel metadata read failure keeps only its fixed predicate name', (t) => {
+  const f = fixture(t);
+  fs.unlinkSync(join(f.root, String(main), 'net/tcp6'));
+  assert.throws(
+    () => f.capture(),
+    (error) => {
+      assert.equal(error.message, 'main_inspector_socket_unproved');
+      assert.equal(error.kernelStep, 'socket_rows');
+      assert.equal(JSON.stringify(error).includes(f.root), false);
+      return true;
+    }
+  );
+});

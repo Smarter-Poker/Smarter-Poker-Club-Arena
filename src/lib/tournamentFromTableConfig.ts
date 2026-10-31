@@ -492,19 +492,8 @@ export function buildTournamentConfig(
     // count exactly as before, whatever Entry Rules held when the buy-in hit 0.
     maxRebuys: isFreeBuy ? freeBuyCap : isRebuy ? entryCap : undefined,
     maxReentries: isFreeBuy ? freeBuyCap : isReentry ? entryCap : undefined,
-    /* THE ADD-ON BREAK LENGTH IS ONLY REAL ON A FREE BUY (2026-09-20). The
-       engine opens a paid event's add-on window for exactly 60 seconds
-       (TournamentManagerBase: `requestedStartMs + 60_000`); only a Free Buy's
-       from-the-start window adds `addon_break_minutes` to its length. So a
-       paid MTT sends 1, exactly as the club modal does, and the slider that
-       promised up to ten minutes is gone from the paid form. */
-    addonBreakMinutes: isMtt
-      ? isFreeBuy
-        ? clampInt(config.addOnBreakLengthMinutes ?? 1, 1, 10)
-        : config.addOnMultiplier > 0
-          ? 1
-          : undefined
-      : undefined,
+    // Every add-on tournament pauses for the same final 60 seconds.
+    addonBreakMinutes: isMtt && (isFreeBuy || config.addOnMultiplier > 0) ? 1 : undefined,
     earlyBirdEnabled: isMtt ? (config.earlyBirdRegistration ?? false) : false,
     earlyBirdChips:
       isMtt && config.earlyBirdRegistration

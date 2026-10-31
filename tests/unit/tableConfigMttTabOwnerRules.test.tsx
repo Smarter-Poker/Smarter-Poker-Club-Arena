@@ -219,16 +219,16 @@ describe('the add-on break length', () => {
     expect(created().addonBreakMinutes).toBe(1);
   });
 
-  it('stays on a Free Buy, where the window really uses it', async () => {
+  it('is locked to one minute on a Free Buy too', async () => {
     await openMttTab();
     fireEvent.click(screen.getByRole('switch', { name: 'Custom Buy-In' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Buy-In' }), {
       target: { value: '0' },
     });
     const slider = screen.getByRole('slider', { name: 'Add-On Break Length' });
-    fireEvent.change(slider, { target: { value: '6' } });
+    expect(slider).toBeDisabled();
     await start();
-    expect(created().addonBreakMinutes).toBe(6);
+    expect(created().addonBreakMinutes).toBe(1);
   });
 });
 

@@ -22,10 +22,10 @@ import {
 } from '../../scripts/ci/classify-ci-changes.mjs';
 
 const root = resolve(__dirname, '../..');
-// accounting_postgres runs as four matrix shards (2026-09-26,
+// accounting_postgres runs as seven matrix shards (2026-09-26,
 // tests/ci-tells-the-truth-faster.law.test.ts). A suite step's only condition
 // is the one shard that runs it: never a bypass, never a failure suppression.
-const ONLY_ITS_SHARD = /^matrix\.shard == [1-4]$/;
+const ONLY_ITS_SHARD = /^matrix\.shard == [1-7]$/;
 const ci = parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
 const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
@@ -2122,7 +2122,7 @@ describe('restored provider accounting qualification', () => {
         .split('          # The hosted image')[0]
         .split('# The hosted image')[0]
         .replaceAll('/usr/', temp + '/');
-      for (const shard of [1, 2, 3, 4]) {
+      for (const shard of [1, 2, 3, 4, 5, 6, 7]) {
         const output = execFileSync(
           '/bin/bash',
           ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
@@ -2131,7 +2131,9 @@ describe('restored provider accounting qualification', () => {
             env: { ...process.env, PATH: '', PG_CI_SHARD: String(shard) },
           }
         );
-        if (shard === 2)
+        if (shard >= 5)
+          expect(output).toBe(''); // Complete PG17/pg_cron fixture needs no compiler package.
+        else if (shard === 2)
           expect(output).toBe(
             'INSTALL:build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev'
           );
@@ -2145,7 +2147,7 @@ describe('restored provider accounting qualification', () => {
       }
       expect(() =>
         execFileSync('/bin/bash', ['-c', prefix], {
-          env: { ...process.env, PATH: '', PG_CI_SHARD: '5' },
+          env: { ...process.env, PATH: '', PG_CI_SHARD: '8' },
           stdio: 'pipe',
         })
       ).toThrow();
@@ -2214,7 +2216,7 @@ describe('restored provider accounting qualification', () => {
     const evidence = ci.jobs.accounting_postgres.steps.find(
       (step: { name?: string }) => step.name === 'Preserve weekly accounting qualification evidence'
     );
-    expect(evidence.if).toBe('always() && matrix.shard == 2');
+    expect(evidence.if).toBe('always() && matrix.shard == 6');
     expect(evidence.uses).toBe('actions/upload-artifact@v4');
     expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-results');
     expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-activation');

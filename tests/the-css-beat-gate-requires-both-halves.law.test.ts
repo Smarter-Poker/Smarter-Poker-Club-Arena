@@ -61,6 +61,9 @@ describe('the CSS Beat gate requires both halves', () => {
   };
   it('is admitted exactly when each half is', () => {
     const own = admission(gate.if, 'always() && ');
+    expect(admission(ci.jobs['css-beats-build'].if, '!cancelled() && ')).toBe(
+      own + " && needs.changes.outputs.server == 'true'"
+    );
     expect(admission(ci.jobs['css-beats-e2e'].if, '!cancelled() && ')).toBe(own);
     expect(admission(ci.jobs['diamond-playfield-e2e'].if, '!cancelled() && ')).toBe(own);
     // The fail-closed admission css-beats-e2e has always had.

@@ -726,3 +726,48 @@ describe('tournament-entry ticket client service', () => {
     );
   });
 });
+
+describe('registration preflight network liveness', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+  it.each(['ticket', 'unit', 'tournament'])(
+    'bounds a never-resolving %s read before any paid admission',
+    async (kind) => {
+      vi.useFakeTimers();
+      mockRpc.mockReset();
+      const { supabase } = await import('../../src/lib/supabase');
+      if (kind === 'ticket') mockRpc.mockReturnValue(new Promise(() => {}));
+      else {
+        const query: any = {
+          select: () => query,
+          eq: () => query,
+          abortSignal: () => query,
+          maybeSingle: () => new Promise(() => {}),
+        };
+        vi.spyOn(supabase, 'from').mockReturnValue(query);
+      }
+      let state = 'pending';
+      const operation =
+        kind === 'ticket'
+          ? tournamentService.findTournamentEntryTicket('tournament-1')
+          : kind === 'unit'
+            ? tournamentService.readTournamentUnitCents('tournament-1')
+            : tournamentService.registerPlayer('tournament-1', 'user-1', 'Player');
+      void operation.then(
+        (value) => {
+          state = value === null ? 'unknown' : 'resolved';
+        },
+        () => {
+          state = 'refused';
+        }
+      );
+      await vi.advanceTimersByTimeAsync(10001);
+      expect(state).toBe(kind === 'unit' ? 'unknown' : 'refused');
+      expect(mockRpc.mock.calls.every(([name]) => name === 'fn_find_tournament_entry_ticket')).toBe(
+        true
+      );
+    }
+  );
+});

@@ -43,7 +43,12 @@ export function lateRegEndMs(t: LobbyTournamentRow): number | null {
 
 function levelWindowEndMs(t: LobbyTournamentRow, cap: number, current: number): number | null {
   const structure = parseBlindStructure(t.blind_structure);
-  const levelBegun = Date.parse(t.level_started_at ?? '');
+  // A newly started event can publish its actual start before its first level
+  // clock. Only level zero shares that confirmed boundary; later levels need
+  // their own timestamp, and a scheduled start never supplies one.
+  const levelBegun = Date.parse(
+    t.level_started_at ?? (t.current_level === 0 ? t.started_at : null) ?? ''
+  );
   if (!structure || cap > structure.length || !Number.isFinite(levelBegun)) return null;
   let end = levelBegun;
   for (let index = current; index < cap; index++) {

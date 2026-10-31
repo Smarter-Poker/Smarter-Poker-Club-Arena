@@ -3,6 +3,19 @@
 import * as inspectorFs from 'node:fs';
 
 const inspectorSocketRefusal = () => new Error('main_inspector_socket_unproved');
+export const INSPECTOR_KERNEL_STEPS = Object.freeze([
+  'members',
+  'identities',
+  'namespace',
+  'socket_rows',
+  'listener',
+  'descriptors',
+  'listener_owner',
+  'clients',
+  'identity_recheck',
+  'snapshot_recheck',
+  'binding_recheck',
+]);
 const inspectorNumericPid = /^[1-9][0-9]{0,9}$/;
 
 function inspectorKernelRead(path, limit, deadlineMs) {
@@ -93,10 +106,20 @@ function inspectorKernelSockets(root, pid, port, deadlineMs) {
   return rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }
 
-function inspectorKernelSnapshot({ root, pid, port, deadlineMs, allowOwnClient, budget }) {
+function inspectorKernelSnapshot({
+  root,
+  pid,
+  port,
+  deadlineMs,
+  allowOwnClient,
+  budget,
+  diagnostic,
+}) {
+  diagnostic.step = 'members';
   const members = inspectorKernelMembers(root, deadlineMs);
   if (!members.includes(String(pid)) || !members.includes(String(process.pid)))
     throw inspectorSocketRefusal();
+  diagnostic.step = 'identities';
   const identities = members.map((member) => ({
     pid: member,
     startTicks: inspectorKernelStart(root, member, deadlineMs),
@@ -105,9 +128,12 @@ function inspectorKernelSnapshot({ root, pid, port, deadlineMs, allowOwnClient, 
   const main = identities.find((value) => value.pid === String(pid));
   // A complete, single-network-namespace census is required. An unknown or
   // hidden member is not an empty descriptor set.
+  diagnostic.step = 'namespace';
   if (identities.some((value) => value.namespace !== main.namespace))
     throw inspectorSocketRefusal();
+  diagnostic.step = 'socket_rows';
   const rows = inspectorKernelSockets(root, pid, port, deadlineMs);
+  diagnostic.step = 'listener';
   const listeners = rows.filter((row) => row.state === '0A');
   if (listeners.length !== 1) throw inspectorSocketRefusal();
   const listener = listeners[0];
@@ -119,6 +145,7 @@ function inspectorKernelSnapshot({ root, pid, port, deadlineMs, allowOwnClient, 
     listener.inode === '0'
   )
     throw inspectorSocketRefusal();
+  diagnostic.step = 'descriptors';
   const owners = new Map(rows.map((row) => [row.inode, new Set()]));
   for (const member of members) {
     if (Date.now() >= deadlineMs) throw inspectorSocketRefusal();
@@ -144,7 +171,9 @@ function inspectorKernelSnapshot({ root, pid, port, deadlineMs, allowOwnClient, 
     const values = owners.get(inode);
     return values?.size === 1 && values.has(String(owner));
   };
+  diagnostic.step = 'listener_owner';
   if (!solely(listener.inode, pid)) throw inspectorSocketRefusal();
+  diagnostic.step = 'clients';
   const clients = rows.filter((row) => row !== listener);
   if (!allowOwnClient) {
     if (clients.length) throw inspectorSocketRefusal();
@@ -169,6 +198,7 @@ function inspectorKernelSnapshot({ root, pid, port, deadlineMs, allowOwnClient, 
     )
       throw inspectorSocketRefusal();
   }
+  diagnostic.step = 'identity_recheck';
   for (const identity of identities) {
     if (
       inspectorKernelStart(root, identity.pid, deadlineMs) !== identity.startTicks ||
@@ -176,6 +206,7 @@ function inspectorKernelSnapshot({ root, pid, port, deadlineMs, allowOwnClient, 
     )
       throw inspectorSocketRefusal();
   }
+  diagnostic.step = 'snapshot_recheck';
   if (
     JSON.stringify(inspectorKernelMembers(root, deadlineMs)) !== JSON.stringify(members) ||
     JSON.stringify(inspectorKernelSockets(root, pid, port, deadlineMs)) !== JSON.stringify(rows)
@@ -216,10 +247,20 @@ export function captureMainInspectorBinding({
     !procRoot.startsWith('/')
   )
     throw inspectorSocketRefusal();
+  const diagnostic = { step: 'members' };
   try {
-    const options = { root: procRoot, pid, port, deadlineMs, allowOwnClient, budget: { fds: 0 } };
+    const options = {
+      root: procRoot,
+      pid,
+      port,
+      deadlineMs,
+      allowOwnClient,
+      budget: { fds: 0 },
+      diagnostic,
+    };
     const before = inspectorKernelSnapshot(options);
     const after = inspectorKernelSnapshot(options);
+    diagnostic.step = 'binding_recheck';
     if (
       Date.now() >= deadlineMs ||
       JSON.stringify(before) !== JSON.stringify(after) ||
@@ -229,7 +270,10 @@ export function captureMainInspectorBinding({
       throw inspectorSocketRefusal();
     return Object.freeze({ ...before.binding, listener: Object.freeze(before.binding.listener) });
   } catch {
-    // Do not export paths, descriptor contents, process names or native errors.
-    throw inspectorSocketRefusal();
+    // Only the fixed predicate name crosses this boundary. All native metadata
+    // remains private; refusal, deadlines and qualification are unchanged.
+    const refusal = inspectorSocketRefusal();
+    refusal.kernelStep = diagnostic.step;
+    throw refusal;
   }
 }

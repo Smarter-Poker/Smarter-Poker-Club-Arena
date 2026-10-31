@@ -470,7 +470,7 @@ describe('the chips and the furniture', () => {
        failing to clear their pod, the felt has got smaller than this geometry
        can serve and the answer is a smaller pod, not a bigger tolerance. */
     const { table } = CROWDED;
-    const pod = seatPodPx(CROWDED.viewportW, false);
+    const pod = seatPodPx(CROWDED.viewportW, false, table.w, { canvasHeightPx: table.h });
     const boardLevel = [
       { x: 10.5, y: 45 },
       { x: 89.5, y: 45 },
@@ -731,7 +731,12 @@ describe('portrait phone bets walk in front of their own player, the same as des
     for (const width of [320, 375, 393, 430, 480])
       for (const count of [6, 9])
         for (const taper of [0, undefined]) {
-          const size = { w: width * 0.78, h: 560, railBets: true, portraitTaper: taper };
+          const size = {
+            w: taper === 0 ? width : width * 0.82,
+            h: 560,
+            railBets: true,
+            portraitTaper: taper,
+          };
           const seats = seatLayoutFor(count).map((raw) => {
             const pod = seatPodPx(width, isHeroSeat(raw), size.w);
             return { seat: fitSeatToViewport(raw, size, width, pod), pod };

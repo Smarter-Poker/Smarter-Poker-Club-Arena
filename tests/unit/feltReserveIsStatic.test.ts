@@ -207,7 +207,7 @@ describe('the felt reserves stay fixed through hand and action states', () => {
         const fixedShortRing =
           prop === '--sp-hero-clear' &&
           d.selector === ".table-page[data-seats='6'] .table-container" &&
-          d.value === '64px';
+          (d.value === '64px' || d.value === '58px');
         if (!fixedShortRing && STATE.test(d.selector))
           offenders.push(`${prop} declared on "${d.selector}"`);
       }
@@ -216,9 +216,17 @@ describe('the felt reserves stay fixed through hand and action states', () => {
       declarationsOf('--sp-hero-clear').filter(
         (d) => d.selector === ".table-page[data-seats='6'] .table-container"
       )
-    ).toEqual([{ selector: ".table-page[data-seats='6'] .table-container", value: '64px' }]);
+    ).toEqual([
+      { selector: ".table-page[data-seats='6'] .table-container", value: '64px' },
+      { selector: ".table-page[data-seats='6'] .table-container", value: '58px' },
+    ]);
     expect(ALL_CSS).toMatch(
       /@media\s*\(max-width:\s*375px\)\s*and\s*\(max-height:\s*700px\)\s*and\s*\(orientation:\s*portrait\)\s*\{\s*\.table-page\[data-seats='6'\]\s+\.table-container\s*\{\s*--sp-hero-clear:\s*64px;/
+    );
+    // The equal-size short-phone fit changes only a permanent viewport
+    // reserve. Hand, action, spectator and dock state remain forbidden inputs.
+    expect(ALL_CSS).toMatch(
+      /@media\s*\(min-width:\s*341px\)\s*and\s*\(max-width:\s*480px\)\s*and\s*\(max-height:\s*720px\)\s*and\s*\(orientation:\s*portrait\)\s*\{\s*\.table-page\s+\.table-container\s*\{\s*--sp-hero-clear:\s*54px;\s*\}\s*\.table-page\[data-seats='6'\]\s+\.table-container\s*\{\s*--sp-hero-clear:\s*58px;/
     );
     expect(
       offenders,

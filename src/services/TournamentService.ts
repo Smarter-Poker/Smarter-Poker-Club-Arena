@@ -1,3 +1,4 @@
+import { runWithRequestDeadline } from '../utils/requestDeadline';
 import { withTournamentRegistrationReadBoundary } from './TournamentRegistrationReadBoundary';
 import { validateMttBlindStructure } from '../../server/src/domain/tournamentBlindContract';
 import {
@@ -367,13 +368,15 @@ export function parseTournamentUnregisterResult(
   return { refundedChips, returnedTicketValue };
 }
 
-type TournamentUnregisterRpcCall = () => Promise<{ data: unknown; error: unknown }>;
+type TournamentUnregisterRpcCall = (
+  signal: AbortSignal
+) => PromiseLike<{ data: unknown; error: unknown }>;
 
 async function invokeTournamentUnregisterRpc(
   invoke: TournamentUnregisterRpcCall
 ): Promise<{ data: unknown; error: unknown }> {
   try {
-    return await invoke();
+    return await runWithRequestDeadline(invoke);
   } catch (error) {
     // Supabase normally resolves transport failures as `{ error }`, but a
     // rejected fetch is the same unknown-outcome class. Normalize both forms
@@ -1774,11 +1777,13 @@ class TournamentService {
       throw new Error('Sign In To The Correct Account Before Requesting A Refund.');
     return withTournamentUnregistrationIntent(userId, tournamentId, async (requestId) => {
       const result = await executeTournamentUnregisterRpc(
-        async () =>
-          supabase.rpc('fn_unregister_from_tournament', {
-            p_tournament_id: tournamentId,
-            p_request_id: requestId,
-          }),
+        (signal) =>
+          supabase
+            .rpc('fn_unregister_from_tournament', {
+              p_tournament_id: tournamentId,
+              p_request_id: requestId,
+            })
+            .abortSignal(signal),
         requestId,
         'TournamentService.unregisterPlayer_result_unconfirmed',
         { tournamentId, userId }
@@ -1809,11 +1814,13 @@ class TournamentService {
     }
     return withTournamentUnregistrationIntent(userId, 'seat:' + tableId, async (requestId) => {
       const result = await executeTournamentUnregisterRpc(
-        async () =>
-          supabase.rpc('fn_leave_seat_and_refund', {
-            p_table_id: tableId,
-            p_request_id: requestId,
-          }),
+        (signal) =>
+          supabase
+            .rpc('fn_leave_seat_and_refund', {
+              p_table_id: tableId,
+              p_request_id: requestId,
+            })
+            .abortSignal(signal),
         requestId,
         'TournamentService.leaveTournamentSeatAndRefund_result_unconfirmed',
         { tableId, userId }
@@ -2391,7 +2398,9 @@ class TournamentService {
         // now correctly says the player is funded; blocking here would prevent
         // the immutable receipt from returning that already-committed result.
         // The RPC owns replay and current eligibility under one transaction lock.
-        const tournament = await this.getTournament(tournamentId);
+        const tournament = await runWithRequestDeadline((signal) =>
+          this.getTournament(tournamentId, { throwOnError: true, signal })
+        );
         if (!tournament) throw new Error('Tournament not found');
 
         const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
@@ -2431,7 +2440,11 @@ class TournamentService {
         };
       },
       async (request) => {
-        const { data, error } = await supabase.rpc('process_tournament_rebuy', request);
+        // A deadline leaves the saved payload pending. A later explicit action
+        // reads the same receipt; it must never create another purchase.
+        const { data, error } = await runWithRequestDeadline((signal) =>
+          supabase.rpc('process_tournament_rebuy', request).abortSignal(signal)
+        );
         if (error) {
           reportError(error, 'TournamentService.Rebuy_RPC_outcome_unconfirmed');
           throw error;
@@ -2506,7 +2519,9 @@ class TournamentService {
         // reach the immutable receipt even though the window is now closed or
         // the add-on is now used. The RPC owns all eligibility under one lock;
         // canAddOn remains display guidance only.
-        const tournament = await this.getTournament(tournamentId);
+        const tournament = await runWithRequestDeadline((signal) =>
+          this.getTournament(tournamentId, { throwOnError: true, signal })
+        );
         if (!tournament) throw new Error('Tournament not found');
 
         const addonChips = tournament.addon_chips || tournament.starting_chips;
@@ -2540,7 +2555,11 @@ class TournamentService {
         };
       },
       async (request) => {
-        const { data, error } = await supabase.rpc('process_tournament_rebuy', request);
+        // A deadline leaves the saved payload pending. A later explicit action
+        // reads the same receipt; it must never create another purchase.
+        const { data, error } = await runWithRequestDeadline((signal) =>
+          supabase.rpc('process_tournament_rebuy', request).abortSignal(signal)
+        );
         if (error) {
           reportError(error, 'TournamentService.Addon_RPC_outcome_unconfirmed');
           throw error;

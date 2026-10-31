@@ -308,7 +308,18 @@ def validate_tournament_player_ui_native(result, tuple_value, schema, runtime_im
 
 def validate_rit_player_ui_native(result, tuple_value, schema, runtime_image):
     readiness = result.get('engine_readiness', {})
+    history = result.get('proof', {}).get('actionHistory', {})
+    require(set(history) == {'table_id','hand_number','accepted_http_count','wire_event_count','history_count','actions'} and
+            re.fullmatch('[0-9a-f-]{36}', history.get('table_id', '')) and
+            type(history.get('hand_number')) is int and history['hand_number'] > 0 and
+            type(history.get('accepted_http_count')) is int and history['accepted_http_count'] == 4 and
+            type(history.get('wire_event_count')) is int and history['wire_event_count'] == 4 and
+            type(history.get('history_count')) is int and history['history_count'] == 1 and isinstance(history.get('actions'), list) and
+            [a.get('action') for a in history['actions']] == ['raise','call','all_in','fold'] and
+            all(a.get('origin') == 'player' and set(a) == {'ordinal','user_id','seat','action','amount','street','origin'}
+                for a in history['actions']), 'RELEASE_BROWSER_ACTION_HISTORY_REQUIRED')
     cases = ['exact-schema-and-stable-component-identities',
+             'browser-raise-call-allin-fold-saved-once',
              'actual-three-run-choice-and-acceptance',
              'three-board-winning-card-timing-and-chip-landings',
              'settled-choice-clearing-and-cold-reload']

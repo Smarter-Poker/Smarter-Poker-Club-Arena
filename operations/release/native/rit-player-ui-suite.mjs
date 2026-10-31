@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { verifyBrowserActionHistory } from './component-observation-protocol.mjs';
 import { createObservationClient } from './component-observation-client.mjs';
 import { prepareOracleHome } from './component-semantic-home.mjs';
 import { waitForExactEngineReady } from './component-semantic-readiness.mjs';
@@ -15,6 +16,7 @@ import {
 
 export const ritPlayerUICases = Object.freeze([
   'exact-schema-and-stable-component-identities',
+  'browser-raise-call-allin-fold-saved-once',
   'actual-three-run-choice-and-acceptance',
   'three-board-winning-card-timing-and-chip-landings',
   'settled-choice-clearing-and-cold-reload',
@@ -44,14 +46,17 @@ export function ritActorBrowserStorage(fixture, user, now = Date.now()) {
   const seconds = Math.floor(now / 1000);
   assert.ok(Number.isSafeInteger(seconds));
   assert.ok(Number.isSafeInteger(claims.exp) && claims.exp > seconds);
-  return browserStorage({
-    access_token: token,
-    user: { id: user.id },
-    token_type: 'bearer',
-    expires_at: claims.exp,
-    expires_in: claims.exp - seconds,
-    refresh_token: '',
-  }, `${namespaces[0]}.supabase.co`);
+  return browserStorage(
+    {
+      access_token: token,
+      user: { id: user.id },
+      token_type: 'bearer',
+      expires_at: claims.exp,
+      expires_in: claims.exp - seconds,
+      refresh_token: '',
+    },
+    `${namespaces[0]}.supabase.co`
+  );
 }
 
 /** Validate genuine wire observations before discarding cards and private state.
@@ -165,6 +170,211 @@ export function isRitActorTurn(live, captured, userId) {
  * advancement or production fallback is implemented here. The financial
  * scenario already disables autonomous actors; these pages are the sole input.
  */
+// One real heads-up hand: small blind raises/calls through preflop, big blind
+// shoves the flop and the other player explicitly folds. The engine owns every
+// turn, card, amount validation, settlement and durable history write.
+async function proveFourBrowserActions({ actors, tableId, observations, deadline }) {
+  const actions = [],
+    requests = [],
+    listeners = [];
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 50));
+  let handNumber;
+  let inputFailure = false;
+  const events = () =>
+    actors[0].wire.readActions({ tableId, handNumber }).map((e) => ({
+      type: 'player_action',
+      table_id: e.tableId,
+      hand_number: e.hand_number,
+      user_id: e.user_id,
+      action: e.action,
+      amount: e.amount,
+      seat: e.seat,
+      stage: e.stage,
+      replayed: e.replayed,
+    }));
+  const spent = new Set();
+  for (const actor of actors) {
+    const receive = (request) => {
+      const url = new URL(request.url());
+      if (
+        request.method() === 'POST' &&
+        url.hostname === 'engine.smarter.poker' &&
+        url.pathname === '/action'
+      ) {
+        try {
+          const body = request.postDataJSON();
+          if (requests.length >= 4) inputFailure = true;
+          if (requests.length < 5) requests.push({ actor: actor.user.id, body });
+        } catch {
+          inputFailure = true;
+        }
+      }
+    };
+    actor.page.on('request', receive);
+    listeners.push([actor.page, receive]);
+  }
+  try {
+    for (const action of ['raise', 'call', 'all_in', 'fold']) {
+      assert.equal(inputFailure, false, 'BROWSER_ACTION_REQUEST_UNKNOWN_OR_REPLAYED');
+      let actor, state, player;
+      while (Date.now() < deadline) {
+        for (const a of actors) {
+          const s = a.wire.state(tableId),
+            p = s?.players?.find((p) => p.user_id === a.user.id);
+          if (
+            !s ||
+            !p ||
+            s.current_player !== a.user.id ||
+            p.is_folded ||
+            p.is_all_in ||
+            p.stack <= 0 ||
+            spent.has(s.action_context)
+          )
+            continue;
+          if (handNumber === undefined) {
+            if (s.stage !== 'preflop') continue;
+            handNumber = s.hand_number;
+          }
+          assert.equal(s.hand_number, handNumber, 'BROWSER_ACTION_HAND_CHANGED');
+          if (s.stage !== (actions.length < 2 ? 'preflop' : 'flop')) continue;
+          actor = a;
+          state = s;
+          player = p;
+          break;
+        }
+        if (actor) break;
+        await pause();
+      }
+      assert.ok(actor, 'BROWSER_ACTION_CURRENT_TURN_REQUIRED');
+      const current = () => {
+        const s = actor.wire.state(tableId);
+        return (
+          s?.hand_number === handNumber &&
+          s.current_player === actor.user.id &&
+          s.action_context === state.action_context &&
+          s.turn_start_time_ms === state.turn_start_time_ms
+        );
+      };
+      await actor.page.bringToFront();
+      const click = async (selector) => {
+        const control = actor.page.locator(`.action-panel ${selector}`);
+        await control.waitFor({ state: 'visible', timeout: 3000 });
+        assert.ok(await control.isEnabled());
+        assert.ok(current(), 'BROWSER_ACTION_STALE_TURN');
+        await control.click({ timeout: 3000 });
+      };
+      if (action === 'raise') await click('.action-btn--raise');
+      if (
+        action === 'all_in' &&
+        !(await actor.page.locator('.action-panel .action-btn--allin').isVisible())
+      )
+        await click('.action-btn--raise');
+      const selector =
+        action === 'raise'
+          ? '.raise-confirm'
+          : action === 'all_in'
+            ? (await actor.page.locator('.action-panel .action-btn--allin').isVisible())
+              ? '.action-btn--allin'
+              : '.raise-preset--allin'
+            : `.action-btn--${action}`;
+      const responsePromise = actor.page
+        .waitForResponse(
+          (response) => {
+            const request = response.request(),
+              url = new URL(response.url());
+            return (
+              request.method() === 'POST' &&
+              url.hostname === 'engine.smarter.poker' &&
+              url.pathname === '/action'
+            );
+          },
+          { timeout: 10000 }
+        )
+        .then(
+          (value) => ({ value }),
+          () => ({ error: true })
+        );
+      await click(selector);
+      const responseResult = await responsePromise;
+      assert.ok(responseResult.value, 'BROWSER_ACTION_HTTP_OUTCOME_UNKNOWN');
+      const response = responseResult.value,
+        body = response.request().postDataJSON();
+      assert.equal(body.tableId, tableId);
+      assert.equal(body.action, action);
+      assert.equal(body.actionContext, state.action_context);
+      assert.equal(response.status(), 200);
+      const reply = await response.json();
+      assert.equal(reply.success, true);
+      const matching = requests.filter(
+        (r) => r.actor === actor.user.id && r.body.idempotencyKey === body.idempotencyKey
+      );
+      assert.equal(matching.length, 1);
+      const amount =
+        action === 'raise'
+          ? body.amount
+          : action === 'call'
+            ? state.current_bet - player.bet
+            : action === 'all_in'
+              ? player.stack + player.bet
+              : 0;
+      spent.add(state.action_context);
+      actions.push({
+        action,
+        table_id: tableId,
+        user_id: actor.user.id,
+        seat: player.seat,
+        hand_number: handNumber,
+        street: state.stage,
+        amount,
+        before_stack: player.stack,
+        before_bet: player.bet,
+        before_current_bet: state.current_bet,
+        action_context: body.actionContext,
+        idempotency_key: body.idempotencyKey,
+        status: response.status(),
+        success: reply.success,
+        requests: matching.length,
+      });
+      while (
+        !events().some(
+          (e) =>
+            e.type === 'player_action' &&
+            e.hand_number === handNumber &&
+            e.user_id === actor.user.id &&
+            e.action === action
+        )
+      ) {
+        assert.ok(Date.now() < deadline, 'BROWSER_ACTION_EVENT_MISSING');
+        await pause();
+      }
+    }
+    let next;
+    while (Date.now() < deadline) {
+      next = actors.map((a) => a.wire.state(tableId)?.hand_number).find((n) => n > handNumber);
+      if (next) break;
+      await pause();
+    }
+    assert.ok(next, 'BROWSER_ACTION_HAND_NOT_COMPLETED');
+    assert.equal(inputFailure, false, 'BROWSER_ACTION_REQUEST_UNKNOWN_OR_REPLAYED');
+    assert.equal(requests.length, 4, 'BROWSER_ACTION_EXTRA_OR_REPLAYED_REQUEST');
+    const hand = { hand_number: handNumber, next_hand_number: next };
+    const until = Math.min(deadline, Date.now() + 15000);
+    while (!(await observations.handPresence(hand)).count) {
+      assert.ok(Date.now() < until, 'BROWSER_ACTION_HISTORY_NOT_SAVED');
+      await pause();
+    }
+    return verifyBrowserActionHistory({
+      tableId,
+      hand,
+      facts: await observations.handFacts(hand),
+      actions,
+      events: events(),
+    });
+  } finally {
+    for (const [page, listener] of listeners) page.off('request', listener);
+  }
+}
+
 export async function qualifyRitPlayerUI({
   tuple,
   schema,
@@ -316,6 +526,15 @@ export async function qualifyRitPlayerUI({
       });
       actors.push({ user, page: actorPage, wire });
     }
+    const deadline = Date.now() + 210000;
+    const actionHistory = await proveFourBrowserActions({
+      actors,
+      tableId: fixture.table_id,
+      observations,
+      deadline,
+    });
+    // Arm the RIT timing witness only after this separate ordinary hand. Actor
+    // foreground input cannot become hidden samples in the later RIT witness.
     // Open and foreground the observer LAST. Actor setup must not contribute
     // hidden samples to the actual presentation witness.
     const page = await observerContext.newPage();
@@ -329,7 +548,6 @@ export async function qualifyRitPlayerUI({
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
-    const deadline = Date.now() + 210000;
     const acted = new Set(),
       consented = new Set();
     let offer, decision, accepted, result;
@@ -467,7 +685,14 @@ export async function qualifyRitPlayerUI({
     retries: 0,
     engine_readiness: engineReadiness,
     cases: ritPlayerUICases.map((name) => ({ name, passed: true })),
-    proof: { ...proof, browser: 'chromium', viewport: { width: 375, height: 812 }, before, after },
+    proof: {
+      ...proof,
+      actionHistory,
+      browser: 'chromium',
+      viewport: { width: 375, height: 812 },
+      before,
+      after,
+    },
     cleanup: { complete: false, owner: 'outer-native-driver' },
   };
 }

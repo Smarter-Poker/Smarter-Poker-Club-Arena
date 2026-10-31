@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import signal
 import stat
 import subprocess
@@ -247,12 +248,34 @@ def unit_snapshot(unit):
     return value
 
 
+def prove_empty_exec_properties(unit, fields):
+    require(bool(fields) and set(fields) <= {'ExecStart', 'ExecStop', 'ExecStopPost'})
+    prefix = ['busctl', '--system', '--timeout=5s']
+    get_unit = prefix + ['call', 'org.freedesktop.systemd1', '/org/freedesktop/systemd1',
+                         'org.freedesktop.systemd1.Manager', 'GetUnit', 's', unit]
+    resolved = shlex.split(command(get_unit))
+    require(len(resolved) == 2 and resolved[0] == 'o'
+            and re.fullmatch(r'/org/freedesktop/systemd1/unit/[A-Za-z0-9_]+', resolved[1]) is not None)
+    prop = prefix + ['get-property', 'org.freedesktop.systemd1', resolved[1]]
+    identity = prop + ['org.freedesktop.systemd1.Unit', 'Id']
+    require(shlex.split(command(identity)) == ['s', unit])
+    for field in sorted(fields):
+        require(shlex.split(command(prop + ['org.freedesktop.systemd1.Service', field])) == ['a(sasbttttuii)', '0'])
+    require(shlex.split(command(identity)) == ['s', unit] and shlex.split(command(get_unit)) == resolved)
+
+
 def loaded_stop_contract(unit, key, allow_masked=False):
     fields = ['ExecStart', 'ExecStop', 'ExecStopPost', 'KillMode', 'FragmentPath', 'DropInPaths',
               'RequiredBy', 'RequisiteOf', 'BoundBy', 'ConsistsOf', 'PropagatesStopTo']
     args = ['systemctl', 'show', unit, '--all']
     for field in fields: args += ['-p', field]
     result = dict(line.split('=', 1) for line in command(args).splitlines())
+    missing = set(fields) - set(result)
+    if missing:
+        # systemctl's Exec-array printer omits empty arrays even with --all.
+        # Only a positive typed D-Bus empty array for this exact unit fills one.
+        prove_empty_exec_properties(unit, missing)
+        result.update({field: '' for field in missing})
     require(set(result) == set(fields))
     require(result['KillMode'] == 'control-group' and result['DropInPaths'] == '')
     require(all(result[field] == '' for field in ['ExecStop', 'RequiredBy', 'RequisiteOf', 'BoundBy', 'ConsistsOf', 'PropagatesStopTo']))

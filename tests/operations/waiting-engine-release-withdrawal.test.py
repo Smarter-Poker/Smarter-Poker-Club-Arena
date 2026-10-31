@@ -518,6 +518,30 @@ class AnnouncedCancellation(unittest.TestCase):
         with patch.object(module, 'command', return_value=render(config | {'ExecStopPost': config['ExecStopPost'] + config['ExecStopPost']})), self.assertRaises(ValueError):
             module.loaded_stop_contract(unit, key)
 
+    def test_missing_exec_needs_positive_typed_empty_for_exact_unit(self):
+        unit = module.cancel_units('41177442979-1')[0]
+        path = '/org/freedesktop/systemd1/unit/exact_2eservice'
+        for failure in [None, 'foreign', 'path', 'nonempty', 'type', 'unknown', 'changed']:
+            with self.subTest(failure=failure):
+                reads = []
+                def response(args):
+                    reads.append(args)
+                    if 'GetUnit' in args:
+                        return 'o "' + (path if failure != 'path' else '/foreign') + '"'
+                    if args[-1] == 'Id':
+                        changed = failure == 'foreign' or (failure == 'changed' and len(reads) > 3)
+                        return 's "' + ('foreign.service' if changed else unit) + '"'
+                    if failure == 'unknown': raise subprocess.CalledProcessError(1, args)
+                    return 'as 0' if failure == 'type' else 'a(sasbttttuii) ' + ('1' if failure == 'nonempty' else '0')
+                with patch.object(module, 'command', side_effect=response):
+                    if failure:
+                        with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                            module.prove_empty_exec_properties(unit, {'ExecStop'})
+                    else: module.prove_empty_exec_properties(unit, {'ExecStop'})
+        with patch.object(module, 'command') as read, self.assertRaises(ValueError):
+            module.prove_empty_exec_properties(unit, {'DropInPaths'})
+        read.assert_not_called()
+
     def test_pre_stop_interruption_with_positive_quiescence_needs_no_stop(self):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as folder, ExitStack() as patches:
             request, control, state, entry, reservation, units = self.harness(folder, patches)

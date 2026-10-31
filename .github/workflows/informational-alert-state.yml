@@ -17,6 +17,7 @@ on:
       - supabase/migrations/**
       - scripts/ci/fixtures/alert-ledger-roots/**
       - scripts/ci/test-alert-ledger-roots.py
+      - scripts/ci/test-explicit-incident-resolution.py
       - scripts/ci/test-native-alert-event.py
       - tools/production-alerts-native-wakeup/**
       - tests/nativeAlertEvent.test.ts
@@ -68,6 +69,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-alert-ledger-roots.py
+      - name: An explicit investigation replaces an unverified age-out atomically
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-explicit-incident-resolution.py
       - name: Retain the regression evidence
         if: always()
         uses: actions/upload-artifact@v4

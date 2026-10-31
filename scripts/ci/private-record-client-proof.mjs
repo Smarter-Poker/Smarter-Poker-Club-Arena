@@ -7,6 +7,21 @@ import { pathToFileURL } from 'node:url';
 import { readStatsClientPin as readClientPin } from './stats-pagination-proof.mjs';
 export const PRIVATE_RECORD_CLIENT_TITLE =
   'published private record client survives its isolated engine channel outage';
+// The owner requires 180 seconds between automatic roster reads. Allow the
+// real cadence plus the existing 45-second request budget, twice per case.
+export const PRIVATE_RECORD_ROSTER_READ_MS = 180_000 + 45_000;
+export const PRIVATE_RECORD_CASE_MS = 2 * PRIVATE_RECORD_ROSTER_READ_MS + 150_000;
+// The live club emitted 127 records/minute in the measured case. Bound the
+// retained observations with headroom for the full ten-minute case.
+export const PRIVATE_RECORD_OBSERVATION_LIMIT = 2048;
+// Full observations remain in memory for assertions. The certificate keeps a
+// diagnostic tail and total count within its unchanged 32 KiB attachment cap.
+export function summarizePrivateRecordObservations(frames) {
+  return {
+    observedRecordFrames: frames.slice(-64),
+    observedRecordFrameCount: frames.length,
+  };
+}
 const REPO = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
 const SHA = /^[0-9a-f]{40}$/;
 const ROOT = 'e2e-report/private-record-client';

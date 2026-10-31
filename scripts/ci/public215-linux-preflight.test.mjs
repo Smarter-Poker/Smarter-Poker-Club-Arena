@@ -85,9 +85,10 @@ test('existing image discovery is read-only, exact-source bound and guarded agai
 
 // The handoff is an explicit immutable input in this already-watched module.
 import {spawnSync} from 'node:child_process';
-import {R7_RESUME_HANDOFF,resumeSelection,resumeProvider,downloadResumeArchive,resumeArchiveFiles,resumeFilesAdmission,inheritedEvidence,commandFacts,failureEvidence,preservePrimary} from './public215-linux-preflight.mjs';
+import {R7_RESUME_HANDOFF,CORRECTED_R7_RESUME_HANDOFF,correctedResumeBoundary,resumeSelection,resumeProvider,downloadResumeArchive,resumeArchiveFiles,resumeFilesAdmission,inheritedEvidence,commandFacts,failureEvidence,preservePrimary} from './public215-linux-preflight.mjs';
 const pinned=R7_RESUME_HANDOFF,prior=pinned.predecessor;
-function providerFixture(){
+function providerFixture(handoff=pinned){
+ const prior=handoff.predecessor;
  const run={id:prior.run_id,run_attempt:prior.attempt,head_sha:prior.head_sha,repository:{id:1132369872},head_repository:{id:1132369872},path:'.github/workflows/public215-linux-preflight.yml',event:'workflow_dispatch',head_branch:'main',status:'completed',conclusion:'failure'};
  const base={run_id:prior.run_id,head_sha:prior.head_sha,status:'completed'};
  const jobs=[{...base,id:prior.contract_job,name:'contract',conclusion:'success'},{...base,id:prior.evidence_job,name:'evidence',conclusion:'failure',steps:[['Existing protected PR and exact candidate source admission','success'],['Establish existing pinned SSH identity','success'],['Read approved preparations and collect bounded isolated Linux receipts','failure'],['Retain execution receipts only','success']].map(([name,conclusion])=>({name,status:'completed',conclusion}))}];
@@ -111,8 +112,8 @@ test('provider continuation requires the exact first-party completed attempt and
  assert.throws(()=>resumeProvider(pinned,f.run,f.jobs.slice(1),f.artifact));
  assert.throws(()=>resumeProvider(pinned,f.run,[...f.jobs,{...f.jobs[0],id:1}],f.artifact));
 });
-function zipFixture(mode='valid'){
- const files=Array.from({length:16},(_,i)=>({name:`file-${i}.json`,value:Buffer.from(`value-${i}`)}));
+function zipFixture(mode='valid',count=16){
+ const files=Array.from({length:count},(_,i)=>({name:`file-${i}.json`,value:Buffer.from(`value-${i}`)}));
  const program=String.raw`import sys,json,io,zipfile,base64,stat
 p=json.load(sys.stdin); out=io.BytesIO()
 with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
@@ -187,4 +188,49 @@ test('owned contract labels remain actionable while arbitrary errors and failed 
  assert.match(refusal.message,/Explicit R7 continuation identity differs/);const evidence=failureEvidence(refusal,{phase:'resume',offset:null,context_id:null,request_sha256:null});assert.equal(evidence.facts.contract,'Explicit R7 continuation identity differs');
  const primary=Error('untrusted failure');await assert.rejects(preservePrimary(async()=>{throw primary;},async()=>{throw Error('post-health');},()=>{throw Error('disk');}),e=>e===primary);
  assert.equal(failureEvidence(primary,{phase:'native'}).secondary_evidence_unavailable,true);
+});
+
+const corrected=CORRECTED_R7_RESUME_HANDOFF;
+test('corrected79 continuation admits only the closed new dataset/provider/source/image and preserves old6',()=>{
+ const selected={dataset:corrected.dataset,candidate_sha:corrected.candidate_sha,stage_run:corrected.stage_run,image_id:RESOLVE_EXISTING_IMAGE};
+ assert.equal(resumeSelection(selected,corrected.server_tree,corrected.serving_sha,corrected.image_id),corrected);
+ assert.equal(corrected.files.length,479);assert.equal(corrected.contexts.length,79);assert.deepEqual(corrected.contexts.map(c=>c.offset),Array.from({length:79},(_,i)=>i));
+ for(const values of [[sha,corrected.serving_sha,corrected.image_id],[corrected.server_tree,sha,corrected.image_id],[corrected.server_tree,corrected.serving_sha,image]])assert.throws(()=>resumeSelection(selected,...values));
+ for(const change of [{candidate_sha:sha},{stage_run:'1'}])assert.throws(()=>resumeSelection({...selected,...change},corrected.server_tree,corrected.serving_sha,corrected.image_id));
+ const f=providerFixture(corrected);resumeProvider(corrected,f.run,f.jobs,f.artifact);
+ for(const change of [{run_attempt:2},{status:'in_progress'},{conclusion:'success'},{head_sha:sha}])assert.throws(()=>resumeProvider(corrected,{...f.run,...change},f.jobs,f.artifact));
+ assert.throws(()=>resumeProvider(corrected,f.run,f.jobs,{...f.artifact,digest:'sha256:'+hex}));
+ assert.equal(pinned.contexts.length,6);assert.equal(pinned.files.length,16);
+});
+function correctedBoundaryFixture(){
+ const files=new Map(),put=(n,v)=>files.set(n,Buffer.from(JSON.stringify(v)));
+ put('failure.json',{format:'public215_linux_preflight_failure_v2',status:'incomplete_unqualified_no_freeze_or_activation',phase:'preparation',offset:79,context_id:null,request_sha256:null,code:'preparation_http',facts:{http_status:500},secondary_evidence_unavailable:false});
+ put('attempt-79.started.json',{phase:'preparation',offset:79,context_id:null,request_sha256:null,observedAt:'2026-10-31T07:51:15.711Z'});
+ for(const c of corrected.contexts){
+  const common={offset:c.offset,context_id:c.context_id,request_sha256:c.request_sha256};
+  put(`attempt-${c.offset}.bound.json`,{...common,phase:'request'});put(`attempt-${c.offset}.terminal.json`,{...common,phase:'result',status:'actual_ssh_and_native_exit0'});
+  put(`attempt-${c.offset}.native-terminal.json`,{...common,phase:'native',command_exit:0,ssh_exit:0,native_exit:0,errno:null,host_code:null,http_status:null,native_code:null,signal:null});
+  put(c.context_id+'.exit.json',{exit_code:0,context_id:c.context_id,request_sha256:c.request_sha256,candidate_sha:corrected.candidate_sha,image_id:corrected.image_id,stage_run:corrected.stage_run,observedAt:'2026-10-31T07:50:00Z'});
+ }return files;
+}
+test('corrected79 inherits only actual79 native zeros and offset79 failed before binding or native execution',()=>{
+ const files=correctedBoundaryFixture();correctedResumeBoundary(corrected,files);
+ const change=(name,patch)=>{const f=new Map(files);f.set(name,Buffer.from(JSON.stringify({...JSON.parse(f.get(name)),...patch})));return f;};
+ for(const patch of [{offset:78},{phase:'native'},{code:'command_exit'},{facts:{http_status:502}},{context_id:hex},{request_sha256:hex},{format:'public215_linux_preflight_failure_v1'}])assert.throws(()=>correctedResumeBoundary(corrected,change('failure.json',patch)));
+ for(const kind of ['bound','native-terminal','terminal']){const f=new Map(files);f.set(`attempt-79.${kind}.json`,Buffer.from('{}'));assert.throws(()=>correctedResumeBoundary(corrected,f));}
+ for(const patch of [{native_exit:1},{native_exit:null},{ssh_exit:1},{command_exit:null},{host_code:'host_lock_busy'}])assert.throws(()=>correctedResumeBoundary(corrected,change('attempt-78.native-terminal.json',patch)));
+ assert.throws(()=>correctedResumeBoundary(corrected,change('attempt-0.terminal.json',{status:'inherited_exact_original_exit0'})));
+ assert.throws(()=>correctedResumeBoundary(corrected,change(corrected.contexts[78].context_id+'.exit.json',{request_sha256:hex})));
+});
+test('closed479 ZIP inventory is accepted but478or480 and substituted members are refused',()=>{
+ const f=zipFixture('valid',479);assert.equal(resumeArchiveFiles(f.bytes,f.m).size,479);
+ for(const count of [478,480]){const bad=zipFixture('valid',count);assert.throws(()=>resumeArchiveFiles(bad.bytes,bad.m));}
+ const changed=structuredClone(f.m);changed.files[478].bytes++;assert.throws(()=>resumeArchiveFiles(f.bytes,changed));
+});
+test('corrected79 current request/model bindings reuse79 originals and require28 fresh contexts',()=>{
+ const model='d'.repeat(64),files=new Map();
+ for(const c of corrected.contexts){const receipt={dataset_id:corrected.dataset,model_checksum:model};files.set(c.context_id+'.result.json',Buffer.from(JSON.stringify({format:'public_hist215_preflight_result_v1',receipt,receipt_checksum:digest(receipt),execution_ms_f64:'3ff0000000000000',peak_rss_bytes:1024})));files.set(c.context_id+'.exit.json',correctedBoundaryFixture().get(c.context_id+'.exit.json'));}
+ let imported=0,fresh=0;for(let i=0;i<107;i++){const c=corrected.contexts[i]||{context_id:i.toString(16).padStart(64,'0'),request_sha256:hex};if(inheritedEvidence(corrected,files,i,c.context_id,c.request_sha256,{model_checksum:model}))imported++;else fresh++;}
+ assert.equal(imported,79);assert.equal(fresh,28);
+ const c=corrected.contexts[78];assert.throws(()=>inheritedEvidence(corrected,files,78,c.context_id,hex,{model_checksum:model}));assert.throws(()=>inheritedEvidence(corrected,files,78,c.context_id,c.request_sha256,{model_checksum:hex}));assert.throws(()=>inheritedEvidence(corrected,files,79,c.context_id,c.request_sha256,{model_checksum:model}));
 });

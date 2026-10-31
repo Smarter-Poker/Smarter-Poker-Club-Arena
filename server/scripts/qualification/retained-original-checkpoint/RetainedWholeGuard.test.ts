@@ -5,6 +5,7 @@ import * as crypto from 'node:crypto';
 const wire = vi.hoisted(() => ({
   originals: new Map<string, any>(),
   parked: new Map<string, any>(),
+  committed: new Map<string, any>(),
   calls: [] as any[],
   clock: {} as any,
   onAttest: null as null | (() => void),
@@ -24,7 +25,13 @@ vi.mock('../services/supabase/client.js', () => {
         data:
           table === 'engine_presence_parked'
             ? (wire.parked.get(filters.get('table_id')) ?? null)
-            : null,
+            : table === 'hand_atomic_commits'
+              ? (wire.committed.get(filters.get('table_id')) ?? null)
+              : table === 'hand_history'
+                ? wire.committed.get(filters.get('table_id'))
+                  ? { id: wire.committed.get(filters.get('table_id')).hand_id }
+                  : null
+                : null,
         error: null,
       }),
       upsert: async (row: any) => {
@@ -130,6 +137,8 @@ afterEach(async () => {
   wire.calls.length = 0;
   wire.originals.clear();
   wire.parked.clear();
+  wire.committed.clear();
+  vi.useRealTimers();
   wire.onAttest = null;
   (lightningFormation.lightningFormationGate as any).entries.clear();
 });
@@ -177,6 +186,10 @@ const wholeCases = [
   'detached-lifecycle-job',
   'detached-job-during-await',
   'missing-manager-census',
+  'shadow-covered-permit',
+  'shadow-held-reserved',
+  'shadow-held-unknown',
+  'shadow-held-zero-bank',
   'shadow-failed',
   'shadow-unretained',
   'shadow-retained-sequence',
@@ -251,6 +264,122 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
   freezeState.setMaintenanceFrozen(true);
   const objects: any[] = [],
     originals: any[] = [];
+  const retiredManagers: any[] = [];
+  if (scenario.startsWith('shadow-held-')) {
+    // Real EED preparation, permit and Manager.stop. A legacy PLO6 roster
+    // with eight seats reaches the deployed deck-capacity backstop (max seven).
+    // The separate unknown-begin case uses two ordinary NLH seats. The native
+    // branch waits before constructing a controller or initializing any bank.
+    // Only the owned fake clock advances that existing 30s sleep.
+    const oldManager: any = actor.bindTournamentDataAuthorityMethods(
+      { tournamentId: id(1), leaseGeneration: id(2) },
+      new TournamentManager(id(1), server, id(2), performance.now() + 600000)
+    );
+    const shadow: any = oldManager.createManagedTableEngine(id(90));
+    held.push(shadow);
+    objects.push(shadow);
+    retiredManagers.push(oldManager);
+    const completed = scenario === 'shadow-held-zero-bank' ? 0 : 1000042;
+    const next = 1000043;
+    shadow.handCount = completed;
+    shadow.tableInfo = {
+      id: id(90),
+      tournament_id: id(1),
+      small_blind: 10,
+      big_blind: 20,
+      ante: 0,
+      game_variant: scenario === 'shadow-held-unknown' ? 'nlh' : 'plo6',
+    };
+    shadow.seatedPlayers = Array.from(
+      { length: scenario === 'shadow-held-unknown' ? 2 : 8 },
+      (_, i) => ({
+        ...chairs(80 + i)[0],
+        seat: i + 1,
+        seat_number: i + 1,
+      })
+    );
+    let releaseBegin!: () => void;
+    const beginGate = new Promise<void>((resolve) => {
+      releaseBegin = resolve;
+    });
+    const permit = new F06HandPermit(
+      {
+        tournament_id: id(1),
+        table_id: id(90),
+        hand_number: String(next),
+        permit_id: id(800),
+        lease_generation: id(2),
+        lifecycle: '1',
+        custody_id: id(801),
+      },
+      async (name) => {
+        expect(name).toBe('fn_f06_begin_hand');
+        if (scenario === 'shadow-held-unknown') await beginGate;
+        return {
+          data: { ok: true, state: 'reserved', ...permit.binding, generation: id(2) },
+          error: null,
+        };
+      },
+      () => oldManager.running && shadow.running && shadow.isCurrentEngine()
+    );
+    shadow.installF06Allocator(
+      'owned-preparation',
+      async () => next,
+      () => shadow.isCurrentEngine(),
+      '1'
+    );
+    shadow.installF06HandAdmission(() => permit);
+    expect(shadow.claimProcessOwnership()).toBe(true);
+    oldManager.running = true;
+    shadow.running = true;
+    oldManager.tableEngines.set(shadow.tableId, shadow);
+    let preparationError: string | null = null;
+    freezeState.setMaintenanceFrozen(false);
+    vi.useFakeTimers();
+    try {
+      // The real loop owns and swallows this preparation error on its stopped
+      // exit. Preserve that promise ownership without running another hand.
+      shadow.dealingLoopPromise = shadow.dealHand(shadow.seatedPlayers).catch((error: Error) => {
+        preparationError = error.message;
+      });
+      await vi.waitFor(() =>
+        expect(permit.recoveryState()).toBe(
+          scenario === 'shadow-held-unknown' ? 'unknown' : 'reserved'
+        )
+      );
+      expect(shadow.handController).toBeNull();
+      expect(shadow.timeBankEngine.getBanksForTable(shadow.tableId)).toEqual([]);
+      const stop = oldManager.stop();
+      expect(shadow.running).toBe(false);
+      releaseBegin();
+      await vi.advanceTimersByTimeAsync(30000);
+      await stop;
+    } finally {
+      vi.useRealTimers();
+      freezeState.setMaintenanceFrozen(true);
+    }
+    expect(permit.recoveryState()).toBe(
+      scenario === 'shadow-held-unknown' ? 'unknown' : 'reserved'
+    );
+    expect(shadow.f06CurrentPermit).toBe(permit);
+    expect(shadow.handCount).toBe(completed);
+    expect(shadow.f06HandPreparation).toBeNull();
+    expect(shadow.terminalTeardownComplete).toBe(true);
+    expect(shadow.hasReleasedProcessOwnership()).toBe(true);
+    expect(shadow.hasUnretiredStoppedTimeBankCustody()).toBe(false);
+    expect(oldManager.tableEngines.size).toBe(0);
+    expect(preparationError).toBe(
+      scenario === 'shadow-held-unknown'
+        ? 'f06_owner_changed'
+        : 'f06_prepared_cancellation_unproven'
+    );
+    if (completed)
+      wire.committed.set(shadow.tableId, {
+        hand_id: id(802),
+        post_commit_completed_at: new Date().toISOString(),
+        post_commit_result: { ok: true },
+      });
+  }
   for (const n of [3, 4]) {
     const seats = chairs(n),
       tableId = id(n),
@@ -390,6 +519,7 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     dataActorContext: actor,
     client,
     privateContinuation,
+    permit: { F06HandPermit },
     crypto,
     fs: {
       readFileSync: (path: string) => {
@@ -400,7 +530,7 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
       },
     },
   };
-  const managers: any[] = [m];
+  const managers: any[] = [m, ...retiredManagers];
   if (scenario.startsWith('detached-')) {
     const detached: any = actor.bindTournamentDataAuthorityMethods(
       { tournamentId: id(60), leaseGeneration: id(61) },
@@ -414,12 +544,22 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     if (scenario === 'detached-job-during-await')
       wire.onAttest = () => detached.lifecycleJobs.add(Promise.resolve());
   }
-  if (scenario.startsWith('shadow-')) {
+  if (scenario.startsWith('shadow-') && !scenario.startsWith('shadow-held-')) {
     const shadow: any = m.createManagedTableEngine(originals[0].e.tableId);
     held.push(shadow);
     await shadow.stop();
     shadow.handCount = 42;
     shadow.pendingOriginalContinuation = originals[0].original;
+    if (scenario === 'shadow-covered-permit')
+      shadow.f06CurrentPermit = new F06HandPermit(
+        originals[0].original.original,
+        async () => {
+          throw Error('Covered shadow must never write');
+        },
+        () => false,
+        () => false,
+        id(2)
+      );
     const lane: any = new HandContinuationLane(
       3,
       () => originals[0].original.batch.controller,
@@ -517,7 +657,17 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     releaseFrontLease(false);
     await worker.stop();
   }
-  if (!['positive', 'detached-drained'].includes(scenario)) {
+  if (scenario.startsWith('shadow-held-'))
+    expect(result, JSON.stringify(result)).toMatchObject({
+      ok: false,
+      readyForRestart: false,
+      stage: 'preflight',
+      reason: 'retained_held_permit_unproven',
+      attemptedTables: 0,
+      completedCalls: 0,
+      verifiedTables: 0,
+    });
+  if (!['positive', 'detached-drained', 'shadow-covered-permit'].includes(scenario)) {
     expect(result, scenario).toMatchObject({
       ok: false,
       attemptedTables: 0,
@@ -527,15 +677,17 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     expect(cash.terminal).toBe(false);
     if (scenario.startsWith('lightning-')) return;
     expect(result.reason).toBe(
-      scenario === 'shadow-newer-retained-sequence'
-        ? 'retained_shadow_disposition_unproven'
-        : scenario === 'shadow-swapped-release-method'
-          ? 'retained_method_owner_unproven'
-          : scenario.startsWith('shadow-')
-            ? 'retained_shadow_work_changed'
-            : scenario === 'missing-manager-census'
-              ? 'retained_manager_shape_unproven'
-              : 'retained_detached_manager_work_unproven'
+      scenario.startsWith('shadow-held-')
+        ? 'retained_held_permit_unproven'
+        : scenario === 'shadow-newer-retained-sequence'
+          ? 'retained_shadow_disposition_unproven'
+          : scenario === 'shadow-swapped-release-method'
+            ? 'retained_method_owner_unproven'
+            : scenario.startsWith('shadow-')
+              ? 'retained_shadow_work_changed'
+              : scenario === 'missing-manager-census'
+                ? 'retained_manager_shape_unproven'
+                : 'retained_detached_manager_work_unproven'
     );
     return;
   }

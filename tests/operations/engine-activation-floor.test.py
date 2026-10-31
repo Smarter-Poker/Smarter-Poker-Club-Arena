@@ -15,6 +15,10 @@ BASH = '/opt/homebrew/bin/bash' if Path('/opt/homebrew/bin/bash').exists() else 
 HELPER = 'server/scripts/engine-release-activation-floor.py'
 MANIFEST = 'server/release/activation-floor.json'
 DAILY = {'schema': 'engine-release-activation-floor/v1', 'preparationAt': '2026-10-30T08:30:00Z', 'activationAt': '2026-10-30T09:00:00Z', 'expiresAt': '2026-10-30T09:05:00Z', 'timeZone': 'America/Chicago'}
+# DAILY has expired (2026-10-30 04:00 Chicago is history). Since 2026-10-30 an
+# expired floor reads as NO floor on every fresh admission, so tests that drive
+# the real clock through a floor that must still hold use this future one.
+FUTURE_DAILY = {'schema': 'engine-release-activation-floor/v1', 'preparationAt': '2027-07-15T08:30:00Z', 'activationAt': '2027-07-15T09:00:00Z', 'expiresAt': '2027-07-15T09:05:00Z', 'timeZone': 'America/Chicago'}
 INTAKE = 'server/scripts/engine-release-intake.sh'
 spec = importlib.util.spec_from_file_location('floor', ROOT / HELPER)
 floor = importlib.util.module_from_spec(spec)
@@ -56,6 +60,11 @@ class ActivationFloor(unittest.TestCase):
         sha = self.git('rev-parse', 'HEAD')
         self.git('update-ref', 'refs/remotes/origin/main', sha)
         return sha
+
+    def future_record(self):
+        (self.repo / MANIFEST).write_text(json.dumps(FUTURE_DAILY))
+        self.sha = self.commit()
+        return floor.policy(str(self.repo), self.sha, self.sha)
 
     def owner_record(self):
         source = json.loads((ROOT / MANIFEST).read_text())
@@ -378,6 +387,8 @@ echo CHECKPOINT_MUST_NOT_RUN
         marker = self.repo / 'installed'
         prefix = 'set -euo pipefail\ndie() { echo "$*" >&2; exit 1; }\n'
         run_id = '123-1'
+        expired_sha = self.sha
+        self.future_record()
         request = [self.sha, self.sha, 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/123', 'fixture', str(int(time.time()) + 86400)]
         import shlex
         prefix += 'REQUEST_LINES=(' + ' '.join(shlex.quote(v) for v in request) + ')\n'
@@ -385,12 +396,22 @@ echo CHECKPOINT_MUST_NOT_RUN
                'GITHUB_RUN_ID': '123', 'RUN_ID': run_id, 'FIXTURE_MARKER': str(marker),
                'RECOVERY_URGENT': '1', 'RECOVERY_OWNER_WINDOW': 'active',
                'RECOVERY_QUARANTINED_MANAGERS': '100', 'HEALTH_LIVENESS': 'dead'}
-        # This test remains deterministic after the one-time date: an expired
-        # request must also refuse before the very same installer boundary.
+        # A floor whose boundary has not come refuses before the very same
+        # installer boundary, whatever emergency signals say.
         result = subprocess.run([BASH, '-c', prefix + fragment], env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('activation floor refused', result.stderr)
         self.assertFalse(marker.exists())
+        # An EXPIRED floor is no floor (2026-10-30): the same intake admits the
+        # target to the routine route, says so, and the installer runs.
+        expired_request = [expired_sha, expired_sha, request[2], 'fixture', request[4]]
+        expired_prefix = prefix.replace('REQUEST_LINES=(' + ' '.join(shlex.quote(v) for v in request) + ')',
+                                        'REQUEST_LINES=(' + ' '.join(shlex.quote(v) for v in expired_request) + ')')
+        result = subprocess.run([BASH, '-c', expired_prefix + fragment], env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('routine daily maintenance route applies', result.stderr)
+        self.assertEqual(marker.read_text(), 'installed')
+        marker.unlink()
         # Regression control executes exactly the former pre-install fragment.
         guard_start = fragment.index('# The immutable target owns')
         guard_end = fragment.index('\nset +e', guard_start)
@@ -485,6 +506,59 @@ echo CHECKPOINT_MUST_NOT_RUN
         self.assertIn('CERTIFICATE_DEADLINE="$ACTIVATION_FLOOR_END_EPOCH"', source)
 
 
+    def test_expired_floor_reads_as_no_floor_on_every_fresh_read(self):
+        # Pure: a live record is untouched; at and after expiry it is None and
+        # says which route applies. In-flight owner reads never come here.
+        import io
+        from contextlib import redirect_stderr
+        r = self.record
+        self.assertIs(floor.effective(r, r['expiresEpoch'] - 1), r)
+        self.assertIs(floor.effective(None, r['expiresEpoch']), None)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertIsNone(floor.effective(r, r['expiresEpoch']))
+            self.assertIsNone(floor.effective(r, r['expiresEpoch'] + 86400 * 365))
+        self.assertIn('routine daily maintenance route applies', err.getvalue())
+        self.assertIn('engine-release-activation-floor/v1 (daily)', err.getvalue())
+        # An owner window names itself in the same line.
+        o = self.owner_record()
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertIsNone(floor.effective(o, o['expiresEpoch']))
+        self.assertIn('(' + o['ownerWindowId'] + ')', err.getvalue())
+        self.assertIs(floor.effective(o, o['expiresEpoch'] - 1), o)
+        # The CLI, on the real clock, over the expired fixture floor: every
+        # fresh admission mode is the routine route, and no entry is created.
+        self.sha = self.git('rev-parse', 'HEAD~1')
+        self.git('update-ref', 'refs/remotes/origin/main', self.git('rev-parse', 'HEAD'))
+        requests = self.repo / 'requests'
+        requests.mkdir()
+        deadline = str(int(time.time()) + 7200)
+        for mode in ('prepare', 'admit', 'publish', 'wait'):
+            with self.subTest(mode=mode):
+                result = subprocess.run(['python3', str(self.repo / HELPER), mode, '--repo', str(self.repo),
+                                         '--target', self.sha, '--control', self.sha, '--deadline', deadline],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {'schema': 'legacy-no-activation-floor'})
+                self.assertIn('routine daily maintenance route applies', result.stderr)
+        for mode in ('entry-check', 'disposition', 'entry', 'announcement-entry'):
+            with self.subTest(mode=mode):
+                result = subprocess.run(['python3', str(self.repo / HELPER), mode, '--repo', str(self.repo),
+                                         '--target', self.sha, '--control', self.sha, '--deadline', deadline,
+                                         '--request-root', str(requests), '--run-id', '123-1'],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), 'legacy')
+        self.assertFalse((requests / '123-1.activation-entry').exists())
+        # A manifest that is malformed is still a refusal, never a fallback.
+        (self.repo / MANIFEST).write_text(json.dumps({**DAILY, 'schema': 'engine-release-activation-floor/v9'}))
+        bad = self.commit()
+        result = subprocess.run(['python3', str(self.repo / HELPER), 'admit', '--repo', str(self.repo),
+                                 '--target', bad, '--control', bad, '--deadline', deadline], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('activation floor refused', result.stderr)
+
     def test_runtime_entry_is_durable_and_expiry_never_creates_it(self):
         root = self.repo / 'requests'
         root.mkdir()
@@ -531,10 +605,23 @@ docker() { echo docker >> "$FIXTURE_EVENTS"; }
         env = {**os.environ, 'REQUEST_ROOT': str(root), 'RUN_ID': '123-1', 'CONTROL_DIR': str(control),
                'REPO_DIR': str(self.repo), 'ENGINE_LOCK': str(self.repo / 'lock'), 'FIXTURE_EVENTS': str(events),
                'RECOVERY_DEADLINE_EPOCH': '9999999999', 'CONTAINER': 'fixture', 'PUBLIC_URL': 'fixture'}
+        # The fixture floor has expired, so a fresh request on it is a routine
+        # (legacy) request and recovery restores the sealed runtime as before
+        # any floor existed - it is never refused and never 'never-entered'.
+        result = subprocess.run([BASH, '-c', prefix + fragment], env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('routine daily maintenance route applies', result.stderr)
+        self.assertIn('runtime', events.read_text())
+        events.unlink()
+        # A floor that still holds: a request that never entered has no
+        # authority to restore the live predecessor.
+        live = self.future_record()
+        (control / 'control-sha').write_text(self.sha + '\n')
+        request.write_text('\n'.join([self.sha, 'url', 'actor', str(control), self.sha, str(live['expiresEpoch'] + 100)]) + '\n')
         result = subprocess.run([BASH, '-c', prefix + fragment], env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(events.exists())
-        floor.entry_state(self.record, str(root), '123-1', True, self.record['activationEpoch'], self.record['expiresEpoch'] + 100)
+        floor.entry_state(live, str(root), '123-1', True, live['activationEpoch'], live['expiresEpoch'] + 100)
         self.git('update-ref', '-d', 'refs/remotes/origin/main')
         result = subprocess.run([BASH, '-c', prefix + fragment], env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

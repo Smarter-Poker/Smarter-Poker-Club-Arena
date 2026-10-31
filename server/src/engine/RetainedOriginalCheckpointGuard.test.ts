@@ -55,6 +55,15 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
         currentActor = previous;
       }
     };
+  class F06HandPermit {
+    constructor(
+      public binding: any,
+      public phase = 'attempted'
+    ) {}
+    recoveryState() {
+      return this.phase;
+    }
+  }
   class MaintenanceBreak {}
   class GameServer {}
   const frozen = () => true;
@@ -213,6 +222,7 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
     async stop(this: any) {
       events.push('stop');
       if (controls.partialStop) throw new Error('stop failed');
+      this.f06HandPreparation = null;
       this.terminal = true;
       this.running = false;
       this.terminalTeardownComplete = true;
@@ -278,6 +288,8 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
     handController: cash ? null : new HandController(),
     pendingOriginalContinuation: original,
     handContinuation: null,
+    f06CurrentPermit: null,
+    f06HandPreparation: null,
     seatedPlayers: [
       {
         user_id: player,
@@ -445,6 +457,7 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
     },
     freezeState: { isMaintenanceFrozen: frozen },
     privateContinuation: { encodePrivateHandContinuation: encode },
+    permit: { F06HandPermit },
     client: {
       supabase: {
         async rpc(name: string, args: any) {
@@ -548,6 +561,7 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
     return detached;
   };
   return {
+    permit: (binding: any, phase = 'attempted') => new F06HandPermit(binding, phase),
     addDetachedManager,
     lightningFormationGate,
     lightningWorker,
@@ -583,6 +597,61 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
 }
 
 describe('serialized retained-original guard owner contract', () => {
+  it.each(['reserved', 'unknown', 'terminated', 'attempted'])(
+    'refuses an idle next permit in phase %s before any stop',
+    async (phase) => {
+      const f = fixture({ cash: true, banks: false });
+      f.engine.f06CurrentPermit = f.permit({ table_id: f.table, hand_number: '124' }, phase);
+      expect(await f.run()).toMatchObject({
+        ok: false,
+        reason: 'retained_held_permit_unproven',
+        attemptedTables: 0,
+        readyForRestart: false,
+      });
+      expect(f.events).not.toContain('stop');
+    }
+  );
+  it.each(['object', 'binding', 'phase', 'preparation'])(
+    'rechecks held permit %s during attestation before stop',
+    async (change) => {
+      const f = fixture();
+      f.engine.f06CurrentPermit = f.permit(f.original.original);
+      f.controls.onAttest = () => {
+        if (change === 'object') f.engine.f06CurrentPermit = f.permit(f.original.original);
+        if (change === 'binding')
+          f.engine.f06CurrentPermit.binding = { ...f.original.original, hand_number: '124' };
+        if (change === 'phase') f.engine.f06CurrentPermit.phase = 'unknown';
+        if (change === 'preparation') f.engine.f06HandPreparation = {};
+      };
+      expect(await f.run()).toMatchObject({
+        ok: false,
+        reason: 'retained_held_permit_changed',
+        attemptedTables: 0,
+      });
+      expect(f.events).not.toContain('stop');
+    }
+  );
+  it.each(['reserved', 'attempted'])(
+    'preserves a positively attested original and preparation in phase %s',
+    async (phase) => {
+      const f = fixture();
+      f.engine.f06CurrentPermit = f.permit(f.original.original, phase);
+      f.engine.f06HandPreparation = {};
+      expect(await f.run()).toMatchObject({ ok: true, verifiedTables: 1 });
+      expect(f.engine.f06HandPreparation).toBeNull();
+    }
+  );
+  it('refuses missing permit owner schema rather than treating it as absence', async () => {
+    const f = fixture();
+    f.engine.f06CurrentPermit = undefined;
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'retained_held_permit_unproven',
+      attemptedTables: 0,
+    });
+    expect(f.events).not.toContain('stop');
+  });
+
   it('accepts the actual93051 string-sequence response and stops only after native attestation', async () => {
     const f = fixture();
     const result = await f.run();

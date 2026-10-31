@@ -6,6 +6,8 @@ This command supplies only the transaction's existing terminal INT boundary.
 It has no image, seal-write, restart, freeze-write or alternate publisher path.
 """
 import base64
+import contextlib
+import io
 import datetime
 import fcntl
 import errno
@@ -45,7 +47,7 @@ def require(condition):
 def selection(value):
     fields = {'runKey', 'releaseSha', 'controlSha', 'desiredSha', 'instanceId'}
     require(isinstance(value, dict) and set(value) in (fields, fields | {'mode'}))
-    require('mode' not in value or value['mode'] == 'cancel_expired_announcement')
+    require('mode' not in value or value['mode'] in {'cancel_expired_announcement', 'observe_expired_announcement'})
     require(all(isinstance(v, str) for v in value.values()))
     require(RUN.fullmatch(value['runKey']) is not None)
     require(all(SHA.fullmatch(value[k]) for k in ('releaseSha', 'controlSha', 'desiredSha')))
@@ -500,7 +502,27 @@ def own_thaw(stamp):
     return prove_thaw(rows, active, stamp, round(time.time() * 1000))
 
 
-def announcement_evidence(request, after_stop=False):
+def observe_seal_state(generation):
+    """Reuse pinned validation without SealLock, directory creation or writes."""
+    path = ROOT / 'engine-release-seal.json'
+    before = regular(path, 0o600)
+    spec = importlib.util.spec_from_file_location('qualified_withdrawal_seal_observer', generation / 'engine-release-seal.py')
+    helper = importlib.util.module_from_spec(spec)
+    original_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(helper)
+        helper.STATE_FILE = path
+        with contextlib.redirect_stderr(io.StringIO()):
+            try: value = helper.load_state()
+            except SystemExit: raise ValueError('Pinned seal read refused') from None
+    finally:
+        sys.dont_write_bytecode = original_bytecode
+    require(regular(path, 0o600) == before)
+    return value
+
+
+def announcement_evidence(request, after_stop=False, read_only=False):
     require(request['controlSha'] == request['releaseSha'] == CANCEL_CONTROL)
     key = request['runKey']
     generation = PARENT / 'engine-control-generations' / CANCEL_CONTROL
@@ -553,8 +575,12 @@ def announcement_evidence(request, after_stop=False):
     released = helper.own_record(released_path, key)
     require(released is not None and released['phase'] == 'released')
     seal = generation / 'engine-release-seal.py'
-    require(command([str(seal), 'pending-owner']) == 'none')
-    require(command([str(seal), 'get', 'desired-sha']) == request['desiredSha'])
+    if read_only:
+        state = observe_seal_state(generation)
+        require(not isinstance(state.get('pending'), dict) and state['desired']['sha'] == request['desiredSha'])
+    else:
+        require(command([str(seal), 'pending-owner']) == 'none')
+        require(command([str(seal), 'get', 'desired-sha']) == request['desiredSha'])
     pin = ROOT / 'engine-release-generation-pins' / (key + '.generation')
     require(regular(pin, 0o600) == str(generation) + '\n' + CANCEL_CONTROL + '\n')
     originals[str(pin.relative_to(ROOT))] = digest(regular(pin, 0o600).encode())
@@ -607,6 +633,49 @@ def cancellation_child_class(argv, key, evidence):
     return 'unproven'
 
 
+def collect_cancellation_admission(request, units, container, read_only=False):
+    evidence_read = lambda: announcement_evidence(request, read_only=True) if read_only else announcement_evidence(request)
+    key = request['runKey']
+    evidence = evidence_read()
+    stop_contract = loaded_stop_contract(units[0], key)
+    state = unit_snapshot(units[0])
+    require(state['ActiveState'] in {'active', 'activating'} and INVOCATION_PATTERN(state['InvocationID']))
+    if state['MainPID'] == '0':
+        empty_retry_admission(units[0], state, key, evidence)
+        unit_cgroups = {}
+        for service in units[:2]:
+            context = unit_snapshot(service, service_context=True)
+            require(context['MainPID'] == '0' and context['ControlPID'] == '0')
+            unit_cgroups[service] = configured_service_cgroup(service, context)
+        for unit in units[1:]:
+            row = prove_unit_empty(unit)
+            require(row['ActiveState'] in {'inactive', 'failed'})
+        require(evidence_read() == evidence and container_identity(request) == container)
+        health_pair(request); empty_retry_admission(units[0], state, key, evidence)
+        intent = {'schema': EMPTY_CANCEL_SCHEMA, 'admission': 'positive-empty-auto-restart',
+                  'request': request, 'container': container, 'evidence': evidence,
+                  'originalUnit': state, 'originalProcess': None, 'originalChild': None, 'stopContract': stop_contract, 'unitCgroups': unit_cgroups}
+    else:
+        parent = process(int(state['MainPID']))
+        require(bash_command(parent['argv'], [str(PARENT / 'engine-release-unit-wrapper-v1.sh'), 'start', key]))
+        require(state['ControlGroup'].startswith('/system.slice/') and state['ControlGroup'].endswith('/' + units[0]))
+        require((PROC / str(parent['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
+        children = (PROC / str(parent['pid']) / 'task' / str(parent['pid']) / 'children').read_text().split()
+        candidates = [process(int(pid)) for pid in children]
+        matches = [row for row in candidates if cancellation_child_class(row['argv'], key, evidence) != 'unproven']
+        require(len(matches) == 1 and matches[0]['parent'] == parent['pid'])
+        require((PROC / str(matches[0]['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
+        engine_pid = command(['docker', 'container', 'inspect', '--format', '{{.State.Pid}}', 'club-arena-engine'])
+        require(engine_pid.isdigit() and int(engine_pid) > 1)
+        require(not (PROC / engine_pid / 'cgroup').read_text().strip().startswith('0::' + state['ControlGroup']))
+        require(all((row['MainPID'] == '0' or (row.get('unitType') == 'path' and row['MainPID'] is None)) and row['ActiveState'] in {'inactive', 'failed'} for row in [unit_snapshot(unit) for unit in units[1:]]))
+        require(evidence_read() == evidence and container_identity(request) == container)
+        health_pair(request); require(unit_snapshot(units[0]) == state and process(parent['pid']) == parent)
+        intent = {'schema': CANCEL_SCHEMA, 'request': request, 'container': container, 'evidence': evidence,
+                  'originalUnit': state, 'originalProcess': parent, 'originalChild': matches[0], 'stopContract': stop_contract}
+    return intent
+
+
 def cancel_announced(request):
     require(os.getuid() == 0)
     key = request['runKey']; units = cancel_units(key)
@@ -633,43 +702,7 @@ def cancel_announced(request):
             intent = json.loads(regular(intent_path, 0o600))
             require(intent['request'] == request and intent['container'] == container)
         else:
-            evidence = announcement_evidence(request)
-            stop_contract = loaded_stop_contract(units[0], key)
-            state = unit_snapshot(units[0])
-            require(state['ActiveState'] in {'active', 'activating'} and INVOCATION_PATTERN(state['InvocationID']))
-            if state['MainPID'] == '0':
-                empty_retry_admission(units[0], state, key, evidence)
-                unit_cgroups = {}
-                for service in units[:2]:
-                    context = unit_snapshot(service, service_context=True)
-                    require(context['MainPID'] == '0' and context['ControlPID'] == '0')
-                    unit_cgroups[service] = configured_service_cgroup(service, context)
-                for unit in units[1:]:
-                    row = prove_unit_empty(unit)
-                    require(row['ActiveState'] in {'inactive', 'failed'})
-                require(announcement_evidence(request) == evidence and container_identity(request) == container)
-                health_pair(request); empty_retry_admission(units[0], state, key, evidence)
-                intent = {'schema': EMPTY_CANCEL_SCHEMA, 'admission': 'positive-empty-auto-restart',
-                          'request': request, 'container': container, 'evidence': evidence,
-                          'originalUnit': state, 'originalProcess': None, 'originalChild': None, 'stopContract': stop_contract, 'unitCgroups': unit_cgroups}
-            else:
-                parent = process(int(state['MainPID']))
-                require(bash_command(parent['argv'], [str(PARENT / 'engine-release-unit-wrapper-v1.sh'), 'start', key]))
-                require(state['ControlGroup'].startswith('/system.slice/') and state['ControlGroup'].endswith('/' + units[0]))
-                require((PROC / str(parent['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
-                children = (PROC / str(parent['pid']) / 'task' / str(parent['pid']) / 'children').read_text().split()
-                candidates = [process(int(pid)) for pid in children]
-                matches = [row for row in candidates if cancellation_child_class(row['argv'], key, evidence) != 'unproven']
-                require(len(matches) == 1 and matches[0]['parent'] == parent['pid'])
-                require((PROC / str(matches[0]['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
-                engine_pid = command(['docker', 'container', 'inspect', '--format', '{{.State.Pid}}', 'club-arena-engine'])
-                require(engine_pid.isdigit() and int(engine_pid) > 1)
-                require(not (PROC / engine_pid / 'cgroup').read_text().strip().startswith('0::' + state['ControlGroup']))
-                require(all((row['MainPID'] == '0' or (row.get('unitType') == 'path' and row['MainPID'] is None)) and row['ActiveState'] in {'inactive', 'failed'} for row in [unit_snapshot(unit) for unit in units[1:]]))
-                require(announcement_evidence(request) == evidence and container_identity(request) == container)
-                health_pair(request); require(unit_snapshot(units[0]) == state and process(parent['pid']) == parent)
-                intent = {'schema': CANCEL_SCHEMA, 'request': request, 'container': container, 'evidence': evidence,
-                          'originalUnit': state, 'originalProcess': parent, 'originalChild': matches[0], 'stopContract': stop_contract}
+            intent = collect_cancellation_admission(request, units, container)
             save_once(intent_path, intent)
         allowed = {'engine-release-requests/' + key + '.' + suffix for suffix in ('request', 'intent', 'awaiting-certificate')}
         allowed |= {'engine-release-generation-pins/' + key + '.generation', 'engine-image-leases/' + key + '.lease'}
@@ -825,7 +858,66 @@ def INVOCATION_PATTERN(value):
 
 
 
+DIAGNOSTIC_SCHEMA = 'withdrawal-predicate-observation/v1'
+DIAGNOSTIC_STAGES = {'selection', 'health_pair', 'container_identity', 'announcement_evidence', 'source_hash',
+    'regular', 'observe_seal_state', 'own_thaw', 'prove_thaw', 'loaded_stop_contract', 'unit_snapshot', 'empty_retry_admission',
+    'configured_service_cgroup', 'prove_unit_empty', 'prove_unloaded_unit_empty', 'manager_unit_absent',
+    'own_wants_edge', 'collect_cancellation_admission', 'cancel_announced', 'cancellation_directory', 'process',
+    'quiet_units', 'masked', 'remote', 'main'}
+DIAGNOSTIC_CODES = {'predicate_refused', 'read_unavailable', 'command_unproved', 'deadline', 'unknown'}
+
+
+def diagnostic_error(error):
+    stage, line = 'remote', None
+    frame = error.__traceback__
+    while frame:
+        if frame.tb_frame.f_code.co_filename == __file__ and frame.tb_frame.f_code.co_name in DIAGNOSTIC_STAGES:
+            stage, line = frame.tb_frame.f_code.co_name, frame.tb_lineno
+        frame = frame.tb_next
+    code = ('deadline' if isinstance(error, subprocess.TimeoutExpired) else
+            'command_unproved' if isinstance(error, subprocess.SubprocessError) else
+            'read_unavailable' if isinstance(error, OSError) else
+            'predicate_refused' if isinstance(error, (ValueError, KeyError, TypeError)) else 'unknown')
+    return {'stage': stage, 'line': line, 'code': code}
+
+
+def validate_diagnostic(value, request):
+    require(isinstance(value, dict) and set(value) == {'schema','request','readOnly','result','retryAllowed','failure'})
+    require(value['schema'] == DIAGNOSTIC_SCHEMA and value['request'] == request and value['retryAllowed'] is False)
+    require(value['readOnly'] is (request.get('mode') == 'observe_expired_announcement'))
+    require(value['result'] in {'predicates_passed_at_read','unproved'})
+    error = value['failure']
+    if value['result'] == 'predicates_passed_at_read': require(value['readOnly'] is True and error is None)
+    else:
+        require(isinstance(error, dict) and set(error) == {'stage','line','code'}
+                and error['stage'] in DIAGNOSTIC_STAGES and error['code'] in DIAGNOSTIC_CODES
+                and (error['line'] is None or type(error['line']) is int and 1 <= error['line'] <= 10000))
+    return value
+
+
+def observe_cancellation(request):
+    answer = {'schema':DIAGNOSTIC_SCHEMA, 'request':request, 'readOnly':True,
+              'result':'unproved', 'retryAllowed':False, 'failure':None}
+    original_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        require(os.getuid() == 0)
+        canonical = request | {'mode':'cancel_expired_announcement'}
+        units = cancel_units(request['runKey'])
+        for unit in units: own_wants_edge(unit)
+        health_pair(canonical)
+        container = container_identity(canonical)
+        collect_cancellation_admission(canonical, units, container, read_only=True)
+        answer['result'] = 'predicates_passed_at_read'
+    except Exception as error:
+        answer['failure'] = diagnostic_error(error)
+    finally:
+        sys.dont_write_bytecode = original_bytecode
+    return validate_diagnostic(answer, request)
+
+
 def remote(request):
+    if request.get('mode') == 'observe_expired_announcement': return observe_cancellation(request)
     if request.get('mode') == 'cancel_expired_announcement':
         return cancel_announced(request)
     require(os.getuid() == 0 and hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'))
@@ -894,7 +986,13 @@ def remote(request):
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
         request = selection(json.loads(base64.b64decode(sys.argv[2], validate=True)))
-        print(json.dumps(remote(request)))
+        try: answer = remote(request)
+        except Exception as error:
+            answer = {'schema':DIAGNOSTIC_SCHEMA, 'request':request, 'readOnly':False,
+                      'result':'unproved', 'retryAllowed':False, 'failure':diagnostic_error(error)}
+            print(json.dumps(validate_diagnostic(answer, request)))
+            raise SystemExit(1)
+        print(json.dumps(answer))
         return
     require(len(sys.argv) == 1 and os.environ.get('GITHUB_EVENT_NAME') == 'repository_dispatch')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
@@ -916,8 +1014,16 @@ def main():
                 '-o', 'UserKnownHostsFile=' + str(directory / 'known_hosts'), '-o', 'ConnectTimeout=10',
                 'root@' + host, "python3 - --remote '" + encoded + "'"]
         reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=150)
-        require(reply.returncode == 0 and len(reply.stdout) <= 4096)
+        require(len(reply.stdout) <= 4096)
         answer = json.loads(reply.stdout)
+        if isinstance(answer, dict) and answer.get('schema') == DIAGNOSTIC_SCHEMA:
+            validate_diagnostic(answer, request)
+            destination = Path('artifacts/engine-withdrawal'); destination.mkdir(parents=True, exist_ok=True)
+            (destination / 'diagnostic.json').write_text(json.dumps(answer, indent=2)+'\n')
+            print(json.dumps(answer))
+            require(reply.returncode == 0 and request.get('mode') == 'observe_expired_announcement')
+            return
+        require(reply.returncode == 0)
         if request.get('mode') == 'cancel_expired_announcement':
             validate_cancellation_reply(answer, request)
             destination = Path('artifacts/engine-withdrawal')

@@ -133,7 +133,7 @@ def selection(value):
             raise ValueError('Exact current serving identity required')
         return dict(value)
     if (not isinstance(value, dict) or set(value) not in ({'runKey', 'releaseSha'}, {'runKey', 'releaseSha', 'mode'})
-            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector', 'main_inspector_retirement'})):
+            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector', 'main_inspector_retirement', 'cancellation_records'})):
         raise ValueError('Exact existing release identity required')
     if not isinstance(value['runKey'], str) or not RUN.fullmatch(value['runKey']):
         raise ValueError('Invalid run key')
@@ -157,7 +157,7 @@ def unique_object(pairs):
     return result
 
 
-def read_json(directory_fd, name, private=False):
+def read_json(directory_fd, name, private=False, with_bytes=False):
     """Fixed relative file, no links, bounded bytes, unchanged inode/time/size."""
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
     try:
@@ -178,7 +178,7 @@ def read_json(directory_fd, name, private=False):
         value = json.loads(raw, object_pairs_hook=unique_object)
         if not isinstance(value, dict):
             raise ValueError('Persisted evidence is not an object')
-        return value
+        return (value, raw) if with_bytes else value
     finally:
         os.close(fd)
 
@@ -1848,6 +1848,106 @@ def validate_retirement_records(value, request):
     return value
 
 
+CANCELLATION_SCHEMA = 'existing-release-cancellation-records/v1'
+CANCELLATION_RECORD_SCHEMAS = {'expired-announcement-cancellation/v1', 'expired-announcement-cancellation/empty-retry-v1'}
+CANCELLATION_LIMITATION = 'Historical durable files only; no current admission, quiescence, retry or mutation authority.'
+
+
+def cancellation_records(request, root_fd):
+    if request['runKey'] != '41177442979-1' or request['releaseSha'] != 'bd11ad35ca27843fd2f4910e5a8fc6a76d8c9d4e':
+        raise ValueError('Exact original cancellation reader required')
+    deadline = time.monotonic() + 3
+    def snapshot():
+        result = {}
+        try:
+            directory = os.open('engine-release-cancellations', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=root_fd)
+        except FileNotFoundError:
+            return {name:('absent_at_read',None) for name in ('intent','stop-issued','quiescent','receipt')}
+        except OSError:
+            return {name:('unknown',None) for name in ('intent','stop-issued','quiescent','receipt')}
+        try:
+            for name in ('intent','stop-issued','quiescent','receipt'):
+                if time.monotonic() >= deadline: raise ValueError('Cancellation read deadline')
+                try:
+                    value, raw = read_json(directory,request['runKey']+'.'+name+'.json',private=True,with_bytes=True)
+                    canonical = (json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()
+                    if raw != canonical: raise ValueError('Noncanonical cancellation record')
+                    result[name] = ('present_at_read', value)
+                except FileNotFoundError: result[name] = ('absent_at_read',None)
+                except (OSError,ValueError): result[name] = ('unknown',None)
+        finally: os.close(directory)
+        return result
+    before = snapshot()
+    answer = {'schema':CANCELLATION_SCHEMA,'readOnly':True,**request,'records':{},'bindingStatus':'unknown',
+              'stopDisposition':None,'receiptResult':None,'retryAllowed':False,'limitation':CANCELLATION_LIMITATION}
+    for name,(status,value) in before.items():
+        answer['records'][name] = {'status':status,'sha256':None}
+        if status == 'present_at_read':
+            raw = json.dumps(value,sort_keys=True,separators=(',',':'))+'\n'
+            answer['records'][name]['sha256'] = hashlib.sha256(raw.encode()).hexdigest()
+    try:
+        intent = before['intent'][1]
+        if not isinstance(intent,dict) or intent.get('schema') not in CANCELLATION_RECORD_SCHEMAS: raise ValueError('Intent unbound')
+        bound = intent.get('request')
+        if (not isinstance(bound,dict) or set(bound) != {'mode','runKey','releaseSha','controlSha','desiredSha','instanceId'}
+                or bound['mode'] != 'cancel_expired_announcement' or bound['runKey'] != request['runKey']
+                or bound['releaseSha'] != request['releaseSha'] or bound['controlSha'] != request['releaseSha']
+                or not SHA.fullmatch(bound['desiredSha']) or not re.fullmatch(r'[1-9][0-9]*-[0-9a-f]{8}',bound['instanceId'])):
+            raise ValueError('Intent request unbound')
+        for name in ('stop-issued','quiescent','receipt'):
+            status,value = before[name]
+            if status == 'unknown': raise ValueError('Unknown record')
+            if status == 'present_at_read' and value.get('schema') != intent['schema']: raise ValueError('Schema differs')
+        issued = before['stop-issued'][1]
+        if issued is not None:
+            if (set(issued) != {'schema','intentHash','stopDisposition'} or issued['intentHash'] != answer['records']['intent']['sha256']
+                    or issued['stopDisposition'] not in {'requested','not-needed-already-quiescent'}): raise ValueError('Issued unbound')
+            answer['stopDisposition'] = issued['stopDisposition']
+        receipt = before['receipt'][1]
+        if receipt is not None:
+            quiet = before['quiescent'][1]
+            states = quiet.get('actualUnitStates') if isinstance(quiet,dict) else None
+            if (not isinstance(states,list) or len(states)!=3
+                    or not all(isinstance(row,dict) and row.get('ActiveState') in {'inactive','failed'}
+                        and (row.get('MainPID')=='0' or index==2 and row.get('unitType')=='path' and row.get('MainPID') is None)
+                        for index,row in enumerate(states))
+                    or receipt.get('actualUnitStates')!=states
+                    or not isinstance(intent.get('container'),dict) or receipt.get('container')!=intent['container']):
+                raise ValueError('Receipt quiet/container unbound')
+            if (receipt.get('request') != bound or receipt.get('result') != 'cancelled-expired-announcement'
+                    or any(receipt.get(key) is not True for key in ('servingInstanceUnchanged','originalTerminalEdgesRetired','quiescent'))
+                    or issued is None or receipt.get('stopDisposition') != issued['stopDisposition']): raise ValueError('Receipt unbound')
+            answer['receiptResult'] = 'cancelled-expired-announcement'
+        answer['bindingStatus'] = 'bound_original_records'
+    except (ValueError,TypeError,KeyError):
+        answer['stopDisposition'] = answer['receiptResult'] = None
+    if before != snapshot():
+        answer['records'] = {name:{'status':'unknown','sha256':None} for name in before}
+        answer['bindingStatus'] = 'changed_during_read'
+        answer['stopDisposition'] = answer['receiptResult'] = None
+    return validate_cancellation_records(answer, request)
+
+
+def validate_cancellation_records(value, request):
+    fields={'schema','readOnly','mode','runKey','releaseSha','records','bindingStatus','stopDisposition','receiptResult','retryAllowed','limitation'}
+    if (not isinstance(value,dict) or set(value)!=fields or value['schema']!=CANCELLATION_SCHEMA
+            or value['readOnly'] is not True or value['retryAllowed'] is not False
+            or any(value.get(k)!=v for k,v in request.items()) or value['limitation']!=CANCELLATION_LIMITATION
+            or value['bindingStatus'] not in {'unknown','bound_original_records','changed_during_read'}
+            or value['stopDisposition'] not in {None,'requested','not-needed-already-quiescent'}
+            or value['receiptResult'] not in {None,'cancelled-expired-announcement'}
+            or not isinstance(value['records'],dict) or set(value['records'])!={'intent','stop-issued','quiescent','receipt'}):
+        raise ValueError('Cancellation export refused')
+    for record in value['records'].values():
+        if (not isinstance(record,dict) or set(record)!={'status','sha256'} or record['status'] not in {'present_at_read','absent_at_read','unknown'}
+                or (record['status']=='present_at_read' and (not isinstance(record['sha256'],str) or not re.fullmatch('[0-9a-f]{64}',record['sha256'])))
+                or (record['status']!='present_at_read' and record['sha256'] is not None)):
+            raise ValueError('Cancellation record export refused')
+    if value['bindingStatus']!='bound_original_records' and (value['stopDisposition'] is not None or value['receiptResult'] is not None):
+        raise ValueError('Cancellation unbound export refused')
+    return value
+
+
 def remote(request):
     request = selection(request)
     if request.get('mode') == 'current_serving_inspector_role':
@@ -1855,6 +1955,8 @@ def remote(request):
     # All production paths are fixed. No environment/caller path override.
     root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        if request.get('mode') == 'cancellation_records':
+            return cancellation_records(request, root_fd)
         if request.get('mode') == 'main_inspector_retirement':
             return retirement_records(request, root_fd)
         if request.get('mode') == 'legacy_checkpoint_inspector':
@@ -1881,6 +1983,8 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'cancellation_records':
+        return validate_cancellation_records(value, request)
     if request.get('mode') == 'main_inspector_retirement':
         return validate_retirement_records(value, request)
     if request.get('mode') == 'current_serving_inspector_role':

@@ -2109,5 +2109,50 @@ class MainRetirementRecordTests(unittest.TestCase):
         self.assertNotIn(b'endpoint',raw);self.assertNotIn(b'containerIdentity"',raw)
 
 
+class CancellationRecordsTests(unittest.TestCase):
+    def setUp(self):
+        self.request={'mode':'cancellation_records','runKey':'41177442979-1','releaseSha':'bd11ad35ca27843fd2f4910e5a8fc6a76d8c9d4e'}
+
+    def test_absence_is_read_without_writes_or_original_request(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(R,'STATE_ROOT',Path(folder)), patch.object(R,'subprocess') as calls:
+            answer=R.remote(self.request)
+            self.assertTrue(all(v['status']=='absent_at_read' for v in answer['records'].values()))
+            self.assertEqual(answer['bindingStatus'],'unknown'); self.assertFalse(answer['retryAllowed'])
+            self.assertEqual(list(Path(folder).iterdir()),[]); calls.run.assert_not_called()
+
+    def test_exact_durable_receipt_binds_after_original_request_cleanup(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(R,'STATE_ROOT',Path(folder)):
+            directory=Path(folder)/'engine-release-cancellations'; directory.mkdir()
+            bound={'mode':'cancel_expired_announcement','runKey':self.request['runKey'],'releaseSha':self.request['releaseSha'],
+                   'controlSha':self.request['releaseSha'],'desiredSha':'c'*40,'instanceId':'1-1234abcd'}
+            schema='expired-announcement-cancellation/empty-retry-v1'
+            intent={'schema':schema,'request':bound,'private':'SECRET','container':{'id':'a'*64}}
+            encode=lambda value:json.dumps(value,sort_keys=True,separators=(',',':'))+'\n'
+            issued={'schema':schema,'intentHash':R.hashlib.sha256(encode(intent).encode()).hexdigest(),'stopDisposition':'not-needed-already-quiescent'}
+            receipt={'schema':schema,'request':bound,'result':'cancelled-expired-announcement','servingInstanceUnchanged':True,
+                     'originalTerminalEdgesRetired':True,'quiescent':True,'stopDisposition':issued['stopDisposition']}
+            quiet={'schema':schema,'actualUnitStates':[{'MainPID':'0','ActiveState':'inactive'} for _ in range(3)]}
+            receipt.update(actualUnitStates=quiet['actualUnitStates'],container=intent['container'])
+            for name,value in [('intent',intent),('stop-issued',issued),('quiescent',quiet),('receipt',receipt)]:
+                path=directory/(self.request['runKey']+'.'+name+'.json');path.write_text(encode(value));path.chmod(0o600)
+            answer=R.remote(self.request)
+            self.assertEqual(answer['bindingStatus'],'bound_original_records');self.assertEqual(answer['receiptResult'],'cancelled-expired-announcement')
+            self.assertNotIn('SECRET',json.dumps(answer));R.validate_reply(answer,self.request)
+            quiet_path=directory/(self.request['runKey']+'.quiescent.json')
+            quiet_path.unlink()
+            absent=R.remote(self.request);self.assertIsNone(absent['receiptResult'])
+            quiet_path.write_text(encode(quiet));quiet_path.chmod(0o600)
+            issued['intentHash']='0'*64
+            (directory/(self.request['runKey']+'.stop-issued.json')).write_text(encode(issued))
+            answer=R.remote(self.request);self.assertEqual(answer['bindingStatus'],'unknown');self.assertIsNone(answer['receiptResult'])
+
+    def test_symlink_and_changed_records_are_unknown(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(R,'STATE_ROOT',Path(folder)):
+            directory=Path(folder)/'engine-release-cancellations';directory.mkdir()
+            (directory/(self.request['runKey']+'.intent.json')).symlink_to('/missing')
+            answer=R.remote(self.request);self.assertEqual(answer['records']['intent']['status'],'unknown')
+            with self.assertRaises(ValueError):R.validate_reply(answer|{'raw':'SECRET'},self.request)
+
+
 if __name__ == '__main__':
     unittest.main()

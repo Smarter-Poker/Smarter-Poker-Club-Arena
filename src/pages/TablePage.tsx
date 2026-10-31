@@ -238,6 +238,7 @@ import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
 import { useSeatMoveAnnouncement } from '../hooks/useSeatMoveAnnouncement';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import TournamentStartCountdown from '../components/table/TournamentStartCountdown';
+import { displayBigBlind, type HandBlinds } from '../utils/handBlinds';
 import { isLightningObserverSnapshot, mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import {
   foldRevealed,
@@ -929,6 +930,7 @@ interface TableState {
     stage: string;
   }[];
   handNumber?: number;
+  handBlinds?: HandBlinds | null;
   clubName?: string;
   /** Union the club belongs to, shown beside the club on the felt masthead. */
   unionName?: string;
@@ -3147,6 +3149,7 @@ function LiveTablePage({
         // GAME_START value) and the hand-change effect that drives per-hand
         // stats + the deal animation never re-fired. Carry it through.
         handNumber: mapped.handNumber > 0 ? mapped.handNumber : prev.handNumber,
+        handBlinds: mapped.handBlinds,
         actionContext: mapped.actionContext,
         players: nextPlayers,
         positions: mapped.positions as PositionBadge[],
@@ -21932,7 +21935,14 @@ function LiveTablePage({
      real blinds land. It used to fall back to 2, so a 5/10 table opened before
      its blinds arrived showed five times too many big blinds. Game logic that
      needs a working blind (the raise panel) keeps its own `bb`. */
-  const seatBigBlind = useMemo(() => safeBB(tableState.blinds, 0), [tableState.blinds]);
+  const seatBigBlind = displayBigBlind(
+    tableState.handBlinds,
+    tableState.tableId,
+    tableState.handNumber,
+    Boolean(tableState.tournamentId),
+    safeBB(tableState.blinds, 0)
+  );
+  const effectiveShowStackInBB = v8Settings.show_stack_in_bb && seatBigBlind > 0;
   /* VARIANT OVERRIDE 2026-08-28 (spec §10.1): the LIVE hand's variant wins —
      a PLO4 bomb hand at an NLH table draws four card-backs per villain, and
      the winner-highlight evaluators below pick the right combination rule. */
@@ -27865,7 +27875,8 @@ function LiveTablePage({
                  0, stayed in chips. The pot reads the seats' figure: one big
                  blind, one setting, every number on the felt follows it. */
               bigBlind={seatBigBlind}
-              displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
+              displayMode={effectiveShowStackInBB ? 'bb' : 'chips'}
+              showChipsFallbackLabel={v8Settings.show_stack_in_bb && !effectiveShowStackInBB}
               onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
               collectTo={potCollectTo}
               /* Dan 2026-08-20: live bets still in front of players — shown as
@@ -28519,7 +28530,7 @@ function LiveTablePage({
                     (tableState.isHandInProgress || (tableState.handNumber ?? 0) > 0) &&
                     !feltShowsNoHand
                   }
-                  showStackInBB={v8Settings.show_stack_in_bb}
+                  showStackInBB={effectiveShowStackInBB}
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}
                   gesturesEnabled={v8Settings.gestures_enabled}
@@ -29604,7 +29615,7 @@ function LiveTablePage({
                            unless this player turned BB on. The panel used to
                            print BB unconditionally while every seat next to it
                            printed chips. Same setting the seats and pot read. */
-                        showStackInBB={v8Settings.show_stack_in_bb}
+                        showStackInBB={effectiveShowStackInBB}
                         displayBigBlind={seatBigBlind}
                         isMyTurn={true}
                         /* 2026-09-04 (audit item 6): the row is marked while

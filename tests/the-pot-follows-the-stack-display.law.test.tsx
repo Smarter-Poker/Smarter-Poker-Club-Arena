@@ -72,7 +72,10 @@ describe('the pot reads the same big blind as the stacks', () => {
   });
 
   it('the seats are handed the same seatBigBlind', () => {
-    expect(page).toMatch(/const seatBigBlind = useMemo\(\(\) => safeBB\(tableState\.blinds, 0\)/);
+    expect(page).toMatch(
+      /const seatBigBlind = displayBigBlind\(\s*tableState\.handBlinds,\s*tableState\.tableId,\s*tableState\.handNumber,/
+    );
+    expect(page).toMatch(/Boolean\(tableState\.tournamentId\),\s*safeBB\(tableState\.blinds, 0\)/);
     expect(page).toMatch(/<SeatSlot[\s\S]*?bigBlind=\{seatBigBlind\}/);
   });
 
@@ -87,8 +90,14 @@ describe('the pot reads the same big blind as the stacks', () => {
   });
 
   it('both read the one stack-display setting', () => {
-    expect(potProps).toMatch(/displayMode=\{v8Settings\.show_stack_in_bb \? 'bb' : 'chips'\}/);
-    expect(page).toMatch(/showStackInBB=\{v8Settings\.show_stack_in_bb\}/);
+    expect(page).toMatch(
+      /const effectiveShowStackInBB = v8Settings\.show_stack_in_bb && seatBigBlind > 0/
+    );
+    expect(potProps).toMatch(/displayMode=\{effectiveShowStackInBB \? 'bb' : 'chips'\}/);
+    expect(page.match(/showStackInBB=\{effectiveShowStackInBB\}/g)).toHaveLength(2);
+    expect(potProps).toMatch(
+      /showChipsFallbackLabel=\{v8Settings\.show_stack_in_bb && !effectiveShowStackInBB\}/
+    );
   });
 });
 

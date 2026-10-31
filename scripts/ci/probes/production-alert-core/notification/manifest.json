@@ -273,8 +273,8 @@
     },
     "hand_identity_native": {
       "path": "scripts/qualification/hand-history-incident-identity/native.mjs",
-      "bytes": 27612,
-      "sha256": "2bd9719154a7b240a35971bf5dc0181c5249301438379c42391af230e5dc6c65"
+      "sha256": "bf8dd80b5ee56a6bee1bc68ca5ef909a057eaaea084ee11f40ef11f733142d11",
+      "bytes": 30695
     },
     "hand_identity_preimages": {
       "path": "scripts/qualification/fixtures/hand-history-incident-identity/preimages.sql",
@@ -300,6 +300,11 @@
       "path": "supabase/migrations/20261029205730_hand_commit_detector_requires_exact_original_outcome.sql",
       "bytes": 4646,
       "sha256": "6a8e0fd06c7c51f9bc4bdc8486346f2e5de81cf9375a46860c7c1963beb23169"
+    },
+    "legacy_batch_migration": {
+      "path": "supabase/migrations/20261031154921_legacy_incident_batches_close_only_after_their_complete_sour.sql",
+      "sha256": "e5936093ee41564e54899b89128f43644f0fbbe60c2775925783b81b13ce5585",
+      "bytes": 11930
     }
   },
   "sequenceContract": {

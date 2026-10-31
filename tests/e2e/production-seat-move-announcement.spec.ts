@@ -161,8 +161,8 @@ test('the published table explains controlled seat moves without moving a player
         // During the final synthetic phase only this browser's display is
         // held. The real engine, players and upstream connection are untouched.
         if (syntheticPhase) return;
-        realIncomingFrames += 1;
         if (engine) {
+          realIncomingFrames += 1;
           try {
             const frame = JSON.parse(String(message));
             if (frame.tableId === subjectTableId) {

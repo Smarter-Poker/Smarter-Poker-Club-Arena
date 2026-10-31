@@ -141,6 +141,11 @@ DO $$BEGIN
 END$$;
 \echo 'PASS anchor: service identity and restrictive RPC access preserved'
 """
+# Exercise the current actual multi-group matcher in the same maintained P6
+# database, after preserving the original single-formation regression above.
+PASS_MIG = ROOT / 'supabase/migrations/20261031155622_lightning_settlement_joins_matcher_pass_before_row_locks.sql'
+setup += (ROOT / 'scripts/ci/fixtures/lightning-matcher-pass-source.sql').read_text()
+setup += (ROOT / 'scripts/ci/fixtures/lightning-matcher-pass-race.sql').read_text().replace('__PASS_MIGRATION__', '\\i ' + str(PASS_MIG))
 socket = os.environ.get('LIGHTNING_ZERO_PAYER_SOCKET')
 with tempfile.TemporaryDirectory(prefix='anchor-order-', dir=os.environ.get('TMPDIR', str(ROOT/'work'))) as work:
     follow = Path(work)/'followup.sql'
@@ -155,9 +160,10 @@ with tempfile.TemporaryDirectory(prefix='anchor-order-', dir=os.environ.get('TMP
     result = subprocess.run(command, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
     (OUT/'native.log').write_text(result.stdout)
     print(result.stdout[-10000:])
-    passed = result.returncode == 0 and result.stdout.count('PASS anchor:') == 3
+    passed = result.returncode == 0 and result.stdout.count('PASS anchor:') == 3 and result.stdout.count('PASS pass:') == 4
     (OUT/'RESULTS.json').write_text(json.dumps({'passed': passed, 'exit_code': result.returncode,
-        'sections': result.stdout.count('PASS anchor:'), 'migration_sha256': hashlib.sha256(MIG.read_bytes()).hexdigest(),
+        'sections': result.stdout.count('PASS anchor:'), 'pass_sections': result.stdout.count('PASS pass:'),
+        'pass_migration_sha256': hashlib.sha256(PASS_MIG.read_bytes()).hexdigest(), 'migration_sha256': hashlib.sha256(MIG.read_bytes()).hexdigest(),
         'production_mutations': False}, indent=2)+'\n')
     if not passed:
         raise SystemExit(result.returncode or 1)

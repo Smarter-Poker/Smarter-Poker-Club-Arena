@@ -1,7 +1,8 @@
 """Private PG17 execution of the exact closure functions; never accepts a DSN.
 
 This tests closure routing and financial non-mutation, not gameplay simulation.
-The preserved financial functions are not stubbed and are never invoked here.
+The exact reservation function is exercised only through its pre-write refusal
+and committed-receipt replay paths. No financial engine is simulated.
 """
 import argparse,json,sys
 from pathlib import Path
@@ -32,6 +33,10 @@ CREATE TABLE smarter_private.tournament_abort_targets(operation_id uuid,tourname
 CREATE TABLE smarter_private.tournament_abort_operations(operation_id uuid,reason text);
 CREATE TABLE smarter_private.f06_hand_permits(permit_id uuid,tournament_id uuid,table_id uuid,lifecycle bigint,hand_number bigint,custody_id uuid,generation uuid,state text);
 CREATE TABLE public.table_seats(table_id uuid,left_at timestamptz,occupancy_id uuid);
+CREATE TABLE public.profiles(id uuid PRIMARY KEY,diamonds bigint);
+CREATE TABLE public.poker_diamond_movements(request_id uuid,request jsonb,receipt jsonb);
+CREATE TABLE public.clubs(id uuid PRIMARY KEY,asset text,is_platform boolean,union_id uuid);
+CREATE TABLE public.ca_arena_settings(id integer,club_id uuid,tournaments_enabled boolean);
 CREATE FUNCTION public.fn_ca_launch_cash_close_resumed(uuid,uuid) RETURNS boolean LANGUAGE sql AS 'SELECT false';
 -- Only the lease/table lane is inert in this routing fixture; it writes no money.
 CREATE FUNCTION public.fn_ca_f06_share_table_lane(uuid,uuid,uuid) RETURNS void LANGUAGE sql AS 'SELECT';
@@ -43,6 +48,7 @@ CREATE FUNCTION public.fn_ca_f06_share_table_lane(uuid,uuid,uuid) RETURNS void L
   e.sql(db,"CREATE TRIGGER admission BEFORE INSERT OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION public.fn_ca_operator_floor_entry_guard();",label='existing-entry-wiring')
   e.sql(db,"INSERT INTO public.tables VALUES('10000000-0000-0000-0000-000000000001','"+b.CLUB+"',NULL,NULL,1,'running',false),('10000000-0000-0000-0000-000000000002','"+b.CLUB+"',NULL,'20000000-0000-0000-0000-000000000001',1,'running',false),('10000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001',NULL,NULL,1,'running',false);INSERT INTO public.tournaments VALUES('20000000-0000-0000-0000-000000000001','"+b.CLUB+"',NULL,'RUNNING');",label='closure-three-scopes')
   e.sql(db,"DO $$BEGIN IF public.fn_ca_launch_tournament_held('002c2d27-9584-4e52-835a-bb2be148fc81',NULL) OR public.fn_ca_operator_floor_state('10000000-0000-0000-0000-000000000001')->'hold'<>'null'::jsonb THEN RAISE EXCEPTION 'baseline_was_not_open';END IF;END$$;",label='baseline-open-reproduced')
+  e.sql(db,"ALTER TABLE public.tables ADD COLUMN min_buy_in numeric DEFAULT 1,ADD COLUMN max_buy_in numeric DEFAULT 1000;ALTER TABLE public.tournaments ADD COLUMN buy_in_amount numeric DEFAULT 10,ADD COLUMN buy_in_fee numeric DEFAULT 0;INSERT INTO public.profiles VALUES('70000000-0000-0000-0000-000000000001',100);INSERT INTO public.clubs VALUES('"+b.CLUB+"','diamonds',true,NULL);INSERT INTO public.ca_arena_settings VALUES(1,'"+b.CLUB+"',true);",label='reservation-prewrite-fixture')
   drift=e.database(db)
   e.sql(drift,'GRANT EXECUTE ON FUNCTION public.fn_ca_operator_floor_state(uuid) TO anon;',label='changed-authority-fixture')
   code,_,err=e.sql(drift,sql,label='changed-authority-refused',check=False)
@@ -70,6 +76,29 @@ DO $$DECLARE x jsonb;BEGIN
 END $$;
 """
   e.sql(db,'BEGIN;'+assertions+'ROLLBACK;',label='closure-boundaries-and-original-preservation')
+  e.sql(db,"""
+BEGIN;
+INSERT INTO public.poker_diamond_movements VALUES(
+ '80000000-0000-0000-0000-000000000001',
+ jsonb_build_object('user_id','70000000-0000-0000-0000-000000000001','purpose','cash_seat','target_id','10000000-0000-0000-0000-000000000001','entry_key','existing','amount',10,'action','reserve'),
+ '{"success":true,"original_receipt":true}');
+DO $$DECLARE x jsonb;target uuid;purpose text;BEGIN
+ x:=public.fn_poker_diamond_reserve('70000000-0000-0000-0000-000000000001','cash_seat','10000000-0000-0000-0000-000000000001','existing',10,'80000000-0000-0000-0000-000000000001');
+ IF x<>'{"success":true,"original_receipt":true}'::jsonb THEN RAISE EXCEPTION 'committed_receipt_changed';END IF;
+ BEGIN
+  PERFORM public.fn_poker_diamond_reserve('70000000-0000-0000-0000-000000000001','cash_seat','10000000-0000-0000-0000-000000000001','existing',11,'80000000-0000-0000-0000-000000000001');
+  RAISE EXCEPTION 'changed_receipt_accepted';
+ EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'idempotency_payload_mismatch' THEN RAISE;END IF;END;
+ FOR target,purpose IN SELECT * FROM (VALUES ('10000000-0000-0000-0000-000000000001'::uuid,'cash_seat'),('20000000-0000-0000-0000-000000000001'::uuid,'tournament_entry')) AS v(t,p) LOOP
+  BEGIN
+   PERFORM public.fn_poker_diamond_reserve('70000000-0000-0000-0000-000000000001',purpose,target,'new',10,gen_random_uuid());
+   RAISE EXCEPTION 'new_funding_accepted';
+  EXCEPTION WHEN SQLSTATE '55000' THEN IF SQLERRM<>'diamond_arena_closed' THEN RAISE;END IF;END;
+ END LOOP;
+ IF (SELECT diamonds FROM public.profiles WHERE id='70000000-0000-0000-0000-000000000001')<>100 OR (SELECT count(*) FROM public.poker_diamond_movements)<>1 THEN RAISE EXCEPTION 'reservation_mutated_money';END IF;
+END$$;
+ROLLBACK;
+""",label='new-funding-refused-original-receipt-preserved')
   code,_,err=e.sql(db,sql,label='closure-replay-refused',check=False)
   if not code or 'already exists' not in err:raise RuntimeError('migration replay was not refused')
   if any(n.sha(ROOT/x)!=h for x,h in e.report['source_sha256'].items()):raise RuntimeError('qualification source changed')

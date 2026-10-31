@@ -39,6 +39,15 @@ def render():
   END IF;
   PERFORM public.fn_ca_lock_settlement_lane_for_tournament"""
    assert old.count(anchor)==1;new=old.replace(anchor,addition)
+  elif name=='fn_poker_diamond_reserve':
+   anchor=" IF v_status IS NULL OR v_status IN"
+   addition=""" -- Committed request replay above remains available. Refuse new funding
+ -- before any lot, custody, journal or wallet mutation.
+ IF EXISTS(SELECT 1 FROM public.ca_diamond_arena_owner_closure c WHERE c.club_id=v_arena AND c.closed) THEN
+   RAISE EXCEPTION 'diamond_arena_closed' USING ERRCODE='55000';
+ END IF;
+ IF v_status IS NULL OR v_status IN"""
+   assert old.count(anchor)==1;new=old.replace(anchor,addition)
   elif name=='fn_f06_begin_hand':
    anchor=' -- A permit its engine attested absent'
    addition=""" -- Exact existing permit replay above stays lawful; only new hands stop.

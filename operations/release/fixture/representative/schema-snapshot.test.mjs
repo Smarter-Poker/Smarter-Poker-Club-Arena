@@ -49,6 +49,8 @@ test('only the exact canonical manual main caller can capture', () => {
 test('database configuration cannot select another project, transaction pool or insecure TLS', () => {
   const config = databaseConfiguration(fixtureURL);
   assert.equal(config.ssl.rejectUnauthorized, true);
+  assert.equal(schemaHash(config.ssl.ca), '700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7');
+  assert.ok(!config.ssl.ca.includes('PRIVATE KEY'));
   assert.match(config.options, /default_transaction_read_only=on/);
   for (const value of [fixtureURL.replace('kuklfnapbkmacvwxktbh','aaaaaaaaaaaaaaaaaaaa'),
     fixtureURL.replace(':5432',':6543'),fixtureURL.replace('/postgres?','/other?'),
@@ -213,7 +215,8 @@ test('pg_dump uses fixed no-data imported snapshot and no credential argv or inh
   assert.ok(observed.args.includes('--lock-wait-timeout=1000'));
   assert.ok(!JSON.stringify(observed.args).includes('synthetic-only'));
   assert.ok(!('DATABASE_URL' in observed.options.env));assert.equal(observed.options.env.PGSSLMODE,'verify-full');
-  assert.equal(observed.options.env.PGSSLROOTCERT,'system');
+  assert.equal(observed.options.env.PGSSLROOTCERT, path.resolve('scripts/ci/certificates/supabase-prod-ca-2021.crt'));
+  assert.equal(schemaHash(await readFile(observed.options.env.PGSSLROOTCERT)), schemaHash(config.ssl.ca));
 });
 
 test('the original catalogue digest and private complete payload use the exact same canonical encoding', async () => {

@@ -4509,7 +4509,7 @@ export abstract class ServerTableEngineBase {
       settlementsAtFence.push(drain);
     }
 
-    const teardown = this.performStop(dealingLoopAtFence, settlementsAtFence);
+    const teardown = this.performStop(dealingLoopAtFence, settlementsAtFence, continuationAtFence);
     this.teardownPromise = teardown;
     void teardown
       .then(
@@ -4527,7 +4527,8 @@ export abstract class ServerTableEngineBase {
       ...(this.postHandTasksPromise ? [this.postHandTasksPromise] : []),
       ...this.tournamentMoveOperations,
       ...this.readContinuationTasks,
-    ]
+    ],
+    continuationAtFence: HandContinuationLane | null = this.handContinuation
   ): Promise<void> {
     this.weeklyHandPause.stop();
     this.weeklyHandTimers.stop();
@@ -4624,6 +4625,18 @@ export abstract class ServerTableEngineBase {
       }
     } else {
       banksCaptured = true;
+    }
+
+    // A generic snapshot excludes the private deck and cannot replace an
+    // unretained original continuation. All accepted physical writers above
+    // have returned, but refusal must preserve the exact original custody.
+    // The memoized rejected teardown also prevents a retry certifying this
+    // same quarantined generation as successfully retired.
+    if (continuationAtFence?.isUnretained()) {
+      throw new AggregateError(
+        [...failures, new Error('Stopped Original Hand Continuation Is Unretained')],
+        `Table engine ${this.tableId} retains unproven original hand custody`
+      );
     }
 
     this.recordLifecycleDiagnostic('owned_work_joined');

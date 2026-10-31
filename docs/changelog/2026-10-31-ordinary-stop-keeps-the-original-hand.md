@@ -9,13 +9,17 @@ Stop now releases only that exact controller-owned local wait after fencing
 further input. It retains the controller through the existing final snapshot;
 it does not complete a hand, invent an action, cancel its original permit, or
 release process ownership early. The captured continuation lane physically
-drains its accepted work before snapshot and cleanup. Its live publication
-fences and failures still apply, and failures remain in the teardown result.
+drains its accepted work. If an original remains unretained, stop explicitly
+refuses retirement before snapshot or controller/process cleanup and preserves
+the exact lane, controller and permit in quarantine. The same rejected stop
+promise remains authoritative on retry. Live publication fences still apply.
 
 The existing terminal-boundary fixture exercises the actual controller wait
 producer and verifies snapshot custody. A pending real continuation persistence
 fixture verifies that ownership stays held through both the accepted write and
-final snapshot, suppresses publication after the fence, and preserves its error.
+refuses retirement with custody preserved. A queued batch also refuses without
+bypassing retention authority. A separate held snapshot proves custody until
+its completion.
 The lane fixture distinguishes terminal physical drainage from live authority.
 
 Source qualification is separate from engine activation and live behavior.

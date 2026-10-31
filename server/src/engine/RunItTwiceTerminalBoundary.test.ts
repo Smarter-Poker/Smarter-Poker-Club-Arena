@@ -154,56 +154,84 @@ describe('Run It Twice terminal error boundary', () => {
     }
   });
 
-  it('keeps ownership and snapshot custody while an accepted continuation write is pending', async () => {
+  it.each(['scheduled', 'physical'] as const)(
+    'refuses retirement while an accepted %s continuation remains unretained',
+    async (stage) => {
+      const { engine, controller } = harness();
+      expect(engine.claimProcessOwnership()).toBe(true);
+      const entered = deferred();
+      const held = deferred();
+      const persist = vi.fn(async () => {
+        entered.resolve();
+        await held.promise;
+      });
+      const dispatch = vi.fn(async () => {});
+      const lane = new HandContinuationLane(
+        0,
+        () => controller.serializeRecoveryState(),
+        () => ({}),
+        persist,
+        dispatch,
+        () => engine.running,
+        () => {}
+      );
+      engine.handContinuation = lane;
+      const permit = { original: 'unchanged' };
+      engine.f06CurrentPermit = permit;
+      engine.flushSnapshot = vi.fn(async () => {});
+      lane.enqueue({ type: 'TURN_CHANGE', seat: 1, availableActions: ['fold', 'call'] });
+      if (stage === 'physical') await entered.promise;
+      const stopping = engine.stop();
+      const outcome = stopping.then(
+        () => null,
+        (error: unknown) => error
+      );
+      try {
+        await Promise.resolve();
+        expect(engine.hasReleasedProcessOwnership()).toBe(false);
+        expect(engine.flushSnapshot).not.toHaveBeenCalled();
+        if (stage === 'scheduled') expect(persist).not.toHaveBeenCalled();
+        held.resolve();
+        expect(await outcome).toBeInstanceOf(AggregateError);
+        expect(engine.hasReleasedProcessOwnership()).toBe(false);
+        expect(engine.handController).toBe(controller);
+        expect(engine.handContinuation).toBe(lane);
+        expect(engine.f06CurrentPermit).toBe(permit);
+        expect(engine.flushSnapshot).not.toHaveBeenCalled();
+        expect(dispatch).not.toHaveBeenCalled();
+        expect(engine.stop()).toBe(stopping);
+        await expect(engine.stop()).rejects.toThrow('retains unproven original hand custody');
+        expect(engine.hasReleasedProcessOwnership()).toBe(false);
+      } finally {
+        held.resolve();
+        await outcome;
+        // Only destroy this isolated fixture's private registry entry; do not
+        // turn a refused stop into a successful retirement in the test.
+        (engine.constructor as any).releaseCurrentEngine(TABLE, engine);
+      }
+    }
+  );
+
+  it('retains controller and process custody until the final snapshot completes', async () => {
     const { engine, controller } = harness();
     expect(engine.claimProcessOwnership()).toBe(true);
     const entered = deferred();
     const held = deferred();
-    const dispatch = vi.fn(async () => {});
-    const lane = new HandContinuationLane(
-      0,
-      () => controller.serializeRecoveryState(),
-      () => ({}),
-      async () => {
-        entered.resolve();
-        await held.promise;
-      },
-      dispatch,
-      () => engine.running,
-      () => {}
-    );
-    engine.handContinuation = lane;
-    lane.enqueue({ type: 'TURN_CHANGE', seat: 1, availableActions: ['fold', 'call'] });
-    await entered.promise;
-    const snapshotEntered = deferred();
-    const snapshotHeld = deferred();
     engine.flushSnapshot = vi.fn(async () => {
       expect(engine.handController).toBe(controller);
-      snapshotEntered.resolve();
-      await snapshotHeld.promise;
+      entered.resolve();
+      await held.promise;
     });
     const stopping = engine.stop();
-    // Observe failure immediately; the original error must remain in stop's
-    // certificate after the accepted physical write has finished.
-    const outcome = stopping.then(
-      () => null,
-      (error: unknown) => error
-    );
     try {
-      await Promise.resolve();
+      await entered.promise;
       expect(engine.hasReleasedProcessOwnership()).toBe(false);
-      expect(engine.flushSnapshot).not.toHaveBeenCalled();
       held.resolve();
-      await snapshotEntered.promise;
-      expect(engine.hasReleasedProcessOwnership()).toBe(false);
-      expect(dispatch).not.toHaveBeenCalled();
-      snapshotHeld.resolve();
-      expect(await outcome).toBeInstanceOf(AggregateError);
+      await stopping;
       expect(engine.hasReleasedProcessOwnership()).toBe(true);
     } finally {
       held.resolve();
-      snapshotHeld.resolve();
-      await outcome;
+      await stopping;
     }
   });
 

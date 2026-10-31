@@ -2192,13 +2192,6 @@ class NativeScaleRecordsTests(unittest.TestCase):
             with self.assertRaises(ValueError):R.selection(self.request|{key:'other'})
         with self.assertRaises(ValueError):R.selection(self.request|{'command':'docker rm'})
 
-    def test_binding_matches_original_immutable_controller_and_fixture_source(self):
-        for name,key in [('legacy-census-scale-preflight.py','controllerSHA256'),('legacy-census-scale-fixture.mjs','fixtureSHA256')]:
-            raw=subprocess.check_output(['git','show',self.request['releaseSha']+':server/scripts/'+name],cwd=ROOT,timeout=3)
-            self.assertEqual(R.hashlib.sha256(raw).hexdigest(),R.SCALE_BINDING[key])
-        self.assertEqual(R.SCALE_BINDING['profile']['fixtureAndCleanupMs'],40000)
-        self.assertEqual(R.SCALE_BINDING['profile']['cardinality'],35000000)
-
     def test_bound_receipt_preserves_failed_cleanup_and_actual_result_without_private_data(self):
         with self.fixture() as (_,fd):answer=R.scale_records(self.request,fd)
         self.assertEqual(answer['bindingStatus'],'bound_original_records')

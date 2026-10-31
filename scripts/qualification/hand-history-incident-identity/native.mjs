@@ -171,6 +171,34 @@ try {
  INSERT INTO ca_incident_events(incident_id,kind,detail)
  SELECT i.id,k.kind,jsonb_build_object('source',i.source) FROM ca_drift_incidents i CROSS JOIN(VALUES('created'),('recurred'))k(kind) WHERE i.metadata->>'alert_id'='${amb2}';COMMIT;`);
  resolve(amb1);resolve(amb2);assert.equal(status(amb2),'open','ambiguous legacy original membership never authorizes closure');
+ // The old per-event uniqueness test above reproduces the actual cron-batch
+ // blockage: two events and both exact same-source/cause/time originals exist.
+ // The new migration changes only set proof; incomplete/mixed sets still refuse.
+ const legacyBatchMigration=path.join(root,'supabase/migrations/20261031154921_legacy_incident_batches_close_only_after_their_complete_sour.sql');
+ const historyBeforeBatch=sql('SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM ca_drift_incidents i');
+ run('psql',[...args,'-f',legacyBatchMigration]);
+ assert.equal(sql('SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM ca_drift_incidents i'),historyBeforeBatch,'batch migration does not rewrite historical incidents');
+ sql(`UPDATE financial_alerts SET resolved=false WHERE id IN('${amb1}','${amb2}');`);
+ resolve(amb1);assert.equal(status(amb2),'open','one unresolved exact legacy batch member keeps the group open');
+ resolve(amb2);assert.equal(status(amb2),'resolved','complete same-cause legacy transaction set closes after every exact source alert resolves');
+ // A missed original-event row must not be inferred from a complete-looking pair.
+ const batchIds=Array.from({length:3},(_,n)=>'91111111-1111-4111-8111-'+String(n+1).padStart(12,'0'));
+ sql(`BEGIN;INSERT INTO financial_alerts(id,severity,source,message,context,resolved) VALUES
+ ${batchIds.map(id=>`('${id}','critical','fixture.incomplete_batch','legacy batch evidence','{}',true)`).join(',')};
+ UPDATE financial_alerts SET resolved=false WHERE id IN('${batchIds.join("','")}');
+ INSERT INTO ca_drift_incidents(source,dedupe_key,occurrences,metadata,detected_at,last_seen_at)
+ SELECT 'financial_alerts:'||source,'fa:'||source||':'||md5(fn_ca_normalize_alert_text(left(message,200))||'|'||fn_ca_normalize_alert_text('')),
+ 2,jsonb_build_object('alert_id',id),created_at,created_at FROM financial_alerts WHERE id='${batchIds[2]}';
+ INSERT INTO ca_incident_events(incident_id,kind,detail)
+ SELECT i.id,k.kind,jsonb_build_object('source',i.source) FROM ca_drift_incidents i CROSS JOIN(VALUES('created'),('recurred'))k(kind) WHERE i.metadata->>'alert_id'='${batchIds[2]}';COMMIT;`);
+ for(const id of batchIds) resolve(id);
+ assert.equal(status(batchIds[2]),'open','extra same-bucket alert with no original event keeps the group unknown');
+ sql(`UPDATE financial_alerts SET resolved=false WHERE id='${unknown}';`);resolve(unknown);
+ assert.equal(status(unknown),'open','missing original membership still refuses after batch correction');
+ sql(`UPDATE financial_alerts SET resolved=false WHERE id='${alien}';`);resolve(alien);
+ assert.equal(status(alien),'open','wrong-source versioned original still refuses after batch correction');
+ console.log('PASS legacy batch: actual old source refuses complete set; corrected source closes only exact complete resolved set, preserves missing/extra/wrong-source unknowns and all history');
+
  // Observe two actual last-member resolutions contending on the legacy row.
  const fixedBridge=sql("SELECT pg_get_functiondef('fn_ca_financial_alert_to_incident()'::regprocedure)");
  const legacyStart=source.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_financial_alert_to_incident()');
@@ -221,7 +249,8 @@ try {
  const literal=x=>"'"+x.replaceAll("'","''")+"'";
  const groupKey=sql(`SELECT dedupe_key FROM ca_drift_incidents WHERE metadata->>'alert_id'='${genericIds[5]}'`);
  const observedAt=sql(`SELECT created_at::text FROM financial_alerts WHERE id='${genericIds[0]}'`);
- const lookup=extracted.replaceAll('NEW.source',literal(genericSource)).replaceAll('v_group.dedupe_key',literal(groupKey));
+ const groupId=sql(`SELECT id FROM ca_drift_incidents WHERE metadata->>'alert_id'='${genericIds[5]}'`);
+ const lookup=extracted.replaceAll('NEW.source',literal(genericSource)).replaceAll('NEW.id',literal(futureIds[0])+'::uuid').replaceAll('v_group.dedupe_key',literal(groupKey)).replaceAll('v_group.id',literal(groupId)+'::uuid');
  const walk=n=>[n,...(n.Plans||[]).flatMap(walk)];
  for(const [label,detail] of [['versioned',{financial_member_version:1,alert_id:futureIds[0]}],['legacy',{}]]) {
    const explained=JSON.parse(sql(`EXPLAIN(ANALYZE,FORMAT JSON,COSTS OFF,TIMING OFF) WITH e AS MATERIALIZED(SELECT ${literal(JSON.stringify(detail))}::jsonb detail,${literal(observedAt)}::timestamptz at) SELECT m.* FROM e CROSS JOIN LATERAL(${lookup})m;`));

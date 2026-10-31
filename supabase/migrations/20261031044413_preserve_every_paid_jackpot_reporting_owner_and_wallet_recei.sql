@@ -71,6 +71,7 @@ BEGIN
  IF v_unknown>0 THEN RAISE EXCEPTION 'Paid jackpot ownership evidence is unavailable' USING ERRCODE='55000'; END IF;
  RETURN v_amount;
 END $jackpot$;
+REVOKE ALL ON FUNCTION public.ca_club_member_jackpot_money(uuid,uuid,timestamptz,timestamptz,text) FROM PUBLIC,anon,authenticated,service_role;
 DO $patch$
 DECLARE d text:=pg_get_functiondef('public.bbj_credit_one_recipient(uuid,uuid,uuid,numeric,boolean)'::regprocedure);
 BEGIN

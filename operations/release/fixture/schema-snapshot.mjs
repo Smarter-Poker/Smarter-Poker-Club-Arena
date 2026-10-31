@@ -46,6 +46,34 @@ export function connectionFailureCode(error) {
   return codes.size === 1 ? [...codes][0] : codes.size > 1 ? 'MULTIPLE_KNOWN_FAILURES' : 'UNKNOWN';
 }
 
+const dumpFailureKinds = new Set(['DEADLINE', 'STDOUT_LIMIT', 'STDERR_LIMIT', 'SPAWN',
+  'TLS_VERIFICATION', 'PERMISSION_DENIED', 'LOCK_TIMEOUT', 'STATEMENT_TIMEOUT',
+  'AUTHENTICATION_FAILED', 'VERSION_MISMATCH', 'CONNECTION_FAILED', 'SNAPSHOT_IMPORT',
+  'INVALID_OPTION', 'QUERY_FAILED', 'CONCURRENT_CATALOG_CHANGE', 'UNKNOWN']);
+export function dumpFailureKind(stderr) {
+  const diagnostic = stderr.toLowerCase();
+  return [
+    ['TLS_VERIFICATION', /certificate verify failed|ssl error[^\n]*certificate/],
+    ['PERMISSION_DENIED', /permission denied|must be (?:owner|superuser)/],
+    ['LOCK_TIMEOUT', /lock timeout|lock wait timeout/],
+    ['STATEMENT_TIMEOUT', /statement timeout/],
+    ['AUTHENTICATION_FAILED', /authentication failed/],
+    ['VERSION_MISMATCH', /version mismatch/],
+    ['SNAPSHOT_IMPORT', /invalid snapshot|cannot import a snapshot|snapshot[^\n]*does not exist/],
+    ['INVALID_OPTION', /unrecognized option|invalid option|invalid connection option/],
+    ['CONNECTION_FAILED', /connection to server|server closed the connection/],
+    ['CONCURRENT_CATALOG_CHANGE', /concurrently updated/],
+    ['QUERY_FAILED', /query failed/],
+  ].find(([, pattern]) => pattern.test(diagnostic))?.[0] ?? 'UNKNOWN';
+}
+export function safeDumpDiagnostic(value) {
+  const count = (number) => Number.isSafeInteger(number) && number >= 0 && number <= 1024 * 1024 * 1024 ? number : null;
+  return { kind: dumpFailureKinds.has(value?.kind) ? value.kind : 'UNKNOWN',
+    exit_code: Number.isInteger(value?.exit_code) && value.exit_code >= 0 && value.exit_code <= 255 ? value.exit_code : null,
+    signal: ['SIGKILL','SIGTERM','SIGABRT','NONE'].includes(value?.signal) ? value.signal : 'UNKNOWN',
+    elapsed_ms: count(value?.elapsed_ms), stdout_bytes: count(value?.stdout_bytes), stderr_bytes: count(value?.stderr_bytes) };
+}
+
 export function captureContext(env) {
   requireCapture(env.GITHUB_REPOSITORY_ID === '1132369872' &&
     env.GITHUB_REPOSITORY === 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' &&
@@ -148,27 +176,33 @@ export async function dumpSnapshot(config, snapshot, { spawnProcess = spawn, dea
   const child = spawnProcess('pg_dump', ['--no-password','--schema-only','--format=plain',
     '--quote-all-identifiers','--no-comments','--no-security-labels','--no-subscriptions',
     '--lock-wait-timeout=1000',`--snapshot=${snapshot}`], { env, stdio: ['ignore','pipe','pipe'] });
-  let size = 0, stderrSize = 0, failed = false;
-  const chunks = [];
-  const timer = setTimeout(() => { failed = true; child.kill('SIGKILL'); }, deadlineMs);
+  let size = 0, stderrSize = 0, failed = false, failureKind = null;
+  const chunks = [], stderrChunks = [];
+  const started = performance.now();
+  const failure = (code, signal) => Object.assign(new Error('ISOLATED_SCHEMA_DUMP_FAILED'), {
+    dumpDiagnostic: safeDumpDiagnostic({kind: failureKind ?? dumpFailureKind(Buffer.concat(stderrChunks).toString('utf8')),
+      exit_code: code, signal: signal ?? 'NONE', elapsed_ms: Math.round(performance.now() - started),
+      stdout_bytes: size, stderr_bytes: stderrSize}) });
+  const timer = setTimeout(() => { failed = true; failureKind ??= 'DEADLINE'; child.kill('SIGKILL'); }, deadlineMs);
   try {
     await new Promise((resolve, reject) => {
       child.stdout.on('data', (bytes) => {
         size += bytes.length;
-        if (size > MAX_SCHEMA_BYTES) { failed = true; child.kill('SIGKILL'); }
+        if (size > MAX_SCHEMA_BYTES) { failed = true; failureKind ??= 'STDOUT_LIMIT'; child.kill('SIGKILL'); }
         else chunks.push(bytes);
       });
       child.stderr.on('data', (bytes) => {
         stderrSize += bytes.length;
-        if (stderrSize > 65536) { failed = true; child.kill('SIGKILL'); }
+        if (stderrSize > 65536) { failed = true; failureKind ??= 'STDERR_LIMIT'; child.kill('SIGKILL'); }
+        else stderrChunks.push(bytes);
       });
-      child.once('error', () => reject(new Error('ISOLATED_SCHEMA_DUMP_FAILED')));
-      child.once('close', (code) => code === 0 && !failed ? resolve() : reject(new Error('ISOLATED_SCHEMA_DUMP_FAILED')));
+      child.once('error', () => { failureKind ??= 'SPAWN'; reject(failure(null, null)); });
+      child.once('close', (code, signal) => code === 0 && !failed ? resolve() : reject(failure(code, signal)));
     });
     const sql = Buffer.concat(chunks).toString('utf8');
     assertSchemaOnly(sql);
     return sql;
-  } finally { clearTimeout(timer); delete env.PGPASSWORD; chunks.length = 0; }
+  } finally { clearTimeout(timer); delete env.PGPASSWORD; chunks.length = 0; stderrChunks.length = 0; }
 }
 
 export async function captureSchema({ output, env = process.env, Client, dump = dumpSnapshot }) {
@@ -252,6 +286,7 @@ export async function captureSchema({ output, env = process.env, Client, dump = 
     safe.captureStage = stage;
     safe.connectionFailure = stage === 'connection' ? connectionFailureCode(error) : 'NOT_CONNECTION';
     safe.connectionRoute = config.host === 'db.kuklfnapbkmacvwxktbh.supabase.co' ? 'direct' : 'session-pooler';
+    if (stage === 'schema-only-dump') safe.dumpDiagnostic = safeDumpDiagnostic(error?.dumpDiagnostic);
     throw safe;
   } finally {
     clearTimeout(timer);
@@ -273,6 +308,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
           ['MULTIPLE_KNOWN_FAILURES','UNKNOWN','NOT_CONNECTION'].includes(error?.connectionFailure)
           ? error.connectionFailure : 'UNKNOWN',
         connection_route: ['direct','session-pooler'].includes(error?.connectionRoute) ? error.connectionRoute : 'UNKNOWN',
+        ...(error?.captureStage === 'schema-only-dump' ? {dump_diagnostic: safeDumpDiagnostic(error?.dumpDiagnostic)} : {}),
         code:safeFailures.has(error?.message) ? error.message : 'ISOLATED_SCHEMA_CAPTURE_FAILED'}));
       process.exitCode = 1;
     });

@@ -1,0 +1,5 @@
+# Bind isolated action proof to actual published client and qualified engine source
+
+The existing manual SchemaAudit connected-UI route now selects the actual published client artifact from run 41244053719, artifact 13059295561, source 24b2998349b2aed7f94b3bf9dad55ea81abef36c. Its downloaded archive digest and release manifest were independently verified. The independently qualified protected engine source is 9c9779174bd148fc73e2ede985c3b06865cc0cc7.
+
+Only the three existing tuple pins change. The maintained same-job full-schema admission builds that engine source into its own isolated image and retains the original role/catalogue parity, budgets and cleanup. This selects an isolated source image; it does not establish a new production runtime or full 35M production-image qualification. No workflow dispatch or production operation was performed by this source change. Actual browser Raise/Call/All-in/Fold and same-hand history proof remains pending the sole operator’s canonical dispatch after protected merge.

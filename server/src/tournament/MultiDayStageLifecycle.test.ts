@@ -724,15 +724,35 @@ describe('the stage-end barrier and the bag', () => {
     expect(state.stop).toHaveBeenCalledOnce();
   });
 
-  it('bag committed and response lost (boundary 4): stand down for the durable record, no retry', async () => {
-    const { state, db } = barrier(() => ({ data: null, error: { message: 'socket hang up' } }));
-    state.advanceStageEndBarrier();
-    await flush();
-    expect(state.stop).toHaveBeenCalledOnce();
-    state.advanceStageEndBarrier();
-    await flush();
-    expect(db.rpc).toHaveLength(1);
-  });
+  it.each(['', '08006', '08007', '53300', '57014', '57P01', '58000', 'XX000'])(
+    'bag outcome is uncertain (%s): stand down for the durable record, no retry',
+    async (code) => {
+      const { state, db } = barrier(() => ({
+        data: null,
+        error: { code, message: 'response interrupted' },
+      }));
+      state.advanceStageEndBarrier();
+      await flush();
+      expect(state.stop).toHaveBeenCalledOnce();
+      state.advanceStageEndBarrier();
+      await flush();
+      expect(db.rpc).toHaveLength(1);
+    }
+  );
+
+  it.each(['23514', '42501', 'P0404', '55P03'])(
+    'a proven bag rollback (%s) remains held for its cause',
+    async (code) => {
+      const { state, db } = barrier(() => ({ data: null, error: { code, message: 'refused' } }));
+      state.advanceStageEndBarrier();
+      await flush();
+      expect(state.stop).not.toHaveBeenCalled();
+      expect(state.stageBagHeldReason).toBe('failed');
+      state.advanceStageEndBarrier();
+      await flush();
+      expect(db.rpc).toHaveLength(1);
+    }
+  );
 
   it('a felt not yet at rest is re-driven through the elimination sweep, bounded', async () => {
     const { state, db } = barrier(() => ({

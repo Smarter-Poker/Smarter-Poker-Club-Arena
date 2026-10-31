@@ -25,6 +25,9 @@ fi
 PG17_BIN="$PG_BIN" python3 -B "$HERE/test-heldout-physics-wrapper.py"
 PG17_BIN="$PG_BIN" python3 -B "$HERE/test-preparation-key-page.py"
 PG17_BIN="$PG_BIN" python3 -B "$HERE/test-compactor-freeze-authority-ingress.py"
+PG17_BIN="$PG_BIN" python3 -B "$HERE/test-public215-seal-validation.py"
+PG17_BIN="$PG_BIN" python3 -B "$HERE/test-public215-source-vectors.py"
+PG17_BIN="$PG_BIN" python3 -B "$HERE/test-public215-seal-locks.py"
 # The hosted parity reader admits only this runner's own private fixture socket.
 # Local runs retain their explicit external-SSD TMPDIR.
 WORK_ROOT="${TMPDIR:-/tmp}"

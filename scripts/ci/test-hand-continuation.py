@@ -121,6 +121,7 @@ def main():
     inputs += [Path('scripts/ci/test-accepted-hand-roster.py'),chain.LIGHTNING,chain.RETIRED_CASH,chain.RAKED_DIAMOND,chain.CAPTURE,chain.MIGRATION]
     inputs += sorted(p.relative_to(ROOT) for p in (ROOT/'scripts/ci/fixtures/played-clock-floor').rglob('*') if p.is_file())
     inputs += [Path('supabase/migrations/20261031031334_retained_hand_permit_readers_allow_settlement_foreign_keys.sql')]
+    inputs += [Path('supabase/migrations/20261031031602_diamond_arena_owner_boundary_closure_without_refunds.sql'),Path('scripts/ci/build-diamond-owner-closure.py'),Path('scripts/ci/test-diamond-owner-closure.py'),Path('scripts/ci/fixtures/diamond-owner-closure.json')]
     source=dict(manifest['source_sha256']);source.update({str(p):sha(ROOT/p) for p in inputs})
     e.report.update(source_sha256=source,installation_refusals=[],races=[],scope='private original continuation on exact production-captured atomic/stack/retention functions and maintained real financial/F06 closure; not live activation')
     for sig in native.CANCELLATION_SIGNALS:signal.signal(sig,native.interrupted)
@@ -164,6 +165,15 @@ def main():
         module(ROOT/DATA/'existing_park_attestation_qualification.py','existing_park_attestation_composition').qualify(e,ROOT,hand,db)
         qualify_fences(e,db,native)
         module(ROOT/'scripts/ci/played_clock_floor_cases.py','played_clock_floor').qualify(e,ROOT,hand)
+        # Closure uses this same original-hand protocol. Run its private routing
+        # fixture in the existing required continuation check and retain its proof
+        # under this check's existing uploaded evidence directory.
+        e.run('diamond-owner-closure',[sys.executable,ROOT/'scripts/ci/test-diamond-owner-closure.py',
+            '--pg-bin',args.pg_bin.resolve(),'--evidence',out/'diamond-owner-closure',
+            '--work-root',work,'--socket-root',args.socket_root],seconds=45)
+        closure=json.loads((out/'diamond-owner-closure/result.json').read_text())
+        if closure['status']!='passed':raise RuntimeError('Diamond owner closure qualification failed')
+        e.report['diamond_owner_closure']={'status':'passed','evidence':'diamond-owner-closure/result.json'}
         if any(sha(ROOT/p)!=digest for p,digest in source.items()):raise RuntimeError('qualification source changed')
         e.report['status']='passed';e.discard(db)
     except BaseException as error:e.report['failure']=repr(error)

@@ -2546,18 +2546,6 @@ jobs:
         env:
           PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
         run: python3 scripts/ci/test-hand-continuation.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/hand-continuation --socket-root "$RUNNER_TEMP"
-      - name: Diamond owner closure preserves original hands without refunds
-        id: diamond_owner_closure
-        if: matrix.shard == 3
-        run: python3 scripts/ci/test-diamond-owner-closure.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/diamond-owner-closure --work-root "$RUNNER_TEMP/diamond-owner-closure" --socket-root "$RUNNER_TEMP"
-      - name: Retain Diamond owner closure proof
-        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_owner_closure.outcome)
-        uses: actions/upload-artifact@v4
-        with:
-          name: diamond-owner-closure-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/diamond-owner-closure/
-          if-no-files-found: error
-          retention-days: 7
       - name: Retain durable original continuation proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_continuation.outcome)
         uses: actions/upload-artifact@v4

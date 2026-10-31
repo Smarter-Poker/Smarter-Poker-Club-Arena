@@ -1024,11 +1024,14 @@ class TournamentService {
    */
   async readTournamentUnitCents(tournamentId: string): Promise<number | null> {
     try {
-      const { data, error } = await supabase
-        .from('tournaments')
-        .select(TOURNAMENT_ARENA_EMBED)
-        .eq('id', tournamentId)
-        .maybeSingle();
+      const { data, error } = await withTournamentRegistrationReadBoundary((signal) =>
+        supabase
+          .from('tournaments')
+          .select(TOURNAMENT_ARENA_EMBED)
+          .eq('id', tournamentId)
+          .abortSignal(signal)
+          .maybeSingle()
+      );
       if (error) {
         reportError(error, 'TournamentService.readTournamentUnitCents', { tournamentId });
         return null;
@@ -1453,9 +1456,13 @@ class TournamentService {
    * ownership could not be checked.
    */
   async findTournamentEntryTicket(tournamentId: string): Promise<TournamentEntryTicket | null> {
-    const { data, error } = await supabase.rpc('fn_find_tournament_entry_ticket', {
-      p_tournament_id: tournamentId,
-    });
+    const { data, error } = await withTournamentRegistrationReadBoundary((signal) =>
+      supabase
+        .rpc('fn_find_tournament_entry_ticket', {
+          p_tournament_id: tournamentId,
+        })
+        .abortSignal(signal)
+    ).catch((error) => ({ data: null, error }));
     if (error) {
       reportError(error, 'TournamentService.findTournamentEntryTicket', { tournamentId });
       throw new Error('Could Not Check For A Tournament Ticket. No Chips Were Charged.');
@@ -1508,7 +1515,9 @@ class TournamentService {
     if (authError || !auth.user || auth.user.id !== userId) {
       throw new Error('Sign In To The Correct Account Before Registering For A Tournament.');
     }
-    const tournament = await this.getTournament(tournamentId);
+    const tournament = await withTournamentRegistrationReadBoundary((signal) =>
+      this.getTournament(tournamentId, { throwOnError: true, signal })
+    );
     if (!tournament) throw new Error('Tournament not found');
 
     // Presence, not truthiness, selects the noncash rail. If a caller says it

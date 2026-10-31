@@ -59,7 +59,7 @@ describe('spin top-tier badge', () => {
 
 const availabilityRead = vi.hoisted(() => ({ select: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({
-  supabase: { from: () => ({ select: availabilityRead.select }) },
+  supabase: { from: () => ({ select: () => ({ abortSignal: availabilityRead.select }) }) },
 }));
 afterEach(() => {
   cleanup();
@@ -99,5 +99,96 @@ describe('spin availability belongs to the requested club', () => {
     view.rerender({ clubId: 'club-b' });
     await act(async () => {});
     expect(view.result.current?.can_draw_100x).toBe(false);
+  });
+});
+
+describe('spin availability freshness', () => {
+  it('expires a mounted live claim without polling the reserve', async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    availabilityRead.select
+      .mockReset()
+      .mockResolvedValue({ data: [{ club_id: 'club-a', can_draw_100x: true }], error: null });
+    const { useSpinTierAvailability } = await import('../../src/hooks/useSpinTierAvailability');
+    const view = renderHook(() => useSpinTierAvailability('club-a'));
+    await act(async () => {});
+    expect(view.result.current?.can_draw_100x).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_001);
+    });
+    expect(view.result.current).toBeNull();
+    expect(availabilityRead.select).toHaveBeenCalledTimes(1);
+    availabilityRead.select.mockResolvedValue({
+      data: [{ club_id: 'club-a', can_draw_100x: false }],
+      error: null,
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(view.result.current?.can_draw_100x).toBe(false);
+  });
+  it('does not reuse an expired true claim when a new read fails', async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    availabilityRead.select
+      .mockReset()
+      .mockResolvedValueOnce({ data: [{ club_id: 'club-a', can_draw_100x: true }], error: null });
+    const { useSpinTierAvailability } = await import('../../src/hooks/useSpinTierAvailability');
+    const first = renderHook(() => useSpinTierAvailability('club-a'));
+    await act(async () => {});
+    first.unmount();
+    vi.setSystemTime(200_000);
+    availabilityRead.select.mockResolvedValueOnce({
+      data: null,
+      error: new Error('read unavailable'),
+    });
+    const next = renderHook(() => useSpinTierAvailability('club-a'));
+    expect(next.result.current).toBeNull();
+    await act(async () => {});
+    expect(next.result.current).toBeNull();
+  });
+  it('releases a hung shared read so a later focus can obtain current availability', async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    let resolveOld!: (value: unknown) => void;
+    availabilityRead.select.mockReset().mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      })
+    );
+    const { useSpinTierAvailability } = await import('../../src/hooks/useSpinTierAvailability');
+    const view = renderHook(() => useSpinTierAvailability('club-a'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_001);
+    });
+    expect(view.result.current).toBeNull();
+    availabilityRead.select.mockResolvedValueOnce({
+      data: [{ club_id: 'club-a', can_draw_100x: true }],
+      error: null,
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(view.result.current?.can_draw_100x).toBe(true);
+    await act(async () => {
+      resolveOld({ data: [{ club_id: 'club-a', can_draw_100x: false }], error: null });
+    });
+    expect(view.result.current?.can_draw_100x).toBe(true);
+  });
+  it('does not turn a malformed boolean into a payable claim', async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    availabilityRead.select.mockReset().mockResolvedValueOnce({
+      data: [{ club_id: 'club-a', can_draw_100x: 'false' }],
+      error: null,
+    });
+    const { useSpinTierAvailability } = await import('../../src/hooks/useSpinTierAvailability');
+    const view = renderHook(() => useSpinTierAvailability('club-a'));
+    await act(async () => {});
+    expect(view.result.current).toBeNull();
   });
 });

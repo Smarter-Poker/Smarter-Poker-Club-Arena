@@ -21,14 +21,15 @@
  * One request per lobby render, not one per card: a lobby shows many Spin
  * tiles for the same club, so the fetch is module-cached with a short TTL and
  * shared across every subscriber. The pool moves with every settled game, but
- * a 60-second-stale badge is fine — the DRAW is still gated server-side, so a
- * stale "100x live" can never produce an unpayable jackpot, only a moment of
- * optimism.
+ * a badge expires after 60 seconds. Focus and visibility recovery can request
+ * a new observation; expiry only hides the old claim and never polls the pool.
+ * The draw remains gated by its server-side funding authority.
  */
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { runWithRequestDeadline } from '../utils/requestDeadline';
 
 export interface SpinTierAvailability {
   can_draw_100x: boolean;
@@ -45,9 +46,12 @@ async function refresh(): Promise<void> {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const { data, error } = await supabase
-        .from('v_spin_tier_availability')
-        .select('club_id, can_draw_100x');
+      const { data, error } = await runWithRequestDeadline((signal) =>
+        supabase
+          .from('v_spin_tier_availability')
+          .select('club_id, can_draw_100x')
+          .abortSignal(signal)
+      );
       if (error) {
         reportError(error, 'SpinTierAvailability.read');
         return; // keep the prior club-scoped cache
@@ -55,9 +59,9 @@ async function refresh(): Promise<void> {
       if (!Array.isArray(data)) return;
       const next = new Map<string, SpinTierAvailability>();
       for (const row of data) {
-        if (row?.club_id) {
+        if (row?.club_id && typeof row.can_draw_100x === 'boolean') {
           next.set(String(row.club_id), {
-            can_draw_100x: !!row.can_draw_100x,
+            can_draw_100x: row.can_draw_100x,
           });
         }
       }
@@ -81,23 +85,51 @@ export function useSpinTierAvailability(
   clubId: string | null | undefined
 ): SpinTierAvailability | null {
   const key = clubId ? String(clubId) : null;
-  const [snapshot, setSnapshot] = useState<{
-    clubId: string | null;
-    value: SpinTierAvailability | null;
-  }>(() => ({ clubId: key, value: key ? (cache.get(key) ?? null) : null }));
+  const current = () => ({
+    clubId: key,
+    value: key && Date.now() - fetchedAt < TTL_MS ? (cache.get(key) ?? null) : null,
+    expiresAt: fetchedAt + TTL_MS,
+  });
+  const [snapshot, setSnapshot] = useState(current);
 
   useEffect(() => {
     if (!key) return;
     let cancelled = false;
-    setSnapshot({ clubId: key, value: cache.get(key) ?? null });
-    void refresh().then(() => {
-      if (!cancelled) setSnapshot({ clubId: key, value: cache.get(key) ?? null });
-    });
+    let expiry: ReturnType<typeof setTimeout> | undefined;
+    const publish = () => {
+      if (cancelled) return;
+      clearTimeout(expiry);
+      const remaining = fetchedAt + TTL_MS - Date.now();
+      setSnapshot({
+        clubId: key,
+        value: remaining > 0 ? (cache.get(key) ?? null) : null,
+        expiresAt: fetchedAt + TTL_MS,
+      });
+      // One display expiry, not a read/retry loop. No stale "Live" claim is
+      // retained after its evidence expires, even if the next read fails.
+      if (remaining > 0)
+        expiry = setTimeout(() => {
+          if (!cancelled) setSnapshot({ clubId: key, value: null, expiresAt: 0 });
+        }, remaining);
+    };
+    const read = () => {
+      publish();
+      void refresh().then(publish);
+    };
+    const visible = () => {
+      if (document.visibilityState === 'visible') read();
+    };
+    read();
+    window.addEventListener('focus', read);
+    document.addEventListener('visibilitychange', visible);
     return () => {
       cancelled = true;
+      clearTimeout(expiry);
+      window.removeEventListener('focus', read);
+      document.removeEventListener('visibilitychange', visible);
     };
   }, [key]);
 
   // A changed club is a new question, including the render before its effect.
-  return key && snapshot.clubId === key ? snapshot.value : null;
+  return key && snapshot.clubId === key && Date.now() < snapshot.expiresAt ? snapshot.value : null;
 }

@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 262384,
-      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+      "bytes": 262624,
+      "sha256": "e0f9a6c8b5d3eac8c7627272aad96f7237eb630fe6c3fe58b4d78be88421c6b9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5790,5 +5790,16 @@
     "execution_performed": false,
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false
+  },
+  "tournamentBoundaryQualification20261031": {
+    "reason": "Adds isolated tournament PostgreSQL regression to accounting shard 4; preserves existing cash commands, assertions and certificates. Current workflow source identity only.",
+    "previous": {
+      "bytes": 262384,
+      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+    },
+    "current": {
+      "bytes": 262624,
+      "sha256": "e0f9a6c8b5d3eac8c7627272aad96f7237eb630fe6c3fe58b4d78be88421c6b9"
+    }
   }
 }

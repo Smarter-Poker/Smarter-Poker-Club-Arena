@@ -319,8 +319,9 @@ const DEAD = '\u0000dead';
  * Add one action to a player's contribution for its street, in the engine's
  * own amount convention (HandController.processAction): a `call` amount is
  * the INCREMENT just put in; `bet`, `raise`, `all_in` and the forced posts
- * (`sb`, `bb`) carry the player's street TOTAL; a dead post (`dead: true`,
- * an ante) is money that never counts toward the street level, so it adds.
+ * (`sb`, `bb`, `straddle`, `post`) carry the player's street TOTAL; a dead
+ * post (`dead: true` - an ante or a dead blind) is money that never counts
+ * toward the street level, so it is pooled; a live `ante` adds to the level.
  */
 export function contribute(paid: Map<string, number>, a: ReviewAction & { dead?: boolean }): void {
   if (typeof a.userId !== 'string') return;
@@ -333,7 +334,9 @@ export function contribute(paid: Map<string, number>, a: ReviewAction & { dead?:
     return;
   }
   const prev = paid.get(a.userId) ?? 0;
-  if (a.action === 'call') paid.set(a.userId, prev + amt);
+  // A live ante (HandController pushes 'ante' with dead:false for the part
+  // that joins the bet level) sits on top of the blind already posted.
+  if (a.action === 'call' || a.action === 'ante') paid.set(a.userId, prev + amt);
   else paid.set(a.userId, Math.max(prev, amt));
 }
 

@@ -144,6 +144,24 @@ describe('the river call faced', () => {
       act('v', 'bet', 'river', 5), act('h', 'call', 'river', 5),
     ];
     expect(riverCallFaced(ante, 'h')).toEqual({ betFraction: 0.5, raised: false });
+    // A live ante on top of the big blind (dead:false) joins the level: bb 1 +
+    // ante 1 = 2; v raises to 6 total, h calls 4 more: 6 + 6 = 12; a 5 bet is
+    // 5/12 of the pot.
+    const liveAnte = [
+      act('v', 'sb', 'preflop', 0.5), act('h', 'bb', 'preflop', 1),
+      { userId: 'h', action: 'ante', stage: 'preflop', amount: 1, dead: false } as ReviewAction,
+      act('v', 'raise', 'preflop', 6), act('h', 'call', 'preflop', 4),
+      act('v', 'bet', 'river', 5), act('h', 'call', 'river', 5),
+    ];
+    expect(riverCallFaced(liveAnte, 'h')).toEqual({ betFraction: 0.417, raised: false });
+    // Hero bet first and faces a raise: the raise is measured against the pot
+    // including hero's own bet, and it is `raised`.
+    const raisedAfterHeroBet = [
+      act('v', 'sb', 'preflop', 0.5), act('h', 'bb', 'preflop', 1), act('v', 'call', 'preflop', 0.5),
+      act('h', 'bet', 'river', 2), act('v', 'raise', 'river', 6), act('h', 'call', 'river', 4),
+    ];
+    // pot 2 + hero 2 = 4 before the raise; the raise puts 6 in: 1.5 pot.
+    expect(riverCallFaced(raisedAfterHeroBet, 'h')).toEqual({ betFraction: 1.5, raised: true });
     // A short all-in call (no isFullRaise) is a call; a full-raise all-in is aggression.
     const jam = [act('v', 'raise', 'preflop', 6), act('h', 'call', 'preflop', 6), act('v', 'all_in', 'river', 30, true), act('h', 'all_in', 'river', 9)];
     expect(riverCallFaced(jam, 'h')).toEqual({ betFraction: 2.5, raised: false });

@@ -4,7 +4,8 @@
 -- original 30 seconds a tick) kept every union and club unpaid, and after
 -- 04:00 no route could pay a missed scope or retry a refused one.
 -- Now each owned boundary pays the scopes that are prepared: preparation gets
--- 150 seconds of each original 240-second tick with a fair share per scope,
+-- 150 seconds of each original 240-second tick with a fair share (deadline and
+-- window budget) per scope,
 -- standalone clubs first; the last ticks before a slot own it with the ready
 -- scopes; a scope whose last-moment revalidation changed is deferred without
 -- refusing the others; and a scope an earlier slot did not pay is prepared for
@@ -12,7 +13,7 @@
 -- keeps the original two-minute notice, physical fleet ACK, four-minute money
 -- deadline, R1/R2/R3 order, receipts and owned-phase money refusal.
 -- No rate, ledger, receipt, report, generation, schedule or engine change.
--- @live-proof: EXISTS(SELECT FROM pg_attribute WHERE attrelid='public.weekly_accounting_payout_pauses'::regclass AND attname='attempt_no' AND NOT attisdropped) AND md5(pg_get_functiondef('smarter_private.weekly_payout_due()'::regprocedure))='b77443e07a558eae875c7f526ca9c16d' AND md5(pg_get_functiondef('smarter_private.weekly_payout_prepare_due()'::regprocedure))='9a997451d6213ee38e67df1d5b271b36' AND md5(pg_get_functiondef('smarter_private.weekly_payout_execute(uuid)'::regprocedure))='bbdd0f71eac3f2c9d36b8fa02e32ca09'
+-- @live-proof: EXISTS(SELECT FROM pg_attribute WHERE attrelid='public.weekly_accounting_payout_pauses'::regclass AND attname='attempt_no' AND NOT attisdropped) AND md5(pg_get_functiondef('smarter_private.weekly_payout_due()'::regprocedure))='b77443e07a558eae875c7f526ca9c16d' AND md5(pg_get_functiondef('smarter_private.weekly_payout_prepare_due()'::regprocedure))='24f2a5141c6ff0612ecaa65de4dbf486' AND md5(pg_get_functiondef('smarter_private.weekly_payout_execute(uuid)'::regprocedure))='bbdd0f71eac3f2c9d36b8fa02e32ca09'
 BEGIN;
 SET LOCAL transaction_timeout='15s';
 SET LOCAL statement_timeout='5s';
@@ -136,6 +137,9 @@ BEGIN
   share:=GREATEST(interval '30 seconds',((began+interval '150 seconds')-clock_timestamp())/GREATEST(remaining,1));
   scope_deadline:=LEAST(NULLIF(current_setting('app.weekly_accounting_scope_deadline',true),'')::timestamptz,clock_timestamp()+share);
   PERFORM set_config('app.weekly_accounting_scope_deadline',scope_deadline::text,true);
+  -- The original window provers stop at deadline-budget+120s (and never past
+  -- the statement's own start+timeout-60s): this scope's budget is its share.
+  PERFORM set_config('app.weekly_accounting_scope_budget',share::text,true);
   BEGIN
    -- Continue only this original R0 transition while its immutable source
    -- reviews prove positive progress. No other failure/result is retried.
@@ -319,7 +323,7 @@ REVOKE ALL ON FUNCTION smarter_private.weekly_payout_execute(uuid) FROM PUBLIC,a
 DO $weekly_payout_catch_up_installed$
 BEGIN
  IF md5(pg_get_functiondef('smarter_private.weekly_payout_due()'::regprocedure))IS DISTINCT FROM 'b77443e07a558eae875c7f526ca9c16d'
-  OR md5(pg_get_functiondef('smarter_private.weekly_payout_prepare_due()'::regprocedure))IS DISTINCT FROM '9a997451d6213ee38e67df1d5b271b36'
+  OR md5(pg_get_functiondef('smarter_private.weekly_payout_prepare_due()'::regprocedure))IS DISTINCT FROM '24f2a5141c6ff0612ecaa65de4dbf486'
   OR md5(pg_get_functiondef('smarter_private.weekly_payout_execute(uuid)'::regprocedure))IS DISTINCT FROM 'bbdd0f71eac3f2c9d36b8fa02e32ca09'
   OR EXISTS(SELECT FROM pg_proc WHERE oid IN('smarter_private.weekly_payout_due()'::regprocedure,'smarter_private.weekly_payout_prepare_due()'::regprocedure,'smarter_private.weekly_payout_execute(uuid)'::regprocedure)
    AND proacl IS DISTINCT FROM '{postgres=X/postgres}'::aclitem[])

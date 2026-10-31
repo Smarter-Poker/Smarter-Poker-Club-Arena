@@ -13,25 +13,25 @@ const LEDGER_PURPOSE = 'source-defined-ledger-attribution';
 // The pinned GoTrue binary's version command includes a literal v prefix.
 // A word-boundary before the first digit rejects that genuine output.
 export function assertFixtureAuthVersion(output) {
-  assert.equal(output.trim(), 'v2.196.0', 'unexpected fixture Auth version');
+  assert.equal(output.trim(), 'v2.197.0', 'unexpected fixture Auth version');
 }
 
-// Exact sorted migration filenames from pinned GoTrue v2.196.0, including 00.
+// Exact sorted migration filenames from pinned GoTrue v2.197.0, including 00.
 // A positive row count alone would accept a partially migrated service.
 export function assertFixtureAuthMigrations(versions) {
   assert.ok(
-    Array.isArray(versions) && versions.length === 70,
+    Array.isArray(versions) && versions.length === 75,
     'FIXTURE_AUTH_MIGRATIONS_INCOMPLETE'
   );
   assert.ok(
     versions.every((value) => typeof value === 'string' && /^(?:00|[0-9]{14})$/.test(value))
   );
-  assert.equal(new Set(versions).size, 70);
+  assert.equal(new Set(versions).size, 75);
   assert.equal(
     createHash('sha256')
       .update([...versions].sort().join('\n') + '\n')
       .digest('hex'),
-    'eef970cca83c2c0954e0f1a9b28757d38f4fa6067a86677b5caed4e44997ec4d',
+    '2f651f5c9c2763d25cba6b87939caff19916e4da689d7ab2d7589a942e11ae79',
     'FIXTURE_AUTH_MIGRATIONS_CHANGED'
   );
 }

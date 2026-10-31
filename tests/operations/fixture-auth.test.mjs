@@ -9,6 +9,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
 import {
   assertFixtureAuthVersion,
+  assertFixtureAuthMigrations,
   browserStorage,
   fixtureAuth,
   fixtureSecrets,
@@ -178,11 +179,18 @@ for (const [status, payload, expected] of [
 }
 
 test('accepts the pinned native GoTrue version output and refuses changed binaries', () => {
-  // Captured from the actual successful Linux image build at 799eebf49d.
-  const nativeVersion = 'v2.196.0\n';
-  assert.equal(/\b2\.196\.0\b/.test(nativeVersion), false);
+  // Exact pinned provider output contract; current native execution is separate.
+  const nativeVersion = 'v2.197.0\n';
+  assert.equal(/\b2\.197\.0\b/.test(nativeVersion), false);
   assert.doesNotThrow(() => assertFixtureAuthVersion(nativeVersion));
-  for (const changed of ['v2.196.1', 'v2.196.01', 'v2.196.0-dev', 'v2.196.0\nv2.197.0', '']) {
+  for (const changed of [
+    'v2.197.1',
+    'v2.196.0',
+    'v2.197.01',
+    'v2.197.0-dev',
+    'v2.197.0\nv2.197.0',
+    '',
+  ]) {
     assert.throws(() => assertFixtureAuthVersion(changed));
   }
 });
@@ -282,7 +290,7 @@ test('a version command keeps its stdout protocol separate from shutdown diagnos
   // Pinned version_cmd.go prints stdout; main.go separately logs cancellation.
   const result = await promisify(execFile)(process.execPath, [
     '-e',
-    'process.stdout.write("v2.196.0\\n");process.stderr.write("received graceful shutdown signal\\n")',
+    'process.stdout.write("v2.197.0\\n");process.stderr.write("received graceful shutdown signal\\n")',
   ]);
   assert.doesNotThrow(() => assertFixtureAuthVersion(result.stdout));
   assert.throws(() => assertFixtureAuthVersion(result.stdout + result.stderr));
@@ -345,5 +353,111 @@ test('browser storage binds the current client SSO key and project namespace at 
   const key = client.match(/storageKey:\s*'([^']+)'/)?.[1];
   assert.equal(key, 'smarter-poker-auth');
   assert.equal(state.origins[0].localStorage.length, 2);
-  assert.deepEqual(JSON.parse(state.origins[0].localStorage.find((entry) => entry.name === key).value), session);
+  assert.deepEqual(
+    JSON.parse(state.origins[0].localStorage.find((entry) => entry.name === key).value),
+    session
+  );
+});
+
+// Official supabase/auth v2.197.0, commit4eee58f296d9698a1c2c0ae14d7a0b379c7622d3.
+// This is a source vector, not inserted migration history or a native pass.
+test('the genuine current Auth core requires exact75 and refuses old, future, legacy or forged ledgers', () => {
+  const versions = [
+    '00',
+    '20210710035447',
+    '20210722035447',
+    '20210730183235',
+    '20210909172000',
+    '20210927181326',
+    '20211122151130',
+    '20211124214934',
+    '20211202183645',
+    '20220114185221',
+    '20220114185340',
+    '20220224000811',
+    '20220323170000',
+    '20220429102000',
+    '20220531120530',
+    '20220614074223',
+    '20220811173540',
+    '20221003041349',
+    '20221003041400',
+    '20221011041400',
+    '20221020193600',
+    '20221021073300',
+    '20221021082433',
+    '20221027105023',
+    '20221114143122',
+    '20221114143410',
+    '20221125140132',
+    '20221208132122',
+    '20221215195500',
+    '20221215195800',
+    '20221215195900',
+    '20230116124310',
+    '20230116124412',
+    '20230131181311',
+    '20230322519590',
+    '20230402418590',
+    '20230411005111',
+    '20230508135423',
+    '20230523124323',
+    '20230818113222',
+    '20230914180801',
+    '20231027141322',
+    '20231114161723',
+    '20231117164230',
+    '20240115144230',
+    '20240214120130',
+    '20240306115329',
+    '20240314092811',
+    '20240427152123',
+    '20240612123726',
+    '20240729123726',
+    '20240802193726',
+    '20240806073726',
+    '20241009103726',
+    '20250717082212',
+    '20250731150234',
+    '20250804100000',
+    '20250901200500',
+    '20250903112500',
+    '20250904133000',
+    '20250925093508',
+    '20251007112900',
+    '20251104100000',
+    '20251111201300',
+    '20251201000000',
+    '20260115000000',
+    '20260121000000',
+    '20260219120000',
+    '20260302000000',
+    '20260625000000',
+    '20260821000000',
+    '20260821010000',
+    '20260824000000',
+    '20260824000001',
+    '20260831180000',
+  ];
+  assertFixtureAuthMigrations(versions);
+  for (const changed of [
+    versions.slice(0, -1),
+    [...versions, '20260911120000'],
+    [...versions.slice(0, -1), versions[0]],
+    [...versions.slice(0, -1), '20171026211738'],
+    versions.filter((version) => !version.startsWith('202608')),
+    [
+      ...versions,
+      ...[
+        '20171026211738',
+        '20171026211808',
+        '20171026211834',
+        '20180103212743',
+        '20180108183307',
+        '20180119214651',
+        '20180125194653',
+      ],
+    ],
+  ])
+    assert.throws(() => assertFixtureAuthMigrations(changed));
 });

@@ -149,10 +149,7 @@ describe('a heading the player taps reorders the whole board', () => {
         .map((r) => r.getAttribute('data-id'));
     // Default order: the featured game is pinned first.
     expect(order()).toEqual(['small', 'big']);
-    const players = within(list)
-      .getAllByRole('columnheader')
-      .map((h) => h.querySelector('button')!)
-      .find((b) => b.textContent?.startsWith('Players'))!;
+    const players = within(list).getByRole('button', { name: /^Players/ });
     fireEvent.click(players); // ascending
     fireEvent.click(players); // descending
     expect(order()).toEqual(['small', 'big']);

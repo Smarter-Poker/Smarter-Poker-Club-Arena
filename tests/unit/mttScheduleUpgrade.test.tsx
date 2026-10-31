@@ -126,6 +126,8 @@ describe('MTT schedule upgrade', () => {
     expect(compactTop.classList.contains('is-featured')).toBe(true);
     expect(within(compactTop as HTMLElement).getByText('Top Event')).toBeTruthy();
     const heading = document.querySelector('.lobby-table-wrap thead') as HTMLElement;
+    fireEvent.click(document.querySelector('.compact-lobby thead th')!);
+    expect(ids()).toEqual(['top', 'late', 'soon', 'open', 'running']);
     const price = within(heading).getByRole('columnheader', { name: /buy-in/i });
     fireEvent.click(within(price).queryByRole('button') ?? price);
     expect(ids()[0]).toBe('top');

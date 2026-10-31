@@ -35,7 +35,6 @@ import {
   spinPrizeLabel,
   stackDepthLabel,
   stackFormatRank,
-  styleCountsLine,
 } from './lobbyEntries';
 import LightningGamesIcon from './LightningGamesIcon';
 import { cashTemplateKey } from '../../config/cashGames';
@@ -610,7 +609,7 @@ const COL_NAME: ColumnDef = {
   key: 'name',
   label: 'Game',
   className: 'lt-col-name',
-  sortable: true,
+  sortable: false,
   /* Sort what the row SHOWS. A cash row's first line is cashTitleLines()'s
      headline ("NLH 1 / 2"); the table's own name is line two. Sorting on
      `name` reordered the board against text the player was not reading. */
@@ -711,7 +710,7 @@ const COL_VARIANT: ColumnDef = {
   key: 'variant',
   label: 'Variant',
   className: 'lt-col-variant',
-  sortable: true,
+  sortable: false,
   sortValue: (e) => variantRank(e),
   render: (e) => (
     /* <abbr title> is a hover affordance and half this traffic has no hover,
@@ -1483,176 +1482,6 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
 }
 
 // ─── The table ─────────────────────────────────────────────────────────────
-/**
- * The variant menu: All, then each of the tab's games in canonical order.
- * Rendered under the Variant heading on both the phone bar and the desktop
- * table; the caller owns the open state and the selection.
- */
-function VariantMenu({
-  choices,
-  selected,
-  onToggle,
-  onSortByVariant,
-  sortedByVariant,
-  onClose,
-}: {
-  choices: readonly { key: string; label: string }[];
-  selected: readonly string[];
-  onToggle: (key: string | null) => void;
-  onSortByVariant: () => void;
-  sortedByVariant: boolean;
-  onClose: () => void;
-}) {
-  const allOn = selected.length === 0;
-  return (
-    <div className="lt-variant-menu" role="group" aria-label="Game Variant">
-      <button
-        type="button"
-        className={`lt-variant-menu__item${allOn ? ' is-on' : ''}`}
-        aria-pressed={allOn}
-        onClick={() => {
-          onToggle(null);
-          onClose();
-        }}
-      >
-        <span className="lt-variant-menu__check" aria-hidden="true" />
-        All
-      </button>
-      {choices.map((c) => {
-        const on = selected.includes(c.key);
-        return (
-          <button
-            key={c.key}
-            type="button"
-            className={`lt-variant-menu__item${on ? ' is-on' : ''}`}
-            aria-pressed={on}
-            onClick={() => onToggle(c.key)}
-          >
-            <span className="lt-variant-menu__check" aria-hidden="true" />
-            {VARIANT_MENU_LABELS[c.key] ?? c.label}
-          </button>
-        );
-      })}
-      <button
-        type="button"
-        className={`lt-variant-menu__item lt-variant-menu__item--sort${sortedByVariant ? ' is-on' : ''}`}
-        aria-pressed={sortedByVariant}
-        onClick={() => {
-          onSortByVariant();
-          onClose();
-        }}
-      >
-        <span className="lt-variant-menu__check" aria-hidden="true" />
-        Sort By Variant
-      </button>
-    </div>
-  );
-}
-
-/**
- * THE STAKES MENU (Dan 2026-09-04): "ADD AN 'ACTION SELECTOR' IN THE STAKES
- * DROP DOWN WHERE USERS CAN SELECT 'CLASSIC' 'ACTION' OR 'MADNESS' AS AN
- * OPTION. AND THE BAR POP UP SHOULD HAVE A 'SORT' HIGH TO LOW, OR LOW TO HIGH
- * INSIDE OF IT." Rendered under the Stakes heading on the phone bar and the
- * desktop table alike, the way the Variant menu is: a Game Style group (All,
- * then the three templates) and a Sort group (High To Low, Low To High). The
- * caller owns the open state, the selection and the sort.
- */
-function StakesMenu({
-  choices,
-  selected,
-  counts,
-  onToggle,
-  sortDir,
-  onSort,
-  onClose,
-}: {
-  choices: readonly { key: string; label: string }[];
-  selected: readonly string[];
-  /**
-   * THE COUNTS (Dan 2026-09-05): how many games of each style the tab holds,
-   * keyed by style, from rows already loaded. Printed under the eyebrow as
-   * "Classic 12 / Action 4 / Madness 2" and beside each item. Omit and the
-   * menu is as it was.
-   */
-  counts?: Readonly<Record<string, number>>;
-  onToggle: (key: string | null) => void;
-  /** The current stakes sort direction, or null when the board is sorted by something else. */
-  sortDir: SortDir | null;
-  onSort: (dir: SortDir) => void;
-  onClose: () => void;
-}) {
-  const allOn = selected.length === 0;
-  return (
-    <div className="lt-variant-menu lt-stakes-menu" role="group" aria-label="Stakes">
-      <span className="lt-variant-menu__eyebrow" aria-hidden="true">
-        Game Style
-      </span>
-      {counts && (
-        <span className="lt-stakes-menu__counts" data-testid="lt-style-counts">
-          {styleCountsLine(choices, counts)}
-        </span>
-      )}
-      <button
-        type="button"
-        className={`lt-variant-menu__item${allOn ? ' is-on' : ''}`}
-        aria-pressed={allOn}
-        onClick={() => {
-          onToggle(null);
-          onClose();
-        }}
-      >
-        <span className="lt-variant-menu__check" aria-hidden="true" />
-        All
-      </button>
-      {choices.map((c) => {
-        const on = selected.includes(c.key);
-        return (
-          <button
-            key={c.key}
-            type="button"
-            className={`lt-variant-menu__item${on ? ' is-on' : ''}`}
-            aria-pressed={on}
-            aria-label={
-              counts
-                ? `${c.label}, ${counts[c.key] ?? 0} ${(counts[c.key] ?? 0) === 1 ? 'Game' : 'Games'}`
-                : undefined
-            }
-            onClick={() => onToggle(c.key)}
-          >
-            <span className="lt-variant-menu__check" aria-hidden="true" />
-            {c.label}
-            {counts && <span className="lt-variant-menu__count">{counts[c.key] ?? 0}</span>}
-          </button>
-        );
-      })}
-      <span className="lt-variant-menu__eyebrow lt-variant-menu__eyebrow--sort" aria-hidden="true">
-        Sort
-      </span>
-      {(
-        [
-          { dir: 'desc', label: 'High To Low' },
-          { dir: 'asc', label: 'Low To High' },
-        ] as const
-      ).map((o) => (
-        <button
-          key={o.dir}
-          type="button"
-          className={`lt-variant-menu__item lt-variant-menu__item--dir${sortDir === o.dir ? ' is-on' : ''}`}
-          aria-pressed={sortDir === o.dir}
-          onClick={() => {
-            onSort(o.dir);
-            onClose();
-          }}
-        >
-          <span className="lt-variant-menu__check" aria-hidden="true" />
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 interface LobbyTableProps {
   entries: LobbyEntry[];
   category: LobbyCategory;
@@ -1664,27 +1493,14 @@ interface LobbyTableProps {
   loading?: boolean;
   /** Scopes the remembered sort; omit and it is remembered globally. */
   clubId?: string;
-  /**
-   * THE VARIANT SELECTOR (Dan 2026-09-03). The Variant heading - on the phone
-   * bar and on the desktop table alike - opens a menu of this tab's games, in
-   * canonical order, with an All option. Keys are the filter spec's `games`
-   * keys; the selection is the saved filter's `games`, so the sheet and this
-   * menu can never disagree. Omit on tabs with nothing to choose.
-   */
+  /** Legacy input compatibility. Heading popups were retired2026-10-31;
+   * game/style selections are owned by the dedicated Filters sheet. */
   variantChoices?: readonly { key: string; label: string }[];
   selectedVariants?: readonly string[];
   onVariantsChange?: (keys: string[]) => void;
-  /**
-   * THE STAKES MENU (Dan 2026-09-04). The Stakes heading opens a menu of the
-   * three game styles (Classic / Action / Madness, with All) and the two
-   * stakes sorts (High To Low / Low To High). Keys are the filter spec's
-   * `styles` keys; the selection is the saved filter's `styles`. Omit on tabs
-   * that have no styles to choose.
-   */
   styleChoices?: readonly { key: string; label: string }[];
   selectedStyles?: readonly string[];
   onStylesChange?: (keys: string[]) => void;
-  /** Games per style on this tab (countStylesOnBoard), shown inside the Stakes menu. */
   styleCounts?: Readonly<Record<string, number>>;
   /**
    * The player chose the page's Sort By order for this tab (2026-10-24). On a
@@ -1718,19 +1534,11 @@ export default function LobbyTable({
   ctx,
   loading,
   clubId,
-  variantChoices,
-  selectedVariants,
-  onVariantsChange,
-  styleChoices,
-  selectedStyles: savedStyles,
-  onStylesChange,
-  styleCounts,
   orderChosen = false,
   requestedOrder = null,
   onHeadingSort,
   orderLabel,
 }: LobbyTableProps) {
-  const selectedStyles = savedStyles?.map(cashTemplateKey);
   const boardNow = useSharedSecondTick(boardEntries.some((e) => e.kind === 'mtt'));
   const liveEntries = useMemo(
     () =>
@@ -1763,95 +1571,6 @@ export default function LobbyTable({
     });
     return changed ? out : liveEntries;
   }, [liveEntries]);
-  /* Two heading menus, one open at a time: 'variant' under Variant, 'stakes'
-     under Stakes.
-
-     THE OLD COMMENT HERE SAID "both anchor to the same ref because only one is
-     mounted", AND THAT WAS FALSE. Each open menu is rendered TWICE - once in
-     the phone sort bar (`--bar`) and once in the desktop heading (`--th`) - and
-     neither copy is conditionally rendered: they are hidden by CSS alone
-     (`.lobby-sortbar { display: none }` above 900px, `.arena-lobby-card-list +
-     .lobby-table-wrap { display: none }` below it). Both nodes therefore exist
-     on a phone, both received `ref={variantMenuRef}`, and React's last commit
-     won - so the ref pointed at the DESKTOP copy, inside a `display: none`
-     table. See the outside-tap handler below for what that cost. */
-  const [openMenu, setOpenMenu] = useState<'variant' | 'stakes' | null>(null);
-  const variantMenuOpen = openMenu === 'variant';
-  const stakesMenuOpen = openMenu === 'stakes';
-  const setVariantMenuOpen = (next: boolean | ((open: boolean) => boolean)) =>
-    setOpenMenu((cur) => {
-      const open = typeof next === 'function' ? next(cur === 'variant') : next;
-      return open ? 'variant' : cur === 'variant' ? null : cur;
-    });
-  const setStakesMenuOpen = (next: boolean | ((open: boolean) => boolean)) =>
-    setOpenMenu((cur) => {
-      const open = typeof next === 'function' ? next(cur === 'stakes') : next;
-      return open ? 'stakes' : cur === 'stakes' ? null : cur;
-    });
-  const hasVariantMenu = Boolean(variantChoices && variantChoices.length > 0 && onVariantsChange);
-  const hasStakesMenu = Boolean(styleChoices && styleChoices.length > 0 && onStylesChange);
-  /* Close on outside tap / Escape, the way any menu should.
-
-     THE BUG THIS FIXES (Dan 2026-09-05: "when you open STAKES or VARIATIONS and
-     get the dropdowns, they aren't clickable. It's like it isn't there, and you
-     click what's behind the page or behind the buttons").
-
-     Containment used to be tested against `variantMenuRef.current`, and that
-     ref resolved to the DESKTOP copy of the menu (see the note on `openMenu`
-     above). So on a phone every tap inside the VISIBLE menu was measured
-     against a hidden node in a `display: none` table, `contains()` answered
-     false, and this handler closed the menu on `pointerdown` - before the
-     item's own `click` could fire. React flushes that discrete update
-     synchronously, so the button under the finger was removed from the DOM and
-     the click retargeted to whatever the menu had been covering: the game card
-     behind it. The menu was never unclickable; it was being unmounted out from
-     under the finger.
-
-     The fix is to stop asking one ref to speak for two nodes. Both copies carry
-     `.lt-variant-menu-anchor`, so `closest()` recognises either one, and there
-     is nothing left to keep in sync. */
-  useEffect(() => {
-    if (openMenu === null) return;
-    const onDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      /* A tap on the Variant heading itself is the heading's own toggle, not
-         an outside tap: closing here AND toggling on the click that follows
-         re-opened the menu on every press, so it could never be closed from
-         where it was opened. */
-      const onTrigger =
-        target instanceof Element && target.closest('[aria-haspopup="menu"]') !== null;
-      const inMenu =
-        target instanceof Element && target.closest('.lt-variant-menu-anchor') !== null;
-      if (!onTrigger && !inMenu) setOpenMenu(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpenMenu(null);
-    };
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [openMenu]);
-  const toggleVariant = (key: string | null) => {
-    if (!onVariantsChange) return;
-    const current = selectedVariants ?? [];
-    if (key === null) {
-      onVariantsChange([]);
-      return;
-    }
-    onVariantsChange(current.includes(key) ? current.filter((k) => k !== key) : [...current, key]);
-  };
-  const toggleStyle = (key: string | null) => {
-    if (!onStylesChange) return;
-    const current = selectedStyles ?? [];
-    if (key === null) {
-      onStylesChange([]);
-      return;
-    }
-    onStylesChange(current.includes(key) ? current.filter((k) => k !== key) : [...current, key]);
-  };
   const columns = useMemo(() => columnsFor(category), [category]);
 
   /* One fetch per lobby, shared by every Spin row (the hook is module-cached
@@ -1873,12 +1592,13 @@ export default function LobbyTable({
   );
   const sort = useMemo(
     () =>
-      headingSort.chosen
+      headingSort.chosen &&
+      columns.some((column) => column.key === headingSort.key && column.sortable)
         ? { key: headingSort.key, dir: headingSort.dir }
         : defaultSortFor(category),
-    [headingSort, category]
+    [headingSort, category, columns]
   );
-  const sortChosen = headingSort.chosen;
+  const sortChosen = headingSort.chosen && headingSort.key === sort?.key;
   const setSort = useCallback(
     (next: { key: string; dir: SortDir }) => {
       setHeadingSort({ ...next, chosen: true });
@@ -2084,16 +1804,6 @@ export default function LobbyTable({
     return out;
   }, [entries, sort, columns, sink, category]);
 
-  /* The Stakes menu names its direction outright - High To Low is High To
-     Low whatever the board was sorted by a moment ago - so it does not go
-     through the flip below. Same write, same memory. */
-  const applySort = (col: ColumnDef, dir: SortDir) => {
-    if (!col.sortable) return;
-    const next = { key: col.key, dir };
-    setSort(next);
-    onHeadingSort?.(next.key, next.dir);
-  };
-
   const handleHeaderClick = (col: ColumnDef) => {
     if (!col.sortable) return;
     /* The write happens OUTSIDE the updater. React may invoke an updater more
@@ -2237,61 +1947,24 @@ export default function LobbyTable({
                       ? sort.dir === 'asc'
                         ? 'ascending'
                         : 'descending'
-                      : 'none'
+                      : col.sortable
+                        ? 'none'
+                        : undefined
                   }
                 >
-                  <button
-                    type="button"
-                    className="compact-lobby__sort"
-                    aria-haspopup={
-                      (col.key === 'name' && hasVariantMenu) ||
-                      (col.key === 'stakes' && hasStakesMenu)
-                        ? 'menu'
-                        : undefined
-                    }
-                    aria-expanded={
-                      col.key === 'name' && hasVariantMenu
-                        ? variantMenuOpen
-                        : col.key === 'stakes' && hasStakesMenu
-                          ? stakesMenuOpen
-                          : undefined
-                    }
-                    onClick={() => {
-                      if (col.key === 'name' && hasVariantMenu) setVariantMenuOpen((open) => !open);
-                      else if (col.key === 'stakes' && hasStakesMenu)
-                        setStakesMenuOpen((open) => !open);
-                      else handleHeaderClick(col);
-                    }}
-                  >
-                    {col.label}
-                    {sort?.key === col.key && (
-                      <span aria-hidden="true">{sort.dir === 'asc' ? ' ▴' : ' ▾'}</span>
-                    )}
-                  </button>
-                  {col.key === 'name' && hasVariantMenu && variantMenuOpen && (
-                    <div className="lt-variant-menu-anchor compact-lobby__menu">
-                      <VariantMenu
-                        choices={variantChoices!}
-                        selected={selectedVariants ?? []}
-                        onToggle={toggleVariant}
-                        sortedByVariant={sort?.key === 'variant'}
-                        onSortByVariant={() => handleHeaderClick(COL_VARIANT)}
-                        onClose={() => setVariantMenuOpen(false)}
-                      />
-                    </div>
-                  )}
-                  {col.key === 'stakes' && hasStakesMenu && stakesMenuOpen && (
-                    <div className="lt-variant-menu-anchor compact-lobby__menu">
-                      <StakesMenu
-                        choices={styleChoices!}
-                        selected={selectedStyles ?? []}
-                        counts={styleCounts}
-                        onToggle={toggleStyle}
-                        sortDir={sort?.key === 'stakes' ? sort.dir : null}
-                        onSort={(dir) => applySort(COL_STAKES, dir)}
-                        onClose={() => setStakesMenuOpen(false)}
-                      />
-                    </div>
+                  {col.sortable ? (
+                    <button
+                      type="button"
+                      className="compact-lobby__sort"
+                      onClick={() => handleHeaderClick(col)}
+                    >
+                      {col.label}
+                      {sort?.key === col.key && (
+                        <span aria-hidden="true">{sort.dir === 'asc' ? ' ▴' : ' ▾'}</span>
+                      )}
+                    </button>
+                  ) : (
+                    <span className="compact-lobby__heading">{col.label}</span>
                   )}
                 </th>
               ))}
@@ -2439,42 +2112,11 @@ export default function LobbyTable({
                      screen-reader users could not sort the lobby at all. */
                     role={col.sortable ? 'columnheader' : undefined}
                     tabIndex={col.sortable ? 0 : undefined}
-                    aria-haspopup={
-                      (col.key === 'variant' && hasVariantMenu) ||
-                      (col.key === 'stakes' && hasStakesMenu)
-                        ? 'menu'
-                        : undefined
-                    }
-                    aria-expanded={
-                      col.key === 'variant' && hasVariantMenu
-                        ? variantMenuOpen
-                        : col.key === 'stakes' && hasStakesMenu
-                          ? stakesMenuOpen
-                          : undefined
-                    }
-                    onClick={() => {
-                      if (col.key === 'variant' && hasVariantMenu) {
-                        setVariantMenuOpen((open) => !open);
-                        return;
-                      }
-                      if (col.key === 'stakes' && hasStakesMenu) {
-                        setStakesMenuOpen((open) => !open);
-                        return;
-                      }
-                      handleHeaderClick(col);
-                    }}
+                    onClick={() => handleHeaderClick(col)}
                     onKeyDown={(e) => {
                       if (!col.sortable) return;
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        if (col.key === 'variant' && hasVariantMenu) {
-                          setVariantMenuOpen((open) => !open);
-                          return;
-                        }
-                        if (col.key === 'stakes' && hasStakesMenu) {
-                          setStakesMenuOpen((open) => !open);
-                          return;
-                        }
                         handleHeaderClick(col);
                       }
                     }}
@@ -2483,55 +2125,10 @@ export default function LobbyTable({
                       {col.label}
                       {col.sortable && (
                         <span className="lt-sortmark" aria-hidden="true">
-                          {col.key === 'variant' && hasVariantMenu
-                            ? selectedVariants?.length
-                              ? `${selectedVariants.length} ▾`
-                              : '▾'
-                            : col.key === 'stakes' && hasStakesMenu
-                              ? `${selectedStyles?.length ? `${selectedStyles.length} ` : ''}${
-                                  active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▾'
-                                }`
-                              : active
-                                ? sort!.dir === 'asc'
-                                  ? '▴'
-                                  : '▾'
-                                : '▴▾'}
+                          {active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▴▾'}
                         </span>
                       )}
                     </span>
-                    {col.key === 'variant' && hasVariantMenu && variantMenuOpen && (
-                      <div
-                        className="lt-variant-menu-anchor lt-variant-menu-anchor--th"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <VariantMenu
-                          choices={variantChoices!}
-                          selected={selectedVariants ?? []}
-                          onToggle={toggleVariant}
-                          sortedByVariant={sort?.key === 'variant'}
-                          onSortByVariant={() => handleHeaderClick(COL_VARIANT)}
-                          onClose={() => setVariantMenuOpen(false)}
-                        />
-                      </div>
-                    )}
-                    {col.key === 'stakes' && hasStakesMenu && stakesMenuOpen && (
-                      <div
-                        className="lt-variant-menu-anchor lt-variant-menu-anchor--th"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <StakesMenu
-                          choices={styleChoices!}
-                          selected={selectedStyles ?? []}
-                          counts={styleCounts}
-                          onToggle={toggleStyle}
-                          sortDir={sort?.key === 'stakes' ? sort.dir : null}
-                          onSort={(dir) => applySort(COL_STAKES, dir)}
-                          onClose={() => setStakesMenuOpen(false)}
-                        />
-                      </div>
-                    )}
                   </th>
                 );
               })}

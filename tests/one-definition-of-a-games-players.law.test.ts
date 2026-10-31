@@ -216,8 +216,8 @@ describe('the board counts the game the controller runs', () => {
     expect(PAGE).toMatch(/const boardTables = useMemo\(/);
     expect(PAGE).toMatch(/\(t\) => !t\.cluster_id \|\| isCensusTable\(t\)/);
     expect(PAGE).toMatch(/return withClusterFigures\(rows\)/);
-    // And the two consumers read the stamped rows, not the raw state.
-    expect(PAGE).toMatch(/countStylesOnBoard\(\s*\(boardTables as unknown as LobbyTableRow\[\]\)/);
+    // The board reads stamped rows. Heading style-count popups were retired October 31.
+    expect(PAGE).not.toContain('countStylesOnBoard');
     expect(PAGE).toMatch(/const tables = boardTables;/);
   });
 });

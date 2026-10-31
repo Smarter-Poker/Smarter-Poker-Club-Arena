@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   ACCESS_CHECK_STATUS_TEXT,
@@ -12,9 +12,8 @@ function pageAnswering(pendingCounts: number[]) {
   let waited = 0;
   const page: AccessCheckPage = {
     url: () => 'https://smarter.poker/hub/club-arena/wallet',
+    locator: () => ({ getAttribute: async () => 'false' }),
     getByRole: () => ({
-      isEnabled: async () => true,
-      inputValue: async () => 'newest',
       filter: ({ hasText }) => ({
         count: async () => {
           asked.push(hasText);
@@ -57,14 +56,13 @@ describe('the mobile fit audit measures where an access guard decided the route 
 
 describe('the fit baseline follows authoritative roster preference hydration', () => {
   const initial = 'https://smarter.poker/hub/club-arena/clubs/kings-club/members';
-  function roster(states: Array<{ url: string; enabled: boolean; sort: string }>) {
+  function roster(states: Array<{ url: string; busy: boolean }>) {
     let index = 0;
     const current = () => states[index];
     const page: AccessCheckPage = {
       url: () => current().url,
+      locator: () => ({ getAttribute: async () => String(current().busy) }),
       getByRole: () => ({
-        isEnabled: async () => current().enabled,
-        inputValue: async () => current().sort,
         filter: () => ({ count: async () => 0 }),
       }),
       waitForTimeout: async () => {
@@ -76,9 +74,9 @@ describe('the fit baseline follows authoritative roster preference hydration', (
 
   it('waits for workspace readiness and its restored canonical sort before baseline capture', async () => {
     const page = roster([
-      { url: initial, enabled: false, sort: 'newest' },
-      { url: initial, enabled: true, sort: 'name' },
-      { url: initial + '?sort=name', enabled: true, sort: 'name' },
+      { url: initial, busy: true },
+      { url: initial, busy: true },
+      { url: initial + '?sort=name', busy: false },
     ]);
     await awaitAccessDecision(page, 'player-sessions');
     expect(page.url()).toBe(initial + '?sort=name');
@@ -86,16 +84,16 @@ describe('the fit baseline follows authoritative roster preference hydration', (
 
   it('refuses a real path navigation while waiting instead of accepting a new baseline', async () => {
     const page = roster([
-      { url: initial, enabled: false, sort: 'newest' },
-      { url: initial.replace('/members', '/cashier'), enabled: true, sort: 'newest' },
+      { url: initial, busy: true },
+      { url: initial.replace('/members', '/cashier'), busy: false },
     ]);
     await expect(awaitAccessDecision(page, 'player-sessions')).rejects.toThrow(
       'Roster preference workspace navigated while settling'
     );
   });
 
-  it('does not call an enabled control settled while its canonical URL is still pending', async () => {
-    const page = roster([{ url: initial, enabled: true, sort: 'name' }]);
+  it('does not capture a workspace whose canonical URL acknowledgement is still pending', async () => {
+    const page = roster([{ url: initial, busy: true }]);
     await expect(awaitAccessDecision(page, 'player-sessions', { timeoutMs: 0 })).rejects.toThrow(
       'Roster preference workspace did not settle within 0 ms'
     );
@@ -117,6 +115,44 @@ describe('the fit baseline follows authoritative roster preference hydration', (
       expect(() =>
         verify({ url: () => changed }, expect, 'player-sessions', { label: 'tablet' }, baseline)
       ).toThrow('player-sessions navigated while resizing to tablet');
+  });
+
+  it('shares the original access deadline with every subsequent workspace read', async () => {
+    let now = 0;
+    let pending = true;
+    const reads: number[] = [];
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const page: AccessCheckPage = {
+      url: () => initial,
+      getByRole: () => ({
+        filter: () => ({
+          count: async () => {
+            if (!pending) return 0;
+            pending = false;
+            return 1;
+          },
+        }),
+      }),
+      locator: () => ({
+        getAttribute: async (_name, options) => {
+          reads.push(options!.timeout);
+          now += 2;
+          return 'false';
+        },
+      }),
+      waitForTimeout: async (ms) => {
+        now += ms;
+      },
+    };
+    try {
+      await expect(
+        awaitAccessDecision(page, 'player-sessions', { timeoutMs: 15, pollMs: 14 })
+      ).rejects.toThrow('Roster preference workspace did not settle within 15 ms');
+      expect(reads).toEqual([1]);
+      expect(now).toBe(16);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 

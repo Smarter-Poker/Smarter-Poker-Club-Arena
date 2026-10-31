@@ -25,9 +25,12 @@ export const ACCESS_CHECK_STATUS_TEXT = 'Checking Your Access';
 export interface AccessCheckPage {
   url(): string;
   getByRole(
-    role: 'status' | 'combobox' | 'searchbox',
+    role: 'status',
     options: { name?: string | RegExp }
-  ): PreferenceControl & { filter(options: { hasText: string }): { count(): Promise<number> } };
+  ): { filter(options: { hasText: string }): { count(): Promise<number> } };
+  locator(selector: string): {
+    getAttribute(name: string, options?: { timeout: number }): Promise<string | null>;
+  };
   waitForTimeout(ms: number): Promise<void>;
 }
 
@@ -48,51 +51,44 @@ export async function awaitAccessDecision(
       .filter({ hasText: ACCESS_CHECK_STATUS_TEXT })
       .count();
     if (pending === 0) {
-      await captureResponsiveDestination(page, { timeoutMs, pollMs });
+      await captureResponsiveDestination(page, { timeoutMs, pollMs, deadline });
       return;
     }
     if (Date.now() >= deadline) {
       throw new Error(`${route || 'home'} access guard did not decide within ${timeoutMs} ms`);
     }
-    await page.waitForTimeout(pollMs);
+    await page.waitForTimeout(Math.min(pollMs, Math.max(0, deadline - Date.now())));
   }
 }
 
-interface PreferenceControl {
-  isEnabled(options?: { timeout: number }): Promise<boolean>;
-  inputValue(options?: { timeout: number }): Promise<string>;
-}
-
-export interface PreferenceWorkspacePage {
-  url(): string;
-  getByRole(role: 'combobox' | 'searchbox', options: { name: string }): PreferenceControl;
-  waitForTimeout(ms: number): Promise<void>;
-}
-
-/** Roster hydration replaces its URL with the restored sort before resize begins.
- * Enabled search is the workspace's own readiness signal, independent of the
- * directory request. The selected sort and URL must agree before capture. */
+/** The workspace owns its hydration and complete canonical URL acknowledgement.
+ * Its semantic busy state does not depend on directory reads or live sync. */
 export async function captureResponsiveDestination(
-  page: PreferenceWorkspacePage,
-  { timeoutMs = 10_000, pollMs = 100 }: { timeoutMs?: number; pollMs?: number } = {}
+  page: AccessCheckPage,
+  {
+    timeoutMs = 10_000,
+    pollMs = 100,
+    deadline = Date.now() + timeoutMs,
+  }: { timeoutMs?: number; pollMs?: number; deadline?: number } = {}
 ): Promise<string> {
   const began = new URL(page.url());
   if (!/\/clubs\/[^/]+\/members\/?$/.test(began.pathname)) return page.url();
-  const deadline = Date.now() + timeoutMs;
+  const remaining = () => {
+    const timeout = deadline - Date.now();
+    if (timeout <= 0)
+      throw new Error(`Roster preference workspace did not settle within ${timeoutMs} ms`);
+    return { timeout };
+  };
   for (;;) {
-    const remaining = { timeout: Math.max(1, deadline - Date.now()) };
-    const enabled = await page
-      .getByRole('searchbox', { name: 'Search Club Members' })
-      .isEnabled(remaining);
-    const sort = await page.getByRole('combobox', { name: 'Sort Players' }).inputValue(remaining);
+    const busy = await page.locator('.members-console').getAttribute('aria-busy', remaining());
+    remaining();
     const current = new URL(page.url());
     if (current.origin !== began.origin || current.pathname !== began.pathname) {
       throw new Error('Roster preference workspace navigated while settling');
     }
-    if (enabled && (sort === 'search' || (current.searchParams.get('sort') || 'newest') === sort))
-      return page.url();
+    if (busy === 'false') return page.url();
     if (Date.now() >= deadline)
       throw new Error(`Roster preference workspace did not settle within ${timeoutMs} ms`);
-    await page.waitForTimeout(pollMs);
+    await page.waitForTimeout(Math.min(pollMs, remaining().timeout));
   }
 }

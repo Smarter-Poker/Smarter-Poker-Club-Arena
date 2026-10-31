@@ -1391,7 +1391,7 @@ jobs:
         needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
-    name: Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4
+    name: Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/7
     # Standard GitHub-hosted runners are free for this public repository.
     # Preserve the complete qualification matrix and fail-closed required verdict.
     runs-on: ubuntu-latest
@@ -1413,21 +1413,23 @@ jobs:
     # Queue wait was 2 seconds; the time was all serial execution.
     #
     # Every suite builds its own disposable PostgreSQL 17 cluster, so none
-    # depends on another's state. They are split across four runners by
+    # depends on another's state. They are split across seven runners by
     # measured weight, each step keeping its own `if:` and evidence upload:
     #   1  BBJ replay, accounting/credit/cash-source suites, Spin expiry
-    #   2  Full weekly accounting activation, Diamond SQL and backed payout discovery
+    #   2  Weekly selector and data-console qualification, Diamond SQL
     #   3  F06 custody lanes, tournament probes, Lightning
-    #   4  Production alert SQL, cash pg_cron, PKO, MTT, satellite, Breakfast, V31
+    #   4  Production alert SQL, cash pg_cron, PKO, MTT, satellite, Breakfast
+    #   5  Isolated weekly recompute and its retained evidence
+    #   6  Full weekly accounting activation and its retained evidence
+    #   7  Certified V31 qualification with its existing phase admission
     # Shards 3 and 4 build the native isolation tester because their suites
     # need it (PG_ISOLATION_TESTER); 1 and 2 do not use it.
     #
     # Nothing is skipped and nothing is weakened: `fail-fast: false` lets
     # every shard finish and report, and the required `Server Engine
     # (typecheck + tests)` aggregate reads `needs.accounting_postgres.result`,
-    # which is `success` only when all four shards succeeded. Measured 29.5m
-    # before; expected ~9m after (the heaviest shard, 1, is ~8m of suites plus
-    # ~1m of checkout and PostgreSQL install).
+    # which is `success` only when all seven shards succeeded. The normal
+    # four-shard baseline took 35m04s; final timings require normal CI evidence.
     # October 12 run 38319524263: shard 1 exhausted its 40m cap; its 25
     # Lightning steps took 692s while shard 3 finished in 878s. Moving only
     # that unchanged family to shard 3 balances observed work (~1570s on 3),
@@ -1446,7 +1448,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     permissions:
       contents: read
       actions: read
@@ -1501,6 +1503,12 @@ jobs:
                   pg_ci_build_tools_ready=false
                 fi
               fi
+              ;;
+            5|6|7)
+              # Isolated weekly recompute, full weekly activation and V31 use
+              # the common PG17 tools; no native compiler or fixture builder.
+              # The shared install/readiness check below retains pg_cron,
+              # including the full weekly activation fixture on shard 6.
               ;;
             *) echo 'Unknown accounting shard' >&2; exit 1 ;;
           esac
@@ -2080,7 +2088,7 @@ jobs:
         run: bash scripts/dev/test-union-weekly-accounting.sh
       - name: Weekly recompute commits bounded parts and preserves real payouts
         id: weekly_recompute_split
-        if: matrix.shard == 2
+        if: matrix.shard == 5
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/weekly-recompute
@@ -2088,7 +2096,7 @@ jobs:
           mkdir -p "$ACCOUNTING_FIXTURE_PARENT"
           python3 -B scripts/dev/test-union-weekly-basis.py --split-recompute-only
       - name: Retain exact weekly recompute qualification
-        if: always() && matrix.shard == 2 && steps.weekly_recompute_split.outcome != 'skipped'
+        if: always() && matrix.shard == 5 && steps.weekly_recompute_split.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: weekly-recompute-${{ github.run_id }}-${{ github.run_attempt }}
@@ -2373,7 +2381,7 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-weekly-accounting-coordinator.sh
       - name: Full weekly accounting activation, rollback and concurrent authority
-        if: matrix.shard == 2
+        if: matrix.shard == 6
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/union-accounting-scratch
@@ -2461,7 +2469,7 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-push-health-reader.sh
       - name: Preserve weekly accounting qualification evidence
-        if: always() && matrix.shard == 2
+        if: always() && matrix.shard == 6
         uses: actions/upload-artifact@v4
         with:
           name: union-accounting-postgres-${{ github.run_id }}-${{ github.run_attempt }}
@@ -3510,7 +3518,7 @@ jobs:
 
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
-          matrix.shard == 4 &&
+          matrix.shard == 7 &&
           (github.event_name == 'schedule' || needs.changes.result != 'success' || needs.changes.outputs.phase4 == 'true')
         env:
           PG17_BIN: /usr/lib/postgresql/17/bin

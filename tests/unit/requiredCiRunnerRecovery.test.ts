@@ -79,6 +79,40 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
+    const accounting = normalized.jobs.accounting_postgres;
+    expect(accounting.strategy).toEqual({
+      'fail-fast': false,
+      matrix: { shard: [1, 2, 3, 4, 5, 6, 7] },
+    });
+    expect(accounting.name).toBe(
+      'Accounting transactions (PostgreSQL 17) shard $' + '{{ matrix.shard }}/7'
+    );
+    accounting.strategy.matrix.shard = [1, 2, 3, 4];
+    accounting.name = 'Accounting transactions (PostgreSQL 17) shard $' + '{{ matrix.shard }}/4';
+    for (const [name, from, to] of [
+      ['Weekly recompute commits bounded parts and preserves real payouts', 2, 5],
+      ['Retain exact weekly recompute qualification', 2, 5],
+      ['Full weekly accounting activation, rollback and concurrent authority', 2, 6],
+      ['Preserve weekly accounting qualification evidence', 2, 6],
+      ['Certified V31 PostgreSQL 17 behavior gate', 4, 7],
+    ] as const) {
+      const selected = accounting.steps.filter((step: { name: string }) => step.name === name);
+      expect(selected).toHaveLength(1);
+      expect(selected[0].if.match(/matrix\.shard == \d/g)).toEqual(['matrix.shard == ' + to]);
+      selected[0].if = selected[0].if.replace('matrix.shard == ' + to, 'matrix.shard == ' + from);
+    }
+    const installers = accounting.steps.filter(
+      (step: { name: string }) =>
+        step.name === 'Install PostgreSQL 17 tools without a default database service'
+    );
+    expect(installers).toHaveLength(1);
+    expect(createHash('sha256').update(JSON.stringify(installers[0])).digest('hex')).toBe(
+      'b0961ac4782f86fbf4158a3eb0d3d3a6d650ae86d662a4bd4d73b552849d37dd'
+    );
+    const newInstallCase =
+      '  5|6|7)\n    # Isolated weekly recompute, full weekly activation and V31 use\n    # the common PG17 tools; no native compiler or fixture builder.\n    # The shared install/readiness check below retains pg_cron,\n    # including the full weekly activation fixture on shard 6.\n    ;;\n';
+    expect(installers[0].run.split(newInstallCase)).toHaveLength(2);
+    installers[0].run = installers[0].run.replace(newInstallCase, '');
     // Normalize only reviewed routing changes; the existing whole-job hashes
     // still enforce every command, assertion, timeout, artifact and ordering.
     const remappedSteps = [

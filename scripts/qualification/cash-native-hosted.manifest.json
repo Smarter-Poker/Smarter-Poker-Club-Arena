@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 271245,
-      "sha256": "769e0c1f62492aafd8863d0cd7122386cebe9e4bc727a1ac7b03b8567b401a7f"
+      "bytes": 271733,
+      "sha256": "e539e5040954d7389b78d26b1a32ca70cf58007d3cd22ba5ef462254970df4c0"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -325,8 +325,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 118936,
-      "sha256": "a1ba44a1d977916db277778b6c565f12913437804c6feaf4adbadbc05311b931"
+      "bytes": 119070,
+      "sha256": "18a832acb3f4fe20c563e31766fa484ef8fc8049144703c9c57e8b954067087c"
     }
   },
   "nativePgCron": {
@@ -5820,5 +5820,50 @@
     "execution_performed": false,
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false
+  },
+  "sevenShardIsolatedQualificationSourceAudit20261031": {
+    "scope": "Current source identity for seven isolated accounting shards: weekly recompute and evidence on 5, full weekly activation and evidence on 6, V31 admission on 7. Preserve every command, assertion, artifact, historical audit, qualification status and four server shards.",
+    "updatedCurrentBindings": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 271245,
+          "sha256": "769e0c1f62492aafd8863d0cd7122386cebe9e4bc727a1ac7b03b8567b401a7f"
+        },
+        "current": {
+          "bytes": 271733,
+          "sha256": "9ac798784d875b1e3d0d4ad9b22b24b5cf8c80b1836095234978020fb260cdb4"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": {
+          "bytes": 118936,
+          "sha256": "a1ba44a1d977916db277778b6c565f12913437804c6feaf4adbadbc05311b931"
+        },
+        "current": {
+          "bytes": 119070,
+          "sha256": "18a832acb3f4fe20c563e31766fa484ef8fc8049144703c9c57e8b954067087c"
+        }
+      }
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "sevenShardDeadlineIdentitySourceAudit20261031": {
+    "scope": "Current source binding correction for seven-shard BBJ job identity and clarified installer comment only. Deadline, assertions and qualification statuses remain unchanged.",
+    "updatedCurrentBindings": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 271733,
+          "sha256": "9ac798784d875b1e3d0d4ad9b22b24b5cf8c80b1836095234978020fb260cdb4"
+        },
+        "current": {
+          "bytes": 271733,
+          "sha256": "e539e5040954d7389b78d26b1a32ca70cf58007d3cd22ba5ef462254970df4c0"
+        }
+      }
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false
   }
 }

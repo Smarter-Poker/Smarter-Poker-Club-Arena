@@ -59,7 +59,9 @@ describe('browser qualification parallel delivery', () => {
     for (const job of ['accounting_postgres', 'server_shards']) {
       expect(ci.jobs[job]['runs-on']).toBe('ubuntu-latest');
       expect(ci.jobs[job]['continue-on-error']).toBeUndefined();
-      expect(ci.jobs[job].strategy.matrix.shard).toEqual([1, 2, 3, 4]);
+      expect(ci.jobs[job].strategy.matrix.shard).toEqual(
+        job === 'accounting_postgres' ? [1, 2, 3, 4, 5, 6, 7] : [1, 2, 3, 4]
+      );
       expect(ci.jobs[job].strategy['fail-fast']).toBe(false);
     }
     expect(ci.jobs.accounting_postgres['timeout-minutes']).toBe(50);

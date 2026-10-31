@@ -14,6 +14,50 @@ class ProofRefusal extends Error {}
 const requireProof = (condition, message) => {
   if (!condition) throw new ProofRefusal(message);
 };
+// Optional display aliases never establish the reserved actor or roster row.
+export function snapshotPrivateRecordFixtureProfile(rows, userId) {
+  requireProof(
+    Array.isArray(rows) &&
+      rows.length === 1 &&
+      rows[0]?.id === userId &&
+      ['avatar_url', 'arena_avatar_url'].every(
+        (key) =>
+          rows[0][key] === null || (typeof rows[0][key] === 'string' && rows[0][key].length <= 2048)
+      ),
+    'Exact own profile and cosmetic restoration fields are required'
+  );
+  return {
+    id: rows[0].id,
+    avatar_url: rows[0].avatar_url,
+    arena_avatar_url: rows[0].arena_avatar_url,
+  };
+}
+export function readPrivateRecordFixturePlayerNumber(detail, userId) {
+  const number = detail?.identity?.player_number;
+  requireProof(
+    detail?.identity?.user_id === userId &&
+      typeof number === 'string' &&
+      /^[0-9]{1,20}$/.test(number),
+    'Authorized member identity and bounded player number are required'
+  );
+  return number;
+}
+export function assertPrivateRecordFixtureRoster(body, userId, playerNumber) {
+  requireProof(
+    typeof playerNumber === 'string' && /^[0-9]{1,20}$/.test(playerNumber),
+    'The authoritative player number is required'
+  );
+  const rows = body?.items;
+  requireProof(Array.isArray(rows), 'The actual roster response is required');
+  const matches = rows.filter((row) => row?.player_number === playerNumber);
+  requireProof(
+    matches.length === 1 &&
+      matches[0].user_id === userId &&
+      rows.filter((row) => row?.user_id === userId).length === 1,
+    'The actual roster must contain one exact reserved actor and player number'
+  );
+  return matches[0];
+}
 export function admitPrivateRecordClientProof(payload, environment = process.env) {
   requireProof(
     environment.GITHUB_EVENT_NAME === 'repository_dispatch' &&
@@ -196,6 +240,8 @@ export function assertPrivateRecordClientProof(
       proof.gatewaySha === input.gatewaySha &&
       [
         'actualPublishedClient',
+        'authoritativeFixtureIdentity',
+        'rosterIdentityVerified',
         'genuineSession',
         'engineReadyBefore',
         'isolatedEngineChannelFault',

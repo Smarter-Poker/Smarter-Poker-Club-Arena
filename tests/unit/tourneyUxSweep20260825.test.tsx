@@ -416,7 +416,11 @@ describe('Item 7 - amounts default to actual totals, never BB', () => {
   });
 
   it('the table passes the real user setting through', () => {
-    expect(code(read(TABLE_PAGE))).toMatch(/showStackInBB=\{v8Settings\.show_stack_in_bb\}/);
+    const page = code(read(TABLE_PAGE));
+    expect(page).toMatch(
+      /const effectiveShowStackInBB = v8Settings\.show_stack_in_bb && seatBigBlind > 0/
+    );
+    expect(page).toMatch(/showStackInBB=\{effectiveShowStackInBB\}/);
   });
 
   it('the hamburger toggle writes the key the felt actually reads', () => {

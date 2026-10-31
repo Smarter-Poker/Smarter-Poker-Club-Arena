@@ -310,4 +310,8 @@ export const CORPUS_BASE_OPTS: HorseDecideOpts = {
   // the NLH digest; the corpus keeps the explicit off arm
   // (HorseTurnCallGaps.test.ts pins the real policy).
   v69TurnCallGaps: false,
+  // V70 (2026-10-31) re-orders hold'em raise-first-in by seat (GTO reference
+  // charts) independently of any read; the corpus keeps the explicit off arm
+  // (HorseGtoOpeningRanges.test.ts pins the real policy).
+  v70GtoOpeningRanges: false,
 };

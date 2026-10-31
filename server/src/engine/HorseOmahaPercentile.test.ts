@@ -39,6 +39,15 @@ import { HorseLogic } from './HorseLogic.js';
 import { omahaPreflopScore, omahaPreflopPercentile } from './HorseEval.js';
 import type { Card, SeatPlayer } from '../types.js';
 
+/**
+ * V70 (2026-10-31) widened the hold'em raise-first-in to the GTO bands (a
+ * three-handed button now opens ~47%, where it opened ~22%). These tests
+ * measure the Omaha scale AGAINST the hold'em ladder, so hold'em keeps its
+ * pre-V70 open as the yardstick; HorseGtoOpeningRanges.test.ts pins the
+ * hold'em open itself. Omaha decisions never read the option.
+ */
+const HOLDEM_YARDSTICK = { v70GtoOpeningRanges: false };
+
 const RANKS = '23456789TJQKA'.split('');
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const C = (r: string, s: string): Card => ({ rank: r, suit: s }) as Card;
@@ -185,7 +194,7 @@ describe('a PLO horse actually plays back - the live symptom, pinned', () => {
             dealerSeat: 1,
             actionHistory: [],
           };
-      const d = HorseLogic.decide(hero, gs as never, 'balanced');
+      const d = HorseLogic.decide(hero, gs as never, 'balanced', {}, HOLDEM_YARDSTICK);
       t[d.action] = (t[d.action] || 0) + 1;
     }
     return t;

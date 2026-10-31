@@ -216,6 +216,15 @@ export interface PreflopCtx {
    *  facing a single open (no callers yet), so the marginal flats become
    *  folds while the 3-bet bar is untouched. Undefined = no change. */
   tournamentFlatBump?: number;
+  /**
+   * V70 GTO OPENING RANGES (2026-10-31, HorseGtoOpeningRanges): the open
+   * decision of an unopened, unlimped no-limit hold'em pot reads the hand on
+   * its seat's own reference order. `strength` is that order mapped onto the
+   * holdemPreflopScore scale (same jitter as `strength`), `bar` the seat's
+   * base open bar, `sbLimpFloor` the small blind's limp floor, `players`
+   * behind hero. Undefined = the legacy open (the explicit off arm).
+   */
+  gtoOpen?: { strength: number; bar: number; sbLimpFloor: number; behind: number };
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
   /**
@@ -303,6 +312,9 @@ const AOF_TIGHTEN_PER_BB = 0.006;
 const AOF_MAX_TIGHTEN = 0.3;
 
 const PUSH_FOLD_MAX_BB = 22;
+/** V70: two- and three-handed, the deepest folded-to stack that plays
+ *  jam-or-fold (the push/fold charts' authority, GtoCharts). */
+const V70_SHORT_HANDED_JAM_MAX_BB = 15;
 
 /**
  * ═══ V34 (2026-09-02): THE SCALE IS NOT A PERCENTILE, SO READ THE TABLE ═══
@@ -980,9 +992,33 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // 22bb is not a new number: it is the one the sibling branches already
   // chose for this exact failure, and inventing a second convention here
   // would be worse than reusing theirs.
-  const pushFoldNlh =
+  // V70: folded to a no-limit hold'em seat, the GTO open owns every stack
+  // the jam-or-fold zones do not. Where they do (push/fold <= 12bb, the
+  // red and orange M zones up to 22bb) the structure is kept exactly as it
+  // was: replacing the orange-zone shove of the opening range with a small
+  // open measured +1.9 +/- 1.6 bb/100 in the 20bb mirror but -8.7 +/- 2.9
+  // against the human-calibrated field over four seeds (the population
+  // over-folds to the shove), so it is a follow-up, not part of this change.
+  const legacyPushFold =
     !ctx.isOmaha &&
     (stackBB <= 12 || (mzOn && (phase6M ? phase6Red : effM < 6) && effStackBB <= PUSH_FOLD_MAX_BB));
+  const legacyOrangeJam =
+    mzOn && (phase6M ? phase6OrangeOrWorse : effM < 10) && stackBB <= 22 && !ctx.isOmaha;
+  //
+  // Two- and three-handed the M zones are not a depth read at all: the
+  // effective-M table scaling (players / 10) puts a heads-up 40bb stack at
+  // M 5, so every heads-up and spin stack under 22bb played jam-or-fold and
+  // the live heads-up small blind folded half its buttons (46% opened over
+  // 7,692 decisions on 2026-10-31). There the jam-or-fold zone is the
+  // push/fold charts' own, <= 15bb (12bb without the M layer), and every
+  // deeper stack opens.
+  const v70ShortHanded = (ctx.tableSize ?? 6) <= 3;
+  const v70JamZone = v70ShortHanded
+    ? stackBB <= 12 || (mzOn && effStackBB <= V70_SHORT_HANDED_JAM_MAX_BB)
+    : legacyPushFold || legacyOrangeJam;
+  const v70Open =
+    ctx.gtoOpen !== undefined && !ctx.isOmaha && unopened && limpers === 0 && !v70JamZone;
+  const pushFoldNlh = legacyPushFold && !v70Open;
   // V25: the old Omaha gate (<=8bb / M<4) is superseded by the commitment
   // zone above, which triggers on the pot-limit arithmetic rather than a bb
   // count. It stays for the ablation path (ploTourney off).
@@ -1115,13 +1151,31 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     const baseOpen =
       position === 'late' && ctx.isButton === true ? OPEN_THRESH_BUTTON : OPEN_THRESH[position];
     const fullRingEarly = position === 'early' && (ctx.tableSize ?? 6) >= 8 ? 0.06 : 0;
-    let openThresh = t53(baseOpen + fullRingEarly, 'open') + Math.min(limpers, 3) * 0.03;
-    openThresh += depthTighten - depthLoosen - anteWiden + vs35.open;
-    openThresh += phase6Shift('open');
-    // TOURNAMENT AGGRESSION: every seat opens a little wider, the cutoff and
-    // button wider still, and the small blind (one player left to beat, an
-    // ante in the pot) far wider.
-    if (tAggro) openThresh -= position === 'sb' ? 0.08 : position === 'late' ? 0.03 : 0.02;
+    let openThresh: number;
+    if (v70Open) {
+      // V70: the seat's own base bar (its target share, ante tables wider),
+      // scaled by the style and the ICM premium exactly as before. Antes,
+      // the full-ring early seats, depth and the tournament widen are inside
+      // the targets; the spin structure, the Phase 6 cell and the bubble
+      // widen below still move it. An ante-free tournament under 50bb keeps
+      // the old depth tighten: measured against the human-calibrated field,
+      // the 40bb no-ante MTT card ran -1.17 +/- 0.61 bb/100 without it over
+      // four seeds and -0.35 +/- 0.53 with it.
+      openThresh =
+        t(ctx.gtoOpen!.bar) -
+        (ctx.format === 'spin' ? 0.05 : 0) +
+        vs35.open +
+        phase6Shift('open') +
+        (isTourney && !ctx.anteInPlay ? depthTighten : 0);
+    } else {
+      openThresh = t53(baseOpen + fullRingEarly, 'open') + Math.min(limpers, 3) * 0.03;
+      openThresh += depthTighten - depthLoosen - anteWiden + vs35.open;
+      openThresh += phase6Shift('open');
+      // TOURNAMENT AGGRESSION: every seat opens a little wider, the cutoff and
+      // button wider still, and the small blind (one player left to beat, an
+      // ante in the pot) far wider.
+      if (tAggro) openThresh -= position === 'sb' ? 0.08 : position === 'late' ? 0.03 : 0.02;
+    }
     // V37: the captain steals wider near the bubble — the field cannot call.
     openThresh -= 0.06 * Math.max(0, Math.min(1, ctx.bubblePressure ?? 0));
     // V10 LIMP ISOLATION: weak limpers are the softest spot in cash poker.
@@ -1144,7 +1198,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // raises ~40% and limps a band below that (the mix right after this);
     // only a genuinely two-handed table opens the 0.24 range.
     const trueHu = headsUp && (ctx.tableSize ?? 2) <= 2;
-    if (bvb) {
+    if (bvb && !v70Open) {
       openThresh =
         t53(trueHu ? 0.24 : 0.3, 'open') +
         depthTighten -
@@ -1158,13 +1212,15 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // against the maniac's measured width, already a price.
     if (ctx.maniacOpenBar !== undefined) openThresh = Math.max(openThresh, ctx.maniacOpenBar);
 
-    if (strength >= openThresh) {
+    // V70: the open reads the hand on this seat's order (see gtoOpen).
+    const openStrength = v70Open ? ctx.gtoOpen!.strength : strength;
+    if (openStrength >= openThresh) {
       // V20 ORANGE ZONE (M 6-10): there is no raise-fold — a standard open
       // is a third of the stack, and folding it to a reshove afterward is
       // the worst line short-stack poker offers. The opening range OPEN-JAMS
       // instead. NLH only, capped at 22bb so a big-ante 30bb stack does not
       // start jamming its whole opening range.
-      if (mzOn && (phase6M ? phase6OrangeOrWorse : effM < 10) && stackBB <= 22 && !ctx.isOmaha) {
+      if (legacyOrangeJam && !v70Open) {
         return { a: 'jam' };
       }
       // V37: below the seat line, an open at any depth that jam-or-fold does
@@ -1205,12 +1261,20 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       else if (stackBB <= 25) baseOpen = 2.0 + rand() * 0.4;
       else if (ctx.mode === 'cash' && stackBB > 150) baseOpen = 2.5 + rand() * 0.8;
       if (position === 'late') baseOpen -= 0.15;
+      // V70: out of position against one player, the small blind's solver
+      // open is ~3x, not a button's 2.2x (no ante; an ante pot keeps the
+      // smaller open the dead money already pays for).
+      else if (v70Open && bvb && !trueHu && !ctx.anteInPlay && stackBB > 25) {
+        baseOpen = 2.8 + rand() * 0.4;
+      }
       const sizeBB = (baseOpen + limpers * 1.0) * ctx.sizingMultiplier;
       // V18: in a straddled pot the open is sized off the straddle.
       return { a: 'raiseTo', to: sizeBB * openUnit };
     }
     // BvB limp mix from the SB with playable-but-not-open hands.
-    if (bvb && toCall > 0 && toCall <= bb && strength >= 0.22 && rand() < 0.75) {
+    // V70: the band is read on the small blind's own order, down to its floor.
+    const sbLimpFloor = v70Open ? ctx.gtoOpen!.sbLimpFloor : 0.22;
+    if (bvb && toCall > 0 && toCall <= bb && openStrength >= sbLimpFloor && rand() < 0.75) {
       return { a: 'call' };
     }
     if (toCall === 0) return { a: 'check' };

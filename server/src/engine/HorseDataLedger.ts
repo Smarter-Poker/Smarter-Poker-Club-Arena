@@ -816,6 +816,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V69'
   ),
   flag(
+    'v70GtoOpeningRanges',
+    "2026-10-31 Hold'em raise-first-in (unopened, unlimped, two or more dealt in): the hand is read on its seat's own GTO reference order by dealt-in players behind (SB 1 .. 9-handed UTG 8) mapped onto the preflop score scale by combo share, against per-seat target widths (cash LJ 16, HJ 20.5, CO 26.5, BTN 43, SB 41 raise plus a limp band to 58; full-ring UTG 11/UTG+1 12.5/UTG+2 14; big blind ante LJ 23, HJ 26, CO 34, BTN 51, SB 48, UTG 17.5 before the ICM premium; three-handed BTN 47/54 and SB 44/50, heads-up SB 72/76 raise plus a limp band to 90/94); at four or more dealt the push/fold and orange/red M-zone jam-or-fold structure (<= 22bb) is untouched, while two- and three-handed jam-or-fold applies only at <= 15bb (the table-size-scaled M had put every heads-up and spin stack under 22bb into it); the SB opens ~3x without an ante deeper than 25bb; an ante-free tournament under 50bb keeps the old depth tighten; style tightness, ICM premium, bubble and maniac bars unchanged; explicit off arm retained",
+    'V70'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
@@ -2101,6 +2106,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V26)',
     'mystery prize landscape; chest tournaments only',
     'V26'
+  ),
+  receipt(
+    'v70_gto_open',
+    'HorsePreflop (V70)',
+    "Hold'em raise-first-in read on the seat's GTO reference order (unopened, unlimped, two or more dealt in)",
+    'V70',
+    'decide_nlh',
+    0.01
   ),
   receipt(
     'v27_gto_open_jam',

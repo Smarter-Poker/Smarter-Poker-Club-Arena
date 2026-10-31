@@ -34,12 +34,21 @@ export async function startObservationBridge(options, testHarness = {}) {
   }
 }
 
-async function startBridge({ db, binding, onFailure, financialActors }, testHarness = {}) {
+async function startBridge(
+  { db, binding, onFailure, financialActors, tournamentCohorts },
+  testHarness = {}
+) {
   const protocol =
     testHarness.protocol ?? (await import(CONTROL_ROOT + 'component-observation-protocol.mjs'));
   const observations =
     testHarness.observations ??
     (await import(CONTROL_ROOT + 'component-semantic-observations.mjs'));
+  const tournamentObservations = protocol;
+  const cohorts =
+    tournamentCohorts === undefined
+      ? null
+      : tournamentObservations.tournamentObservationBinding(tournamentCohorts);
+  const tournamentDeadline = performance.now() + 360000;
   const {
     validateBinding,
     validateRequest,
@@ -124,7 +133,11 @@ async function startBridge({ db, binding, onFailure, financialActors }, testHarn
   db.on?.('error', () => fail('OBSERVATION_DATABASE_FAILED'));
   async function execute(request) {
     const financialRead = request.read === 'financial_facts';
-    if (financialRead) {
+    const tournamentRead = request.read === 'tournament_player_facts';
+    if (tournamentRead) {
+      assert.ok(cohorts, 'OBSERVATION_TOURNAMENT_COHORTS_NOT_BOUND');
+      assert.ok(performance.now() < tournamentDeadline, 'OBSERVATION_TOURNAMENT_DEADLINE');
+    } else if (financialRead) {
       assert.ok(actorIds, 'OBSERVATION_FINANCIAL_ACTORS_NOT_BOUND');
       if (!financial) {
         assert.ok(request.financial.hand_number > handFloor, 'OBSERVATION_HISTORICAL_HAND_REFUSED');
@@ -142,7 +155,11 @@ async function startBridge({ db, binding, onFailure, financialActors }, testHarn
       assert.deepEqual(request.hand, hand, 'OBSERVATION_HAND_SUBSTITUTION');
       assert.ok(now() < handDeadline, 'OBSERVATION_PERSISTENCE_DEADLINE');
     }
-    const deadline = financialRead ? financialDeadline : handDeadline;
+    const deadline = tournamentRead
+      ? tournamentDeadline
+      : financialRead
+        ? financialDeadline
+        : handDeadline;
     const budget = request.read === 'catalogue' ? READ_MS : Math.min(READ_MS, deadline - now());
     assert.ok(budget > 0);
     let timer, abortListener;
@@ -158,6 +175,12 @@ async function startBridge({ db, binding, onFailure, financialActors }, testHarn
         let data;
         if (request.read === 'catalogue')
           data = { catalogue_digest: await observations.schemaCatalogue(db) };
+        else if (tournamentRead)
+          data = await tournamentObservations.observeTournamentPlayerFacts(
+            db,
+            cohorts,
+            request.tournament
+          );
         else if (financialRead)
           data = await observations.observeFinancialFacts(db, owned.table_id, actorIds, financial);
         else if (request.read === 'hand_presence')
@@ -261,9 +284,11 @@ async function startBridge({ db, binding, onFailure, financialActors }, testHarn
             read: request.read,
             ...(request.read === 'catalogue'
               ? {}
-              : request.read === 'financial_facts'
-                ? { financial }
-                : { hand }),
+              : request.read === 'tournament_player_facts'
+                ? { tournament: request.tournament }
+                : request.read === 'financial_facts'
+                  ? { financial }
+                  : { hand }),
             data,
           };
           const encoded = Buffer.from(JSON.stringify(response) + '\n');

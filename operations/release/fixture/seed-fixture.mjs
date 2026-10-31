@@ -11,6 +11,147 @@ const OP_IDS = [
   '90000000-0000-4000-8000-000000000022',
 ];
 
+// Optional finite tournament venue for browser acceptance. Uses the existing
+// disposable database and its canonical owner/mint/bank/creation/admission
+// doors. No raw tournament, seat, wallet or receipt row is inserted here.
+export async function seedPlayerUITournaments({ db, clubId, owner, users }) {
+  assert.match(clubId, UUID);
+  assert.ok(Array.isArray(users) && users.length === 3);
+  const ids = users.map((u) => u.id);
+  ids.forEach((id) => assert.match(id, UUID));
+  assert.equal(new Set([...ids, owner.id]).size, 4);
+  const local = await db.query(
+    'SELECT current_database() AS database,inet_server_addr() IS NULL AS local,current_user AS owner'
+  );
+  assert.deepEqual(local.rows[0], {
+    database: 'club_arena_qualification',
+    local: true,
+    owner: 'postgres',
+  });
+  const principals = [owner, ...users],
+    claims = [];
+  for (const user of principals) {
+    const claim = JSON.parse(
+      Buffer.from(user.session.access_token.split('.')[1], 'base64url').toString()
+    );
+    assert.equal(claim.sub, user.id);
+    assert.equal(claim.role, 'authenticated');
+    const session = await db.query(
+      `SELECT count(*)::integer AS n FROM auth.sessions s
+      JOIN auth.users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2
+      AND u.email LIKE '%@smarter-poker.invalid'
+      AND u.raw_user_meta_data->'component_qualification'='true'::jsonb
+      AND (s.not_after IS NULL OR s.not_after>now()) AND s.aal::text=$3`,
+      [claim.session_id, user.id, claim.aal]
+    );
+    assert.equal(session.rows[0].n, 1, 'PLAYER_UI_REAL_SYNTHETIC_SESSION_REQUIRED');
+    claims.push(claim);
+  }
+  assert.equal(claims[0].aal, 'aal2');
+  const empty = await db.query('SELECT count(*)::integer AS n FROM public.tournaments');
+  assert.equal(empty.rows[0].n, 0, 'PLAYER_UI_FRESH_TOURNAMENT_DATABASE_REQUIRED');
+  await assertCanonicalSignup(db, ids);
+  await db.query(
+    `UPDATE public.profiles SET onboarding_complete=true,
+    age_verified=true,age_verified_at=now(),over_18_attested_at=now(),
+    club_arena_tos_accepted_at=now(),jurisdiction_country='US',
+    jurisdiction_region='IL',jurisdiction_acknowledged_at=now()
+    WHERE id=ANY($1::uuid[])`,
+    [ids]
+  );
+  const transact = async (index, sql, params) => {
+    await db.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
+    try {
+      await db.query(
+        "SET LOCAL statement_timeout='10s'; SET LOCAL lock_timeout='2s'; SET LOCAL ROLE authenticated"
+      );
+      await db.query("SELECT set_config('request.jwt.claims',$1,true)", [
+        JSON.stringify(claims[index]),
+      ]);
+      const result = await db.query(sql, params);
+      await db.query('SET CONSTRAINTS ALL IMMEDIATE');
+      await db.query('COMMIT');
+      return result;
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
+    }
+  };
+  for (let i = 0; i < users.length; i++) {
+    await transact(i + 1, 'SELECT public.fn_join_club($1)', [clubId]);
+    const sent = await transact(
+      0,
+      `SELECT public.fn_club_bank_send($1,$2,2000,
+      'player_wallet','Disposable tournament UI fixture actor funding',$3) AS result`,
+      [clubId, ids[i], `90000000-0000-4000-8000-00000000010${i}`]
+    );
+    assert.equal(sent.rows[0].result?.success, true, 'PLAYER_UI_CANONICAL_FUNDING_REFUSED');
+  }
+  const cohorts = [];
+  for (const format of ['MTT', 'SPIN', 'SNG']) {
+    const config = {
+      name: `Component UI ${format}`,
+      type: format.toLowerCase(),
+      gameVariant: 'NLH',
+      buyIn: 20,
+      startingStack: 10000,
+      maxPlayers: format === 'MTT' ? null : 3,
+      minPlayers: 3,
+      tableSize: 3,
+      blindStructure: [
+        { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, duration: 600, durationMinutes: 10 },
+        { level: 2, smallBlind: 50, bigBlind: 100, ante: 0, duration: 600, durationMinutes: 10 },
+      ],
+      payoutStructure: [{ place: 1, percentage: 100 }],
+      startTime: new Date(Date.now() + 60000).toISOString(),
+      isRebuy: format === 'MTT',
+      isReentry: false,
+      lateRegistrationLevels: format === 'MTT' ? 2 : 0,
+      rebuyLevels: format === 'MTT' ? 2 : 0,
+      rebuyCost: format === 'MTT' ? 20 : 0,
+      rebuyChips: format === 'MTT' ? 10000 : 0,
+      maxRebuys: 1,
+      addOnAvailable: false,
+      actionTimeSeconds: 10,
+    };
+    const made = await transact(0, 'SELECT public.fn_create_tournament($1,$2::jsonb) AS result', [
+      clubId,
+      config,
+    ]);
+    const response = made.rows[0].result;
+    assert.equal(response?.success, true, 'PLAYER_UI_CANONICAL_CREATION_REFUSED');
+    const tournamentId = response.tournament_id ?? response.tournamentId;
+    assert.match(tournamentId, UUID);
+    // Admission is ordinary authenticated and keeps one original request ID.
+    for (let i = 0; i < users.length; i++) {
+      const requestId = `90000000-0000-4000-8000-0000000002${cohorts.length}${i}`;
+      const admitted = await transact(
+        i + 1,
+        'SELECT public.fn_register_for_tournament_request($1,$2) AS result',
+        [tournamentId, requestId]
+      );
+      assert.equal(admitted.rows[0].result?.ok, true, 'PLAYER_UI_CANONICAL_REGISTRATION_REFUSED');
+    }
+    if (format === 'MTT') {
+      const started = await transact(
+        0,
+        'SELECT public.fn_owner_start_tournament_now($1) AS result',
+        [tournamentId]
+      );
+      assert.equal(started.rows[0].result?.ok, true, 'PLAYER_UI_CANONICAL_START_REFUSED');
+    }
+    cohorts.push({
+      format,
+      tournament_id: tournamentId,
+      club_id: clubId,
+      actor_ids: ids,
+      rebuy_cost: format === 'MTT' ? 20 : 0,
+      rebuy_chips: format === 'MTT' ? 10000 : 0,
+    });
+  }
+  return cohorts;
+}
+
 function inputIds(actorIds, spectatorId) {
   assert.ok(Array.isArray(actorIds) && actorIds.length === 2, 'FIXTURE_TWO_ACTORS_REQUIRED');
   const ids = [...actorIds, spectatorId];

@@ -381,11 +381,13 @@ export function startArguments(args) {
   assert.equal(schema, '--schema=/inputs/schema.zip');
   assert.match(web, /^--web=\/inputs\/[0-9a-f]{64}\.zip$/);
   assert.equal(engine, '--engine=http://engine:8080');
-  if (args.length === 4) assert.equal(scenario, '--scenario=financial');
+  if (args.length === 4)
+    assert.ok(['--scenario=financial', '--scenario=tournament-player-ui'].includes(scenario));
   return {
     schema: schema.slice(9),
     web: web.slice(6),
-    ...(scenario ? { financialScenario: true } : {}),
+    ...(scenario === '--scenario=financial' ? { financialScenario: true } : {}),
+    ...(scenario === '--scenario=tournament-player-ui' ? { tournamentPlayerUI: true } : {}),
   };
 }
 

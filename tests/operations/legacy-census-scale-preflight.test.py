@@ -101,6 +101,24 @@ class ScaleBoundary(unittest.TestCase):
         unknown = subprocess.CompletedProcess([],1,'','daemon unavailable')
         with patch.object(m,'command',return_value=unknown), self.assertRaisesRegex(RuntimeError,'unknown'):
             m.cleanup('own','k'*64,time.monotonic()+5)
+        # An unrecognised inspect failure whose daemon listing still shows the
+        # name, or whose listing itself fails, stays unknown.
+        listed = subprocess.CompletedProcess([],0,'b'*64+'\n','')
+        with patch.object(m,'command',side_effect=[unknown,listed]), self.assertRaisesRegex(RuntimeError,'unknown'):
+            m.cleanup('own','k'*64,time.monotonic()+5)
+        own0 = subprocess.CompletedProcess([],0,json.dumps('a'*64)+' '+json.dumps('k'*64),'')
+        # Lowercase not-found wording (newer Docker CLIs) is absence.
+        lower = subprocess.CompletedProcess([],1,'[]','error: no such object: own')
+        with patch.object(m,'command',side_effect=[own0,subprocess.CompletedProcess([],0,'',''),lower]):
+            self.assertTrue(m.cleanup('own','k'*64,time.monotonic()+5))
+        # Any other wording is absence only when the daemon lists nothing by
+        # this exact name; the listing is anchored to the full name.
+        other = subprocess.CompletedProcess([],1,'','Error response from daemon: object not present')
+        empty = subprocess.CompletedProcess([],0,'','')
+        with patch.object(m,'command',side_effect=[own0,subprocess.CompletedProcess([],0,'',''),other,empty]) as cmd:
+            self.assertTrue(m.cleanup('own','k'*64,time.monotonic()+5))
+        self.assertEqual(cmd.call_args_list[3].args[0][:2],['docker','ps'])
+        self.assertIn('name=^/?own$',cmd.call_args_list[3].args[0])
         own = subprocess.CompletedProcess([],0,json.dumps('a'*64)+' '+json.dumps('k'*64),'')
         absent = subprocess.CompletedProcess([],1,'','Error: No such object: own')
         with patch.object(m,'command',side_effect=[own,subprocess.CompletedProcess([],0,'',''),absent]) as cmd:

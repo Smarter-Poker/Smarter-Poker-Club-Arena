@@ -9,3 +9,9 @@ Native PostgreSQL 17 verifies scope refusal, open-arena refusal, unpaid-bounty r
 The existing required continuation qualification invokes this native operation test and retains its evidence. This SQL is an explicit operator action, not a cron or release-triggered data cleanup.
 
 A ten-table production rollback qualification hit the unchanged 5 s deadline and rolled back. The operation was reduced to at most two pages; no timeout was extended and no partial result was treated as committed.
+
+Correction: capture the existing immutable disposal witness from the original history, submission identity and completed settlement before deletion. Abort if an existing witness disagrees. This preserves later raw-compaction eligibility without erasing raw requests or changing retention safeguards. The initial history-only batches retained raw requests but omitted this witness; their original financial facts and submissions remain available for separately qualified provenance recovery. Further deletion was stopped when this dependency was found. Native rollback and retained-raw checks cover the added ordering.
+
+The same explicit bounded operation also recovers missing disposal witnesses for already-removed terminal Diamond histories, deriving identity from immutable submissions, original history time from the preserved financial facts, and completion from the matching atomic receipt. It does not fabricate gameplay data or bypass raw-compaction checks. Native tests cover recovery and duplicate invocation with raw/accounting data unchanged.
+
+Spin ownership additionally requires the canonical tournament terminal-settlement receipt, matching the existing retention safeguard. A completed status alone does not substitute for that receipt; a native refusal test pins this boundary.

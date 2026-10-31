@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 261967,
-      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+      "bytes": 262364,
+      "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1767,5 +1767,20 @@
       "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
     },
     "qualification": "Current CI source identity only. No historical financial/native/installation/live result is recertified; all original evidence and other pins remain unchanged."
+  },
+  "deliveryLatencyScopeAndShardSourceAudit20261031": {
+    "scope": "Current CI source identity only: use positive unchanged isolated-simulation input evidence for existing compiler replay and throughput selection, and move the unchanged isolated Diamond acceptance group and backed payout scan to accounting shard 2. Preserve all commands, assertions, deadlines, artifacts, required verdicts, four-runner matrix and historical evidence.",
+    "previousCiPin": {
+      "bytes": 261967,
+      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+    },
+    "currentCiPin": {
+      "bytes": 262364,
+      "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "qualification": "Source binding only; not financial/native recertification, installation or live proof. Exact-candidate required checks remain necessary."
   }
 }

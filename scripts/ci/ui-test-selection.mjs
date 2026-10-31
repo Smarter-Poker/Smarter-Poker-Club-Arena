@@ -2,7 +2,7 @@ import ts from 'typescript';
 import postcss from 'postcss';
 import { gitEnvironmentForCwd } from './classify-ci-changes.mjs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync, existsSync, appendFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, appendFileSync, lstatSync } from 'node:fs';
 import { resolve, dirname, relative, basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -170,7 +170,7 @@ export function configOnly(path, before, after) {
   }
 }
 
-export function selectionInputs(root, base, head) {
+export function selectionInputs(root, base, head, isolatedStyles = false) {
   const git = (...args) =>
     execFileSync('git', args, {
       cwd: root,
@@ -212,11 +212,31 @@ export function selectionInputs(root, base, head) {
         path.startsWith('/')
       )
         throw Error('Non-modification');
-      const before = status === 'A' ? '' : git('show', `${ancestor}:${path}`);
-      const after = readFileSync(resolve(root, path), 'utf8');
-      if (after !== git('show', `${head}:${path}`)) throw Error('Changed candidate input');
+      const bytesAt = (revision) => execFileSync('git', ['show', `${revision}:${path}`], {
+        cwd: root, env: gitEnvironmentForCwd(), maxBuffer: 64 * 1024 * 1024,
+      });
+      if (isolatedStyles) {
+        if (!lstatSync(resolve(root, path)).isFile()) throw Error('Non-regular input');
+        for (const revision of status === 'A' ? [head] : [ancestor, head])
+          if (!/^100(?:644|755) blob /.test(git('ls-tree', revision, '--', path)))
+            throw Error('Non-regular Git input');
+      }
+      const afterBytes = readFileSync(resolve(root, path));
+      if (!afterBytes.equals(bytesAt(head))) throw Error('Changed candidate input');
+      const beforeBytes = status === 'A' ? Buffer.alloc(0) : bytesAt(ancestor);
+      const before = beforeBytes.toString('utf8');
+      const after = afterBytes.toString('utf8');
       if (!changelog) {
-        if (!presentationOnly(path, before, after)) {
+        if (isolatedStyles) {
+          if (/^src\/.+\.css$/.test(path)) {
+            if (!Buffer.from(before).equals(beforeBytes) || !Buffer.from(after).equals(afterBytes))
+              throw Error('Invalid CSS encoding');
+            postcss.parse(before);
+            postcss.parse(after);
+          } else if (!/^public\/assets\/.+\.(?:png|webp|jpe?g)$/.test(path)) {
+            throw Error('Not isolated styles or raster artwork');
+          }
+        } else if (!presentationOnly(path, before, after)) {
           if (!configOnly(path, before, after))
             throw Error('Not proved presentation or configuration-only');
         }
@@ -233,6 +253,14 @@ export function selectionInputs(root, base, head) {
   } catch (error) {
     return { focused: false, changed: [], reason: error.message };
   }
+}
+
+// This proof only omits isolated SQL and monitoring simulations. It must not
+// narrow browser/unit coverage or omit the asset matte scan. Those consumers
+// still use the original presentation proof above.
+export function isolatedSimulationsUnchanged(root, base, head) {
+  return selectionInputs(root, base, head).focused ||
+    selectionInputs(root, base, head, true).focused;
 }
 
 function files(root, dir) {
@@ -554,6 +582,8 @@ export function runSelection(root, args, env = process.env) {
     // Only positive presentation/configuration proofs may omit the unchanged
     // SQL replay. Financial, executable, mixed and unknown inputs keep it.
     appendFileSync(env.GITHUB_OUTPUT, `presentation_only=${proof.focused}\n`);
+    appendFileSync(env.GITHUB_OUTPUT,
+      `isolated_simulations_unchanged=${proof.focused || selectionInputs(root, env.CI_BASE_SHA, env.CI_HEAD_SHA, true).focused}\n`);
   } else if (mode === 'unit') {
     if (!proof.focused) return invoke('vitest', ['run', 'tests/', ...args]);
     // Run the conservative source-contract set, then the actual import graph.

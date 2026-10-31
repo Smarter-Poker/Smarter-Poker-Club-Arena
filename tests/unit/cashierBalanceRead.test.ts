@@ -152,3 +152,20 @@ describe('the agent float row (D-16)', () => {
     expect(snapshot.hasFloat).toBe(true);
   });
 });
+
+// Owner correction October 29: funding is never enlarged by the tracking line.
+it('returns only funded chips even when the tracking line exceeds the wallet', async () => {
+  state.agent = {
+    data: {
+      agent_wallet_balance: 504.72,
+      promo_wallet_balance: 200,
+      is_prepaid: false,
+      credit_limit: 500,
+      credit_used: 0,
+    },
+    error: null,
+  };
+  const snapshot = await readCashierBalances(CLUB, USER, 'agent_wallet', signal);
+  expect(snapshot.bank).toBe(504.72);
+  expect(snapshot.credit).toBe(0);
+});

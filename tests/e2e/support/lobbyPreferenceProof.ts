@@ -1,8 +1,9 @@
+import { openLobbyGameSection } from './lobbyGameSections';
 import type { Page, Request, Response } from '@playwright/test';
 
 const TAB_KEYS: Record<string, string> = {
   ALL: 'ALL',
-  MTT: 'MTT',
+  "MTT'S": 'MTT',
   NLH: 'HOLDEM',
   PLO: 'OMAHA',
   LIMIT: 'LIMIT',
@@ -228,6 +229,7 @@ export async function selectLobbyPreference(
   proof: LobbyPreferenceProof
 ) {
   await proof.ready(ownerId);
+  await openLobbyGameSection(page, label);
   const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
   const tab = tabs.getByRole('tab', { name: label, exact: true });
   const before = await tabs.getByRole('tab', { selected: true }).textContent();

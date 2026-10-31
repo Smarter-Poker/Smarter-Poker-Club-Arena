@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import ArenaGameCard from './game-cards/ArenaGameCard';
+import { useSatelliteDestination } from './game-cards/useTournamentCardText';
 import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
 import type { ArenaGameCardActions } from './game-cards/arenaGameCardTypes';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow, RuleMedallion } from './lobbyEntries';
@@ -710,6 +711,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
     String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
     Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
+  const satelliteDestination = useSatelliteDestination(
+    tournament?.satellite_target_id || tournament?.satellite_target
+  );
+  const guaranteedTickets = Math.max(0, Math.floor(Number(tournament?.satellite_seats) || 0));
   const panelPlaceLadderPool = useMemo<number | null>(() => {
     if (!tournament) return 0;
     if (
@@ -794,6 +799,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         </header>
 
         <div className="glp__scroll">
+          {panelIsSatellite && (
+            <div className="glp__satellite-target" role="note" aria-label="Ticket Destination">
+              {satelliteDestination || 'Loading Satellite Destination...'}
+            </div>
+          )}
           <ArenaGameCard
             data={gameCardData}
             actions={gameCardActions}
@@ -1191,13 +1201,38 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               {entry.kind === 'mtt' && tab === 'payouts' && (
                 <PanelSection
                   title="Payouts"
-                  pill={panelPayouts.length ? `${panelPayouts.length} Paid` : entry.gameLabel}
+                  pill={
+                    panelIsSatellite
+                      ? 'Tickets'
+                      : panelPayouts.length
+                        ? `${panelPayouts.length} Paid`
+                        : entry.gameLabel
+                  }
                   id="glp-panel-payouts"
                   role="tabpanel"
                   aria-labelledby="glp-tab-payouts"
                   tabIndex={0}
                 >
-                  {tournament && panelPayouts.length > 0 ? (
+                  {tournament && panelIsSatellite ? (
+                    <div className="glp__satellite-payouts">
+                      <p>
+                        <strong>
+                          {guaranteedTickets > 0
+                            ? `${guaranteedTickets} ${guaranteedTickets === 1 ? 'Ticket' : 'Tickets'} Guaranteed`
+                            : 'Tournament Entry Tickets'}
+                        </strong>
+                      </p>
+                      <p>{satelliteDestination || 'Loading Satellite Destination...'}</p>
+                      <p>
+                        Each Qualifier Receives A Target Tournament Entry. Additional Tickets Are
+                        Awarded As The Prize Pool Funds Them.
+                      </p>
+                      <p className="glp__note">
+                        Final Awards Follow The Funded Ticket Plan. The Bubble Receives Any
+                        Remaining Cash.
+                      </p>
+                    </div>
+                  ) : tournament && panelPayouts.length > 0 ? (
                     <>
                       <div className="glp__tablewrap">
                         <table className="glp__table">

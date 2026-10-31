@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  *  PLAYER STATS PAGE — Premium Glassmorphism Design
  *
@@ -67,6 +68,7 @@ import { ratioOrUnmeasured } from './stats/format';
 import { RANGES, num, str, type FullStats, type HandMode, type HandRow } from './stats/types';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useStatsPulse } from '../hooks/useStatsPulse';
+import StatsLiveRecords from './stats/StatsLiveRecords';
 import { resolvedTimeZone } from '../lib/localTime';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
@@ -95,7 +97,8 @@ import {
   buildStatsCashEvidencePath,
   restoreStatsEvidenceScroll,
 } from '../lib/statsEvidenceNavigation';
-import SharedClubStatsView from './stats/SharedClubStatsView';
+// The shared-profile branch is not part of the owner's overview route.
+const SharedClubStatsView = lazy(() => import('./stats/SharedClubStatsView'));
 import ClubScopeConsole from './stats/ClubScopeConsole';
 import StatsHeadlineDeck from './stats/StatsHeadlineDeck';
 import {
@@ -177,8 +180,9 @@ export default function PlayerStatsPage() {
   const [comparisonLoadedKey, setComparisonLoadedKey] = useState<string | null>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
   const [comparisonError, setComparisonError] = useState(false);
-  const [comparisonSort, setComparisonSort] = useState<ClubComparisonSort>(() =>
-    validClubSort(searchParams.get('clubSort'))
+  const [comparisonSort, setComparisonSort] = usePlayerPreference<ClubComparisonSort>(
+    'PlayerStatsPage:comparisonSort',
+    () => validClubSort(searchParams.get('clubSort'))
   );
   const [full, setFull] = useState<FullStats | null>(null);
   // Keep the payload scope explicit. A failed range request must never leave
@@ -188,7 +192,9 @@ export default function PlayerStatsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [servingCache, setServingCache] = useState(false);
-  const [rangeKey, setRangeKey] = useState<string>(() => validRangeKey(searchParams.get('range')));
+  const [rangeKey, setRangeKey] = usePlayerPreference<string>('PlayerStatsPage:rangeKey', () =>
+    validRangeKey(searchParams.get('range'))
+  );
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [statsDataSource, setStatsDataSource] = useState<'live' | 'memory cache' | 'saved cache'>(
     'live'
@@ -412,7 +418,7 @@ export default function PlayerStatsPage() {
   const searchKey = searchParams.toString();
   useEffect(() => {
     const current = new URLSearchParams(searchKey);
-    const nextRange = validRangeKey(current.get('range'));
+    const nextRange = current.has('range') ? validRangeKey(current.get('range')) : rangeKey;
     if (current.get('range') && nextRange === 'all') updateStatsUrl({ range: null }, true);
     if (current.get('tab') && validTab(current.get('tab')) === 'overview') {
       updateStatsUrl({ tab: null }, true);
@@ -433,7 +439,7 @@ export default function PlayerStatsPage() {
       setRangeKey(nextRange);
     }
     setCategory(validTab(current.get('tab')));
-    setComparisonSort(validClubSort(current.get('clubSort')));
+    if (current.has('clubSort')) setComparisonSort(validClubSort(current.get('clubSort')));
     if (!isOwnProfile) return;
     if (statsScope !== CHIP_STATS) {
       if (selectedClubId) setSelectedClubId(null);
@@ -527,6 +533,7 @@ export default function PlayerStatsPage() {
   // was never read here, so a fault rendered as "Rake Ledger Empty".
   const [rakeError, setRakeError] = useState(false);
   const [rakeReload, setRakeReload] = useState(0);
+  const [liveRevision, setLiveRevision] = useState(0);
   useEffect(() => {
     setRakeError(false);
     if (!isOwnProfile || !user?.id) {
@@ -563,7 +570,7 @@ export default function PlayerStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id, windowDays, rakeReload, statsScope, selectedClubId]);
+  }, [isOwnProfile, user?.id, windowDays, rakeReload, statsScope, selectedClubId, liveRevision]);
   const [cashOpportunityStats, setCashOpportunityStats] = useState<CashOpportunityStats | null>(
     null
   );
@@ -619,6 +626,7 @@ export default function PlayerStatsPage() {
     selectedClubId,
     statsTimezone,
     cashOpportunityReload,
+    liveRevision,
   ]);
   const openCashEvidence = useCallback(
     (metric: CashEvidenceMetric) => {
@@ -1094,9 +1102,14 @@ export default function PlayerStatsPage() {
    * range closure from overwriting the current window. */
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleRefresh = useCallback(() => {
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    // Keep the first deadline: a busy table must not postpone the read forever.
+    if (refreshTimerRef.current) return;
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
+      // Rake and opportunities are separate reads, so an overview refresh alone
+      // cannot update them. Invalidate them even when the overview read fails.
+      clearStatsRangeMemo();
+      setLiveRevision((revision) => revision + 1);
       void loadRef.current?.({ fresh: true });
     }, 2000);
   }, []);
@@ -1258,6 +1271,7 @@ export default function PlayerStatsPage() {
     wantsAllTime,
     rangeKey,
     allTimeReload,
+    liveRevision,
     isMounted,
     statsScope,
     cacheIdentityFor,
@@ -1265,7 +1279,7 @@ export default function PlayerStatsPage() {
     statsTimezone,
   ]);
   const allTimeStats: FullStats | null = rangeKey === 'all' ? full : allTimeFetched;
-  const comparisonKey = `${user?.id ?? ''}:${targetUserId ?? ''}:${statsScope}:${rangeKey}:${statsTimezone}:${clubs.map((club) => club.id).join(',')}`;
+  const comparisonKey = `${user?.id ?? ''}:${targetUserId ?? ''}:${statsScope}:${rangeKey}:${statsTimezone}:${clubs.map((club) => club.id).join(',')}:${liveRevision}`;
   const comparisonRequestRef = useRef(0);
   const loadClubComparison = useCallback(async () => {
     if (!targetUserId || !isOwnProfile || clubs.length === 0) return;
@@ -1430,6 +1444,7 @@ export default function PlayerStatsPage() {
       metric_availability: statsContract.quality.metric_availability,
       total_profit: overall.total_profit,
       hours_played: overall.hours_played,
+      cash_hours_played: overall.cash_hours_played,
       showdowns_won: overall.showdowns_won,
       showdowns_total: overall.showdowns_total,
       aggression_factor: overall.aggression_factor,
@@ -1482,16 +1497,18 @@ export default function PlayerStatsPage() {
     ) : null;
   if (!isOwnProfile) {
     return (
-      <SharedClubStatsView
-        targetUserId={targetUserId!}
-        asset={statsScope}
-        timezone={statsTimezone}
-        rangeKey={rangeKey}
-        windowDays={windowDays}
-        initialClubId={searchParams.get('statsClub')}
-        onClubChange={(clubId, replace) => updateStatsUrl({ statsClub: clubId }, replace)}
-        onRangeChange={changeRange}
-      />
+      <Suspense fallback={<PageSkeleton variant="stats" />}>
+        <SharedClubStatsView
+          targetUserId={targetUserId!}
+          asset={statsScope}
+          timezone={statsTimezone}
+          rangeKey={rangeKey}
+          windowDays={windowDays}
+          initialClubId={searchParams.get('statsClub')}
+          onClubChange={(clubId, replace) => updateStatsUrl({ statsClub: clubId }, replace)}
+          onRangeChange={changeRange}
+        />
+      </Suspense>
     );
   }
   if (loading) {
@@ -1571,6 +1588,15 @@ export default function PlayerStatsPage() {
   );
   return (
     <div className={`stats-page${privacyPresentationMode ? ' stats-page--presentation' : ''}`}>
+      <StatsLiveRecords
+        userId={targetUserId}
+        clubIds={[
+          ...(selectedClubId ? [selectedClubId] : clubs.map((club) => club.id)),
+          ...(agentRoles ?? []).map((role) => role.club_id),
+        ]}
+        enabled={isOwnProfile && !clubsLoading}
+        onChange={scheduleRefresh}
+      />
       <PageBar
         title="Player Intelligence"
         titleId="stats-page-title"
@@ -1728,6 +1754,8 @@ export default function PlayerStatsPage() {
               <>
                 {showTab('rake') && (
                   <RakeTab
+                    liveRevision={liveRevision}
+                    viewerId={user?.id}
                     rakeLoading={rakeLoading}
                     rakeStats={rakeStats}
                     rakeError={rakeError}

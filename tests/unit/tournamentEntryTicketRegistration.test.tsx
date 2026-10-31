@@ -78,6 +78,44 @@ describe('human tournament registration with entry-only tickets', () => {
     mocks.registerPlayer.mockResolvedValue({ id: 'registration-1', table_id: 'table-1' });
   });
 
+  it.each([true, false])(
+    'prints the real start condition and cancels without charging (whenFull=%s)',
+    async (startsWhenFull) => {
+      render(<SignUpHost />);
+      const hook = renderHook(() => useTournamentRegistration());
+      let registration!: Promise<void>;
+      act(() => {
+        registration = hook.result.current.register({ ...tournament, startsWhenFull });
+      });
+      await screen.findByRole('dialog');
+      if (startsWhenFull) {
+        expect(screen.getByText('When Full')).toBeInTheDocument();
+        expect(screen.queryByText(/You Can Unregister Any Time/)).not.toBeInTheDocument();
+      } else {
+        expect(screen.queryByText('When Full')).not.toBeInTheDocument();
+        expect(
+          screen.getByText(
+            new Date(tournament.start_time).toLocaleString('en-US', {
+              month: '2-digit',
+              day: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })
+          )
+        ).toBeInTheDocument();
+        expect(screen.getByText(/You Can Unregister Any Time/)).toBeInTheDocument();
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel Sign Up' }));
+      await act(async () => {
+        await registration;
+      });
+      expect(mocks.registerPlayer).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    }
+  );
+
   it('waits for the selector, shows Tournament Ticket, and passes its exact id', async () => {
     let resolveTicket!: (ticket: { id: string; value: number }) => void;
     mocks.findTicket.mockReturnValue(

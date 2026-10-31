@@ -127,6 +127,11 @@ def verify(q,fresh,overlap,register,check,prepare=None,after_funded=None):
         verify_bounty_addon(q,setup,call,state,check)
         return
 
+    if '--mtt-player-lock' in sys.argv:
+        from mtt_player_lock_cases import verify_contention
+        verify_contention(q,setup,call,state,check)
+        if '--mtt-player-lock-mission-convoy-only' in sys.argv: return
+
     for kind in ['rebuy','reentry','addon']:
         setup(kind,kind)
         before=state()

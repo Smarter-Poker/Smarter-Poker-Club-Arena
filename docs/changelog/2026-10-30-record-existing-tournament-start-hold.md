@@ -1,0 +1,5 @@
+# Record the existing tournament start hold
+
+Recover the unpublished source recording of migration `20261030001305` from original incident commit `d6d49e9b7652f399a89cd4d6465dc4b43c0e7831`. The original owner installed it during the active freeze outage at `2026-10-30T00:27:42.130433Z`, then committed its recording, but source publication failed and no pull request was created. The source remains exactly 6,230 bytes including its final newline, MD5 `d57e63523e1435b357e064986e6e4459`, SHA-256 `31839f81553aac5241bb95734d410c748da9d1e73572a415e02c6b760d5225d0`. Its existing recorded-migration entry is preserved exactly alongside all current entries.
+
+This is historical source/provenance publication only. Do not install or replay the migration, change its version, alter the hold, or restore an older runtime. The original incident checkpoint retains isolated PostgreSQL qualification and installed-source/permission readback; these historical observations do not certify current tournament recovery. Current engine, accounting and hold operations retain their existing owners. No workflow, source-binding pin or release policy changes are included.

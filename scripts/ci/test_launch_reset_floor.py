@@ -155,6 +155,10 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # The real certificate CHECK accepts the per-club quality key written by R4.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-statement-certificate-kind-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('weekly-statement-certificate-kind'))], text=True))
 
+# Fee source identities retain exact full FOR bags through the narrow UUID cover.
+# The existing scoped-launch artifact retains this fail-closed native receipt.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-source-identity-cover-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-source-identity-cover.json'))], text=True))
+
 # Statement validation retains all original checks while reading indexed event owners.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-statement-indexed-quality-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("weekly-statement-indexed-quality.json"))], text=True))
 
@@ -168,6 +172,11 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # An explicit restart of that original accrual preserves immutable receipts,
 # refuses paid books and admits the exact unpaid atomic-history liabilities.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-unpaid-atomic-cash-contracts-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Historical own playing earnings preserve paid legacy receipts and route new
+# typed destinations through the actual document pipeline and original R0/R2/R3.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-own-agent-rakeback-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-own-agent-financial-postgres.py'), '--pg-bin', str(pg), '--scratch-root', str(args.scratch), '--output', str(args.output.with_name('own-agent-v1.json'))], text=True))
 
 # A single weekly player entitlement preserves every historical payer through
 # native R3 payments, documents, retired reserves and interruption/replay.
@@ -194,6 +203,10 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # The original standalone weekly bank is funding once, with its native mint lineage.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-standalone-weekly-statement-funding-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
 
+# The fee fingerprint serializes its unchanged economic object once; native
+# semantic, admission ABI and atomic installer faults remain in this required floor.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-fee-fingerprint-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("weekly-fee-fingerprint.json"))], text=True))
+
 # Original cash freshness preserves earning scope plus late effective admissions.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-effective-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 
@@ -205,3 +218,35 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-hand-witness-window-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 # Original weekly incomplete counts seek immutable source and batch keys per attribution.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-counts-indexed-incomplete-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Original tournament membership keeps raw Union equality in its physical key.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-membership-union-key-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-membership-union-key.json'))], text=True))
+
+# Original shaped cash keeps its exact Boolean evidence gate in a fixed-width physical key.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-boolgate-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-boolgate.json'))], text=True))
+
+# Original Boolean index statistics are collected by the guarded owning migration.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-statistics-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-statistics.json'))], text=True))
+
+# Original linked cash uses a lossless long-text partial proof selector.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-linked-cash-spgist-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-linked-cash-spgist.json'))], text=True))
+
+# Bounded physical rake evidence keeps every original oversized row on fallback.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-rake-record-bounded-cover-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('rake-record-bounded-cover.json'))], text=True))
+
+# Genuine relation-level linked-cash union statistics are qualified without changing original proof owners.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-linked-cash-statistics-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-linked-cash-statistics.json'))], text=True))
+
+# Original cash refusal reads scope and clock bounds before blocked IDs.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-cash-refusal-scope-time-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('cash-refusal-scope-time.json'))], text=True))
+
+# Original tournament quality consumes bounded physical evidence atomically.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-quality-bounded-evidence-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-quality-bounded-evidence.json'))], text=True))
+
+
+# Current measured three-field source access and exact fee fallback retain their
+# full semantic/error regression in this same required native floor family.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-quality-current-cover-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('weekly-quality-current-cover.json'))], text=True))
+
+# Three unsealed original cash readers preserve the genuine generation.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-cash-three-helper-forward-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-cash-three-helper-forward.json'))], text=True))

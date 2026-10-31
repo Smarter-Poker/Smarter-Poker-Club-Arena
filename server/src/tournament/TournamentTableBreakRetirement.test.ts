@@ -22,6 +22,7 @@ const LEASE_GENERATION = 'cccccccc-0000-4000-8000-000000000001';
 class TableBreakHarness extends TournamentManager {
   constructor(gameServer: GameServer) {
     super(TOURNAMENT_ID, gameServer, LEASE_GENERATION, performance.now() + 20_000);
+    (this as unknown as { lifecycleEpoch: { begin(): unknown } }).lifecycleEpoch.begin();
     this.running = true;
     this.isFinalTable = true;
   }
@@ -206,8 +207,18 @@ describe('tournament table-break retirement is one durable ownership chain', () 
         const query = {
           select: () => query,
           or: () => query,
+          order: () => query,
+          limit: (count: number) => {
+            rows = rows.slice(0, count);
+            return query;
+          },
+          gt: (key: string, value: string) => {
+            rows = rows.filter((row) => String(row[key]) > value);
+            return query;
+          },
           eq: (key: string, value: unknown) => {
-            if (key !== 'tournament_id') rows = rows.filter((row) => row[key] === value);
+            if (key !== 'tournament_id' && key !== 'tables.tournament_id')
+              rows = rows.filter((row) => row[key] === value);
             return query;
           },
           in: (key: string, values: unknown[]) => {
@@ -553,31 +564,24 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       // Use the real occupied-table reader. The retired source either remains
       // open but empty, or its close committed before the response was lost.
       vi.spyOn(supabase, 'from').mockImplementation(((relation: string) => {
-        if (relation === 'tables')
-          return {
-            select: () => ({
-              eq: () => ({
-                in: () =>
-                  Promise.resolve({
-                    data: [...occupied, ...(sourceStatus === 'running' ? [{ id: TABLE_ID }] : [])],
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        if (relation === 'table_seats')
-          return {
-            select: () => ({
-              in: () => ({
-                is: () =>
-                  Promise.resolve({
-                    data: occupied.map(({ id }) => ({ table_id: id })),
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        throw new Error(`Unexpected relation: ${relation}`);
+        const rows =
+          relation === 'tables'
+            ? [...occupied, ...(sourceStatus === 'running' ? [{ id: TABLE_ID }] : [])]
+            : relation === 'table_seats'
+              ? occupied.map(({ id }) => ({ id: `seat-${id}`, table_id: id }))
+              : null;
+        if (!rows) throw new Error(`Unexpected relation: ${relation}`);
+        const query = {
+          select: () => query,
+          eq: () => query,
+          in: () => query,
+          is: () => query,
+          order: () => query,
+          limit: () => query,
+          then: (resolve: (value: unknown) => unknown) =>
+            Promise.resolve({ data: rows, error: null }).then(resolve),
+        };
+        return query;
       }) as never);
       const rpc = vi
         .spyOn(supabase, 'rpc')
@@ -755,8 +759,18 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       const query = {
         select: () => query,
         or: () => query,
+        order: () => query,
+        limit: (count: number) => {
+          rows = rows.slice(0, count);
+          return query;
+        },
+        gt: (key: string, value: string) => {
+          rows = rows.filter((row) => String(row[key]) > value);
+          return query;
+        },
         eq: (key: string, value: unknown) => {
-          if (key !== 'tournament_id') rows = rows.filter((row) => row[key] === value);
+          if (key !== 'tournament_id' && key !== 'tables.tournament_id')
+            rows = rows.filter((row) => row[key] === value);
           return query;
         },
         in: (key: string, values: unknown[]) => {
@@ -1031,11 +1045,14 @@ describe('closed-source ambiguity reaches the actual manager diagnostic', () => 
       { table_id: 'closed-b', user_id: 'twice', seat_number: 2, stack: '250.00' },
       { table_id: 'closed-a', user_id: 'twice', seat_number: 1, stack: 100 },
     ];
-    const tableFilter = vi.fn().mockResolvedValue({ data: tables, error: null });
-    const liveFilter = vi.fn().mockResolvedValue({ data: seats, error: null });
+    const page = (rows: unknown[]) => ({
+      order: vi.fn(() => ({ limit: vi.fn().mockResolvedValue({ data: rows, error: null }) })),
+    });
+    const tableFilter = vi.fn(() => page(tables));
+    const liveFilter = vi.fn(() => page(seats));
     const seatFilter = vi.fn(() => ({ is: liveFilter }));
     const tableSelect = vi.fn(() => ({ eq: tableFilter }));
-    const seatSelect = vi.fn(() => ({ in: seatFilter }));
+    const seatSelect = vi.fn(() => ({ eq: seatFilter }));
     const reads = vi.spyOn(supabase, 'from').mockImplementation(((relation: string) => {
       if (relation === 'tables') return { select: tableSelect };
       if (relation === 'table_seats') return { select: seatSelect };
@@ -1052,11 +1069,10 @@ describe('closed-source ambiguity reaches the actual manager diagnostic', () => 
     expect(reads.mock.calls.map(([relation]) => relation)).toEqual(['tables', 'table_seats']);
     expect(tableSelect).toHaveBeenCalledWith('id, status, is_deleted, max_players');
     expect(tableFilter).toHaveBeenCalledWith('tournament_id', TOURNAMENT_ID);
-    expect(seatSelect).toHaveBeenCalledWith('table_id, user_id, seat_number, stack');
-    expect(seatFilter).toHaveBeenCalledWith(
-      'table_id',
-      tables.map(({ id }) => id)
+    expect(seatSelect).toHaveBeenCalledWith(
+      'id, table_id, user_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(tournament_id)'
     );
+    expect(seatFilter).toHaveBeenCalledWith('tables.tournament_id', TOURNAMENT_ID);
     expect(liveFilter).toHaveBeenCalledWith('left_at', null);
     expect(report).toHaveBeenCalledTimes(1);
     expect(report).toHaveBeenCalledWith(

@@ -34,11 +34,15 @@ export interface UseRabbitHuntRevealOptions {
   userId: string | null | undefined;
   /** Blocks the request before it is made (the tile's offer being down). */
   disabled?: boolean;
+  /** Read-only recovery of this surface's exact purchased hand. */
+  onRestore?: () => Promise<RabbitHuntRevealResult | null>;
 }
 
 export interface RabbitHuntRevealState {
   reveal: (handNumber?: number) => Promise<void>;
   isRevealing: boolean;
+  isSlow: boolean;
+  recoveryNeeded: boolean;
   hasRevealed: boolean;
   cards: Card[];
   /** VIP monthly hunts left after the last reveal; null until one is bought. */
@@ -59,9 +63,12 @@ export function useRabbitHuntReveal({
   onReveal,
   userId,
   disabled = false,
+  onRestore,
 }: UseRabbitHuntRevealOptions): RabbitHuntRevealState {
   const toast = useToast();
   const [isRevealing, setIsRevealing] = useState(false);
+  const [isSlow, setIsSlow] = useState(false);
+  const [recoveryNeeded, setRecoveryNeeded] = useState(false);
   const [hasRevealed, setHasRevealed] = useState(false);
   const [cards, setCards] = useState<Card[]>([]);
   const [vipRemaining, setVipRemaining] = useState<number | null>(null);
@@ -82,6 +89,16 @@ export function useRabbitHuntReveal({
     inFlightRef.current = false;
   }
 
+  // A panel can close while its paid request is pending. Its owner still
+  // receives the response, but a discarded surface must not toast or paint it.
+  useEffect(
+    () => () => {
+      requestRef.current += 1;
+      inFlightRef.current = false;
+    },
+    []
+  );
+
   const stateBelongsToActiveUser = stateUserId === userId;
   const visibleIsRevealing = stateBelongsToActiveUser ? isRevealing : false;
   const visibleHasRevealed = stateBelongsToActiveUser ? hasRevealed : false;
@@ -92,11 +109,53 @@ export function useRabbitHuntReveal({
   useEffect(() => {
     setStateUserId(userId);
     setIsRevealing(false);
+    setRecoveryNeeded(false);
     setHasRevealed(false);
     setCards([]);
     setVipRemaining(null);
     setPackRemaining(null);
   }, [userId]);
+
+  useEffect(() => {
+    setIsSlow(false);
+    if (!visibleIsRevealing) return;
+    const timer = setTimeout(() => setIsSlow(true), 1500);
+    return () => clearTimeout(timer);
+  }, [visibleIsRevealing]);
+
+  useEffect(() => {
+    if (!onRestore || !userId) return;
+    let closed = false;
+    const requestedUser = userId;
+    const read = () => {
+      if (document.hidden) return;
+      const version = requestRef.current;
+      void onRestore()
+        .then((result) => {
+          if (
+            closed ||
+            requestRef.current !== version ||
+            activeUserRef.current !== requestedUser ||
+            !result?.success ||
+            !result.cards?.length
+          )
+            return;
+          setStateUserId(requestedUser);
+          setCards(result.cards);
+          setHasRevealed(true);
+          setRecoveryNeeded(false);
+        })
+        .catch((error) => reportError(error, 'RabbitHunt.Receipt_read_failed'));
+    };
+    read();
+    document.addEventListener('visibilitychange', read);
+    window.addEventListener('online', read);
+    return () => {
+      closed = true;
+      document.removeEventListener('visibilitychange', read);
+      window.removeEventListener('online', read);
+    };
+  }, [onRestore, userId]);
 
   const reset = useCallback(() => {
     requestRef.current += 1;
@@ -104,6 +163,7 @@ export function useRabbitHuntReveal({
     setStateUserId(activeUserRef.current);
     setIsRevealing(false);
     setCards([]);
+    setRecoveryNeeded(false);
     setHasRevealed(false);
     setVipRemaining(null);
     setPackRemaining(null);
@@ -128,15 +188,16 @@ export function useRabbitHuntReveal({
       inFlightRef.current = true;
       setStateUserId(requestedUserId);
       setIsRevealing(true);
+      setRecoveryNeeded(false);
       try {
-        /* One call: it charges and returns the cards, or it charges nothing
-           and returns why. There is no window in which a player has paid and
-           has no cards - the failure the old fetch-then-charge dance could
-           not close from the client. */
+        /* Billing and cards are one authoritative operation. A transport
+           interruption is still an unknown outcome; recover the same hand
+           through its existing receipt, never substitute the next hand. */
         const result = await onReveal(handNumber);
         if (!isCurrentRequest()) return;
 
         if (!result.success || !result.cards || result.cards.length === 0) {
+          setRecoveryNeeded(result.retryable === true);
           toast.error(result.error || 'Rabbit Hunt Is Not Available For This Hand');
           return;
         }
@@ -163,7 +224,8 @@ export function useRabbitHuntReveal({
       } catch (error) {
         if (isCurrentRequest()) {
           reportError(error, 'RabbitHunt.Rabbit_hunt_failed');
-          toast.error('Rabbit Hunt Failed');
+          setRecoveryNeeded(true);
+          toast.error('Connection Interrupted. Try This Hand Again');
         }
       } finally {
         if (isCurrentRequest()) {
@@ -178,6 +240,8 @@ export function useRabbitHuntReveal({
   return {
     reveal,
     isRevealing: visibleIsRevealing,
+    isSlow: stateBelongsToActiveUser && visibleIsRevealing && isSlow,
+    recoveryNeeded: stateBelongsToActiveUser && recoveryNeeded,
     hasRevealed: visibleHasRevealed,
     cards: visibleCards,
     vipRemaining: visibleVipRemaining,

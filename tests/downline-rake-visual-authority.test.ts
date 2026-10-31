@@ -15,7 +15,7 @@ describe('Downline Rake visual authority', () => {
   it('uses semantic controls without primitive status or breadcrumb glyphs', () => {
     expect(PANEL).toContain('className="dlr-member-action"');
     expect(PANEL).toContain('type="button"');
-    expect(PANEL).toContain('Verified 30-Second Poll / Last Checked');
+    expect(PANEL).toContain('Live Record Updates / Last Checked');
     expect(PANEL).not.toContain('Live · Updated');
     expect(PANEL).not.toMatch(/[♠♥♦♣▲▼▪✓✗○★☆⚠→←↑↓›]/u);
   });

@@ -1,0 +1,1 @@
+  IF checked=0 THEN RAISE NOTICE 'CLOCK_GROUP_QUALITY_FIRST_ROW:%',jsonb_build_object('observed_at',clock_timestamp(),'elapsed_ms',extract(epoch FROM clock_timestamp()-current_setting('ca.dss_clock_group_quality_started')::timestamptz)*1000,'plan_cache_mode',current_setting('plan_cache_mode'),'read_only',current_setting('transaction_read_only'));END IF;

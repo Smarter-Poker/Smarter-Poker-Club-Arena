@@ -26,6 +26,7 @@ import {
   horseDiamondSpinsStatus,
   type HorseSpinStatus,
 } from '../services/HorseDiamondSpinsDriver.js';
+import { horsePlo5DepartureEvidence } from '../services/HorsePlo5DepartureEvidence.js';
 
 // Minimal structural typing so handlers don't need to import the GameServer
 // class (which lives in `index.ts`) nor the transport classes. Anything that
@@ -161,6 +162,9 @@ export function handleHealth(
     ...snapshot,
     ...(horseJournal ? { horseJournal } : {}),
     ...(horseDiamondSpins ? { horseDiamondSpins } : {}),
+    // Actual departure decisions only, with no seat identities or amounts.
+    // A diagnostic count never changes dealer routing readiness.
+    horsePlo5Departure: horsePlo5DepartureEvidence(),
   };
   sendJSON(res, dealerReady ? 200 : 503, status);
 }

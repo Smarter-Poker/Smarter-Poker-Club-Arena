@@ -139,7 +139,7 @@ describe('the static publisher is event-driven and independent', () => {
   });
 
   it('does not wait on or share a concurrency group with the engine deploy', () => {
-    const publishGroup = publisher.match(/^concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
+    const publishGroup = publisher.match(/^ {4}concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
     const engineGroup = engine.match(/^concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
     expect(publishGroup).toBeTruthy();
     expect(engineGroup).toBeTruthy();
@@ -212,7 +212,7 @@ describe('a run that ships nothing says so, and says which half failed', () => {
     );
   });
 
-  it('annotates NOT DEPLOYED on every non-shipping path', () => {
+  it('reports unshipped outcomes without asserting the current serving identity', () => {
     expect(engine).toContain('name: Say plainly when nothing shipped');
     expect(engineCode).toContain('::warning title=NOT DEPLOYED::');
     const step = engine.slice(engine.indexOf('name: Say plainly when nothing shipped'));

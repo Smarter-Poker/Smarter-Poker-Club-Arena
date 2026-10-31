@@ -225,6 +225,10 @@ async function openMembers(page: Page, probe: MembersProbe): Promise<number> {
   const startedAt = Date.now();
   await page.goto(MEMBERS_PATH, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+  await expect(page.locator('[data-players-mode]')).toBeVisible({ timeout: 45_000 });
+  // A previous case may legitimately have saved Advanced mode for this actor.
+  // Choose the mode being checked through its real control, preserving preferences.
+  await page.getByRole('button', { name: 'Simple', exact: true }).click();
   await expect(page.locator('[data-players-mode="simple"]')).toBeVisible({ timeout: 45_000 });
   const viewportWidth = page.viewportSize()?.width;
   if (viewportWidth !== undefined && viewportWidth <= 430) {
@@ -300,6 +304,66 @@ test.describe('Production Kings Club Players', () => {
     if (!probe) return;
     await attachMembersProbe(page, probe, testInfo);
     observedMembersPaths.delete(page);
+  });
+
+  test('ranks player names above upline matches and restores manual order after clearing search', async ({
+    page,
+  }, testInfo) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+    const sort = page.getByRole('combobox', { name: 'Sort Players' });
+    await completeNextPageRead(probe, () => sort.selectOption('oldest'), 'manual oldest sort');
+    const search = page.getByRole('searchbox', { name: 'Search Club Members' });
+    const responsePromise = page.waitForResponse((response) => {
+      if (!response.url().includes('/rpc/ca_club_members_page')) return false;
+      return response.request().postDataJSON()?.p_search?.trim().toLowerCase() === 'mikey';
+    });
+    await completeNextPageRead(probe, () => search.fill('mikey'), 'player name relevance search');
+    const response = await responsePromise;
+    expect(response.ok()).toBe(true);
+    const result = await response.json();
+    const rows = result.items as Array<{ user_id: string; alias: string; username: string }>;
+    const rank = (row: (typeof rows)[number]) => {
+      const names = [row.alias, row.username].map((value) => (value ?? '').toLowerCase());
+      return names.some((name) => name === 'mikey')
+        ? 0
+        : names.some((name) => name.startsWith('mikey'))
+          ? 1
+          : names.some((name) => name.includes('mikey'))
+            ? 2
+            : 3;
+    };
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rank(rows[0]), 'a direct player name must precede contextual matches').toBeLessThan(3);
+    const ranks = rows.map(rank);
+    expect(ranks).toEqual([...ranks].sort((left, right) => left - right));
+    expect(result.query.sort).toBe('search');
+    await expect(sort).toHaveValue('search');
+    await expect(sort).toBeDisabled();
+    await expect(
+      page
+        .getByRole('list', { name: 'Club Member Directory' })
+        .getByRole('listitem')
+        .first()
+        .locator('.member-alias')
+    ).toHaveText(rows[0].alias);
+    await testInfo.attach('player-name-search-proof', {
+      body: JSON.stringify({
+        search: 'mikey',
+        filteredTotal: result.filtered_total,
+        nextCursor: result.next_cursor,
+        rows: rows.map((row) => ({
+          user_id: row.user_id,
+          alias: row.alias,
+          username: row.username,
+          rank: rank(row),
+        })),
+      }),
+      contentType: 'application/json',
+    });
+    await completeNextPageRead(probe, () => search.fill(''), 'clear relevance search');
+    await expect(sort).toHaveValue('oldest');
+    await expect(sort).toBeEnabled();
   });
 
   test('loads the real roster once and completes search, filter, sort, and player navigation', async ({
@@ -502,7 +566,18 @@ test.describe('Production Kings Club Players', () => {
     const probe = observeMembersPath(page);
     await openMembers(page, probe);
     const sort = page.getByRole('combobox', { name: 'Sort Players' });
+    // Earlier cases may have persisted Name. Require an actual transition,
+    // rather than expecting a new directory read for selecting the same value.
+    if ((await sort.inputValue()) === 'name') {
+      await completeNextPageRead(
+        probe,
+        () => sort.selectOption('oldest'),
+        'workspace sort baseline'
+      );
+      await expect(sort).toHaveValue('oldest');
+    }
     await completeNextPageRead(probe, () => sort.selectOption('name'), 'workspace name sort');
+    await expect(sort).toHaveValue('name');
     await page
       .locator('.members-columns summary')
       .filter({ hasText: /^Columns$/ })
@@ -583,10 +658,15 @@ test.describe('Production Kings Club Players', () => {
     await page.locator('.mm-back').click();
     await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     await expect(search).toHaveValue(alias);
-    await expect(sort).toHaveValue('name');
+    await expect(sort).toHaveValue('search');
+    await expect(sort).toBeDisabled();
+    await expect(sort.locator('option:checked')).toHaveText('Player Name Matches');
     await expect(directory.getByRole('listitem').first().locator('.member-alias')).toContainText(
       alias
     );
+    await completeNextPageRead(probe, () => search.fill(''), 'workspace clear saved search');
+    await expect(sort).toHaveValue('name');
+    await expect(sort).toBeEnabled();
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
     expect(probe.pageErrorCount).toBe(0);
@@ -1035,4 +1115,181 @@ test.describe('Production Kings Club Players', () => {
     expect(probe.pageErrorCount).toBe(0);
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
+});
+
+// Only the new account/device lifecycle is qualified here; the existing roster
+// layout, pagination and return-position journeys retain their own evidence.
+test('account roster preferences survive logout and a cache-empty second device', async ({
+  browser,
+  baseURL,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  if (!baseURL) throw new Error('A deployed base URL is required');
+  const {
+    createTemporaryCustomizationAccount,
+    cleanupTemporaryCustomizationAccount,
+    requireCustomizationCertificationEnvironment,
+    withCauses,
+  } = await import('./support/temporaryCustomizationAccount');
+  const {
+    openFreshPreferenceDevice,
+    logoutAndOpenFreshPreferenceDevice,
+    acknowledgePreferenceWelcome,
+  } = await import('./support/accountPreferenceSession');
+  const { ensureAcceptedTerms } = await import('./support/ensureAcceptedTerms');
+  const { ensurePlayableProfile } = await import('./support/ensurePlayableProfile');
+  const { prepareProductionE2EStaffMembership } =
+    await import('../../scripts/ci/production-e2e-account.mjs');
+  const { writeFile, unlink } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const environment = requireCustomizationCertificationEnvironment();
+  const account = await createTemporaryCustomizationAccount(
+    environment,
+    'postdeploy-roster-lifecycle',
+    0
+  );
+  const scratch = process.env.RUNNER_TEMP || process.env.TMPDIR;
+  if (!scratch) {
+    await cleanupTemporaryCustomizationAccount(environment, account);
+    throw new Error('Owned scratch directory is required');
+  }
+  const record = join(scratch, `roster-preference-${account.id}.json`);
+  let writer: Awaited<ReturnType<typeof openFreshPreferenceDevice>> | undefined;
+  let reader: Awaited<ReturnType<typeof openFreshPreferenceDevice>> | undefined;
+  const failures: unknown[] = [];
+  try {
+    await writeFile(
+      record,
+      JSON.stringify({ id: account.id, email: account.email, password: account.password }),
+      { mode: 0o600 }
+    );
+    const clubId = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+    await prepareProductionE2EStaffMembership({
+      environment: {
+        ...process.env,
+        SUPABASE_URL: environment.supabaseUrl,
+        SUPABASE_SERVICE_ROLE_KEY: environment.serviceRoleKey,
+        VITE_SUPABASE_ANON_KEY: environment.publishableKey,
+        E2E_TEST_ACCOUNT_FILE: record,
+        E2E_CLUB_ID: clubId,
+      },
+    });
+    writer = await openFreshPreferenceDevice(browser, baseURL, account);
+    await writer.page.goto('settings', { waitUntil: 'domcontentloaded' });
+    await ensureAcceptedTerms(writer.page);
+    await ensurePlayableProfile(writer.page);
+    await acknowledgePreferenceWelcome(writer.page);
+    const route = `clubs/${clubId}/members`;
+    await writer.page.goto(route, { waitUntil: 'domcontentloaded' });
+    await expect(
+      writer.page.getByRole('combobox', { name: 'Sort Players', exact: true })
+    ).toBeVisible({ timeout: 45_000 });
+    const advanced = writer.page.getByRole('button', { name: 'Advanced', exact: true });
+    if ((await advanced.getAttribute('aria-pressed')) !== 'true') await advanced.click();
+    await writer.page
+      .getByRole('combobox', { name: 'Sort Players', exact: true })
+      .selectOption('name');
+    await writer.page
+      .getByRole('combobox', { name: 'Filter Players', exact: true })
+      .selectOption('online');
+    await writer.page
+      .getByRole('searchbox', { name: 'Search Club Members', exact: true })
+      .fill('Preference Proof');
+    const preferenceKey = `roster:workspace:${clubId}`;
+    await expect
+      .poll(async () => {
+        const row = await account.client
+          .from('user_page_preferences')
+          .select('value')
+          .eq('user_id', account.id)
+          .eq('preference_key', preferenceKey)
+          .maybeSingle();
+        if (row.error) throw row.error;
+        return row.data?.value;
+      })
+      .toMatchObject({ search: 'Preference Proof', filter: 'online', sort: 'name' });
+    reader = await logoutAndOpenFreshPreferenceDevice(writer.page, baseURL, account);
+    await reader.page.goto(route, { waitUntil: 'domcontentloaded' });
+    await acknowledgePreferenceWelcome(reader.page);
+    await expect(
+      reader.page.getByRole('combobox', { name: 'Filter Players', exact: true })
+    ).toHaveValue('online', { timeout: 45_000 });
+    const restoredSearch = reader.page.getByRole('searchbox', {
+      name: 'Search Club Members',
+      exact: true,
+    });
+    const restoredSort = reader.page.getByRole('combobox', { name: 'Sort Players', exact: true });
+    await expect(restoredSearch).toHaveValue('Preference Proof');
+    // A name search deliberately presents relevance; the account keeps its chosen sort.
+    await expect(restoredSort).toHaveValue('search');
+    await expect(restoredSort).toBeDisabled();
+    const saved = await reader.client
+      .from('user_page_preferences')
+      .select('value')
+      .eq('user_id', account.id)
+      .eq('preference_key', preferenceKey)
+      .maybeSingle();
+    expect(saved.error).toBeNull();
+    expect(saved.data?.value).toMatchObject({
+      search: 'Preference Proof',
+      filter: 'online',
+      sort: 'name',
+    });
+    await restoredSearch.fill('');
+    await expect(restoredSort).toBeEnabled();
+    await expect(restoredSort).toHaveValue('name');
+    await restoredSearch.fill('Preference Proof');
+    await expect(restoredSort).toHaveValue('search');
+    await expect(restoredSort).toBeDisabled();
+    const restoredReader = reader;
+    await expect
+      .poll(async () => {
+        const row = await restoredReader.client
+          .from('user_page_preferences')
+          .select('value')
+          .eq('user_id', account.id)
+          .eq('preference_key', preferenceKey)
+          .maybeSingle();
+        if (row.error) throw row.error;
+        return row.data?.value;
+      })
+      .toMatchObject({ search: 'Preference Proof', filter: 'online', sort: 'name' });
+    await testInfo.attach('roster-account-fresh-device-proof.json', {
+      body: Buffer.from(
+        JSON.stringify({
+          ownerId: account.id,
+          preferenceKey,
+          workspace: saved.data?.value,
+          activeSearchSortOverride: { displayedSort: 'search', disabled: true },
+          retainedSortAfterClearingSearch: 'name',
+          restoredSearchAfterProof: 'Preference Proof',
+          authOnlyContext: true,
+          logout: 'real-ui',
+        })
+      ),
+      contentType: 'application/json',
+    });
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    const closed = await Promise.allSettled([reader?.context.close(), writer?.context.close()]);
+    for (const result of closed) if (result.status === 'rejected') failures.push(result.reason);
+    try {
+      await cleanupTemporaryCustomizationAccount(environment, account);
+      await testInfo.attach('roster-account-cleanup-proof.json', {
+        body: Buffer.from(JSON.stringify({ ownerId: account.id, cleanupVerified: true })),
+        contentType: 'application/json',
+      });
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      try {
+        await unlink(record);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') failures.push(error);
+      }
+    }
+  }
+  if (failures.length)
+    throw new AggregateError(failures, withCauses('Roster Preference Lifecycle Failed', failures));
 });

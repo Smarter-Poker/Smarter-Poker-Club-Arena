@@ -97,12 +97,6 @@ export function describeRakeError(e: unknown): string {
   return safeErrorMessage(e, 'That request could not be completed.');
 }
 
-/** Live rake channels, one per club, shared by every subscriber on the page. */
-const rakeChannels = new Map<
-  string,
-  { channel: ReturnType<typeof supabase.channel>; listeners: Set<() => void> }
->();
-
 /**
  * A roles read that can say it FAILED (Stats contract truth, 2026-09-20).
  *
@@ -145,8 +139,9 @@ export const AgentRakeService = {
     until?: string | null;
     search?: string;
     limit?: number;
+    signal?: AbortSignal;
   }): Promise<DownlineRakeRow[]> {
-    const { data, error } = await supabase.rpc('fn_agent_downline_rake', {
+    let request = supabase.rpc('fn_agent_downline_rake', {
       p_agent_user_id: opts.agentUserId ?? null,
       p_club_id: opts.clubId ?? null,
       p_since: opts.since ?? null,
@@ -154,6 +149,8 @@ export const AgentRakeService = {
       p_search: opts.search?.trim() || null,
       p_limit: opts.limit ?? 500,
     });
+    if (opts.signal) request = request.abortSignal(opts.signal);
+    const { data, error } = await request;
     if (error) throw error;
     return (data ?? []) as DownlineRakeRow[];
   },
@@ -163,74 +160,18 @@ export const AgentRakeService = {
     clubId?: string;
     since?: string | null;
     until?: string | null;
+    signal?: AbortSignal;
   }): Promise<DownlineRakeSummary | null> {
-    const { data, error } = await supabase.rpc('fn_agent_downline_rake_summary', {
+    let request = supabase.rpc('fn_agent_downline_rake_summary', {
       p_agent_user_id: opts.agentUserId ?? null,
       p_club_id: opts.clubId ?? null,
       p_since: opts.since ?? null,
       p_until: opts.until ?? null,
     });
+    if (opts.signal) request = request.abortSignal(opts.signal);
+    const { data, error } = await request;
     if (error) throw error;
     return (data ?? null) as DownlineRakeSummary | null;
-  },
-
-  /**
-   * Live trigger, and it is NOT live. Returns an unsubscribe function.
-   *
-   * `rake_records` is deliberately NOT in the realtime publication - it would
-   * broadcast every hand on the platform to every subscriber, which is both a
-   * firehose and a cross-club data leak. That part still holds.
-   *
-   * What no longer holds is the next sentence, which said "agent_commissions is
-   * published and is written as rake is earned, so it is the correct signal".
-   * It was the correct signal, and it was published, until the 2026-09-06
-   * publication trim: 1,802,610 writes against 6.7M live rows put it among the
-   * eleven tables the trim keeps out. So this channel joins, reports SUBSCRIBED
-   * and delivers nothing.
-   *
-   * The consumer is covered meanwhile: DownlineRakePanel wraps this in a 30s
-   * poll it describes as a fallback "in case the socket drops", and that poll is
-   * now the whole mechanism. Left in place rather than deleted because the
-   * subscription is correct for a scoped carrier and the panel does not break
-   * without it - but do not read this as a live feed.
-   */
-  subscribeToRake(clubId: string | undefined, onChange: () => void): () => void {
-    /* ONE CHANNEL PER CLUB, SHARED. The name used to carry a random suffix, so
-       every caller opened its own websocket subscription to the same
-       postgres_changes filter and a page with three rake panels held three.
-       Subscribers are counted; the channel is removed when the last one
-       leaves and recreated by the next. */
-    const key = clubId ?? 'all';
-    let shared = rakeChannels.get(key);
-    if (!shared) {
-      const listeners = new Set<() => void>();
-      const channel = supabase
-        .channel(`downline-rake-${key}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'agent_commissions',
-            ...(clubId ? { filter: `club_id=eq.${clubId}` } : {}),
-          },
-          () => listeners.forEach((fn) => fn())
-        )
-        .subscribe();
-      shared = { channel, listeners };
-      rakeChannels.set(key, shared);
-    }
-    shared.listeners.add(onChange);
-
-    return () => {
-      const current = rakeChannels.get(key);
-      if (!current) return;
-      current.listeners.delete(onChange);
-      if (current.listeners.size === 0) {
-        rakeChannels.delete(key);
-        void supabase.removeChannel(current.channel);
-      }
-    };
   },
 };
 

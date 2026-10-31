@@ -1,0 +1,11 @@
+# Verify seat-move announcements in the served client
+
+The completed seat-move repair has protected source tests and published-byte evidence. Those checks do not themselves show the notice rendering through the live table transport.
+
+A single Chromium case in the existing live-table lane now observes an occupied cash table through the existing isolated production-account lane. It forwards the real engine socket unchanged and delivers controlled seat-move events only to that reserved browser. It checks the served toast and System chat, poker alias and destination, duplicate and historical-replay suppression, and unchanged spectator route. Participation requests are refused before reaching production and must remain absent.
+
+This is controlled browser-event evidence, not a claim that a real player moved during the test. The existing engine's committed-event emission and source-table broadcast remain the producer contract. No player, seat, stack or ledger is changed for the proof. The existing live-table lane runs it after its four required continuity cases and before isolated-account cleanup, using the browsers and reserved account already present. Its result is required for certification and its mobile evidence is retained alongside the other table proofs. Separate output directories preserve the original four cases. No second verification pipeline or shared staff-account wait is added.
+
+The reserved-account stale threshold increases by the same five minutes as the longest owning job, preserving its existing fourteen-minute grace. Current qualified notice harness authority stays explicit when an engine certificate observes a retained client. Requested natural-observation failures retain their original diagnostic priority.
+
+The first served-browser attempt stopped before event injection because a full cash table renders its waiting-list spectator call to action instead of the optional Spectating label. The proof now checks the maintained full-table spectator footer as well as the ordinary spectator state, while retaining zero hero seats, unchanged source route, real occupied roster and zero attempted participation writes. It never clicks the waiting-list action. The announcement itself was not exercised by that failed precondition.

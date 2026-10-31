@@ -39,6 +39,63 @@ if "${psql[@]}" -f "$repo/supabase/migrations/20261019152515_private_record_noti
 if ! grep -q 'Private record transport preimage changed' "$work/notify-replay.log"; then cat "$work/notify-replay.log"; exit 1; fi
 echo 'MEMBER_RECORD_POSTGRES PASS: regression, ranges, attribution, permissions, live signals, replay refusal'
 
+# Only an identical OLD/NEW row is redundant; qualify the actual source trigger,
+# paid-provider capture and committed Postgres NOTIFY before/after the change.
+noop_migration="$repo/supabase/migrations/20261029153512_identical_private_record_updates_do_not_broadcast.sql"
+"${psql[@]}" -f "$fixture/noop-before.sql"
+if "${psql[@]}" -f "$fixture/noop-quiet.sql" > "$work/noop-before-failure.log" 2>&1; then
+  echo 'Identical source regression unexpectedly passed before the fix'; exit 1
+fi
+if ! grep -q 'Identical private source UPDATE emitted a signal' "$work/noop-before-failure.log"; then
+  cat "$work/noop-before-failure.log"; exit 1
+fi
+# A wrong source binding or private ACL refuses atomically, leaving the source
+# and all transport state exactly as they were before the failed transaction.
+for negative in fingerprint authority; do
+  {
+    echo 'BEGIN;'
+    if [ "$negative" = fingerprint ]; then
+      echo "UPDATE public.ca_private_record_transport_state SET source_fingerprints=jsonb_set(source_fingerprints,'{public.fn_publish_member_record_row()}',to_jsonb('changed'::text));"
+    else
+      echo 'GRANT EXECUTE ON FUNCTION public.fn_publish_member_record_row() TO service_role;'
+    fi
+    cat "$noop_migration"
+  } > "$work/noop-$negative.sql"
+  if "${psql[@]}" -f "$work/noop-$negative.sql" > "$work/noop-$negative.log" 2>&1; then
+    echo "No-op $negative drift unexpectedly accepted"; exit 1
+  fi
+  expected=PRIVATE_RECORD_NOOP_TRANSPORT_PREIMAGE_CHANGED
+  if [ "$negative" = authority ]; then expected=PRIVATE_RECORD_NOOP_AUTHORITY_CHANGED; fi
+  if ! grep -q "$expected" "$work/noop-$negative.log"; then cat "$work/noop-$negative.log"; exit 1; fi
+  "${psql[@]}" <<'SQL'
+DO $$ BEGIN
+ IF md5(pg_get_functiondef('public.fn_publish_member_record_row()'::regprocedure))<>'9c508011d3e04af5b43137d46cc58901'
+  OR NOT public.fn_private_record_transport_ready()
+  OR has_function_privilege('service_role','public.fn_publish_member_record_row()','EXECUTE')
+  OR (SELECT to_jsonb(s) FROM public.ca_private_record_transport_state s) IS DISTINCT FROM (SELECT state FROM fixture_noop_original_state)
+ THEN RAISE EXCEPTION 'No-op failed admission was not atomic'; END IF;
+END $$;
+SQL
+done
+"${psql[@]}" -f "$noop_migration" -f "$fixture/noop-quiet.sql" > "$work/noop-quiet.log" 2>&1
+cat "$work/noop-quiet.log"
+if grep -q 'Asynchronous notification.*ca_private_record_changes' "$work/noop-quiet.log"; then
+  echo 'Identical source UPDATE emitted a committed Postgres notification'; exit 1
+fi
+if ! "${psql[@]}" -f "$fixture/noop-changed.sql" > "$work/noop-changed.log" 2>&1; then
+  cat "$work/noop-changed.log"; exit 1
+fi
+cat "$work/noop-changed.log"
+if [ "$(grep -c 'Asynchronous notification.*ca_private_record_changes' "$work/noop-changed.log")" -ne 27 ]; then
+  echo 'Actual changed-source commit notification coverage changed'; exit 1
+fi
+if "${psql[@]}" -f "$noop_migration" > "$work/noop-replay.log" 2>&1; then
+  echo 'No-op migration replay unexpectedly accepted'; exit 1
+fi
+if ! grep -q 'PRIVATE_RECORD_NOOP_PREIMAGE_CHANGED_OR_REPLAY' "$work/noop-replay.log"; then cat "$work/noop-replay.log"; exit 1; fi
+"${psql[@]}" -c 'DROP TABLE fixture_noop_original_state;'
+echo 'PRIVATE_RECORD_NOOP_POSTGRES PASS: reproduced unchanged UPDATE, zero paid/NOTIFY, genuine changes and identity/removal, exact source binding, atomic fingerprint/ACL drift refusal and replay refusal'
+
 "${psql[@]}" -c 'CREATE DATABASE member_record_concurrency'
 "${psql[@]}" -d member_record_concurrency -f "$fixture/bootstrap.sql" -f "$fixture/readers.sql" -f "$fixture/before.sql" -f "$migration"
 python3 -B "$fixture/concurrency.py" "$pgbin/psql" "$work/socket" 57642 "$repo/supabase/migrations/20261018140249_activate_funded_member_record_daily_facts_without_repeated_r.sql"
@@ -90,3 +147,19 @@ if "${psql[@]}" -f "$repo/supabase/migrations/20261027190154_bus_event_logs_obey
   echo 'Bus retention migration replay unexpectedly accepted'; exit 1
 fi
 if ! grep -q 'already exists' "$work/bus-replay.log"; then cat "$work/bus-replay.log"; exit 1; fi
+
+# A variant must include the same tournament charges as All Variants.
+variant_fee_migration="$repo/supabase/migrations/20261030045555_member_variant_statistics_include_tournament_fee_receipts.sql"
+"${psql[@]}" -f "$fixture/variant-fee-before.sql"
+if "${psql[@]}" -f "$fixture/variant-fee-after.sql" > "$work/variant-fee-before.log" 2>&1; then
+  echo 'Variant fee regression unexpectedly passed before the fix'; exit 1
+fi
+if ! grep -q 'Variant tournament fee receipts missing' "$work/variant-fee-before.log"; then cat "$work/variant-fee-before.log"; exit 1; fi
+"${psql[@]}" -f "$variant_fee_migration" -f "$fixture/variant-fee-after.sql"
+if "${psql[@]}" -f "$variant_fee_migration" > "$work/variant-fee-replay.log" 2>&1; then
+  echo 'Variant fee migration replay unexpectedly accepted'; exit 1
+fi
+grep -q 'Member variant fee preimage changed or migration already installed' "$work/variant-fee-replay.log"
+
+# Independent fallback: native committed signal, LISTEN, authorized WebSocket.
+"$repo/server/node_modules/.bin/tsx" "$repo/server/scripts/privateRecordGatewayPostgres.mts" "$work/socket" 57642

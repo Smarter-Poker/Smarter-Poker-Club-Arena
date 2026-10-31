@@ -219,6 +219,115 @@ function scenarioEntry(plan: ReturnType<typeof planLane>): Issued {
 }
 
 describe('Lightning sized shoves retain their original intent', () => {
+  it.each(['before', 'after'] as const)(
+    'preserves early-fold callback custody when dispatch throws %s transfer',
+    async (failureAt) => {
+      vi.useFakeTimers({
+        toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+      });
+      const formed = formedHand(4, 9820);
+      const plan = planLane(() => ({ action: 'fold' }));
+      const decide = plan.raw.decideFast.getMockImplementation()!;
+      plan.raw.decideFast.mockImplementation((snap) =>
+        snap.fence.endsWith(':early') ? decide(snap) : new Promise(() => {})
+      );
+      const failure = Error('injected early-fold dispatch admission failure');
+      plan.raw.runWithDispatchBarrier.mockImplementationOnce((run) => {
+        if (failureAt === 'after') run();
+        throw failure;
+      });
+      const t = buildHost(formed, [100, 100, 100, 100], {
+        horses: new Set(formed.players),
+        deps: { horseLane: () => plan.lane },
+      });
+      await t.host.start();
+      await flush(4);
+      await expect(vi.advanceTimersByTimeAsync(5000)).rejects.toBe(failure);
+
+      expect(
+        plan.issued.some(
+          (entry) =>
+            entry.snap.fence.endsWith(':early') &&
+            entry.witness.executionStatus ===
+              (failureAt === 'before' ? 'not_executed' : 'pending') &&
+            entry.outcome === (failureAt === 'before' ? 'retired' : 'pending')
+        )
+      ).toBe(true);
+    }
+  );
+
+  it('preserves an accepted on-turn fast fold when dispatch unwind throws', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
+    const formed = formedHand(2, 9840);
+    const plan = planLane(() => ({ action: 'fold' }));
+    const failure = Error('injected postaccept fast-fold dispatch failure');
+    plan.raw.runWithDispatchBarrier.mockImplementationOnce((run) => {
+      run();
+      throw failure;
+    });
+    const t = buildHost(formed, [100, 100], {
+      horses: new Set(formed.players),
+      deps: { horseLane: () => plan.lane },
+    });
+    await t.host.start();
+    await flush(4);
+    await expect(vi.advanceTimersByTimeAsync(5000)).rejects.toBe(failure);
+    expect(
+      plan.issued.some(
+        (entry) =>
+          entry.witness.executionStatus === 'intended' &&
+          entry.witness.executedAction === 'fold' &&
+          entry.witness.acceptedActions.length === 1
+      )
+    ).toBe(true);
+  });
+  it('preserves Lightning controller acceptance when effect bookkeeping throws before applied assignment', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
+    const formed = formedHand(2, 9830);
+    const plan = planLane((snap) => ({ action: 'raise', amount: gs(snap).minRaiseTo ?? 4 }));
+    const failure = Error('injected accepted Lightning effect bookkeeping failure');
+    plan.raw.commitDecisionEffects.mockImplementationOnce(() => {
+      throw failure;
+    });
+    const t = buildHost(formed, [100, 100], {
+      horses: new Set(formed.players),
+      deps: { horseLane: () => plan.lane },
+    });
+    await t.host.start();
+    await flush(4);
+    await expect(vi.advanceTimersByTimeAsync(1000)).rejects.toBe(failure);
+    const entry = plan.issued[0]!;
+    expect(entry.witness.executionStatus).toBe('intended');
+    expect(entry.witness.acceptedActions).toHaveLength(1);
+    expect(entry.witness.executedAction).toBe('raise');
+    expect(entry.outcome).toBe('retired');
+  });
+  it('releases a returned witness when its ordinary timer dispatch throws', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
+    const formed = formedHand(2, 9810);
+    const plan = planLane(passive);
+    const failure = Error('injected Lightning dispatch admission failure');
+    plan.raw.runWithDispatchBarrier.mockImplementationOnce(() => {
+      throw failure;
+    });
+    const t = buildHost(formed, [100, 100], {
+      horses: new Set(formed.players),
+      deps: { horseLane: () => plan.lane },
+    });
+    await t.host.start();
+    await flush(4);
+    await expect(vi.advanceTimersByTimeAsync(1000)).rejects.toBe(failure);
+    expect(plan.issued.length).toBeGreaterThan(0);
+    expect(plan.issued[0]!.witness.executionStatus).toBe('not_executed');
+    expect(plan.issued[0]!.outcome).toBe('retired');
+  });
+
   it.each(['nlh', 'plo4', 'plo5', 'plo6'])(
     '%s refuses an illegal promoted raise but tolerates an explicit all-in',
     async (variant) => {

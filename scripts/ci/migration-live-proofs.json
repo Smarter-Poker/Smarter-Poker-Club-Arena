@@ -91,6 +91,28 @@
       "proofs": [
         "(SELECT count(*) = 0 FROM public.tournaments t WHERE t.id <> 'a70c1028-2000-4000-8000-000000000001'::uuid AND t.schedule_id IS DISTINCT FROM 'a70c1028-2000-4000-9000-000000000001'::uuid AND (COALESCE(t.is_bounty,false) OR COALESCE(t.is_pko,false) OR COALESCE(t.is_mystery_bounty,false)) AND upper(COALESCE(t.tournament_type,'MTT')) = 'MTT' AND lower(COALESCE(t.variant,'')) <> 'satellite' AND t.satellite_target_id IS NULL AND upper(COALESCE(t.status,'')) IN ('REGISTERING','ANNOUNCED') AND COALESCE(t.buy_in_amount,0) + COALESCE(t.buy_in_fee,0) > 0 AND NOT (COALESCE(t.is_rebuy,false) AND COALESCE(t.max_rebuys,1) > 0 AND (COALESCE(t.late_reg_levels,0) = 0 OR t.rebuy_levels = t.late_reg_levels)))"
       ]
+    },
+    {
+      "file": "20261028200033_v31_cell_build_uses_its_bounded_rpc_budget.sql",
+      "sha256": "69ea6ff62fe68aa502db8092dcf67fe80ffe222897064ecf46eb23da1b20c018",
+      "replaces": ["fn_gto_v31_build_cell(uuid,jsonb) retains its exact source body,"],
+      "proofs": [
+        "(SELECT count(*)=1 AND bool_and(md5(pg_get_functiondef(p.oid))='11ffdbe0a66d2fa02df78111c971f834' AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, extensions','statement_timeout=240s','lock_timeout=1s']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE')) FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_gto_v31_build_cell(uuid,jsonb)')) AND (SELECT rolconfig @> ARRAY['statement_timeout=8s']::text[] FROM pg_roles WHERE rolname='service_role')"
+      ]
+    },
+    {
+      "file": "20261029202310_all_new_mtt_tournaments_pay_the_top_fifteen_percent.sql",
+      "sha256": "461e56dc7efa043cc0b1b0cb9e0fa1273f260e9f7d4dc21e12c7f8eeecf2a948",
+      "proofs": [
+        "(SELECT md5(pg_get_functiondef(to_regprocedure('public.fn_ca_mtt_payout_depth_guard()'))) = 'c77386d2d43fe35433d4b0581ea77421')"
+      ]
+    },
+    {
+      "file": "20261029202847_unfinalized_mtt_fields_adopt_fifteen_percent_payout_depth.sql",
+      "sha256": "28ccff0f693c1def87ecdd9febc74701a6f5d4fe7d454b6f974ca730d6d38c4c",
+      "proofs": [
+        "NOT EXISTS (SELECT 1 FROM public.tournaments t WHERE upper(COALESCE(t.tournament_type,''))='MTT' AND lower(COALESCE(t.variant,'')) NOT IN ('spin','sng','satellite') AND t.satellite_target_id IS NULL AND t.satellite_target IS NULL AND NOT COALESCE(t.is_premium_spin,false) AND t.status IN ('ANNOUNCED','SCHEDULED','PENDING','REGISTERING','RUNNING','PAUSED') AND NOT COALESCE(t.prize_pool_finalized,false) AND NOT public.fn_tournament_payout_terms_committed_v1(t.id) AND (t.payout_depth_percent IS DISTINCT FROM 15 OR t.payout_percent IS DISTINCT FROM 15))"
+      ]
     }
   ]
 }

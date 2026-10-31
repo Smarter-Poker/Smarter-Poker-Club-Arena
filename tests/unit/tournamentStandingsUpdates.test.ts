@@ -66,6 +66,16 @@ describe('shared committed standings invalidations', () => {
     expect(fx.events.size).toBe(0);
     expect(fx.statuses.size).toBe(0);
   });
+  it('refreshes committed readers on engine reconnect without database change broadcasts', async () => {
+    vi.useFakeTimers();
+    const notify = vi.fn();
+    const stop = subscribeTournamentStandings('reconnect', notify);
+    for (const status of fx.statuses) status('connected');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(notify).toHaveBeenCalledOnce();
+    stop();
+    expect(fx.statuses.size).toBe(0);
+  });
   it('rebinds at the identity boundary and cancels a pending flush on cleanup', async () => {
     vi.useFakeTimers();
     const notify = vi.fn();

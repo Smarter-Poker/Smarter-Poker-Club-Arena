@@ -17,10 +17,10 @@ const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 export const DEFAULT_E2E_LIGHTNING_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 export const DEFAULT_E2E_TEMPLATE_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 const PROFILE_ATTEMPTS = 24;
-// The explicit natural-multirun certificate can own its account for 143 minutes.
+// The explicit natural-multirun certificate can own its account for 148 minutes.
 // Recovery must never retire it while that job can still be running; preserve
-// the existing fourteen minutes of provider/clock headroom (143 + 14 = 157).
-export const STALE_ACCOUNT_AGE_MS = 157 * 60_000;
+// the existing fourteen minutes of provider/clock headroom (148 + 14 = 162).
+export const STALE_ACCOUNT_AGE_MS = 162 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
 const FRESH_SCHEDULE_CLAIM_RETRY_DELAYS_MS = Object.freeze([
   2_000, 4_000, 8_000, 16_000, 30_000, 60_000, 120_000, 90_000,
@@ -1572,6 +1572,10 @@ export async function createProductionE2EAccount({
     const id = String(created?.id || created?.user?.id || '');
     if (!id) throw new Error('Supabase Auth created no user id for the post-deploy account.');
     account = { id, email, password, createdAt: new Date().toISOString() };
+    // Save the known identity before fallible profile work, so always() cleanup
+    // can recover it even if setup and its immediate cleanup both fail.
+    const path = firstRun ? firstRunFixturePath(environment) : fixturePath(environment);
+    writeFileSync(path, `${JSON.stringify(account)}\n`, { mode: 0o600 });
     await waitForProfile(configuration, id, fetchImpl, wait);
     // A FIRST-RUN account is left exactly as a brand-new sign-up arrives: its
     // alias chosen on the sign-up form and NO arena avatar, so the profile gate
@@ -1580,8 +1584,6 @@ export async function createProductionE2EAccount({
     // real iPhone player found ENTER ARENA dead (2026-10-17).
     if (!firstRun) await normalizeProfile(configuration, id, fetchImpl);
 
-    const path = firstRun ? firstRunFixturePath(environment) : fixturePath(environment);
-    writeFileSync(path, `${JSON.stringify(account)}\n`, { mode: 0o600 });
     process.stdout.write(`::add-mask::${email}\n::add-mask::${password}\n`);
     appendFileSync(
       environment.GITHUB_ENV,

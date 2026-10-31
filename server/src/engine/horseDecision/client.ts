@@ -1,3 +1,14 @@
+import type { HorseOwnPublicHistoryLoader } from './ownPublicHistoryProvenance.js';
+import {
+  V31ControlClient,
+  type V31ControlRequest,
+  type V31ControlAck,
+} from './v31ReloadControl.js';
+import {
+  isolateMemoryIsValid,
+  type IsolateMemorySample,
+} from '../../observability/isolateMemory.js';
+import type { HorseOwnPublicHistoryCacheStatus } from './ownPublicHistory.js';
 import {
   liveHorseFeatureAuthority,
   horseFeatureAcceptanceUsable,
@@ -98,7 +109,7 @@ import {
 } from './responseValidation.js';
 
 export interface WorkerLike {
-  postMessage(message: HorseDecisionWorkerRequest): void;
+  postMessage(message: HorseDecisionWorkerRequest | V31ControlRequest): void;
   on(event: 'message', listener: (message: HorseDecisionWorkerResponse) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
   on(event: 'exit', listener: (code: number) => void): this;
@@ -120,7 +131,7 @@ export interface HorseDecisionJobOptions {
 }
 
 export interface LiveHorseDecisionWorkerClientOptions {
-  ownPublicHistory?: (context: HorseObserverReadContext) => Promise<unknown>;
+  ownPublicHistory?: HorseOwnPublicHistoryLoader;
   workerFactory?: () => WorkerLike;
   /** Legacy injection retained for source compatibility; pooled reads are never fetched. */
   opponentProfiles?: (
@@ -205,6 +216,9 @@ export interface LiveHorseDecisionWorkerStatus {
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'] | null;
   governor: HorseDecisionWorkerReady['governor'] | null;
   statusSampledAt: number | null;
+  isolateMemory?: IsolateMemorySample | null;
+  isolateMemoryAgeMs?: number | null;
+  mainHistoryCache?: HorseOwnPublicHistoryCacheStatus | null;
 }
 
 export class HorseDecisionAbortedError extends Error {
@@ -616,7 +630,10 @@ export class LiveHorseDecisionWorkerClient {
     { inputDigest: string; readFrameDigest: string }
   >();
 
+  private isolateMemory: IsolateMemorySample | null = null;
+  private readonly shardIndex: number | undefined;
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
+    this.shardIndex = options.shard?.index ?? 0;
     this.onFatal = options.onFatal;
     this.ownPublicHistory = options.ownPublicHistory
       ? new HorseOwnPublicHistoryCache(options.ownPublicHistory)
@@ -731,6 +748,11 @@ export class LiveHorseDecisionWorkerClient {
         : null,
       governor: this.governor ? { ...this.governor } : null,
       statusSampledAt: this.statusSampledAt,
+      isolateMemory: this.isolateMemory ? { ...this.isolateMemory } : null,
+      isolateMemoryAgeMs: this.isolateMemory
+        ? Math.max(0, now - this.isolateMemory.sampledAtMs)
+        : null,
+      mainHistoryCache: this.ownPublicHistory?.status() ?? null,
     };
   }
 
@@ -780,6 +802,9 @@ export class LiveHorseDecisionWorkerClient {
         ? this.ownPublicHistory?.forSnapshot(context, captured.decisionTimeMs)
         : undefined,
       ownPublicHistoryState: context ? this.ownPublicHistory?.state(context) : undefined,
+      ownPublicHistoryProvenance: context
+        ? this.ownPublicHistory?.provenance(context, captured.decisionTimeMs)
+        : undefined,
     };
     return this.enqueue<FastHorseDecisionResult>(
       request,
@@ -1074,6 +1099,7 @@ export class LiveHorseDecisionWorkerClient {
    * the worker to flush and stop its owned services. No abrupt normal path.
    */
   stop(): Promise<void> {
+    this.v31Control?.close(Error('v31_control_worker_stopping'));
     if (this.stopPromise) return this.stopPromise;
     if (this.phase === 'stopped') return Promise.resolve();
     if (this.phase === 'failed') {
@@ -1387,7 +1413,27 @@ export class LiveHorseDecisionWorkerClient {
     if (next) this.startExecutionClock(next);
   }
 
-  private onMessage(message: HorseDecisionWorkerResponse): void {
+  private v31Control?: V31ControlClient;
+  requestV31Control(request: V31ControlRequest): Promise<V31ControlAck> {
+    if (this.phase !== 'ready') return Promise.reject(Error('v31_control_worker_not_ready'));
+    this.v31Control ??= new V31ControlClient((message) => this.worker.postMessage(message));
+    return this.v31Control.request(request).then((ack) => {
+      // Each acknowledgment comes from this exact worker; never infer sibling readiness.
+      if (ack.ok && this.solverStores)
+        this.solverStores = {
+          ...this.solverStores,
+          postflopV31: ack.count,
+          postflopV31Dataset: ack.dataset,
+        };
+      return ack;
+    });
+  }
+  private onMessage(message: HorseDecisionWorkerResponse | V31ControlAck): void {
+    if (message?.type === 'V31_STORE_CONTROL_ACK') {
+      this.v31Control?.receive(message);
+      return;
+    }
+
     if (
       !message ||
       typeof message !== 'object' ||
@@ -2087,6 +2133,11 @@ export class LiveHorseDecisionWorkerClient {
       this.lastComputeMs = message.computeMs;
       if (this.governor) this.governor = { ...this.governor, scale: message.governorScale };
     } else if (message.type === 'STATUS_RESULT') {
+      this.isolateMemory =
+        isolateMemoryIsValid(message.isolateMemory, this.shardIndex) &&
+        message.isolateMemory.sampledAtMs <= Date.now()
+          ? { ...message.isolateMemory }
+          : null;
       this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
@@ -2111,6 +2162,7 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private fail(error: Error): void {
+    this.v31Control?.close(error);
     if (this.phase === 'failed' || this.phase === 'stopped') return;
     // Work returned by a dead worker is restarted authority from here on.
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
@@ -2271,6 +2323,9 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private terminateWorker(): Promise<void> {
+    // Only terminal STOPPED/startup cancellation/failure reaches this owner.
+    // Ordinary null ACK recovery keeps this same cache and exact originals.
+    this.ownPublicHistory?.dispose();
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);

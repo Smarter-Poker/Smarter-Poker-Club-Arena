@@ -285,9 +285,13 @@ describe('a failed query must never read as "nobody is left" - the money paths',
     const readField = recovery.indexOf('const field = await readRecoveryField(tournament.id)');
     const refusal = recovery.indexOf('if (!field.rows || field.rows.length < 1)', readField);
     const receipt = recovery.indexOf('requestTournamentTerminalReceipt(', refusal);
-    expect(code(RECOVERY)).toMatch(
-      /return \{ rows: !error && Array\.isArray\(data\) \? \(data as RecoveryPlayer\[\]\) : null, error \}/
+    const reader = sliceMethod(code(RECOVERY), 'async function readRecoveryField(');
+    expect(reader).toContain('await fetchAllRows<');
+    expect(reader).toMatch(
+      /return result\.complete\s*\? \{ rows: result\.rows, error: null \}\s*:/
     );
+    expect(reader).toContain("{ rows: null, error: new Error('recovery field read incomplete') }");
+    expect(reader).toContain('return { rows: null, error }');
     expect(readField).toBeGreaterThanOrEqual(0);
     expect(refusal).toBeGreaterThan(readField);
     expect(receipt).toBeGreaterThan(refusal);

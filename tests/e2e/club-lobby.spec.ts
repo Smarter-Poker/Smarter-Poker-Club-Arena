@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  CLUB LOBBY — real-browser click-through (LOBBY V2, line-based)
@@ -36,6 +37,8 @@ async function rowCount(page: Page): Promise<number> {
  * the empty state did. A genuinely empty club is a pass, not a timeout.
  */
 async function lobbySettled(page: Page): Promise<void> {
+  await prepareCashLobbyActions(page);
+  await openLobbyGameSection(page, 'ALL');
   await page
     .locator('.club-home__games .lt-row:not(.lt-row--skeleton), .empty-tables')
     .first()
@@ -44,6 +47,17 @@ async function lobbySettled(page: Page): Promise<void> {
   // Every test has a fresh context. Dismiss the optional entry greeting and
   // Diamond invitation through their real controls before lobby interactions.
   await prepareCashLobbyActions(page);
+}
+
+/** Cash-door cases must not inherit another case's durable MTT/PLO filter. */
+async function selectAllGames(page: Page): Promise<void> {
+  await openLobbyGameSection(page, 'ALL');
+  const all = page.getByRole('tab', { name: 'ALL', exact: true });
+  await all.click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.club-home__games .lt-row[data-kind="cash"]').first()).toBeVisible({
+    timeout: 45_000,
+  });
 }
 
 test.describe('Club lobby', () => {
@@ -136,6 +150,7 @@ test.describe('Club lobby', () => {
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);
+    await selectAllGames(page);
 
     const rows = await rowCount(page);
     test.skip(rows === 0, 'no games in this lobby right now');
@@ -186,7 +201,8 @@ test.describe('Club lobby', () => {
     // The dedicated tournament club has a real maintained catalog. ALL only
     // includes registering/late entries; use the actual MTT category instead
     // of silently skipping when that subset is temporarily empty.
-    await page.getByRole('tab', { name: 'MTT', exact: true }).click();
+    await openLobbyGameSection(page, 'MTT');
+    await page.getByRole('tab', { name: "MTT'S", exact: true }).click();
     await expect(page.locator('.club-home__games .lt-row[data-kind="mtt"]').first()).toBeVisible({
       timeout: 45_000,
     });
@@ -223,6 +239,7 @@ test.describe('Club lobby', () => {
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);
+    await selectAllGames(page);
 
     // R10: a cash GAME opens feeders when a Main fills. It never advertises
     // the game as Full or offers a standalone table queue. The maintained
@@ -318,6 +335,7 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${memberClub}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
     await prepareCashLobbyActions(page);
+    await openLobbyGameSection(page, 'ALL');
     const all = page.getByRole('tab', { name: 'ALL', exact: true });
     await expect(all).toBeVisible({ timeout: 45_000 });
     await settleDiamondSpinsOffer(page, offer);

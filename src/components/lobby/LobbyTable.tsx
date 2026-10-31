@@ -1,3 +1,6 @@
+import { isRecordedSatelliteTournament } from '../../utils/tournamentFilters';
+import { useSatelliteDestination } from './game-cards/useTournamentCardText';
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { useSharedSecondTick } from './useSharedSecondTick';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -54,31 +57,16 @@ import './CompactLobbyRows.css';
 
 type SortDir = 'asc' | 'desc';
 
-export type LobbyCategory = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
-
-/* Remembered column sort, per club and per category. A player who sorts by
-   Stakes lost it the moment they looked at another tab and came back, which
-   on a lobby this dense is the sort of small forgetting that makes a screen
-   feel like it is not listening. Storage failures are silent: the sort still
-   works for the session, only the memory of it is lost. */
-const SORT_KEY = (clubId: string | undefined, category: string) =>
-  `ca_lobby_sort_${clubId || 'any'}_${category}`;
-
-function readSort(
-  clubId: string | undefined,
-  category: string
-): { key: string; dir: SortDir } | null {
-  try {
-    const raw = localStorage.getItem(SORT_KEY(clubId, category));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { key?: unknown; dir?: unknown };
-    if (typeof parsed?.key !== 'string') return null;
-    if (parsed.dir !== 'asc' && parsed.dir !== 'desc') return null;
-    return { key: parsed.key, dir: parsed.dir };
-  } catch {
-    return null;
-  }
-}
+export type LobbyCategory =
+  | 'ALL'
+  | 'HOLDEM'
+  | 'OMAHA'
+  | 'LIMIT'
+  | 'MIXED'
+  | 'MTT'
+  | 'SNG'
+  | 'SPIN'
+  | 'SATELLITE';
 
 /**
  * The order a tab opens in when the player has never sorted it themselves.
@@ -101,19 +89,6 @@ function defaultSortFor(category: string): { key: string; dir: SortDir } | null 
 /** The tabs whose lists are kept in variant groups (see `sorted`). */
 function groupsByVariant(category: string): boolean {
   return category === 'HOLDEM' || category === 'OMAHA' || category === 'LIMIT';
-}
-
-function writeSort(
-  clubId: string | undefined,
-  category: string,
-  sort: { key: string; dir: SortDir } | null
-) {
-  try {
-    if (sort) localStorage.setItem(SORT_KEY(clubId, category), JSON.stringify(sort));
-    else localStorage.removeItem(SORT_KEY(clubId, category));
-  } catch {
-    /* quota or private mode - the sort still applies for this session */
-  }
 }
 
 interface ColumnDef {
@@ -374,6 +349,19 @@ function compactRowClass(entry: LobbyEntry): string | undefined {
   return cls.join(' ') || undefined;
 }
 
+function SatelliteRowDestination({ entry }: { entry: LobbyEntry }) {
+  const row = entry.kind !== 'cash' ? (entry.raw as LobbyTournamentRow) : undefined;
+  const destination = useSatelliteDestination(row?.satellite_target_id || row?.satellite_target);
+  const label =
+    destination ||
+    (row && isRecordedSatelliteTournament({ ...row })
+      ? 'Satellite Destination Unavailable'
+      : undefined);
+  return label ? (
+    <span className="compact-lobby__meta compact-lobby__destination">{label}</span>
+  ) : null;
+}
+
 function TournamentRowSignals({
   entry,
   badgesOnly = false,
@@ -492,7 +480,7 @@ function SeatsMeter({ entry }: { entry: LobbyEntry }) {
 function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
   /* null, not an empty span: a non-empty cell defeats `td:empty` and reserves
      34px on every tournament row. */
-  if (entry.kind !== 'cash' || !ctx.onToggleFavorite) return null;
+  if (!ctx.onToggleFavorite) return null;
   const isFav = ctx.favoriteIds.has(entry.id);
   return (
     <button
@@ -503,7 +491,7 @@ function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
       title={isFav ? 'Remove From Favorites' : 'Add To Favorites'}
       onClick={(e) => {
         e.stopPropagation();
-        ctx.onToggleFavorite?.(entry.id, !isFav);
+        ctx.onToggleFavorite?.(entry.id, !isFav, entry.kind);
       }}
     >
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
@@ -638,6 +626,7 @@ const COL_NAME: ColumnDef = {
             {mttTitleLine(e)}
           </span>
           <MttTitleMeta entry={e} />
+          <SatelliteRowDestination entry={e} />
           <TournamentRowSignals entry={e} badgesOnly />
           <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
@@ -681,6 +670,7 @@ const COL_NAME: ColumnDef = {
           {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
           {e.name}
         </span>
+        <SatelliteRowDestination entry={e} />
         {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
         <LobbyFlagChips entry={e} />
         <PlayerStateChip entry={e} ctx={ctx} />
@@ -819,7 +809,10 @@ const COL_STATUS: ColumnDef = {
           on their last bought seat rather than at a time, so "Starts In 29
           Min..." beside a badge reading Filling was two different answers to
           the same question; and a cash game is running now. */}
-      <LobbyStatusBadge status={e.status} label={e.statusLabel} />
+      <LobbyStatusBadge
+        status={e.status}
+        label={e.kind !== 'cash' && e.status === 'late_reg' ? 'Running' : e.statusLabel}
+      />
     </span>
   ),
 };
@@ -1383,6 +1376,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_ACTIONS,
       ];
     case 'MTT':
+    case 'SATELLITE':
       /* Dan 2026-08-25: "THAT SHOULD BE THE FIRST LINE DISPLAYED." The title
          led no board here - it sat fourth, behind Starting Time, Game Type and
          Buy-In, which are all facts ABOUT a tournament and answer nothing until
@@ -1390,6 +1384,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          other tab the name already sits first behind the favourite star. */
       return [
         COL_TNAME,
+        COL_FAV,
         COL_STARTS,
         { ...COL_VARIANT, label: 'Game Type' },
         COL_BUYIN,
@@ -1428,6 +1423,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          here because a player who has never opened a Spin has no way to know
          that, not because it varies. */
       return [
+        COL_FAV,
         COL_NAME,
         COL_VARIANT,
         COL_BUYIN,
@@ -1441,6 +1437,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
       ];
     case 'SNG':
       return [
+        COL_FAV,
         COL_NAME,
         COL_VARIANT,
         COL_BUYIN,
@@ -1855,17 +1852,25 @@ export default function LobbyTable({
     [ctx, spinTiers]
   );
 
-  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(
-    () => readSort(clubId, category) ?? defaultSortFor(category)
+  const [headingSort, setHeadingSort] = usePlayerPreference(
+    `lobby:headingSort:${category}`,
+    { key: '', dir: 'asc' as SortDir, chosen: false },
+    clubId || 'any'
   );
-  /* A HEADING THE PLAYER CHOSE IS OBEYED (Dan 2026-10-23: "PLAYERS AND STATUS
-     DON'T CHANGE WHEN THEY ARE CLICKED"). The featured pin used to float the
-     club's featured games above every ordering, so on a board whose first
-     rows were featured a Players or Status tap reordered only the rows under
-     them and the top of the list never moved. The pin now decorates the
-     default order only; once the player picks a heading, that heading decides
-     the whole list. Dead seat-first games and empty cash tables still sink. */
-  const [sortChosen, setSortChosen] = useState<boolean>(() => readSort(clubId, category) != null);
+  const sort = useMemo(
+    () =>
+      headingSort.chosen
+        ? { key: headingSort.key, dir: headingSort.dir }
+        : defaultSortFor(category),
+    [headingSort, category]
+  );
+  const sortChosen = headingSort.chosen;
+  const setSort = useCallback(
+    (next: { key: string; dir: SortDir }) => {
+      setHeadingSort({ ...next, chosen: true });
+    },
+    [setHeadingSort]
+  );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const mobileCardsRef = useRef<HTMLDivElement>(null);
   /* Which row the keyboard is on. Deliberately separate from `selectedId`:
@@ -1877,15 +1882,7 @@ export default function LobbyTable({
      it is restored from what this player last chose on THIS tab instead. A
      remembered key that the new column set does not define is dropped by the
      sort itself (columns.find returns undefined -> original order). */
-  /**
-   * Restore the remembered sort when the TAB changes.
-   *
-   * `clubId` was in this dependency list and should not have been: on a slug
-   * route it starts as the slug and becomes the UUID a moment later, so the
-   * effect fired twice with two different storage keys and threw away any
-   * header the player had clicked in between. The tab is the only thing that
-   * changes the column set, and the column set is the only reason to re-read.
-   */
+  // ClubHome supplies the canonical club UUID before this board mounts.
   /* A sheet chip applies once per press (the seq), never on mount and never
      when the tab changes - the tab's own remembered heading wins there. */
   const lastOrderSeqRef = useRef(requestedOrder?.seq ?? 0);
@@ -1896,23 +1893,11 @@ export default function LobbyTable({
     const col =
       target === 'reset' ? undefined : columns.find((c) => c.key === target.key && c.sortable);
     if (target === 'reset' || !col) {
-      setSort(defaultSortFor(category));
-      setSortChosen(false);
-      writeSort(clubId, category, null);
+      setHeadingSort({ key: '', dir: 'asc', chosen: false });
       return;
     }
     setSort(target);
-    setSortChosen(true);
-    writeSort(clubId, category, target);
   }, [requestedOrder, category, clubId, columns]);
-
-  const lastCategoryRef = useRef(category);
-  useEffect(() => {
-    if (lastCategoryRef.current === category) return;
-    lastCategoryRef.current = category;
-    setSort(readSort(clubId, category) ?? defaultSortFor(category));
-    setSortChosen(readSort(clubId, category) != null);
-  }, [category, clubId]);
 
   /* Dan 2026-08-25: a Spin or Heads-Up with every seat gone "NEEDS TO BE
      DROPPED TO THE BOTTOM OF THE RESULTS". This is applied AFTER whatever sort
@@ -2082,8 +2067,6 @@ export default function LobbyTable({
     if (!col.sortable) return;
     const next = { key: col.key, dir };
     setSort(next);
-    setSortChosen(true);
-    writeSort(clubId, category, next);
     onHeadingSort?.(next.key, next.dir);
   };
 
@@ -2119,8 +2102,6 @@ export default function LobbyTable({
           ? { key: col.key, dir: 'asc' }
           : { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
       setSort(next);
-      setSortChosen(true);
-      writeSort(clubId, category, next);
       onHeadingSort?.(next.key, next.dir);
     }
   };
@@ -2218,7 +2199,7 @@ export default function LobbyTable({
                 COL_NAME,
                 category === 'ALL'
                   ? COL_COST
-                  : ['MTT', 'SPIN', 'SNG'].includes(category)
+                  : ['MTT', 'SPIN', 'SNG', 'SATELLITE'].includes(category)
                     ? COL_BUYIN
                     : COL_STAKES,
                 COL_PLAYERS,
@@ -2315,6 +2296,7 @@ export default function LobbyTable({
                 onClick={() => onSelect(entry)}
               >
                 <td>
+                  <FavCell entry={entry} ctx={rowCtx} />
                   <button
                     type="button"
                     className="compact-lobby__open"
@@ -2340,6 +2322,7 @@ export default function LobbyTable({
                         entry.variantLabel
                       )}
                     </span>
+                    {entry.kind !== 'cash' && <SatelliteRowDestination entry={entry} />}
                     {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
                     <PlayerStateChip entry={entry} ctx={rowCtx} />
                   </button>

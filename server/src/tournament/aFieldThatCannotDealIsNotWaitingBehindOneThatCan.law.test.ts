@@ -21,13 +21,28 @@ import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const fixture = vi.hoisted(() => ({ reportError: vi.fn() }));
+const fixture = vi.hoisted(() => ({ reportError: vi.fn(), bustRead: vi.fn() }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: fixture.reportError }));
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
+      if (table === 'tournament_players') {
+        const query: any = {
+          select: () => query,
+          eq: () => query,
+          order: () => query,
+          limit: () => query,
+          lte: (column: string, value: number) => {
+            fixture.bustRead(column, value);
+            return query;
+          },
+          then: (resolve: (value: unknown) => unknown) =>
+            Promise.resolve({ data: null, error: { message: 'bust-stage reached' } }).then(resolve),
+        };
+        return query;
+      }
       throw new Error('no database in this fixture');
     },
     rpc: () => {
@@ -43,6 +58,7 @@ const {
   tournamentEliminationScheduler,
 } = await import('./TournamentEliminationScheduler.js');
 const { TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js');
+const { TournamentManager } = await import('./TournamentManager.js');
 const { TournamentSweepWorkCursor } = await import('./TournamentSweepWorkCursor.js');
 
 const microtasks = async (): Promise<void> => {
@@ -322,6 +338,7 @@ describe('the balance stage declares the lane', () => {
 
   function balanceManager(checkTableBalance: (this: any) => Promise<unknown>) {
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    manager.recoveredOriginalAdmissions = new Map();
     Object.assign(manager, {
       tournamentId,
       running: true,
@@ -367,7 +384,89 @@ describe('the balance stage declares the lane', () => {
     expect(fixture.reportError).not.toHaveBeenCalled();
   });
 
-  it('a balance stage cut short by the work budget keeps its continuation in the lane', async () => {
+  it.each(['slow-unknown', 'park-continuation'] as const)(
+    'a pending balance operation cannot monopolize every future bust admission: %s',
+    async (kind) => {
+      let now = 1_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => now);
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const scheduler = new TournamentEliminationScheduler({
+        maxConcurrent: 1,
+        sweepWarnMs: 0,
+        startTimers: false,
+      });
+      const manager = balanceManager(async () => {
+        manager.requestUrgentEliminationSweepAfter(5_000);
+        now += 6_000;
+        return kind === 'park-continuation' ? { kind } : undefined;
+      });
+      delete manager.eliminationWorkBudgetExpired;
+      const original = { requestId: 'same-physical-park', source: 'same-source' };
+      manager.pendingTournamentParkRequests = new Map([['same-source', original]]);
+      if (kind === 'park-continuation') {
+        manager.eliminationMutationAllowed = () => true;
+        manager.recoverF06OriginalAdmissions = vi.fn().mockResolvedValue(undefined);
+        manager.requestTournamentBreakPark = vi.fn(async (sourceId: string) => {
+          expect(sourceId).toBe('same-source');
+          expect(manager.pendingTournamentParkRequests.get(sourceId)).toBe(original);
+          now += 6_000;
+        });
+        manager.prepareFreshTableBalance = vi.fn();
+        manager.checkTableBalance = vi.fn(
+          (TournamentManager.prototype as any).checkTableBalance.bind(manager)
+        );
+      }
+
+      fixture.bustRead.mockClear();
+      manager.refreshChipCapInputs = vi.fn().mockResolvedValue(undefined);
+      manager.recoverPendingBountyObligations = vi.fn().mockResolvedValue(true);
+      manager.checkFinalTableDeal = vi.fn().mockResolvedValue(true);
+      manager.requestUrgentEliminationSweepAfter = (delay: number) =>
+        scheduler.wakeUrgentAfter(tournamentId, delay);
+      manager.bustAwaitingSinceMs = now - 30_000;
+      let completed = 0;
+      const stages: number[] = [];
+      let unregister: (() => void) | undefined;
+      manager.requestEliminationSweep = () => scheduler.wake(tournamentId);
+      vi.spyOn(tournamentEliminationScheduler, 'setConsolidating').mockImplementation(
+        (_id, value) => scheduler.setConsolidating(tournamentId, value)
+      );
+      try {
+        unregister = scheduler.register({
+          tournamentId,
+          run: async (signal) => {
+            stages.push(manager.eliminationSweepCursor.nextStage);
+            await manager.runEliminationSweep(signal);
+            completed++;
+            if (completed === 2) {
+              now += 5_000;
+            }
+            if (completed === 3) unregister?.();
+          },
+        });
+        await vi.waitFor(() => expect(completed).toBe(3), { timeout: 13_000 });
+        expect(stages).toEqual([5, 6, 0]);
+        expect(fixture.bustRead).toHaveBeenCalledWith('chips', 0);
+        expect(manager.eliminationSweepCursor.nextStage).toBe(1);
+        expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
+        expect(manager.pendingTournamentParkRequests.get('same-source')).toBe(original);
+        if (kind === 'park-continuation') {
+          expect(manager.requestTournamentBreakPark).toHaveBeenCalledOnce();
+          expect(manager.prepareFreshTableBalance).not.toHaveBeenCalled();
+        }
+        expect(manager.bustAwaitingSinceMs).toBe(970_000);
+        // Fair scheduling does not erase the genuine unresolved-bust alarm.
+        expect(manager.getStalledEliminationSweep(1_100_000)).toMatchObject({
+          msBustWaiting: 130_000,
+        });
+      } finally {
+        scheduler.stop();
+      }
+    },
+    16_000
+  );
+
+  it('a slow balance unit retains its lane while yielding to the remaining stages', async () => {
     const setConsolidating = vi
       .spyOn(tournamentEliminationScheduler, 'setConsolidating')
       .mockReturnValue(true);
@@ -380,18 +479,18 @@ describe('the balance stage declares the lane', () => {
     manager.eliminationWorkBudgetExpired = () => spent;
     await manager.runEliminationSweep(new AbortController().signal);
     expect(setConsolidating).toHaveBeenCalledWith(tournamentId, true);
-    expect(manager.eliminationSweepCursor.nextStage).toBe(5);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(6);
     expect(manager.requestEliminationSweep).toHaveBeenCalled();
   });
 
-  it('an acknowledged park continuation keeps the balance cursor even before its budget is spent', async () => {
+  it('an acknowledged park continuation yields its cursor without releasing its lane', async () => {
     const setConsolidating = vi
       .spyOn(tournamentEliminationScheduler, 'setConsolidating')
       .mockReturnValue(true);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const manager = balanceManager(async () => ({ kind: 'park-continuation' }));
     await manager.runEliminationSweep(new AbortController().signal);
-    expect(manager.eliminationSweepCursor.nextStage).toBe(5);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(6);
     expect(setConsolidating).toHaveBeenLastCalledWith(tournamentId, true);
   });
 
@@ -412,6 +511,19 @@ describe('the balance stage declares the lane', () => {
     expect(setConsolidating).toHaveBeenLastCalledWith(tournamentId, false);
   });
 
+  it('a completed consolidation does not create another causal wake', async () => {
+    vi.spyOn(tournamentEliminationScheduler, 'setConsolidating').mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const manager = balanceManager(async () => ({ kind: 'planning-complete' }));
+    manager.consolidationDeclared = true;
+    manager.requestUrgentEliminationSweepAfter = vi.fn();
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.consolidationDeclared).toBe(false);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(0);
+    expect(manager.requestUrgentEliminationSweepAfter).not.toHaveBeenCalled();
+    expect(manager.requestEliminationSweep).not.toHaveBeenCalled();
+  });
+
   it('a field that is already balanced never touches the lane', async () => {
     const setConsolidating = vi.spyOn(tournamentEliminationScheduler, 'setConsolidating');
     const manager = balanceManager(async () => undefined);
@@ -428,6 +540,7 @@ describe('a held level on a spread field asks for its balance pass', () => {
 
   function heldManager(seats: number[]) {
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    manager.recoveredOriginalAdmissions = new Map();
     Object.assign(manager, {
       tournamentId,
       consolidationDeclared: false,
@@ -491,6 +604,7 @@ describe('the hand that leaves a field unable to deal asks for consolidation', (
       onRestartRequired: vi.fn(),
     }));
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    manager.recoveredOriginalAdmissions = new Map();
     Object.assign(manager, {
       tournamentId: id,
       tableEngines: new Map(engines.map((engine, i) => [`table-${i}`, engine])),

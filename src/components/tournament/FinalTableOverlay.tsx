@@ -5,7 +5,7 @@
  *
  * Shows:
  * - "FINAL TABLE" engraved in the master's header well
- * - Player lineup with auto-classified styles (Shark/Fish/Rock etc.)
+ * - Player lineup with names and chip counts
  * - Chip counts + rankings, printed as rows on the black glass
  * - Prize pool reminder
  * - Auto-dismiss after 8 seconds (or tap to dismiss)
@@ -32,12 +32,8 @@
  * separators; both go through the house formatters now.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
-import {
-  playerStyleClassifier,
-  type PlayerStyleResult,
-} from '../../services/PlayerStyleClassifier';
 import { soundService } from '../../services/SoundService';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { compactChips, formatPrizeAtUnit, moneyWordAtUnit } from '../../utils/format';
@@ -53,14 +49,6 @@ export interface FinalTablePlayer {
   username: string;
   chips: number;
   avatar?: string;
-  /** Stats for style classification */
-  stats?: {
-    handsPlayed: number;
-    vpipCount: number;
-    pfrCount: number;
-    aggressiveActions?: number;
-    passiveActions?: number;
-  };
 }
 
 interface FinalTableOverlayProps {
@@ -76,10 +64,6 @@ interface FinalTableOverlayProps {
    * waits for it instead of guessing.
    */
   unitCents: number | null;
-  /** Fallback: get client-side HUD stats when DB stats are missing */
-  hudStatsProvider?: (
-    userId: string
-  ) => { handsPlayed: number; vpipCount: number; pfrCount: number } | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -91,7 +75,6 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
   tournamentName = 'Tournament',
   prizePool = 0,
   unitCents,
-  hudStatsProvider,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [players, setPlayers] = useState<FinalTablePlayer[]>([]);
@@ -137,27 +120,6 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
     timerRefs.current.push(setTimeout(() => setIsVisible(false), 600));
   }, []);
 
-  // Classify each player's style
-  const classifiedPlayers = useMemo(() => {
-    return players.map((p) => {
-      // Priority: event payload stats → client-side HUD stats → default unknown
-      const payloadStats = p.stats;
-      const hudStats = hudStatsProvider?.(p.userId);
-      const statsToUse =
-        payloadStats ||
-        (hudStats
-          ? {
-              handsPlayed: hudStats.handsPlayed,
-              vpipCount: hudStats.vpipCount,
-              pfrCount: hudStats.pfrCount,
-            }
-          : { handsPlayed: 0, vpipCount: 0, pfrCount: 0 });
-
-      const styleResult: PlayerStyleResult = playerStyleClassifier.classify(statsToUse);
-      return { ...p, styleResult };
-    });
-  }, [players, hudStatsProvider]);
-
   if (!isVisible) return null;
 
   const totalChips = players.reduce((s, p) => s + p.chips, 0);
@@ -194,7 +156,7 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
 
           {/* Player List */}
           <div className="ft-overlay__players">
-            {classifiedPlayers.map((player, index) => {
+            {players.map((player, index) => {
               const chipPct = totalChips > 0 ? (player.chips / totalChips) * 100 : 0;
               return (
                 <div
@@ -209,19 +171,6 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
                   <div className="ft-player__info">
                     <div className="ft-player__name-row">
                       <span className="ft-player__name sc-ink--silver">{player.username}</span>
-                      {/* Player Style. Printed as type in the master's muted
-                          ink, never as a coloured chip: the classifier's own
-                          palette carries ambers and oranges, and Dan's rule is
-                          brand colours only. The full description stays on the
-                          title so nothing is lost. */}
-                      {player.styleResult.style !== 'unknown' && (
-                        <span
-                          className="ft-player__style sc-ink--muted"
-                          title={player.styleResult.tooltip}
-                        >
-                          {player.styleResult.label}
-                        </span>
-                      )}
                     </div>
                     <div className="ft-player__chips-row">
                       <span className="ft-player__chips sc-ink--silver">

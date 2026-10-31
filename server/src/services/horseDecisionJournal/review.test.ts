@@ -59,6 +59,7 @@ import {
   readHorseJournalHandRecords,
   reconcileHorseJournalHand,
   reviewHorsePlanEffects,
+  reviewHorseOwnTurnEffects,
 } from './review.js';
 import {
   createHorsePlanEffectReceipt,
@@ -66,6 +67,7 @@ import {
 } from '../../engine/HorsePlanEffectReceipt.js';
 import {
   workerHarness as planWorkerHarness,
+  requestAt as planRequestAt,
   commitOf as planCommitOf,
 } from '../../testing/horseRegression/plan/fixture.js';
 import { runtimeHorseJournalArchiveOptions } from './config.js';
@@ -142,6 +144,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           v27GtoCharts: false,
           phase8Postflop: 'off',
@@ -166,6 +169,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           phase10EvidenceMode: true,
           phase8Postflop: 'off',
@@ -189,6 +193,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           phase11EvidenceMode: true,
           phase8Postflop: 'off',
@@ -213,6 +218,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           phase12EvidenceMode: true,
           phase8Postflop: 'off',
@@ -237,6 +243,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           phase8Postflop: 'off',
           phase10Plo4: 'off',
@@ -354,6 +361,9 @@ const directory = () => {
   dirs.push(d);
   return d;
 };
+// V61 (2026-10-29) shades hold'em one-pair river calls by default; these
+// captured replays keep the explicit off arm so the recorded receipts and
+// admissions still mean what they meant when they were captured.
 describe('private retained-hand journal consumer', () => {
   it('counts authorized pooled notes separately and rejects future provenance', () => {
     const f = fixture('nlh', [], false, false, false, false, false, true);
@@ -2452,7 +2462,7 @@ describe('Phase 15.1 plan-effect ledger from authoritative receipts', () => {
   const planProducer = '40000000-0000-4000-8000-000000000009';
   const planHand = journalHash('plan-ledger-hand');
   const planTurn = journalHash('plan-ledger-turn');
-  async function issuedAndAccepted() {
+  async function issuedAndAccepted(otherHorse = false) {
     HorseMind.reset();
     const receipts: HorsePlanEffectReceipt[] = [];
     const h = planWorkerHarness({
@@ -2461,7 +2471,16 @@ describe('Phase 15.1 plan-effect ledger from authoritative receipts', () => {
       },
     });
     try {
-      const result = await h.fast();
+      const request = otherHorse
+        ? JSON.parse(
+            JSON.stringify(planRequestAt()).replaceAll(
+              '11111111-1111-4111-8111-111111111111',
+              '77777777-7777-4777-8777-777777777777'
+            )
+          )
+        : planRequestAt();
+      request.decisionKey = buildHorseDecisionKey(request);
+      const result = await h.fast(request);
       h.runtime.receive(planCommitOf(result, 2));
       await h.runtime.drain();
       return { result, capture: h.captures[0]!, receipt: receipts[0]! };
@@ -2493,6 +2512,67 @@ describe('Phase 15.1 plan-effect ledger from authoritative receipts', () => {
       },
       payload
     );
+
+  it('attributes a receipt to its own turn without crediting another horse in the hand', async () => {
+    const f = await issuedAndAccepted();
+    const first = row('decision', f.capture);
+    const other = await issuedAndAccepted(true);
+    const second = row('decision', other.capture, journalHash('other-horse-turn'));
+    const rows = [
+      first,
+      row('execution', witnessOf(f.result)),
+      row('plan_receipt', f.receipt),
+      second,
+      row('execution', witnessOf(other.result), second.turnKey),
+      row('accepted_hand', {}),
+    ];
+    expect(reviewHorseOwnTurnEffects(rows, planHand, first)).toBe('applied');
+    expect(reviewHorseOwnTurnEffects(rows, planHand, second)).toBe('unknown');
+    expect(
+      reviewHorseOwnTurnEffects(
+        [...rows, row('plan_receipt', other.receipt, second.turnKey)],
+        planHand,
+        second
+      )
+    ).toBe('applied');
+    expect(
+      reviewHorseOwnTurnEffects(
+        rows.filter((r) => r.kind !== 'decision'),
+        planHand,
+        first
+      )
+    ).toBe('unknown');
+    expect(
+      reviewHorseOwnTurnEffects(
+        rows.filter((r) => r.kind !== 'plan_receipt'),
+        planHand,
+        first
+      )
+    ).toBe('unknown');
+    expect(reviewHorseOwnTurnEffects(rows, journalHash('wrong-hand'), first)).toBe('unknown');
+  });
+  it('preserves failed own-turn receipts and qualifies empty effects separately', async () => {
+    const f = await issuedAndAccepted();
+    const decision = row('decision', f.capture);
+    const rows = [
+      decision,
+      row('execution', witnessOf(f.result)),
+      row('plan_receipt', createHorsePlanEffectReceipt({ ...f.receipt, disposition: 'failed' })),
+      row('accepted_hand', {}),
+    ];
+    expect(reviewHorseOwnTurnEffects(rows, planHand, decision)).toBe('failed');
+    const empty = row('decision', { ...f.capture, effects: [] });
+    expect(reviewHorseOwnTurnEffects([empty, row('accepted_hand', {})], planHand, empty)).toBe(
+      'not_applicable'
+    );
+    expect(reviewHorseOwnTurnEffects([empty], planHand, empty)).toBe('unknown');
+    const missing = { ...f.capture } as any;
+    delete missing.effects;
+    const absent = row('decision', missing);
+    expect(reviewHorseOwnTurnEffects([absent, row('accepted_hand', {})], planHand, absent)).toBe(
+      'unknown'
+    );
+  });
 
   it('counts issued, accepted, durable and applied, and verifies application only from the receipt', async () => {
     const f = await issuedAndAccepted();

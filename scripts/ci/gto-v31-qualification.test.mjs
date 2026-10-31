@@ -3,7 +3,7 @@ import test from 'node:test';
 import { invocation, servingIdentity, promotionReady, receiptSourceMatches, evaluatorArguments } from './gto-v31-qualification.mjs';
 
 const id = '2687c795-6014-543e-85fd-460f418da6c3';
-const valid = { eventName: 'workflow_dispatch', ref: 'refs/heads/main', repository: 'Smarter-Poker/Smarter-Poker-Club-Arena', inputs: { dataset: id, operation: 'evaluate' } };
+const valid = { eventName: 'workflow_dispatch', ref: 'refs/heads/main', repository: 'Smarter-Poker/Smarter-Poker-Club-Arena', repositoryId: '1132369872', inputs: { dataset: id, operation: 'evaluate' } };
 
 test('only an explicit main dispatch with a canonical dataset can acquire the provider route', () => {
   assert.deepEqual(invocation(valid), { dataset: id, operation: 'evaluate' });
@@ -37,8 +37,10 @@ test('promotion admission refuses partial, losing, duplicated or different-datas
     assert.throws(() => promotionReady({ ...candidate, ...changed }, id));
 });
 
-test('the existing CLI receives no source override, shell interpolation or environment-file argument', () => {
-  assert.deepEqual(evaluatorArguments(id, 'evaluate'), ['node_modules/tsx/dist/cli.mjs', 'src/scripts/gtoV31Evaluate.ts', `--dataset=${id}`]);
+test('the finite worker CLI receives no source override, shell interpolation or environment-file argument', () => {
+  assert.deepEqual(evaluatorArguments(id, 'evaluate'), ['scripts/gto-v31-evaluate-worker.mjs', `--dataset=${id}`]);
   assert.equal(evaluatorArguments(id, 'promote').at(-1), '--promote');
   assert.throws(() => evaluatorArguments('not-a-uuid', 'promote'));
 });
+
+test('organization transfer retains immutable source authority',()=>{assert.deepEqual(invocation({...valid,repository:'Smarter-Software-PIQ/Smarter-Poker-Club-Arena'}),{dataset:id,operation:'evaluate'});for(const repositoryId of [undefined,'','42'])assert.throws(()=>invocation({...valid,repositoryId}));});

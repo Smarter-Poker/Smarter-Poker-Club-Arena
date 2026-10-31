@@ -297,6 +297,18 @@ class PacketContracts(unittest.TestCase):
    self.assertEqual(summary['observedHorses'],1);self.assertFalse(summary['completeCapture'])
    self.assertFalse(summary['completeCanonicalHorseCoverage']);self.assertNotIn('PRIVATE',json.dumps(summary))
    self.assertEqual(summary['gaps'],{'partition_observation_unavailable':1})
+   self.assertEqual(summary['partitionFailure'],{'code':'partition_cli_unclassified','completedPartitions':1})
+ def test_partition_failure_projection_is_closed_and_never_echoes_private_output(self):
+  for code in module.FLEET_FAILURE_CODES:
+   run=subprocess.CompletedProcess([],2,json.dumps({'qualifiedExecution':False,'failureCode':code,'private':'secret'}).encode(),b'UUID TOKEN PRIVATE')
+   self.assertEqual(module.partition_failure_code(ValueError('opaque'),run),code)
+  for raw in [b'PRIVATE',b'{"qualifiedExecution":false,"failureCode":"secret"}',b'x'*4097]:
+   run=subprocess.CompletedProcess([],3,raw,b'PRIVATE')
+   self.assertEqual(module.partition_failure_code(ValueError('secret'),run),'partition_cli_unclassified')
+  self.assertEqual(module.partition_failure_code(subprocess.TimeoutExpired(['PRIVATE'],115,stderr=b'SECRET')),'partition_timeout')
+  self.assertEqual(module.partition_failure_code(FileNotFoundError('SECRET')),'partition_process_unavailable')
+  self.assertEqual(module.partition_failure_code(ValueError('partition_deadline')),'partition_deadline')
+  self.assertEqual(module.partition_failure_code(ValueError('SECRET')),'partition_result_unverified')
  def with_partition_reads(self,result,independent_actor=None):
   o=result['execution']['observation'];fields={'qualifiedReadDecisions':'qualifiedReadHorses','ownHistoryLoadedDecisions':'ownHistoryLoadedHorses','positiveSampleDecisions':'positiveSampleHorses','positiveSampleWithHistoryDecisions':'positiveSampleWithHistoryHorses','retainedHistoryRiverSampleDecisions':'retainedHistoryRiverSampleHorses'}
   for h in o['horses']:
@@ -356,6 +368,106 @@ class PacketContracts(unittest.TestCase):
  def test_configured_uri_is_internal_environment_not_arguments(self):
   e=module.database_environment({'DATABASE_URL':'postgresql://fixture:percent%21@127.0.0.1:5432/test?sslmode=require'})
   self.assertEqual(e['PGPASSWORD'],'percent!');self.assertEqual(e['PGSSLMODE'],'require');self.assertNotIn('DATABASE_URL',e)
+ def indexed_fixture(self,actors=(0,1),start='2000-01-01T00:00:00.000Z',end='2000-01-01T00:00:01.000Z'):
+  p,a=self.partition_fixture(1);p['window']={'startUtc':start,'endUtc':end};a['packetDigest']=module.digest(p)
+  part=module.partition_packets(p,a)[0];r=self.partition_result(part,actors)
+  return p,a,r,module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+ def test_indexed_ledger_preserves_docker_nanosecond_identity(self):
+  p,a,r,_=self.indexed_fixture()
+  for timestamp in ['2026-10-28T16:09:46Z','2026-10-28T16:09:46.603Z','2026-10-28T16:09:46.603123456Z']:
+   r['execution']['servingStartedAt']=timestamp
+   ledger=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+   self.assertEqual(ledger['observations'][0]['servingStartedAt'],timestamp)
+  for timestamp in ['2026-10-28T16:09:46.6031234567Z','2026-10-28T16:09:46.Z','PRIVATE']:
+   r['execution']['servingStartedAt']=timestamp
+   with self.assertRaisesRegex(ValueError,'indexed_ledger_binding'):module.bounded_summary(p,a,[r])
+ def test_partition_validation_refusal_projection_is_closed(self):
+  run=subprocess.CompletedProcess([],0,stdout=b'',stderr=b'PRIVATE')
+  for reason in ['indexed_ledger_binding','partition_execution_binding','partition_horse_phases','river_counts','phase_counts','read_counts','private_result']:
+   self.assertEqual(module.partition_failure_code(ValueError(reason),run),reason)
+  self.assertEqual(module.partition_failure_code(json.JSONDecodeError('PRIVATE','PRIVATE',0),run),'partition_result_json_invalid')
+  self.assertEqual(module.partition_failure_code(ValueError('PRIVATE'),run),'partition_result_unverified')
+ def test_indexed_ledger_retains_private_ordinal_evidence_and_explicit_unknowns(self):
+  p,a,r,ledger=self.indexed_fixture((0,0,1))
+  self.assertEqual(ledger['rows'][0]['acceptedDecisions'],2)
+  self.assertIsNone(ledger['rows'][0]['qualifiedOriginalReadDecisions'])
+  self.assertIsNone(ledger['rows'][0]['pooledPublicReadDecisions'])
+  self.assertEqual(ledger['rows'][2]['acceptedDecisions'],0)
+  self.assertEqual(ledger['decisionCorrectness'],'unknown');self.assertEqual(ledger['planEffectPersistence'],'unknown')
+  self.assertFalse(ledger['allPhasesVerified']);self.assertFalse(ledger['completePopulation'])
+  self.assertNotIn(p['horseIds'][0],json.dumps(ledger))
+  # Roster ordering in transport does not change stable ordinal mapping.
+  p['horseIds'].reverse();a['packetDigest']=module.digest(p);r['packetDigest']=module.digest(p)
+  o=r['execution']['observation'];o['packetDigest']=module.digest(p)
+  again=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+  self.assertEqual(again['cohortDigest'],ledger['cohortDigest']);self.assertEqual(again['rows'],ledger['rows'])
+ def test_indexed_ledger_does_not_promote_unreported_read_evidence(self):
+  p,a,r,_=self.indexed_fixture((0,))
+  # A numerical field without a validated public/read schema is not evidence.
+  for h in r['execution']['observation']['horses']:
+   h['riverLearning']={'qualifiedReadDecisions':h['acceptedDecisions']}
+  ledger=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+  self.assertEqual(ledger['rows'][0]['acceptedDecisions'],1)
+  self.assertIsNone(ledger['rows'][0]['qualifiedOriginalReadDecisions'])
+  # Valid public counts still do not validate missing river schema/provenance.
+  for h in r['execution']['observation']['horses']:
+   h['retainedReceiptCounts']={'pooledPublicReads':h['acceptedDecisions'],'independentPublicReads':0}
+  summary=module.bounded_summary(p,a,[r]);row=summary['indexedEvidenceLedger']['rows'][0]
+  self.assertEqual(summary['publicReadEvidence']['status'],'reported')
+  self.assertEqual(summary['riverLearningEvidence']['status'],'unknown')
+  self.assertEqual(row['pooledPublicReadDecisions'],1)
+  self.assertIsNone(row['qualifiedOriginalReadDecisions'])
+ def test_indexed_union_disjoint_windows_union_horses_and_dedupe_exact_retries(self):
+  _,_,_,one=self.indexed_fixture((0,1))
+  _,_,_,two=self.indexed_fixture((1,2),'2000-01-01T00:00:01.000Z','2000-01-01T00:00:02.000Z')
+  joined=module.union_indexed_ledgers([one,two,one])
+  self.assertEqual(len(joined['observations']),2)
+  self.assertEqual(sum(r['acceptedDecisions']>0 for r in joined['rows']),3)
+  self.assertEqual(sum(r['acceptedDecisions'] for r in joined['rows']),4)
+  self.assertEqual(joined['rows'][1]['acceptedDecisions'],2)
+  self.assertIsNone(joined['rows'][1]['qualifiedOriginalReadDecisions'])
+ def test_indexed_union_refuses_source_cohort_overlap_and_partial_duplicate_unions(self):
+  _,_,_,one=self.indexed_fixture()
+  _,_,_,two=self.indexed_fixture((1,2),'2000-01-01T00:00:01.000Z','2000-01-01T00:00:02.000Z')
+  for key,value in [('sourceSha','b'*40),('cohortDigest','b'*64)]:
+   changed=json.loads(json.dumps(two));changed[key]=value
+   with self.assertRaises(ValueError):module.union_indexed_ledgers([one,changed])
+  changed=json.loads(json.dumps(one));changed['observations'][0]['packetDigest']='e'*64
+  with self.assertRaises(ValueError):module.union_indexed_ledgers([one,changed])
+  joined=module.union_indexed_ledgers([one,two])
+  with self.assertRaises(ValueError):module.union_indexed_ledgers([joined,one])
+ def test_indexed_ledger_refuses_false_claims_reorder_private_fields_and_bad_counts(self):
+  _,_,_,ledger=self.indexed_fixture()
+  mutations=[lambda v:v.update(allPhasesVerified=True),lambda v:v.update(planEffectPersistence='verified'),
+   lambda v:v.update(secret='PRIVATE'),lambda v:v['rows'][0].update(qualifiedOriginalReadDecisions=True),
+   lambda v:v['rows'][0].update(acceptedDecisions=-1),lambda v:v['rows'].reverse(),
+   lambda v:v['observations'][0].update(servingContainer='PRIVATE'),
+   lambda v:v['rows'][0].update(horseId='PRIVATE')]
+  for mutate in mutations:
+   v=json.loads(json.dumps(ledger));mutate(v)
+   with self.assertRaises(ValueError):module.validate_indexed_ledger(v)
+ def test_indexed_ledger_partial_capture_never_claims_complete_and_missing_identity_is_not_fabricated(self):
+  p,a=self.partition_fixture();part=module.partition_packets(p,a)[0];r=self.partition_result(part)
+  summary=module.bounded_summary(p,a,[r]);self.assertFalse(summary['completeCapture'])
+  self.assertIsNotNone(summary['indexedEvidenceLedger'])
+  empty=module.bounded_summary(p,a,[]);self.assertIsNone(empty['indexedEvidenceLedger'])
+ def test_indexed_own_turn_counts_require_closed_validated_schema(self):
+  p,a,r,_=self.indexed_fixture((0,))
+  o=r['execution']['observation'];h=o['horses'][0]
+  values={k:0 for k in module.EXECUTION_FIELDS};values.update(selectedMatch=1,effectsUnknown=1)
+  h['executionEvidence']={'version':'horse-own-turn-execution-v1',**values}
+  row=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']['rows'][0]
+  self.assertEqual(row['ownTurnExecution']['selectedMatch'],1)
+  self.assertEqual(row['ownTurnExecution']['effectsUnknown'],1)
+  for mutation in [lambda v:v.update(effectsApplied=1),lambda v:v.update(selectedMatch=True),lambda v:v.update(secret='PRIVATE'),lambda v:v.update(version='unknown')]:
+   h['executionEvidence']={'version':'horse-own-turn-execution-v1',**values};mutation(h['executionEvidence'])
+   with self.assertRaises(ValueError):module.bounded_summary(p,a,[r])
+ def test_indexed_legacy_own_turn_evidence_is_unknown_and_union_does_not_promote_it(self):
+  _,_,_,old=self.indexed_fixture((0,))
+  for row in old['rows']:row.pop('ownTurnExecution',None)
+  parsed=module.validate_indexed_ledger(old)
+  self.assertTrue(all(v is None for v in parsed['rows'][0]['ownTurnExecution'].values()))
+  self.assertEqual(parsed['planEffectPersistence'],'unknown')
 if __name__=='__main__':
  import sys
  unittest.main(argv=[sys.argv[0],'PacketContracts'] if '--contracts' in sys.argv else None)

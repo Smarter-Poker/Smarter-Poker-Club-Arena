@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../services/supabase/client.js', () => ({ supabase: {}, maintenanceSupabase: {} }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 vi.mock('../http/auth.js', () => ({ authenticateRequest: vi.fn(async () => ({ userId: 'u4' })) }));
@@ -42,6 +42,9 @@ function hand() {
 function harness() {
   const h = hand();
   const engine = Object.create(ServerTableEngine.prototype) as any;
+  // Match the fresh engine constructor: no retained original or replay lane.
+  engine.pendingOriginalContinuation = null;
+  engine.handContinuation = null;
   engine.handController = h;
   engine.lifecycleCanMutate = () => true;
   engine.actionLock = false;
@@ -186,8 +189,16 @@ describe('HTTP retries preserve the decision boundary', () => {
 });
 
 describe('decision context delivery', () => {
+  const engines: ServerTableEngine[] = [];
+  afterEach(async () => {
+    for (const engine of engines.splice(0)) await engine.stop();
+  });
   function delivery() {
     const engine = new ServerTableEngine('context-delivery') as any;
+    expect(engine.claimProcessOwnership()).toBe(true);
+    engine.running = true;
+    engine.handStartSettleMs = engine.streetSettleMs = engine.actionSettleMs = 0;
+    engines.push(engine);
     const h = hand();
     engine.handController = h;
     engine.tableInfo = { game_variant: 'nlh', big_blind: 2, small_blind: 1, max_players: 4 };

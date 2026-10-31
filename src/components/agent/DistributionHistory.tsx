@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DISTRIBUTION HISTORY — Full audit log of agent chip distributions
@@ -39,8 +40,12 @@ type DateRange = '7d' | '30d' | '90d' | 'all';
 export default function DistributionHistory({ userId, clubId }: DistributionHistoryProps) {
   const [records, setRecords] = useState<DistributionRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState<DateRange>('30d');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [dateRange, setDateRange] = usePlayerPreference<DateRange>(
+    'distributionHistory.dateRange',
+    '30d',
+    clubId
+  );
+  const [searchTerm, setSearchTerm] = usePlayerPreference('distributionHistory.search', '', clubId);
   const isMounted = useIsMounted();
 
   const loadHistory = useCallback(async () => {

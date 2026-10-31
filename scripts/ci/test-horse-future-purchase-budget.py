@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -122,4 +123,9 @@ CREATE FUNCTION fn_seat_horse_in_seat_first_game_before_terminal_seat_gate(uuid,
             check('migration replay refuses drift','horse_future_purchase_preimage_changed' in run(MIGRATION.read_text(),True))
             print(json.dumps({'passed':len(checks),'checks':checks,'scope':'actual wrappers and actual cap lock; controlled unchanged economic delegate sinks'}))
         finally: command([PG/'pg_ctl','-D',d/'db','-m','immediate','-w','stop'])
+    # Qualify the same purchase wrapper's timing migration after this cluster
+    # stops; failures propagate through the existing required accounting owner.
+    subprocess.run([
+        sys.executable, '-B', str(ROOT/'scripts/ci/test-horse-registration-timing.py'),
+    ], cwd=ROOT, env={**ENV, 'PG_BIN':str(PG), 'TMPDIR':str(BASE)}, check=True, timeout=120)
 if __name__=='__main__':main()

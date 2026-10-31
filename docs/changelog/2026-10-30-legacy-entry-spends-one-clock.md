@@ -1,0 +1,9 @@
+# Legacy checkpoint entry spends one clock
+
+The transaction admitted a legacy checkpoint with at least 285 seconds remaining, performed lock, protected-source and runtime checks, then demanded the same 285 seconds again. The helper repeated that full threshold after rollback-readiness work. Those repeated thresholds charged elapsed work repeatedly while its nominal 40-second clock began only after the lock.
+
+The transaction now starts its single absolute clock before initial admission. The initial 285-second requirement stays strict. Later checks debit only elapsed time from that same clock and bind the original break end. The helper requires 245 seconds plus the actual unspent entry budget. The guard's 245-second reserve, five-second native cleanup, one-shot intent, custody and identity checks, and 135-second rollback reserve remain intact.
+
+Scoped native-command bounds cover lock, source, health and identity reads. Existing timeout commands are flattened into one process group so expiry cannot leave a nested timeout's work behind. Final client reads have no grace beyond the absolute deadline; an interrupted checkpoint retains its unknown durable intent. Fixed per-operation phase/elapsed/remaining signs explain admission and refusal without exporting raw health or player data.
+
+An isolated clock reproduced the original full-queue refusal after a 20-second pre-lock delay despite a feasible same-40-second entry. Regression coverage executes the maintained queue and helper predicate, rejects expired/changed-window/weekly-owner/identity cases, and exercises native child and OS-lock deadline behavior. This source reproduction does not establish the actual host's latency cause. Protected installation, sealed cutover and all original-hand/chip live acceptance remain separate evidence.

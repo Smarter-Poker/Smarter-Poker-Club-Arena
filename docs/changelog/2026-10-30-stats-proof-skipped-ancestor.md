@@ -1,0 +1,11 @@
+# Stats pagination proof executes after its qualified cleanup gate
+
+The focused `run-stats-pagination-proof` event intentionally skips the publication gate. In run 41145667479 the cleanup safety check passed, but GitHub skipped the Stats job because its condition inherited the default success requirement from the skipped publication ancestor.
+
+The Stats job now explicitly evaluates after that ancestor while requiring a successful cleanup safety check, an uncancelled run and the exact existing event. Its fixed case, release pins, permissions, timeouts, zero retries and isolated-account cleanup are unchanged. No other proof profile or publisher changes.
+
+The focused regression evaluates the actual workflow condition for the skipped ancestor and rejects failed, skipped, cancelled or unknown cleanup results, cancelled runs and other events. Before the workflow repair, two checks failed and thirteen passed; after the repair all fifteen checks passed.
+
+The existing cleanup contract also now checks the safety requirement directly: any explicit status function must require successful cleanup and reject cancelled runs. It evaluates failed, skipped, cancelled and unknown cleanup results, while unchanged lanes retain their implicit dependency protection. The former blanket ban on explicit status functions reproduced the one Stats case failure after the workflow repair; the complete updated cleanup contract passes.
+
+Required Accounting shard 2 exposed a separate fixture date coupling at the October 31 UTC rollover: fixed October 26–29 fee assertions reused six cash facts dated relative to the execution day. The variant fixture now anchors only its exact six cash-hand IDs to October 29 before capturing its baseline, after the earlier relative-date money cases finish. It asserts the same three Hold'em and three Omaha hands, six cash rake and fifteen net, and preserves every original fee, date-isolation, access and replay assertion. The unchanged native fixture reproduced `Variant/date isolation failed` before this fixture-only correction. Afterward, the complete member-record PostgreSQL fixture passed, including all original variant fee assertions, replay refusal and native commit-to-WebSocket checks; its PostgreSQL cluster was removed by the existing cleanup trap. Production readers and migrations are unchanged.

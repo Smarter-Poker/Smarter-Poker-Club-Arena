@@ -168,7 +168,7 @@ describe('3. Reset To Defaults writes only what the panel offers', () => {
 describe('4. this browser cannot write its settings into somebody else account', () => {
   it('gates every upward push on ownership of the local values', () => {
     const hydrate = sliceMethod(TABLE_SETTINGS, 'async function hydrateFromServer');
-    const pushes = hydrate.match(/toPush\.push\(/g) || [];
+    const pushes = hydrate.match(/toPush\.push\(\[key, local\[key\]\]/g) || [];
     expect(pushes.length, 'the migration path must still exist').toBeGreaterThan(0);
     const guarded =
       hydrate.match(/mayAdoptLocal && local\[key\] !== DEFAULT_SETTINGS\[key\]/g) || [];

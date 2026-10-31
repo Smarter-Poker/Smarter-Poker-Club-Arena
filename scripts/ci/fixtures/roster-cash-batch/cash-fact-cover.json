@@ -1,0 +1,6 @@
+{
+  "migration": "supabase/migrations/20261030191751_roster_cash_boundary_facts_read_their_covered_projection.sql",
+  "index": "ca_hand_facts_cash_member_time_cover",
+  "reader": "2c02c3c5ab3cff998243a34de1cec02c",
+  "helperBody": "0af290178a97c7e49bdb8db65fa8cec1"
+}

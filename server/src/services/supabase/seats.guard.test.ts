@@ -91,7 +91,25 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
       ...markSeatAsLeft.matchAll(/rpc\(\s*'([a-z_]+)'/g),
       ...atomicCashout.matchAll(/rpc\(\s*'([a-z_]+)'/g),
     ].map((m) => m[1]);
-    expect(new Set(cashoutRpcs)).toEqual(new Set(['fn_cashout_seat_occupancy']));
+    expect(new Set(cashoutRpcs)).toEqual(
+      new Set(['fn_cashout_seat_occupancy', 'fn_cashout_unfunded_seat_occupancy'])
+    );
+    // The Lightning entry adds locked preconditions, never a second cashout.
+    const migration = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        '../supabase/migrations/20261028171228_lightning_bust_expiry_preserves_a_concurrent_paid_rebuy.sql'
+      ),
+      'utf8'
+    );
+    const wrapper = migration
+      .split('AS $function$')[1]
+      .split('$function$;')[0]
+      .replace(/--.*$/gm, '');
+    expect(wrapper.match(/RETURN public\.fn_cashout_seat_occupancy\(/g)).toHaveLength(2);
+    expect(wrapper).not.toMatch(
+      /atomic_seat_cashout_locked|atomic_credit_wallet|refund|\b(?:INSERT|UPDATE|DELETE)\s+(?:INTO|FROM|public\.)/i
+    );
 
     /* And no OTHER function in this file may cash a seat out. That is the half
        the whole-file assertion was really buying, kept explicitly.
@@ -103,7 +121,9 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
       .replace(atomicCashout, '')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
-    expect(outsideCode).not.toMatch(/atomic_seat_cashout_locked|fn_cashout_seat_occupancy/);
+    expect(outsideCode).not.toMatch(
+      /atomic_seat_cashout_locked|fn_cashout_seat_occupancy|fn_cashout_unfunded_seat_occupancy/
+    );
   });
 
   it('neither path credits a wallet itself', () => {

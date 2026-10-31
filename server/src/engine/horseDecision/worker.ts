@@ -1,3 +1,7 @@
+import { createV31WorkerControl } from './v31ReloadControl.js';
+import { loadGtoPostflopV31Once } from '../../services/GtoPostflopV31Loader.js';
+import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
+import { sampleIsolateMemory } from '../../observability/isolateMemory.js';
 /** Worker-thread entry point for the live HorseLogic decision lane. */
 
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
@@ -69,7 +73,23 @@ if (!isMainThread && parentPort) {
       }
     : defaultHorseDecisionWorkerDependencies;
   const port = parentPort;
-  const runtime = new HorseDecisionWorkerRuntime((message) => port.postMessage(message), deps);
-  port.on('message', (message: HorseDecisionWorkerRequest) => runtime.receive(message));
+  const runtime = new HorseDecisionWorkerRuntime((message) => port.postMessage(message), {
+    ...deps,
+    isolateMemory: () => sampleIsolateMemory(shard?.index ?? 0),
+  });
+  const control = createV31WorkerControl({
+    load: loadGtoPostflopV31Once,
+    snapshot: () => {
+      const d = gtoPostflopV31Dataset();
+      return {
+        count: gtoPostflopV31Count(),
+        dataset: d ? { id: d.id, checksum: d.checksum } : null,
+      };
+    },
+    send: (ack) => port.postMessage(ack),
+  });
+  port.on('message', (message: HorseDecisionWorkerRequest) => {
+    if (!control(message)) runtime.receive(message);
+  });
   void runtime.start();
 }

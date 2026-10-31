@@ -59,6 +59,48 @@ function wireFrame(frame) {
   }
 }
 
+/** A real document request retires its sockets. History navigation keeps the
+ * root ProfileAccountSync owner and its already acknowledged private channel. */
+export function observeAssignmentPrivateChannel(page, accountId, onMessage = () => {}) {
+  let joined = deferred();
+  let navigationCount = 0;
+  let documentEpoch = 0;
+  let acknowledged = false;
+  page.on('request', (request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+      documentEpoch++;
+      // Keep an in-flight waiter attached while a new document replaces its
+      // socket. A previously acknowledged document needs fresh evidence.
+      if (acknowledged) joined = deferred();
+      acknowledged = false;
+    }
+  });
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) navigationCount++;
+  });
+  page.on('websocket', (socket) => {
+    const socketEpoch = documentEpoch;
+    socket.on('framereceived', (frame) => {
+      if (socketEpoch !== documentEpoch) return;
+      const message = wireFrame(frame);
+      if (!String(message?.topic || '').endsWith(`profile-account:${accountId}`)) return;
+      if (message.event === 'phx_reply' && message.payload?.status === 'ok') {
+        acknowledged = true;
+        joined.resolve();
+      }
+      onMessage(message);
+    });
+  });
+  return {
+    get joined() {
+      return joined.promise;
+    },
+    get navigationCount() {
+      return navigationCount;
+    },
+  };
+}
+
 export async function startAssignmentBrowserProof({
   account,
   session,
@@ -195,38 +237,25 @@ export async function startAssignmentBrowserProof({
       );
     }
     const { page } = await open(account, session);
-    let joined = deferred();
     const scopeChanged = deferred(),
       rosterChanged = deferred();
     let scopeSeen = false,
-      armed = false,
-      navigationCount = 0;
+      armed = false;
     const requestsAfterScope = new WeakSet();
-    page.on('framenavigated', (frame) => {
-      if (frame === page.mainFrame()) {
-        navigationCount++;
-        joined = deferred();
+    const channelObservation = observeAssignmentPrivateChannel(page, account.id, (message) => {
+      const payload = message.payload?.payload;
+      if (
+        armed &&
+        message.event === 'broadcast' &&
+        message.payload?.event === 'account_changed' &&
+        payload?.user_id === account.id &&
+        payload?.club_id === clubId &&
+        payload?.reason === 'member_scope_changed'
+      ) {
+        scopeSeen = true;
+        scopeChanged.resolve();
       }
     });
-    page.on('websocket', (socket) =>
-      socket.on('framereceived', (frame) => {
-        const message = wireFrame(frame);
-        if (!String(message?.topic || '').endsWith(`profile-account:${account.id}`)) return;
-        if (message.event === 'phx_reply' && message.payload?.status === 'ok') joined.resolve();
-        const payload = message.payload?.payload;
-        if (
-          armed &&
-          message.event === 'broadcast' &&
-          message.payload?.event === 'account_changed' &&
-          payload?.user_id === account.id &&
-          payload?.club_id === clubId &&
-          payload?.reason === 'member_scope_changed'
-        ) {
-          scopeSeen = true;
-          scopeChanged.resolve();
-        }
-      })
-    );
     page.on('request', (request) => {
       if (
         scopeSeen &&
@@ -256,8 +285,11 @@ export async function startAssignmentBrowserProof({
     await ensurePlayableProfile(page);
     const row = page.getByRole('button', { name: new RegExp(`^Open ${escaped(playerAlias)}, `) });
     await row.waitFor({ state: 'visible', timeout: 60_000 });
-    await bounded(joined.promise, 'The old agent never joined its owned private account channel');
-    const initialNavigation = navigationCount;
+    await bounded(
+      channelObservation.joined,
+      'The old agent never joined its owned private account channel'
+    );
+    const initialNavigation = channelObservation.navigationCount;
     await page.screenshot({
       path: join(evidenceDir, 'agent-transfer-source-before.png'),
       fullPage: true,
@@ -279,7 +311,7 @@ export async function startAssignmentBrowserProof({
           .waitFor({ state: 'visible', timeout: 30_000 });
         await row.waitFor({ state: 'hidden', timeout: 30_000 });
         assert.equal(
-          navigationCount,
+          channelObservation.navigationCount,
           initialNavigation,
           'Open-screen proof navigated or reloaded after the transfer'
         );

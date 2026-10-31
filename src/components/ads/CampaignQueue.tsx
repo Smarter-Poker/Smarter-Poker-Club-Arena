@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * CAMPAIGN QUEUE - the house reviews what advertisers have booked, and opens a
  * flight for an outside sponsor.
@@ -62,7 +63,7 @@ export default function CampaignQueue() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = usePlayerPreference('campaignQueue.showAll', false, 'global');
   const [rates, setRates] = useState<AdRateCard[]>([]);
   const [sponsorOpen, setSponsorOpen] = useState(false);
   const [sponsor, setSponsor] = useState(EMPTY_SPONSOR);

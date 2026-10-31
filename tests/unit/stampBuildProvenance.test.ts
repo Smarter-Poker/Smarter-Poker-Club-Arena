@@ -157,6 +157,7 @@ function pullRequestBuild() {
     GITHUB_EVENT_NAME: 'pull_request',
     GITHUB_EVENT_PATH: eventPath,
     GITHUB_REPOSITORY: repositoryName,
+    GITHUB_REPOSITORY_ID: '1132369872',
     GITHUB_REF: 'refs/pull/4788/merge',
     GITHUB_SHA: merge,
     GITHUB_RUN_ID: '12345',
@@ -368,6 +369,7 @@ describe('actual client publisher provenance admission', () => {
    */
   const workflow =
     readFileSync(path.resolve('.github/workflows/publish-club-arena.yml'), 'utf8') +
+    readFileSync(path.resolve('.github/workflows/publish-club-arena-transaction.yml'), 'utf8') +
     readFileSync(path.resolve('.github/scripts/publish-origin-activate.sh'), 'utf8');
   const blocks = [...workflow.matchAll(/<<'NODE'\n([\s\S]*?)^\s*NODE$/gm)];
   const courier = blocks.find((block) =>
@@ -436,7 +438,7 @@ describe('actual client publisher provenance admission', () => {
     expect(envelope.status, envelope.stderr).toBe(expected);
     const retained = spawnSync(
       'python3',
-      ['-', provenancePath, buildInfoPath, sha, repositoryName],
+      ['-', provenancePath, buildInfoPath, sha, repositoryName, 'candidate'],
       {
         cwd: dir,
         env: fixtureEnv,

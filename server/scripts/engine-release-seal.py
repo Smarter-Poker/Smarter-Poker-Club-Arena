@@ -653,12 +653,14 @@ RECOVERY_WINDOW_PREFIX = "engine-recovery-window-"
 RECOVERY_CAUSE_RE = re.compile(r"^(urgent|engine-degraded)$")
 
 
-def recent_recovery_window(run_id: str, now_ms: int) -> str:
-    """Name the reservation that spent this hour's off-cycle window, if any.
+def recovery_window_eligibility(run_id: str, now_ms: int) -> tuple[str, int]:
+    """Name the first blocker and the time every blocking reservation expires.
 
     An unreadable reservation still counts, dated by its file: it can only
     make a release wait for the scheduled break, never add a pause.
     """
+    blocker = ""
+    eligible_at = 0
     for path in sorted(STATE_DIR.glob(RECOVERY_WINDOW_PREFIX + "*.json")):
         other = path.name[len(RECOVERY_WINDOW_PREFIX):-len(".json")]
         if other == run_id:
@@ -673,8 +675,15 @@ def recent_recovery_window(run_id: str, now_ms: int) -> str:
             except OSError:
                 continue
         if announced > now_ms - RECOVERY_WINDOW_MIN_INTERVAL_MS:
-            return other
-    return ""
+            if not blocker:
+                blocker = other
+            eligible_at = max(eligible_at, announced + RECOVERY_WINDOW_MIN_INTERVAL_MS)
+    return blocker, eligible_at
+
+
+def recent_recovery_window(run_id: str, now_ms: int) -> str:
+    """Keep the existing reservation reader's named-blocker contract."""
+    return recovery_window_eligibility(run_id, now_ms)[0]
 
 
 def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
@@ -740,8 +749,12 @@ def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
             print("unavailable")
             return
         now_ms = int(time.time() * 1000)
-        if recent_recovery_window(run_id, now_ms):
-            print("rate-limited")
+        blocker, eligible_at = recovery_window_eligibility(run_id, now_ms)
+        if blocker:
+            if getattr(args, "include_eligibility", False):
+                print(f"rate-limited:{eligible_at}")
+            else:
+                print("rate-limited")
             return
         value = {"runId": run_id, "sha": target, "announcedAt": now_ms, "cause": cause}
         write_json_atomic(path, value)
@@ -1630,6 +1643,7 @@ def parser() -> argparse.ArgumentParser:
     recovery_window.add_argument("--repo", required=True)
     recovery_window.add_argument("--missed-window", action="store_true")
     recovery_window.add_argument("--cause")
+    recovery_window.add_argument("--include-eligibility", action="store_true")
     recovery_window.set_defaults(handler=cmd_reserve_recovery_window)
 
     pending_owner = commands.add_parser("pending-owner")

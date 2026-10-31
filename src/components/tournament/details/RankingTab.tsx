@@ -1,3 +1,10 @@
+import { tournamentTableLabel } from '../../../utils/tournamentTableLabel';
+import { formatPrizeAtUnit } from '../../../utils/format';
+import {
+  useSatelliteAwards,
+  satelliteAwardLabel,
+  satelliteAwardNotice,
+} from './useSatelliteAwards';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  RANKING — the tab that used to be "Chips", rebuilt
@@ -76,6 +83,7 @@ import { useDownlineIds } from './useDownlineIds';
 import {
   chips,
   chipsCompact,
+  tournamentRowUnitCents,
   effectivePrizePool,
   finishedFieldSummary,
   initials,
@@ -162,6 +170,7 @@ interface RankRowProps {
    * opens one is worse than a row that does nothing.
    */
   eventRunning: boolean;
+  awardLabel?: string;
   onPick: (entry: TournamentEntry) => void;
 }
 
@@ -179,6 +188,7 @@ const RankRow = React.memo(function RankRow({
   pulseDir,
   pulseAmount,
   eventRunning,
+  awardLabel,
   onPick,
 }: RankRowProps) {
   const stack = Number(entry.chips) || 0;
@@ -215,7 +225,7 @@ const RankRow = React.memo(function RankRow({
      event used to print the winner as "Not Seated Yet" beside a stack nobody
      holds any more. */
   const champion = !qualified && entry.status === 'winner';
-  const finished = (out && !qualified) || champion;
+  const finished = Boolean(awardLabel) || (out && !qualified) || champion;
   const won = Number(entry.prize) || 0;
 
   const subText = qualified
@@ -227,7 +237,9 @@ const RankRow = React.memo(function RankRow({
           ? `Busted ${ordinal(entry.position)}`
           : 'Busted'
         : entry.table_id
-          ? tableName || 'At A Table'
+          ? watchable
+            ? 'Tap To Observe Table'
+            : 'Table Unavailable'
           : 'Not Seated Yet';
 
   const body = (
@@ -255,6 +267,9 @@ const RankRow = React.memo(function RankRow({
       <span className="rk-main">
         <span className="rk-nameline">
           <span className="tl-name">{entry.username}</span>
+          {!out && !champion && entry.table_id && tableName && (
+            <span className="rk-table-number">{tableName}</span>
+          )}
           {entry.is_satellite_qualifier && <SatelliteSeatBadge />}
           {isHero && <span className="tl-badge tl-badge--action">You</span>}
           {isDownline && !isHero && <span className="tl-badge">Yours</span>}
@@ -287,7 +302,7 @@ const RankRow = React.memo(function RankRow({
         <span className="rk-nums">
           {won > 0 && (
             <>
-              <span className="tl-num tl-num--accent">{chips(won)}</span>
+              <span className="tl-num tl-num--accent">{awardLabel ?? chips(won)}</span>
               <span className="tl-sub rk-won">Won</span>
             </>
           )}
@@ -432,7 +447,7 @@ function WatchModal({ entry, tableName, bigBlind, onCancel, onConfirm }: WatchMo
         </div>
 
         <p className="rk-modal__note">
-          This Opens A New Screen. Every Table You Already Have Open Keeps Playing.
+          Continue Watching When This Player Moves Tables. Every Table You Are Playing Stays Open.
         </p>
 
         <div className="rk-modal__actions">
@@ -460,7 +475,13 @@ export default function RankingTab({
   blindLevels,
   currentUserId,
   onWatchPlayer,
+  satelliteAwards: providedAwards,
 }: TournamentTabProps) {
+  const awardEvidence = useSatelliteAwards(tournament, entries, providedAwards, currentUserId);
+  const isSatellite =
+    Boolean(tournament.satellite_target_id || tournament.satellite_target) ||
+    String(tournament.variant).toLowerCase() === 'satellite' ||
+    String(tournament.tournament_type).toUpperCase() === 'SATELLITE';
   const toast = useToast();
   const isMounted = useIsMounted();
   /** Distinguishes this mount's realtime channel; see the subscription effect. */
@@ -487,6 +508,10 @@ export default function RankingTab({
 
   const tournamentId = tournament?.id;
 
+  useEffect(() => {
+    setPicked(null);
+  }, [tournamentId]);
+
   /**
    * The page hands `onWatchPlayer` over only while the event is RUNNING, which
    * is the same gate the footer's WATCH button uses. Reading its presence
@@ -494,7 +519,11 @@ export default function RankingTab({
    */
   const eventRunning = Boolean(onWatchPlayer);
 
-  const { downlineIds, carriesDownline } = useDownlineIds(currentUserId, tournament?.club_id);
+  const { downlineIds, carriesDownline } = useDownlineIds(
+    currentUserId,
+    tournament?.club_id,
+    tournament?.union_id
+  );
 
   // ── the pulse ───────────────────────────────────────────────────────────────
   /** Schedule the moment this row's flash goes out. Restarts a running one. */
@@ -796,9 +825,22 @@ export default function RankingTab({
     const map = new Map<string, string>();
     /* "Table 2", not "<Event Name> - Table 2": the header already names the
        event, and at 375px the full name truncated before the number. */
-    for (const t of tables) if (t.id) map.set(t.id, shortTableName(t.name, tournament.name));
+    for (const t of tables) {
+      if (t.id)
+        map.set(t.id, tournamentTableLabel(t.name) || shortTableName(t.name, tournament.name));
+    }
     return map;
   }, [tables, tournament.name]);
+
+  const openTableIds = useMemo(
+    () =>
+      new Set(
+        tables
+          .filter((table) => String(table.status || '').toLowerCase() !== 'closed')
+          .map((table) => table.id)
+      ),
+    [tables]
+  );
 
   const heroIndex = useMemo(
     () => (currentUserId ? ordered.findIndex((e) => e.user_id === currentUserId) : -1),
@@ -877,18 +919,35 @@ export default function RankingTab({
   }, []);
 
   const confirmWatch = useCallback(() => {
-    const entry = picked;
+    // Confirm against the complete current field, not the row captured before
+    // a balance move or elimination while this dialog was open.
+    const current = picked ? merged.find((row) => row.user_id === picked.user_id) : undefined;
+    const entry = current
+      ? { ...current, ...pendingPatches.current.get(current.user_id) }
+      : undefined;
     setPicked(null);
     // Only reachable if the seat vanished between the click and the confirm.
-    if (!entry?.table_id || !onWatchPlayer) {
+    if (!entry?.table_id || isOut(entry) || !onWatchPlayer) {
       toast.warning('That Player Is No Longer Seated');
+      return;
+    }
+    if (!openTableIds.has(entry.table_id)) {
+      toast.warning('That Table Is No Longer Available');
       return;
     }
     /* Through the page's one door, not a navigate of this tab's own: the page
        knows whether it is the in-game popup, and there a watch has to put the
        popup away or the table it opens stays hidden behind it. */
-    onWatchPlayer(entry.table_id, tableNameById.get(entry.table_id) || entry.username);
-  }, [picked, onWatchPlayer, tableNameById, toast]);
+    onWatchPlayer(entry.table_id, tableNameById.get(entry.table_id) || entry.username, {
+      tournamentId,
+      userId: entry.user_id,
+      username: entry.username,
+    });
+  }, [picked, merged, onWatchPlayer, tableNameById, openTableIds, toast, tournamentId]);
+
+  const pickedCurrent = picked
+    ? merged.find((entry) => entry.user_id === picked.user_id)
+    : undefined;
 
   // ── render ──────────────────────────────────────────────────────────────────
   if (entries.length === 0) {
@@ -943,9 +1002,7 @@ export default function RankingTab({
             <div className="tl-stat">
               <span className="tl-stat__label">Qualified</span>
               <span className="tl-stat__value">{chips(finished.qualified)}</span>
-              <span className="tl-stat__sub">
-                {finished.qualified === 1 ? 'Seat Won' : 'Seats Won'}
-              </span>
+              <span className="tl-stat__sub">Qualified For Target</span>
             </div>
           ) : (
             <div className="tl-stat">
@@ -1096,6 +1153,12 @@ export default function RankingTab({
         </span>
       </div>
 
+      {isSatellite && isFinished && satelliteAwardNotice(awardEvidence, entries) && (
+        <p className="tl-empty__hint" role="status">
+          {satelliteAwardNotice(awardEvidence, entries)}
+        </p>
+      )}
+
       {/* The list scrolls inside itself, so the page keeps one scrollbar and
           the locked footer below it never moves. */}
       <ul
@@ -1118,17 +1181,25 @@ export default function RankingTab({
               tableName={entry.table_id ? tableNameById.get(entry.table_id) : undefined}
               pulseDir={pulse?.dir ?? 0}
               pulseAmount={pulse?.amount ?? 0}
-              eventRunning={eventRunning}
+              awardLabel={
+                isSatellite && isFinished && Number(entry.prize) > 0
+                  ? satelliteAwardLabel(
+                      awardEvidence.kindFor(entry.user_id, entry.prize),
+                      formatPrizeAtUnit(Number(entry.prize), tournamentRowUnitCents(tournament))
+                    )
+                  : undefined
+              }
+              eventRunning={eventRunning && !!entry.table_id && openTableIds.has(entry.table_id)}
               onPick={handlePick}
             />
           );
         })}
       </ul>
 
-      {picked && (
+      {pickedCurrent && (
         <WatchModal
-          entry={picked}
-          tableName={picked.table_id ? tableNameById.get(picked.table_id) : undefined}
+          entry={pickedCurrent}
+          tableName={pickedCurrent.table_id ? tableNameById.get(pickedCurrent.table_id) : undefined}
           bigBlind={bigBlind}
           onCancel={() => setPicked(null)}
           onConfirm={confirmWatch}

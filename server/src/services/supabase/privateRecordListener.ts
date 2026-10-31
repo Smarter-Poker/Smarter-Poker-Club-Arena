@@ -1,7 +1,5 @@
-import { defaultOpenSession, type OutboxListenerClient } from './handOutboxListener.js';
-import { resolveEngineListenConnectionString } from '../leaseHeartbeatSession.js';
+import type { OutboxListenerClient } from './pgListenSession.js';
 import { reconnectDelayMs } from './enginePgSession.js';
-import { privateRecordTransportReady } from './privateRecordTransportReady.js';
 import { PRIVATE_RECORD_TOPIC } from '../../transport/PrivateRecordSubscriptions.js';
 
 export const PRIVATE_RECORD_CHANNEL = 'ca_private_record_changes';
@@ -19,10 +17,9 @@ export class PrivateRecordListener {
   constructor(
     private changed: (topic: string) => void,
     private readiness: (ready: boolean, phase: 'connecting' | 'unavailable') => void,
-    private resolve = resolveEngineListenConnectionString,
-    private open = (connection: string) =>
-      defaultOpenSession(connection, `club-arena-engine-private-record-listener:${process.pid}`),
-    private sourceReady = privateRecordTransportReady
+    private resolve: () => Promise<string>,
+    private open: (connection: string) => OutboxListenerClient,
+    private sourceReady: (client: OutboxListenerClient) => Promise<boolean>
   ) {}
   start(): void {
     if (this.stopped) {
@@ -57,7 +54,7 @@ export class PrivateRecordListener {
       });
       await client.connect();
       await client.query(`LISTEN ${PRIVATE_RECORD_CHANNEL}`);
-      if (!(await this.sourceReady())) throw new Error('private record source is not ready');
+      if (!(await this.sourceReady(client))) throw new Error('private record source is not ready');
       if (this.stopped || this.client !== client) {
         await client.end().catch(() => undefined);
         return;

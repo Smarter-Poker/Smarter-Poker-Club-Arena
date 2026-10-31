@@ -119,6 +119,7 @@ import {
 import {
   applyStakeBandSupply,
   horseMaximumBuyIn,
+  horseCashMinimum,
   gameLaneFor,
   horseHash,
   isActiveNow,
@@ -4957,7 +4958,7 @@ export class HorseFleetManager {
        emits nothing and the seat stage emits it once. */
     note: (e: BankrollEvent) => void = bankrollEvent
   ): number {
-    const minB = Number(table.min_buy_in) || table.big_blind * 40;
+    const minB = horseCashMinimum(table, Number(table.min_buy_in) || table.big_blind * 40);
     const maxB = Number(table.max_buy_in) || table.big_blind * 200;
     // Owner October 26: every entry chooses the table maximum. A bankroll
     // that cannot carry that amount declines this seat rather than buying short.

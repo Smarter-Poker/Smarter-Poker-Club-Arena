@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "fn_ca_effective_payout_depth(numeric,smallint)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_effective_payout_depth(p_depth numeric, p_legacy_percent smallint)\n RETURNS numeric\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE(p_depth, p_legacy_percent::numeric, 12.5);\n$function$\n",
+    "definition_md5": "2b32bfb102985c3a57d2cc39e589f4f8"
+  }
+]

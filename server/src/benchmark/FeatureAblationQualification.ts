@@ -1,3 +1,4 @@
+import { HORSE_REFERENCE_DECISION_SOURCE_REASONS } from '../engine/HorseReferenceDecisionSources.js';
 import { featureLiveDomainRefusals as validateLiveDeclaration } from '../engine/HorseFeatureLiveDomain.js';
 import {
   incrementalDevelopmentProfiles,
@@ -258,7 +259,7 @@ export function validateLockedFeatureAblationPlan(p: FeatureAblationQualificatio
     !FEATURE_ABLATION_REQUIRED_RUNTIME_FILES.every((k) => digest(p.runtimeSourceFiles[k])) ||
     Object.keys(p.runtimeSourceFiles).some(
       (k) =>
-        !k.startsWith('src/') ||
+        (!k.startsWith('src/') && !Object.hasOwn(HORSE_REFERENCE_DECISION_SOURCE_REASONS, k)) ||
         k.includes('..') ||
         k.endsWith('FeatureAblationQualificationPlans.json')
     ) ||

@@ -1,3 +1,6 @@
+import type { FollowTournamentPlayer } from '../../utils/followTournamentPlayer';
+import { useSatelliteAwards } from '../../components/tournament/details/useSatelliteAwards';
+import { satelliteStartsWhenFull } from '../../utils/satelliteQualification';
 import { readTournamentStandings } from '../../services/readTournamentStandings';
 import {
   tournamentEntryWindow,
@@ -624,8 +627,8 @@ export default function TournamentDetails({
             // registered_at / rebuys / add_on ride along and the contract
             // fields stay populated. It cannot carry the profiles embed, so
             // `avatar_url` and `player_code` are null until the next full
-            // load - EntriesTab fetches those itself, and RankingTab falls
-            // back to initials rather than a broken image.
+            // load; both entry and ranking rows use initials until that
+            // owning reload hydrates the joined profile.
             const newPlayer = payload.new as {
               id: string;
               user_id: string;
@@ -634,6 +637,7 @@ export default function TournamentDetails({
               status: string;
               position?: number | null;
               prize?: number | null;
+              bounty_winnings?: number | null;
               table_id?: string | null;
               registered_at?: string | null;
               rebuys?: number | null;
@@ -680,6 +684,7 @@ export default function TournamentDetails({
                     Number.isFinite(Number(newPlayer.prize))
                       ? Number(newPlayer.prize)
                       : undefined,
+                  bounty_winnings: Number(newPlayer.bounty_winnings) || 0,
                   status: newPlayer.status as TournamentEntry['status'],
                   table_id: newPlayer.table_id || null,
                   created_at: newPlayer.registered_at ?? null,
@@ -701,6 +706,7 @@ export default function TournamentDetails({
               status: string;
               position?: number | null;
               prize?: number | null;
+              bounty_winnings?: number | null;
               table_id?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
@@ -718,6 +724,10 @@ export default function TournamentDetails({
                         updatedPlayer.prize !== undefined && updatedPlayer.prize !== null
                           ? Number(updatedPlayer.prize)
                           : e.prize,
+                      bounty_winnings:
+                        updatedPlayer.bounty_winnings != null
+                          ? Number(updatedPlayer.bounty_winnings) || 0
+                          : e.bounty_winnings,
                       table_id:
                         updatedPlayer.table_id !== undefined ? updatedPlayer.table_id : e.table_id,
                       rebuys:
@@ -1077,7 +1087,7 @@ export default function TournamentDetails({
           owner.entryPatches = [];
           const { data: playersData, error } = await readTournamentStandings(
             data.id,
-            'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+            'id, user_id, username, chips, status, position, prize, bounty_winnings, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
           );
 
           if (getIsMounted && !getIsMounted()) return;
@@ -1109,6 +1119,7 @@ export default function TournamentDetails({
                     e.prize !== null && e.prize !== undefined && Number.isFinite(Number(e.prize))
                       ? Number(e.prize)
                       : undefined,
+                  bounty_winnings: Number(e.bounty_winnings) || 0,
                   status: e.status as TournamentEntry['status'],
                   /* `club_id` was selected here and mapped onto the entry solely
                    so the old inline Unions block could count
@@ -1294,6 +1305,7 @@ export default function TournamentDetails({
         is_pko: !!t.is_pko,
         is_mystery_bounty: !!t.is_mystery_bounty,
         start_time: tournament.start_time,
+        startsWhenFull: satelliteStartsWhenFull(tournament),
         // main's typed `t` cast is cleaner than the `as any` this branch had.
         club_id: t.club_id ?? null,
         // The hook derives late-registration from status, so LATE_REG is not
@@ -1412,12 +1424,12 @@ export default function TournamentDetails({
    * new screen's tab is labelled before the engine reports its own name.
    */
   const watchTable = useCallback(
-    (tableId: string, tableName?: string) => {
-      if (onClose && currentTableId && tableId === currentTableId) {
+    (tableId: string, tableName?: string, followPlayer?: FollowTournamentPlayer) => {
+      if (!followPlayer && onClose && currentTableId && tableId === currentTableId) {
         onClose();
         return;
       }
-      if (!openTableAsObserver(navigate, { tableId, tableName })) {
+      if (!openTableAsObserver(navigate, { tableId, tableName, followPlayer })) {
         toast.error('That Table Is Not Available To Watch');
         return;
       }
@@ -1733,12 +1745,15 @@ export default function TournamentDetails({
    * redirected to that table directly") - a finished event's table ids point at
    * closed felts, and a tab that receives no handler renders no link.
    */
+  const satelliteAwards = useSatelliteAwards(tournament, entries, undefined, user?.id);
+
   const tabProps = useMemo<TournamentTabProps | null>(
     () =>
       tournament
         ? {
             tournament,
             entries,
+            satelliteAwards,
             /* A FINISHED EVENT HAS NO FELT (2026-10-04). Tables are only ever
                READ while the event is dealing, and nothing cleared them when
                it stopped, so a lobby left open across the finish - the in-game
@@ -1762,6 +1777,7 @@ export default function TournamentDetails({
     [
       tournament,
       entries,
+      satelliteAwards,
       tables,
       blindLevels,
       user?.id,

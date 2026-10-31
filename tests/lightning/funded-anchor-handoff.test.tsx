@@ -243,3 +243,24 @@ it('a funded seat at a Classic game is never watched for a Lightning conversion'
   expect(result.current.readyPoolSessionId).toBeNull();
   expect(result.current.joining).toBe(false);
 });
+
+it('the original Join intent follows scoped durable funding before any observer or public hero snapshot', async () => {
+  setLightningEntryIntent(ANCHOR, CLUSTER);
+  const c = consumer([{ user_id: USER, stack: 200, leave_pending: false }]);
+  expect(c.input.heroBoughtIn).toBe(false);
+  renderHook(() => useLightningAnchorHandoff(c.input));
+  await act(async () => {});
+  expect(c.navigate).toHaveBeenCalledWith(`/table/${POOL}`, { replace: true });
+});
+
+it('a Join intent never follows a session whose durable anchor is another table', async () => {
+  setLightningEntryIntent(ANCHOR, CLUSTER);
+  rpc.mockResolvedValue({
+    data: { pool_session_id: POOL, state: 'active', anchor_table_id: POOL },
+    error: null,
+  });
+  const c = consumer([{ user_id: USER, stack: 200, leave_pending: false }]);
+  renderHook(() => useLightningAnchorHandoff(c.input));
+  await act(async () => {});
+  expect(c.navigate).not.toHaveBeenCalled();
+});

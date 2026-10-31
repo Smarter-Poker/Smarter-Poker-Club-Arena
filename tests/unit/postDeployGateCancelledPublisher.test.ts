@@ -35,7 +35,7 @@ const job = (name: string, conclusion: string, steps = 0): Job => ({
   })),
 });
 
-function runGate(jobs: Job[]): { output: string; error: string | null } {
+function runGate(jobs: Job[], conclusion = ''): { output: string; error: string | null } {
   const dir = mkdtempSync(join(tmpdir(), 'post-deploy-gate-'));
   try {
     const payload = join(dir, 'jobs.json');
@@ -43,7 +43,11 @@ function runGate(jobs: Job[]): { output: string; error: string | null } {
     writeFileSync(payload, JSON.stringify({ total_count: jobs.length, jobs }));
     writeFileSync(output, '');
     try {
-      execFileSync(process.execPath, ['-', payload, output], { input: program, stdio: 'pipe' });
+      execFileSync(process.execPath, ['-', payload, output], {
+        input: program,
+        stdio: 'pipe',
+        env: { ...process.env, SOURCE_CONCLUSION: conclusion },
+      });
       return { output: readFileSync(output, 'utf8'), error: null };
     } catch (error) {
       return { output: readFileSync(output, 'utf8'), error: String((error as any).stderr) };
@@ -131,5 +135,237 @@ describe('the publication gate and a publisher that never reached the origin', (
       job('Publish the app bundle (Capgo OTA)', 'cancelled'),
     ]);
     expect(result.error).not.toBeNull();
+  });
+});
+
+describe('a gateway component is not a static client publication', () => {
+  it('leaves client certification unclaimed after a qualified gateway-only publication', () => {
+    const gateway = job('publish-record-gateway', 'success');
+    gateway.steps = [
+      'Activate only the prepared independent service',
+      'Verify authenticated gateway record delivery',
+      'Ensure the reserved gateway canary account is retired',
+    ].map((name) => ({ name, status: 'completed', conclusion: 'success' }));
+    const result = runGate([
+      job('publish-needed', 'success', 8),
+      job('build-record-gateway', 'success', 5),
+      gateway,
+      job('publish-to-origin', 'skipped'),
+      job('retain-runtime', 'skipped'),
+    ]);
+    expect(result.error).toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+  it('does not hide an incomplete gateway installation as a successful client standdown', () => {
+    const result = runGate([
+      job('publish-needed', 'success', 8),
+      job('build-record-gateway', 'success', 5),
+      job('publish-record-gateway', 'failure', 2),
+      job('publish-to-origin', 'skipped'),
+      job('retain-runtime', 'skipped'),
+    ]);
+    expect(result.error).not.toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+});
+
+describe('read-only gateway inspection is not publication', () => {
+  it.each(['success', 'failure'])(
+    'preserves the actual %s result without certifying a client',
+    (conclusion) => {
+      const inspection = job('inspect-record-gateway-host', conclusion);
+      inspection.steps = [
+        {
+          name: 'Read fixed gateway host metadata without changing host state',
+          status: 'completed',
+          conclusion,
+        },
+      ];
+      const result = runGate([
+        job('publish-needed', 'success', 8),
+        inspection,
+        job('publish-to-origin', 'skipped'),
+      ]);
+      expect(result.error === null).toBe(conclusion === 'success');
+      expect(result.output).not.toContain('should_run=true');
+    }
+  );
+});
+
+describe('gateway certification requires its real consumer proof and cleanup', () => {
+  it.each([
+    'Verify authenticated gateway record delivery',
+    'Ensure the reserved gateway canary account is retired',
+  ])('refuses a missing %s step', (missing) => {
+    const gateway = job('publish-record-gateway', 'success');
+    gateway.steps = [
+      'Activate only the prepared independent service',
+      'Verify authenticated gateway record delivery',
+      'Ensure the reserved gateway canary account is retired',
+    ]
+      .filter((name) => name !== missing)
+      .map((name) => ({ name, status: 'completed', conclusion: 'success' }));
+    const result = runGate([
+      job('publish-needed', 'success', 8),
+      job('build-record-gateway', 'success'),
+      gateway,
+      job('publish-to-origin', 'skipped'),
+    ]);
+    expect(result.error).not.toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+});
+
+describe('exact protected transaction publisher display names', () => {
+  const published = (name: string) => ({
+    ...job(name, 'success'),
+    steps: [
+      'Stand down if the origin already serves a newer bundle',
+      'Publish through the host-owned immutable transaction',
+      'Verify the origin serves this bundle',
+    ].map((name) => ({ name, status: 'completed', conclusion: 'success' })),
+  });
+  it.each([
+    'publish-to-origin',
+    'production / publish-to-origin',
+    'client-publication / production / publish-to-origin',
+  ])('accepts the protected origin proof named %s', (name) => {
+    const r = runGate([published(name)]);
+    expect(r.error).toBeNull();
+    expect(r.output).toContain('should_run=true');
+  });
+  it('accepts the exact nested client publication origin proof (41073917180)', () => {
+    const r = runGate([published('client-publication / production / publish-to-origin')]);
+    expect(r.error).toBeNull();
+    expect(r.output).toContain('should_run=true');
+  });
+  it('keeps nested origin ambiguity, failed proof and foreign wrappers fail-closed', () => {
+    const nested = 'client-publication / production / publish-to-origin';
+    const failed = published(nested);
+    failed.steps[2].conclusion = 'failure';
+    for (const jobs of [
+      [published(nested), published('production / publish-to-origin')],
+      [published(`foreign / ${nested}`)],
+      [published('client-publication / foreign / publish-to-origin')],
+      [failed],
+    ]) {
+      const r = runGate(jobs);
+      expect(r.error).not.toBeNull();
+      expect(r.output).not.toContain('should_run=true');
+    }
+  });
+  it.each(['cancelled', 'failure', 'success', 'unknown'])(
+    'keeps proven web publication independent of the %s run summary',
+    (conclusion) => {
+      const r = runGate([published('production / publish-to-origin')], conclusion);
+      expect(r.error).toBeNull();
+      expect(r.output).toContain('should_run=true');
+    }
+  );
+  it('requires the real nested origin proof step to succeed', () => {
+    const origin = published('client-publication / production / publish-to-origin');
+    origin.steps[2].conclusion = 'failure';
+    const result = runGate([origin]);
+    expect(result.error).not.toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+  it.each(['success', 'failure'])(
+    'reads nested runtime retention without hiding a %s verdict',
+    (conclusion) => {
+      const retained = job('client-publication / production / retain-runtime', conclusion);
+      retained.steps = [
+        'Verify both origins still serve the qualified immutable runtime',
+        'Record qualified retained runtime',
+      ].map((name) => ({ name, status: 'completed', conclusion }));
+      const result = runGate([
+        retained,
+        job('client-publication / production / publish-to-origin', 'skipped'),
+      ]);
+      expect(result.error === null).toBe(conclusion === 'success');
+      expect(result.output.includes('should_run=true')).toBe(conclusion === 'success');
+    }
+  );
+  it('refuses foreign prefixes and ambiguous logical origin proofs', () => {
+    for (const jobs of [
+      [published('foreign / publish-to-origin')],
+      [published('foreign / client-publication / production / publish-to-origin')],
+      [published('client-publication / production / publish-to-origin extra')],
+      [
+        published('production / publish-to-origin'),
+        published('client-publication / production / publish-to-origin'),
+      ],
+      [published('production / publish-to-origin'), published('publish-to-origin')],
+    ])
+      expect(runGate(jobs).error).not.toBeNull();
+  });
+  it('accepts a nested retained runtime only with both original verification steps', () => {
+    const retained = job('client-publication / production / retain-runtime', 'success');
+    retained.steps = [
+      'Verify both origins still serve the qualified immutable runtime',
+      'Record qualified retained runtime',
+    ].map((name) => ({ name, status: 'completed', conclusion: 'success' }));
+    const origin = job('client-publication / production / publish-to-origin', 'skipped');
+    const r = runGate([retained, origin]);
+    expect(r.error).toBeNull();
+    expect(r.output).toContain('should_run=true\nretained=true');
+    expect(
+      runGate([{ ...retained, steps: retained.steps.slice(0, 1) }, origin]).error
+    ).not.toBeNull();
+    expect(runGate([retained, published(origin.name)]).error).not.toBeNull();
+  });
+});
+
+describe('superseded preparation never certifies a release', () => {
+  const prepared = () => [
+    job('publish-needed', 'success'),
+    ...tests(),
+    job('build-and-store', 'success'),
+    job('build-record-gateway', 'skipped'),
+  ];
+  it('stands down only for cancelled, complete read-only preparation with no transaction child', () => {
+    for (const list of [prepared(), [...prepared(), job('production', 'cancelled')]]) {
+      const r = runGate(list, 'cancelled');
+      expect(r.error).toBeNull();
+      expect(r.output).not.toContain('should_run=true');
+    }
+  });
+  it('refuses failed preparation, unknown jobs, duplicate roles and started or renamed transaction children', () => {
+    for (const list of [
+      [...prepared(), job('renamed-origin', 'success')],
+      [...prepared(), job('production / renamed-origin', 'success')],
+      [...prepared(), job('production', 'cancelled', 1)],
+      [...prepared(), job('publish-needed', 'success')],
+      [...prepared(), job('client-tests (1)', 'failure')],
+    ])
+      expect(runGate(list, 'cancelled').error).not.toBeNull();
+    for (const conclusion of ['', 'success', 'failure', 'unknown'])
+      expect(runGate(prepared(), conclusion).error).not.toBeNull();
+  });
+  it('recognizes only the exact current nested read-only preparation before cancellation', () => {
+    const producer = parse(readFileSync('.github/workflows/publish-club-arena-client.yml', 'utf8'));
+    const nested = [
+      job('publish-needed', 'success'),
+      job('build-record-gateway', 'skipped'),
+      job('production', 'skipped'),
+      job('client-publication / admit', 'success'),
+      job('client-publication / Admit The Selected Client Publication Window', 'success'),
+      job('client-publication / build-and-store', 'success'),
+      ...producer.jobs['client-tests'].strategy.matrix.shard.map((n: number) =>
+        job(`client-publication / client-tests (${n})`, 'success')
+      ),
+    ];
+    for (const jobs of [nested, [...nested, job('client-publication / production', 'cancelled')]]) {
+      const result = runGate(jobs, 'cancelled');
+      expect(result.error).toBeNull();
+      expect(result.output).not.toContain('should_run=true');
+    }
+    for (const extra of [
+      job('client-publication / production', 'cancelled', 1),
+      job('client-publication / production / renamed-origin', 'success'),
+      job('foreign / client-publication / admit', 'success'),
+      job('client-publication / client-tests (17)', 'failure'),
+    ])
+      expect(runGate([...nested, extra], 'cancelled').error).not.toBeNull();
+    expect(runGate(nested, 'success').error).not.toBeNull();
   });
 });

@@ -57,7 +57,7 @@ import type { HandRecord, HandHistoryLoadState } from './HandHistoryPanel';
 import HandDetailView from '../handdetail/HandDetailView';
 import RecordedPotAwards from '../handdetail/RecordedPotAwards';
 import CardImage, { CardBack } from './CardImage';
-import { replayRabbitOffer } from './replayRabbitOffer';
+import { replayRabbitOffer, RABBIT_HUNT_OFFER_TTL_MS } from './replayRabbitOffer';
 import { useRabbitHuntReveal } from './useRabbitHuntReveal';
 import type { RabbitHuntRevealResult } from './RabbitHunt';
 import { cardKey } from '../../utils/handEvaluator';
@@ -99,12 +99,17 @@ export interface HandDetailModalProps {
    * block never renders - there is no table to ask.
    */
   onRabbitHunt?: (handNumber: number) => Promise<RabbitHuntRevealResult>;
+  onRabbitHuntReceipt?: (handNumber: number) => Promise<RabbitHuntRevealResult | null>;
   /** The signed-in player; without one there is nobody to bill. */
   rabbitUserId?: string | null;
   /** Open the full animated replay of THE HAND PASSED IN, not "the last hand". */
   onReplay?: (hand: HandRecord) => void;
   /** Open the share modal for THE HAND PASSED IN. */
   onShare?: (hand: HandRecord) => void;
+  /** Fetch the next canonical page when the reader reaches the oldest loaded hand. */
+  onLoadOlder?: () => Promise<string | null>;
+  hasOlderHands?: boolean;
+  olderHandsLoading?: boolean;
 }
 
 /** How many face-down cards a muck shows - the variant's own holding size. */
@@ -190,26 +195,50 @@ function RabbitHuntReplayBlock({
   hand,
   model,
   onRabbitHunt,
+  onRabbitHuntReceipt,
   userId,
 }: {
   hand: HandRecord;
   model: ReplayModel;
   onRabbitHunt: (handNumber: number) => Promise<RabbitHuntRevealResult>;
+  onRabbitHuntReceipt?: (handNumber: number) => Promise<RabbitHuntRevealResult | null>;
   userId: string | null | undefined;
 }) {
-  const offer = replayRabbitOffer({
-    handNumber: hand.handNumber,
-    timestamp: hand.timestamp,
-    boards: model.boards,
-  });
-  const { reveal, isRevealing, hasRevealed, cards } = useRabbitHuntReveal({
+  const [offerNow, setOfferNow] = useState(Date.now);
+  useEffect(() => {
+    const refresh = () => setOfferNow(Date.now());
+    const timer = setTimeout(
+      refresh,
+      Math.max(1, hand.timestamp + RABBIT_HUNT_OFFER_TTL_MS - Date.now() + 1)
+    );
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [hand.timestamp]);
+  const offer = replayRabbitOffer(
+    {
+      handNumber: hand.handNumber,
+      timestamp: hand.timestamp,
+      boards: model.boards,
+    },
+    offerNow
+  );
+  const restore = useCallback(
+    () => onRabbitHuntReceipt?.(hand.handNumber) ?? Promise.resolve(null),
+    [onRabbitHuntReceipt, hand.handNumber]
+  );
+  const { reveal, isRevealing, isSlow, recoveryNeeded, hasRevealed, cards } = useRabbitHuntReveal({
     onReveal: (n) => onRabbitHunt(n ?? hand.handNumber),
     userId,
+    onRestore: restore,
+    disabled: !offer.show,
   });
 
   // Nothing left to sell, a re-run, or past the engine's window - and nothing
   // already bought that we should keep showing.
-  if (!offer.show && !hasRevealed) return null;
+  if (!offer.show && !hasRevealed && !isRevealing) return null;
 
   return (
     <section className="hdm-rabbit" aria-label="Rabbit Hunt">
@@ -221,6 +250,7 @@ function RabbitHuntReplayBlock({
           </span>
         )}
       </header>
+      <div className="hdm-section-count">Hand {hand.handNumber.toLocaleString()} · Only You</div>
       {hasRevealed ? (
         <div className="hdm-board hdm-rabbit__cards">
           <span className="hdm-board__badge">Would Have Come</span>
@@ -246,8 +276,15 @@ function RabbitHuntReplayBlock({
           className="hdm-rabbit__btn"
           onClick={() => void reveal(hand.handNumber)}
           disabled={isRevealing}
+          aria-busy={isRevealing}
         >
-          {isRevealing ? 'Revealing...' : 'Show What Would Have Come'}
+          {isRevealing
+            ? isSlow
+              ? 'Still Connecting...'
+              : 'Revealing...'
+            : recoveryNeeded
+              ? 'Recover This Hand'
+              : 'Show What Would Have Come'}
         </button>
       )}
     </section>
@@ -345,13 +382,18 @@ export function HandDetailModal({
   onReplay,
   onShare,
   onRabbitHunt,
+  onRabbitHuntReceipt,
   rabbitUserId,
+  onLoadOlder,
+  hasOlderHands = false,
+  olderHandsLoading = false,
 }: HandDetailModalProps) {
   /* THE SUBJECT IS A HAND, NOT A POSITION. `hands` is newest-first and can be
      replaced while the modal is open (a hand finishing behind it). Holding an
      index meant the hand on screen silently became its newer neighbour. */
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [tab, setTab] = useState<'summary' | 'detail'>('summary');
+  const navigationGeneration = useRef(0);
 
   /* Drag-to-dismiss for the mobile sheet: past 100px of downward travel the
      sheet closes, anything less springs back. */
@@ -380,6 +422,7 @@ export function HandDetailModal({
 
   // Each open starts on the requested hand (or the newest), on the Summary tab.
   useEffect(() => {
+    navigationGeneration.current += 1;
     if (isOpen) {
       setSubjectId(initialHandId ?? null);
       setTab('summary');
@@ -416,6 +459,20 @@ export function HandDetailModal({
     const clamped = Math.max(0, Math.min(total - 1, i));
     const target = hands[clamped];
     if (target) setSubjectId(target.id);
+  };
+
+  const goOlder = async () => {
+    if (index < total - 1) {
+      goTo(index + 1);
+      return;
+    }
+    if (!onLoadOlder || !hasOlderHands || olderHandsLoading) return;
+    const generation = navigationGeneration.current;
+    const subject = hands[index]?.id;
+    const nextId = await onLoadOlder();
+    if (generation === navigationGeneration.current && nextId) {
+      setSubjectId((current) => (current === subject ? nextId : current));
+    }
   };
 
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -813,6 +870,7 @@ export function HandDetailModal({
                     hand={hand}
                     model={model}
                     onRabbitHunt={onRabbitHunt}
+                    onRabbitHuntReceipt={onRabbitHuntReceipt}
                     userId={rabbitUserId}
                   />
                 ) : null}
@@ -848,9 +906,10 @@ export function HandDetailModal({
             <button
               type="button"
               className="hdm-nav__arrow"
-              disabled={index >= total - 1}
-              aria-label="Older Hand"
-              onClick={() => goTo(index + 1)}
+              disabled={olderHandsLoading || (index >= total - 1 && !hasOlderHands)}
+              aria-label={index >= total - 1 && hasOlderHands ? 'Load Older Hands' : 'Older Hand'}
+              aria-busy={olderHandsLoading}
+              onClick={() => void goOlder()}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -866,8 +925,10 @@ export function HandDetailModal({
               </svg>
             </button>
             <div className="hdm-nav__track">
-              <span className="hdm-nav__label">
-                {displayPos.toLocaleString()}/{total.toLocaleString()}
+              <span className="hdm-nav__label" aria-live="polite">
+                {olderHandsLoading
+                  ? 'Loading'
+                  : `${displayPos.toLocaleString()}/${total.toLocaleString()}${hasOlderHands ? '+' : ''}`}
               </span>
               {/* The only thing drawn on this sheet: a position control the
                   master paints nowhere, cut down to an engraved track and a

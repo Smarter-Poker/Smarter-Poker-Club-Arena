@@ -1,3 +1,10 @@
+import {
+  useSatelliteAwards,
+  satelliteAwardLabel,
+  satelliteAwardNotice,
+  satelliteAwardTotalLabel,
+} from '../../components/tournament/details/useSatelliteAwards';
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ♠ CLUB ARENA — Tournament Results History Page
  * Shows completed tournaments with final standings, prizes, and stats.
@@ -49,6 +56,9 @@ interface CompletedTournament {
   prize_pool: number;
   current_players: number;
   max_players: number | null;
+  min_players?: number | null;
+  table_size?: number | null;
+  satellite_seats?: number | null;
   status: string;
   started_at: string | null;
   ended_at: string | null;
@@ -189,8 +199,12 @@ export default function TournamentResultsPage() {
   ];
   const filterParam = searchParams.get('filter');
   const typeParam = searchParams.get('type');
-  const [filter, setFilter] = useState<'all' | 'mine'>(filterParam === 'mine' ? 'mine' : 'all');
-  const [typeFilter, setTypeFilter] = useState<string>(
+  const [filter, setFilter] = usePlayerPreference<'all' | 'mine'>(
+    'tournament/TournamentResultsPage:filter',
+    filterParam === 'mine' ? 'mine' : 'all'
+  );
+  const [typeFilter, setTypeFilter] = usePlayerPreference<string>(
+    'tournament/TournamentResultsPage:typeFilter',
     typeParam && VALID_TYPE_FILTERS.includes(typeParam) ? typeParam : 'all'
   );
   const [activeTab, setActiveTab] = useState<'standings' | 'hands'>('standings');
@@ -199,7 +213,10 @@ export default function TournamentResultsPage() {
    * place. "Total Payout" is the second view precisely so the fact that a lower
    * finisher can top the money list is visible rather than implied.
    */
-  const [resultSort, setResultSort] = useState<ResultSort>('finish');
+  const [resultSort, setResultSort] = usePlayerPreference<ResultSort>(
+    'tournament/TournamentResultsPage:resultSort',
+    'finish'
+  );
   /** Mystery bounty split for the selected event. Empty for every other format. */
   const [mysteryRead, setMysteryRead] = useState<
     ArchiveRead<{
@@ -266,7 +283,7 @@ export default function TournamentResultsPage() {
          age out of the top 100 saw their own history shrink toward empty.
          The inner join pushes both problems into one query: the newest 100
          completed events THE PLAYER WAS IN. */
-      const cols = `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`;
+      const cols = `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, min_players, table_size, satellite_seats, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`;
       const mine = filter === 'mine' && user?.id;
       let query = supabase
         .from('tournaments')
@@ -437,7 +454,7 @@ export default function TournamentResultsPage() {
         const { data, error: deepLinkErr } = await supabase
           .from('tournaments')
           .select(
-            `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
+            `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, min_players, table_size, satellite_seats, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
           )
           .eq('id', tournamentId)
           .maybeSingle();
@@ -663,6 +680,11 @@ export default function TournamentResultsPage() {
    * would print a fraction the payment cannot contain. `unitWord` is the noun
    * that goes beside it.
    */
+  const satelliteAwards = useSatelliteAwards(selectedTournament, results, undefined, user?.id);
+  const selectedIsSatellite =
+    Boolean(selectedTournament?.satellite_target_id || selectedTournament?.satellite_target) ||
+    String(selectedTournament?.variant).toLowerCase() === 'satellite' ||
+    String(selectedTournament?.tournament_type).toUpperCase() === 'SATELLITE';
   const selectedUnitCents = tournamentRowUnitCents(selectedTournament);
   const selectedUnitSuffix = moneySuffixAtUnit(selectedUnitCents);
 
@@ -864,7 +886,7 @@ export default function TournamentResultsPage() {
                     const { data, error: hitRowErr } = await supabase
                       .from('tournaments')
                       .select(
-                        `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
+                        `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, min_players, table_size, satellite_seats, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
                       )
                       .eq('id', h.tournamentId)
                       .maybeSingle();
@@ -1231,9 +1253,19 @@ export default function TournamentResultsPage() {
                     >
                       Biggest Total Payout: {topEarner.username} (
                       {getOrdinalPosition(topEarner.position)}) With{' '}
-                      {unitAmount(totalPayout(topEarner))}
-                      {selectedUnitSuffix}, More Than The Champion
+                      {selectedIsSatellite
+                        ? satelliteAwardTotalLabel(
+                            satelliteAwards.kindFor(topEarner.user_id, topEarner.prize),
+                            topEarner.prize,
+                            topEarner.bounty_winnings,
+                            unitAmount
+                          )
+                        : `${unitAmount(totalPayout(topEarner))}${selectedUnitSuffix}`}
+                      , More Than The Champion
                     </div>
+                  )}
+                  {selectedIsSatellite && satelliteAwardNotice(satelliteAwards, results) && (
+                    <p role="status">{satelliteAwardNotice(satelliteAwards, results)}</p>
                   )}
                   {/* Column key. Kept above the rows because every row is a
                         four-number line and a phone has no room for headers on
@@ -1252,7 +1284,9 @@ export default function TournamentResultsPage() {
                       }}
                     >
                       <span>Finish And Player</span>
-                      <span style={{ textAlign: 'right' }}>Prize</span>
+                      <span style={{ textAlign: 'right' }}>
+                        {selectedIsSatellite ? 'Award' : 'Prize'}
+                      </span>
                       <span style={{ textAlign: 'right' }}>KOs</span>
                       <span style={{ textAlign: 'right' }}>Bounty</span>
                       <span style={{ textAlign: 'right' }}>Total</span>
@@ -1375,7 +1409,14 @@ export default function TournamentResultsPage() {
                                 textAlign: 'right',
                               }}
                             >
-                              {r.prize > 0 ? unitAmount(r.prize) : '-'}
+                              {r.prize > 0
+                                ? selectedIsSatellite
+                                  ? satelliteAwardLabel(
+                                      satelliteAwards.kindFor(r.user_id, r.prize),
+                                      unitAmount(r.prize)
+                                    )
+                                  : unitAmount(r.prize)
+                                : '-'}
                             </span>
                             <span
                               style={{
@@ -1406,7 +1447,16 @@ export default function TournamentResultsPage() {
                                 textAlign: 'right',
                               }}
                             >
-                              {total > 0 ? unitAmount(total) : '-'}
+                              {total > 0
+                                ? selectedIsSatellite
+                                  ? satelliteAwardTotalLabel(
+                                      satelliteAwards.kindFor(r.user_id, r.prize),
+                                      r.prize,
+                                      r.bounty_winnings,
+                                      unitAmount
+                                    )
+                                  : unitAmount(total)
+                                : '-'}
                             </span>
                           </div>
                         );

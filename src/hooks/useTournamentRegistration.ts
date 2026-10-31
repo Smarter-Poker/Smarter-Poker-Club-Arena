@@ -46,6 +46,8 @@ export interface RegisterTournamentParams {
   is_pko?: boolean;
   is_mystery_bounty?: boolean;
   start_time?: string | null;
+  /** Recorded fixed-field satellite: the internal scheduling timestamp is not a start clock. */
+  startsWhenFull?: boolean;
   /**
    * The tournament's status, so the hook can work out for itself whether this
    * is a late registration.
@@ -168,6 +170,7 @@ export function useTournamentRegistration() {
         isPko: t.is_pko,
         isMysteryBounty: t.is_mystery_bounty,
         startTime: t.start_time ?? null,
+        startsWhenFull: t.startsWhenFull,
         userId: currentUserId,
         clubId: t.club_id ?? null,
         unionId: t.union_id ?? null,
@@ -206,7 +209,15 @@ export function useTournamentRegistration() {
         }
 
         if (onSuccess) {
-          onSuccess();
+          // The entry is already committed. A page refresh cannot turn its
+          // result into a registration failure or block travel to the paid seat.
+          try {
+            void Promise.resolve(onSuccess()).catch((error) => {
+              reportError(error, 'useTournamentRegistration.onSuccess', { tournamentId: t.id });
+            });
+          } catch (error) {
+            reportError(error, 'useTournamentRegistration.onSuccess', { tournamentId: t.id });
+          }
         }
 
         /**
@@ -273,22 +284,29 @@ export function useTournamentRegistration() {
           | { state: 'unknown' };
 
         const findMySeat = async (): Promise<SeatLookup> => {
-          const { data: tp, error } = await supabase
-            .from('tournament_players')
-            .select('table_id')
-            .eq('tournament_id', t.id)
-            .eq('user_id', currentUserId)
-            .maybeSingle();
-          /* A read that FAILED is not "no seat yet" - and it is not a pending
+          try {
+            const { data: tp, error } = await supabase
+              .from('tournament_players')
+              .select('table_id')
+              .eq('tournament_id', t.id)
+              .eq('user_id', currentUserId)
+              .maybeSingle();
+            /* A read that FAILED is not "no seat yet" - and it is not a pending
              seat either. Three distinct outcomes, three distinct things said
              to the player (#795). */
-          if (error) {
+            if (error) {
+              reportError(error, 'useTournamentRegistration.findMySeat', { tournamentId: t.id });
+              return { state: 'unknown' };
+            }
+            if (!tp) return { state: 'unknown' };
+            const tableId = (tp.table_id as string | undefined) || null;
+            return tableId ? { state: 'seated', tableId } : { state: 'pending' };
+          } catch (error) {
+            // A transport exception has the same unknown-seat meaning as an
+            // error response. Neither undoes the confirmed entry above.
             reportError(error, 'useTournamentRegistration.findMySeat', { tournamentId: t.id });
             return { state: 'unknown' };
           }
-          if (!tp) return { state: 'unknown' };
-          const tableId = (tp.table_id as string | undefined) || null;
-          return tableId ? { state: 'seated', tableId } : { state: 'pending' };
         };
 
         // The registration read-back is itself an authoritative roster read, so

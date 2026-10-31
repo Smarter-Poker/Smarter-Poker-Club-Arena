@@ -44,7 +44,7 @@ import {
  * lobby tab.
  */
 
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 /* Dan 2026-08-28: this card is the SatellitesTab of TournamentDetails, which
    MultiTablePage renders inside a lobby tab. All three of its navigate calls
    target /tournaments/:id, and every one of them used to drop a seated player
@@ -85,6 +85,7 @@ interface Tournament extends TournamentEntryWindowRow {
   maxPlayers: number | null;
   registeredPlayers: number;
   startsAt?: string;
+  startsWhenFull?: boolean;
   /** `bagged`: a multi-day event between days (live, entries closed). */
   status: 'registering' | 'running' | 'bagged' | 'finished' | 'cancelled';
   blindStructure: string;
@@ -239,9 +240,10 @@ function TournamentLobbyCardInner({
   onRegister,
   knownRegistration,
   stageNote,
-}: TournamentLobbyCardProps) {
+  user,
+}: TournamentLobbyCardProps & { user: ReturnType<typeof useAuthUser>['user'] }) {
   const navigate = useAppNavigate();
-  const { user } = useAuthUser();
+  const registrationRead = useRef(0);
   const [registering, setRegistering] = useState(false);
   const [isRegistered, setIsRegistered] = useState(knownRegistration === true);
   /**
@@ -276,18 +278,23 @@ function TournamentLobbyCardInner({
     /* Only query when the caller has not already told us. `undefined` is "I
        do not know, go and look"; `null` is "my batch query failed", which is
        also a reason to look rather than to guess. See knownRegistration. */
+    registrationRead.current++;
     if (typeof knownRegistration === 'boolean') {
       setIsRegistered(knownRegistration);
       setRegCheckFailed(false);
     } else {
       checkRegistration();
     }
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (tournament.startsAt) {
       updateCountdown();
-      const interval = setInterval(updateCountdown, 1000);
-      return () => clearInterval(interval);
+      interval = setInterval(updateCountdown, 1000);
     }
-  }, [tournament.id, tournament.startsAt, knownRegistration]);
+    return () => {
+      registrationRead.current++;
+      if (interval !== undefined) clearInterval(interval);
+    };
+  }, [tournament.id, tournament.startsAt, knownRegistration, user?.id]);
 
   // See lateRegState() above for why these two are not one variable.
   const entryWindow = tournamentEntryWindow({
@@ -318,20 +325,29 @@ function TournamentLobbyCardInner({
   ]);
 
   const checkRegistration = async () => {
-    if (!user?.id) return;
-    const { data, error } = await supabase
-      .from('tournament_players')
-      .select('id')
-      .eq('tournament_id', tournament.id)
-      .eq('user_id', user.id)
-      .maybeSingle();
-    if (error) {
-      reportError(error, 'TournamentLobbyCard.Registration_check_failed');
-      setRegCheckFailed(true);
+    const request = ++registrationRead.current;
+    if (!user?.id) {
+      setIsRegistered(false);
+      setRegCheckFailed(false);
       return;
     }
-    setRegCheckFailed(false);
-    setIsRegistered(!!data);
+    setRegCheckFailed(true);
+    try {
+      const { data, error } = await supabase
+        .from('tournament_players')
+        .select('id')
+        .eq('tournament_id', tournament.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (request !== registrationRead.current) return;
+      if (error) throw error;
+      setRegCheckFailed(false);
+      setIsRegistered(!!data);
+    } catch (error) {
+      if (request !== registrationRead.current) return;
+      reportError(error, 'TournamentLobbyCard.Registration_check_failed');
+      setRegCheckFailed(true);
+    }
   };
 
   const updateCountdown = () => {
@@ -910,16 +926,26 @@ function TournamentLobbyCardInner({
           </div>
         )}
 
-        {tournament.startsAt && tournament.status === 'registering' && countdown && (
+        {tournament.startsWhenFull && tournament.status === 'registering' && (
           <div className={styles.row}>
-            <span className="sc-label sc-ink--blue">Starts In</span>
-            <span
-              className={`${styles.value} ${isCountdownCritical ? 'sc-ink--red' : 'sc-ink--silver'}`}
-            >
-              {countdown}
-            </span>
+            <span className="sc-label sc-ink--blue">Starts</span>
+            <span className={`${styles.value} sc-ink--silver`}>When Full</span>
           </div>
         )}
+
+        {!tournament.startsWhenFull &&
+          tournament.startsAt &&
+          tournament.status === 'registering' &&
+          countdown && (
+            <div className={styles.row}>
+              <span className="sc-label sc-ink--blue">Starts In</span>
+              <span
+                className={`${styles.value} ${isCountdownCritical ? 'sc-ink--red' : 'sc-ink--silver'}`}
+              >
+                {countdown}
+              </span>
+            </div>
+          )}
 
         <div className={styles.row}>
           <span className="sc-label sc-ink--blue">Seats</span>
@@ -937,4 +963,13 @@ function TournamentLobbyCardInner({
     </Section>
   );
 }
-export default memo(TournamentLobbyCardInner);
+export default memo(function TournamentLobbyCard(props: TournamentLobbyCardProps) {
+  const { user } = useAuthUser();
+  return (
+    <TournamentLobbyCardInner
+      key={JSON.stringify([props.tournament.id, user?.id ?? null])}
+      {...props}
+      user={user}
+    />
+  );
+});

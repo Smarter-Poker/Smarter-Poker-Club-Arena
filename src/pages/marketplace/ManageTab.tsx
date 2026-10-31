@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * MARKETPLACE : Manage tab (owner/admin only).
  * All CRUD goes through the server route /api/club-arena/manage-shop (the old
@@ -101,7 +102,7 @@ export default function ManageTab({
   const [perUserLimit, setPerUserLimit] = useState('');
   const [availableUntil, setAvailableUntil] = useState('');
   const [availableFrom, setAvailableFrom] = useState('');
-  const [sortOrder, setSortOrder] = useState('');
+  const [sortOrder, setSortOrder] = usePlayerPreference('marketplace/ManageTab:sortOrder', '');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [desc, setDesc] = useState('');

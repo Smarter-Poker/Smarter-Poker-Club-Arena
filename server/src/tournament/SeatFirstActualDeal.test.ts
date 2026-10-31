@@ -151,6 +151,16 @@ function fixture(
       is() {
         return builder;
       },
+      // These fixed two/three-player fixtures fit on one keyset page.
+      order() {
+        return builder;
+      },
+      limit() {
+        return builder;
+      },
+      gt() {
+        return builder;
+      },
       update(value: any) {
         patch = value;
         return builder;
@@ -415,6 +425,9 @@ function fixture(
   engine.broadcastCurrentState = async () => {};
   engine.persistHoleCardsWithRetry = async () => {};
   engine.flushSnapshot = async () => {};
+  // This fixture isolates admitted launch/reveal/first-turn timing. Private
+  // persistence is exercised by OriginalControllerRuntime and native PG17.
+  engine.retainOriginalBatch = vi.fn(async () => {});
   const realEvent = engine.handleHandEvent.bind(engine);
   const handStarts: number[] = [];
   engine.handleHandEvent = async (event: any, players: any, generation: any) => {

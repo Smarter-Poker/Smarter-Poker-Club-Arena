@@ -4,10 +4,10 @@ import {
   horseChoosesTournamentRebuy,
 } from './horseTournamentRebuyChoice.js';
 
-// Owner rule, 2026-10-24: eligible horses rebuy on 75 percent of MTT busts.
-describe('horses choose a tournament rebuy on 75 percent of busts', () => {
-  it('pins the owner share at exactly 75 percent', () => {
-    expect(HORSE_TOURNAMENT_REBUY_SHARE).toBe(0.75);
+// Owner rule, 2026-10-29: eligible horses rebuy on 70 percent of MTT busts.
+describe('horses choose a tournament rebuy on 70 percent of busts', () => {
+  it('pins the owner share at exactly 70 percent', () => {
+    expect(HORSE_TOURNAMENT_REBUY_SHARE).toBe(0.7);
   });
 
   it('keeps the same decision across repeated reads and rejects unknown busts', () => {
@@ -20,7 +20,7 @@ describe('horses choose a tournament rebuy on 75 percent of busts', () => {
     }
   });
 
-  it('varies by horse, event and bust, with approximately 75 percent choosing yes', () => {
+  it('varies by horse, event and bust, with approximately 70 percent choosing yes', () => {
     for (const vary of ['horse', 'event', 'hand']) {
       let yes = 0;
       for (let i = 1; i <= 10_000; i++) {
@@ -32,8 +32,8 @@ describe('horses choose a tournament rebuy on 75 percent of busts', () => {
           )
         );
       }
-      expect(yes).toBeGreaterThan(7300);
-      expect(yes).toBeLessThan(7700);
+      expect(yes).toBeGreaterThan(6800);
+      expect(yes).toBeLessThan(7200);
     }
   });
 });

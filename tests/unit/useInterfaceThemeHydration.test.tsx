@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   reads: new Map<string, ProfileRead>(),
   listeners: new Map<string, Set<(event: BusEvent) => void>>(),
   reportError: vi.fn(),
+  persistTheme: vi.fn(),
 }));
 
 vi.mock('../../src/lib/authUtils', () => ({
@@ -57,7 +58,15 @@ vi.mock('../../src/lib/ownProfile', () => ({
 }));
 
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.reportError }));
+vi.mock('../../src/lib/persistInterfaceTheme', () => ({
+  persistInterfaceTheme: mocks.persistTheme,
+}));
 
+import {
+  beginTableSettingIntent,
+  confirmTableSettingIntent,
+  readTableSettingIntent,
+} from '../../src/lib/tableSettingIntents';
 import { masterBus } from '../../src/core/MasterBus';
 import { useInterfaceThemeHydration } from '../../src/hooks/useInterfaceThemeHydration';
 import { interfaceThemeCacheKey, useSettingsStore } from '../../src/stores/useSettingsStore';
@@ -81,6 +90,7 @@ describe('useInterfaceThemeHydration', () => {
     mocks.reads.clear();
     mocks.listeners.clear();
     mocks.reportError.mockReset();
+    mocks.persistTheme.mockReset().mockResolvedValue({ ok: true });
     useSettingsStore.setState({
       theme: 'dark',
       themePreference: 'dark',
@@ -102,6 +112,55 @@ describe('useInterfaceThemeHydration', () => {
     expect(useSettingsStore.getState().interfaceThemeHydrationState).toBe('ready');
     expect(document.documentElement).toHaveAttribute('data-theme', 'light');
     expect(localStorage.getItem(interfaceThemeCacheKey('user-a'))).toBe('light');
+  });
+
+  it('keeps a pending choice painted while its lazy writer loads and preserves the original request', async () => {
+    mocks.localUserId = 'user-a';
+    const id = beginTableSettingIntent('user-a', 'interface-theme', 'light');
+    const write = deferred<{ ok: boolean }>();
+    const read = vi.fn(resolvedTheme('light'));
+    mocks.reads.set('user-a', read);
+    mocks.persistTheme.mockImplementation(
+      async (owner: string, _theme: string, requestId: string) => {
+        const result = await write.promise;
+        confirmTableSettingIntent(owner, 'interface-theme', requestId);
+        return result;
+      }
+    );
+
+    renderHook(() => useInterfaceThemeHydration());
+    expect(useSettingsStore.getState().theme).toBe('light');
+    await waitFor(() => expect(mocks.persistTheme).toHaveBeenCalledWith('user-a', 'light', id));
+    expect(read).not.toHaveBeenCalled();
+    expect(readTableSettingIntent('user-a', 'interface-theme')?.id).toBe(id);
+    await act(async () => {
+      write.resolve({ ok: true });
+    });
+    await waitFor(() =>
+      expect(useSettingsStore.getState().interfaceThemeHydrationState).toBe('ready')
+    );
+    expect(useSettingsStore.getState().theme).toBe('light');
+    expect(readTableSettingIntent('user-a', 'interface-theme')).toBeNull();
+  });
+
+  it('does not send an older recovery when a newer choice arrives while its writer loads', async () => {
+    mocks.localUserId = 'user-a';
+    beginTableSettingIntent('user-a', 'interface-theme', 'light');
+    mocks.reads.set('user-a', resolvedTheme('light'));
+    renderHook(() => useInterfaceThemeHydration());
+
+    let latestId = '';
+    act(() => {
+      latestId = beginTableSettingIntent('user-a', 'interface-theme', 'dark');
+      useSettingsStore.getState().receiveTheme('dark', 'user-a');
+    });
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+
+    expect(mocks.persistTheme).not.toHaveBeenCalled();
+    expect(useSettingsStore.getState().theme).toBe('dark');
+    expect(readTableSettingIntent('user-a', 'interface-theme')?.id).toBe(latestId);
   });
 
   it('preserves Auto as the durable preference while resolving the current device mode', async () => {

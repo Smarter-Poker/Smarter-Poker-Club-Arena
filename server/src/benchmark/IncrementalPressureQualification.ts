@@ -115,6 +115,17 @@ export function assertIncrementalWorkerFlags(
   if (!matches(rules.flags.candidate) && !matches(rules.flags.reference))
     throw Error('Incremental actual worker flag contrast changed');
 }
+// The provider name changed in the repository transfer; the immutable identity did not.
+const INCREMENTAL_PROVIDER_REPOSITORY = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
+const INCREMENTAL_PROVIDER_REPOSITORY_ID = 1132369872;
+function isIncrementalProviderRepository(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const repository = value as Record<string, unknown>;
+  return (
+    repository.id === INCREMENTAL_PROVIDER_REPOSITORY_ID &&
+    repository.full_name === INCREMENTAL_PROVIDER_REPOSITORY
+  );
+}
 export function assertIncrementalPlanProvenance(
   operation: unknown,
   prs: unknown,
@@ -126,6 +137,7 @@ export function assertIncrementalPlanProvenance(
   const o = operation as Record<string, unknown>;
   if (
     String(o.id) !== run ||
+    !isIncrementalProviderRepository(o.repository) ||
     o.path !== '.github/workflows/horse-feature-ablation-qualification.yml' ||
     o.event !== 'workflow_dispatch' ||
     o.head_branch !== 'main' ||
@@ -139,7 +151,7 @@ export function assertIncrementalPlanProvenance(
         p.merged_at &&
         p.merge_commit_sha === commit &&
         p.base?.ref === 'main' &&
-        p.base?.repo?.full_name === 'Smarter-Poker/Smarter-Poker-Club-Arena' &&
+        isIncrementalProviderRepository(p.base?.repo) &&
         Date.parse(p.merged_at) < Date.parse(String(o.created_at))
     )
   )
@@ -366,6 +378,66 @@ export function assertIncrementalUnconsumedRecovery(jobs: any[], attempt: number
     }
   }
 }
+/** Original hosted cell job/run verification. Called by the memoized pre-deal
+ * guard; no histories, deals, result selection or authority are created here. */
+export async function authenticateFeatureAblationProviderAttempt(
+  operation: {
+    providerRunId: string | number;
+    runAttempt: number;
+    jobId: string | number;
+    createdAt: string;
+    createdAtSource: string;
+  },
+  cellKey: string,
+  maxAttempts: number
+): Promise<void> {
+  const op = operation,
+    repo = process.env.GITHUB_REPOSITORY,
+    run = process.env.GITHUB_RUN_ID,
+    runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT),
+    token = process.env.GITHUB_TOKEN;
+  if (
+    repo !== INCREMENTAL_PROVIDER_REPOSITORY ||
+    process.env.GITHUB_REPOSITORY_ID !== String(INCREMENTAL_PROVIDER_REPOSITORY_ID) ||
+    String(op.providerRunId) !== run ||
+    op.runAttempt !== runAttempt ||
+    !/^\d+$/.test(String(op.jobId)) ||
+    !token ||
+    runAttempt > maxAttempts
+  )
+    throw Error('Actual provider attempt unavailable');
+  const get = async (suffix: string) => {
+    const r = await fetch(`https://api.github.com/repos/${repo}${suffix}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!r.ok) throw Error('Provider identity read refused');
+    const body: unknown = await r.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body))
+      throw Error('Provider identity shape refused');
+    return body as Record<string, unknown>;
+  };
+  const [j, r] = await Promise.all([get(`/actions/jobs/${op.jobId}`), get(`/actions/runs/${run}`)]);
+  const createdAt = j.created_at ?? r.created_at,
+    createdAtSource = j.created_at ? 'job.created_at' : 'run.created_at';
+  if (
+    !isIncrementalProviderRepository(r.repository) ||
+    String(r.id) !== run ||
+    String(j.id) !== String(op.jobId) ||
+    String(j.run_id) !== run ||
+    j.run_attempt !== runAttempt ||
+    j.name !== `Cell ${cellKey}` ||
+    r.path !== '.github/workflows/horse-feature-ablation-qualification.yml' ||
+    r.event !== 'workflow_dispatch' ||
+    r.head_branch !== 'main' ||
+    op.createdAt !== createdAt ||
+    op.createdAtSource !== createdAtSource
+  )
+    throw Error('Original provider job identity mismatch');
+}
 /** Actual provider/PR provenance, not a caller's JSON approval. Must complete
  * before warm histories or contract deals. Existing v1 admission is untouched. */
 export async function authenticateIncrementalPlan(
@@ -390,7 +462,8 @@ export async function authenticateIncrementalPlan(
     run = process.env.GITHUB_RUN_ID,
     token = process.env.GITHUB_TOKEN;
   if (
-    repo !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    repo !== INCREMENTAL_PROVIDER_REPOSITORY ||
+    process.env.GITHUB_REPOSITORY_ID !== String(INCREMENTAL_PROVIDER_REPOSITORY_ID) ||
     !/^\d+$/.test(run ?? '') ||
     !token ||
     process.env.GITHUB_REF !== 'refs/heads/main' ||
@@ -470,7 +543,7 @@ export async function authenticateIncrementalPlan(
       p.merge_commit_sha === firstFamilyCommit &&
       p.merged_at &&
       p.base?.ref === 'main' &&
-      p.base?.repo?.full_name === repo
+      isIncrementalProviderRepository(p.base?.repo)
   )?.merged_at;
   const baseline = await get(`/actions/runs/${family.providerAnchor.baselineRunId}`);
   const familyPrs = await get(`/commits/${familyCommit}/pulls`);

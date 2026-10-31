@@ -44,10 +44,272 @@ on:
     workflows: ['Publish Club Arena']
     types: [completed]
   repository_dispatch:
-    types: [run-post-deploy-e2e]
+    types: [run-post-deploy-e2e, run-stats-pagination-proof, run-private-record-client-proof]
 
 jobs:
+  # No production fixture job may enter even its always-cleanup steps until
+  # the root cleanup repair is installed. This job only reads catalog/history.
+  certification-cleanup-safety:
+    name: Installed certification cleanup protects live tables
+    needs: publication-gate
+    if: >-
+      always() && !cancelled() &&
+      (needs.publication-gate.outputs.should_run == 'true' ||
+       (github.event_name == 'repository_dispatch' &&
+        (github.event.action == 'run-stats-pagination-proof' ||
+         github.event.action == 'run-private-record-client-proof')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked read-only verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Require installed scoped cleanup before production fixtures
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/await-certification-cleanup-safety.mjs
+
+  # Explicit one-client transport proof. This never publishes or changes source flags.
+  private-record-client-proof:
+    needs: certification-cleanup-safety
+    # The focused event skips publication-gate; require successful cleanup
+    # explicitly so that skipped ancestor cannot suppress the actual proof.
+    if: always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
+    name: Exact published private record client failover proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    concurrency:
+      group: private-record-client-proof-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Admit exact protected gateway functional receipt
+        id: admit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECORD_CLIENT_PROOF_ACTION: ${{ github.event.action }}
+          RECORD_CLIENT_PROOF_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: node scripts/ci/private-record-client-proof.mjs admit
+      - name: Require protected source ancestry
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --filter=blob:none origin main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          git merge-base --is-ancestor "$LIVE_SHA" origin/main
+          git merge-base --is-ancestor "$EXPECTED_GATEWAY_REVISION" origin/main
+      - name: Install locked verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Pin published client, gateway and retained paid source
+        id: before
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/private-record-client-proof.mjs pin before.json
+      - name: Install Chromium only
+        timeout-minutes: 5
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
+      - name: Create the owned isolated account
+        id: account
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+      - name: Prepare its existing zero-balance member workspace
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: node scripts/ci/production-e2e-account.mjs prepare-staff
+      - name: Verify the actual published SDK and visible own record
+        id: browser
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/private-record-client/report.json
+        run: >-
+          npx playwright test tests/e2e/production-private-record-failover.spec.ts
+          --project=chromium --workers=1 --retries=0 --trace=off --reporter=line,json
+          --output=test-results/private-record-client
+      - name: Read identities and paid source after the case
+        id: after
+        if: always() && steps.before.outcome == 'success'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/private-record-client-proof.mjs pin after.json
+      - name: Retire only the owned account and verify cleanup
+        id: cleanup
+        if: always() && steps.account.outcome != '' && steps.account.outcome != 'skipped'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          import { cleanupProductionE2EAccount } from './scripts/ci/production-e2e-account.mjs';
+          if (await cleanupProductionE2EAccount() !== true) throw new Error('Owned account cleanup did not verify retirement');
+          writeFileSync('e2e-report/private-record-client/cleanup.json', JSON.stringify({verified:true}));
+          NODE
+      - name: Certify only the completed modern client case
+        if: always() && steps.admit.outcome == 'success'
+        env:
+          ACCOUNT_OUTCOME: ${{ steps.account.outcome }}
+          BROWSER_OUTCOME: ${{ steps.browser.outcome }}
+          AFTER_PIN_OUTCOME: ${{ steps.after.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: node scripts/ci/private-record-client-proof.mjs verify
+      - name: Retain token-free scoped proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-record-client-proof-${{ github.run_id }}
+          path: |
+            e2e-report/private-record-client/
+            test-results/private-record-client/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Explicit, closed recovery of the one release-bound Stats case. It never publishes.
+  stats-pagination-proof:
+    needs: certification-cleanup-safety
+    # The focused event deliberately skips publication-gate. Evaluate this
+    # lane despite that ancestor, but never bypass cleanup qualification.
+    if: always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'
+    name: Exact published Stats pagination proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      group: stats-pagination-proof-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Admit only the fixed protected-main proof
+        id: admit
+        env:
+          STATS_PROOF_ACTION: ${{ github.event.action }}
+          STATS_PROOF_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/stats-pagination-proof.mjs admit
+          git fetch --no-tags --filter=blob:none origin main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Install locked verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium only
+        timeout-minutes: 5
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
+      - name: Create the owned isolated account
+        id: account
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+      - name: Pin both origins immediately before the one case
+        id: pin
+        run: |
+          set -euo pipefail
+          mkdir -p e2e-report/stats-pagination
+          git fetch --no-tags --filter=blob:none origin main
+          SHA=$(node scripts/ci/stats-pagination-proof.mjs pin e2e-report/stats-pagination/before.json)
+          git cat-file -e "$SHA^{commit}"
+          git merge-base --is-ancestor "$SHA" origin/main
+          echo "LIVE_SHA=$SHA" >> "$GITHUB_ENV"
+      - name: Qualify the exact dedicated journey pin
+        id: journey_pin
+        run: |
+          set -euo pipefail
+          SHA=$(node scripts/ci/downline-journey-pin.mjs)
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$SHA" = "$LIVE_SHA"
+          echo "DOWNLINE_JOURNEY_SHA=$SHA" >> "$GITHUB_ENV"
+      - name: Execute exactly the published pagination case
+        id: proof
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          E2E_STATS_PAGINATION_PROOF: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/stats-pagination/report.json
+        run: >-
+          npx playwright test tests/e2e/stats-deep.spec.ts
+          --grep '^.*published downline pagination survives the initial debounce and resets only for changed search$'
+          --project=chromium --workers=1 --retries=0 --reporter=line,json
+          --trace=retain-on-failure --output=test-results/stats-pagination
+      - name: Require the same two origins immediately after the case
+        id: after_pin
+        if: always() && steps.pin.outcome == 'success'
+        run: node scripts/ci/stats-pagination-proof.mjs pin e2e-report/stats-pagination/after.json
+      - name: Verify cleanup of this exact isolated account
+        id: cleanup
+        if: always() && steps.admit.outcome == 'success'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { mkdirSync, writeFileSync } from 'node:fs';
+          import { cleanupProductionE2EAccount } from './scripts/ci/production-e2e-account.mjs';
+          if (await cleanupProductionE2EAccount() !== true) throw new Error('Owned account cleanup did not verify retirement');
+          mkdirSync('e2e-report/stats-pagination', { recursive: true });
+          writeFileSync('e2e-report/stats-pagination/cleanup.json', JSON.stringify({ verified: true }));
+          NODE
+      - name: Require one first-attempt pass, exact release and actual cleanup
+        if: always()
+        env:
+          ACCOUNT_OUTCOME: ${{ steps.account.outcome }}
+          PROOF_OUTCOME: ${{ steps.proof.outcome }}
+          AFTER_PIN_OUTCOME: ${{ steps.after_pin.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: >-
+          node scripts/ci/stats-pagination-proof.mjs verify
+          e2e-report/stats-pagination/report.json e2e-report/stats-pagination/before.json
+          e2e-report/stats-pagination/after.json e2e-report/stats-pagination/cleanup.json
+      - name: Retain the one-case proof on every outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stats-pagination-proof
+          path: |
+            e2e-report/stats-pagination/
+            e2e-report/downline-journey-pin.json
+            test-results/stats-pagination/
+          if-no-files-found: error
+          retention-days: 14
+
   publication-gate:
+    if: github.event_name != 'repository_dispatch' || (github.event.action != 'run-stats-pagination-proof' && github.event.action != 'run-private-record-client-proof')
     name: Confirm The Hetzner Web Publish Reached Production
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -77,6 +339,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
           SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
           REPOSITORY_ID: ${{ github.repository_id }}
           ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
           ENGINE_TRIGGER_JSON: ${{ toJSON(github.event.client_payload.engine_sha) }}
@@ -104,8 +367,8 @@ jobs:
               exit 0
             fi
             if [ "${MOBILE_MULTIRUN_TARGET_JSON-null}" != null ]; then
-              { [ "$MOBILE_MULTIRUN_TARGET_JSON" = 3 ] && [ "$MOBILE_MULTIRUN_JSON" = true ] && [ "$ENGINE_TRIGGER_JSON" = null ]; } \
-                || { echo '::error::A targeted natural proof requires numeric target 3, literal mobile true and no engine pin.'; exit 1; }
+              { { [ "$MOBILE_MULTIRUN_TARGET_JSON" = 1 ] || [ "$MOBILE_MULTIRUN_TARGET_JSON" = 3 ]; } && [ "$MOBILE_MULTIRUN_JSON" = true ] && [ "$ENGINE_TRIGGER_JSON" = null ] && [ "${HORSE_SOCIAL_JSON-null}" = null ] && [ "${CLIENT_NAVIGATION_JSON-null}" = null ]; } \
+                || { echo '::error::A targeted natural proof requires numeric target 1 or 3, literal mobile true and no engine pin.'; exit 1; }
             fi
             if [ "$MOBILE_MULTIRUN_JSON" = true ] && [ "$ENGINE_TRIGGER_JSON" = null ]; then
               # An explicit client observation binds the healthy serving engine
@@ -133,10 +396,12 @@ jobs:
             "${{ github.repository }}" "$SOURCE_RUN_ID" > "$JOBS_JSON"
           node - "$JOBS_JSON" "$GITHUB_OUTPUT" <<'NODE'
           const fs = require('node:fs');
+          const { publisherJobKey } = require('./scripts/ci/publisher-job-identity.mjs');
           const [file, output] = process.argv.slice(2);
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const publisherJob = (entry, key) => publisherJobKey(entry?.name) === key || entry?.name === key || entry?.name === `production / ${key}`;
           if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
-          const jobs = payload.jobs.filter((entry) => entry?.name === 'publish-to-origin');
+          const jobs = payload.jobs.filter((entry) => publisherJob(entry, 'publish-to-origin'));
           // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
           //
           // publish-club-arena cancels in progress when a newer merge arrives,
@@ -157,10 +422,47 @@ jobs:
           // This deliberately cannot hide a real publish. A source run holding
           // any job that actually ran, with no publish-to-origin among them,
           // is the renamed-or-missing-job hole and still throws below. The
-          // source run's own top-level conclusion is still never consulted -
+          // source conclusion never qualifies or suppresses proven web publication.
+          // Only cancelled read-only preparation with no writer can stand down;
           // an optional Capgo failure must not suppress web E2E.
           if (payload.total_count !== payload.jobs.length) throw new Error('Source job metadata is incomplete.');
-          const retained = payload.jobs.filter((entry) => entry?.name === 'retain-runtime');
+          const inspection = payload.jobs.filter(entry => publisherJob(entry, 'inspect-record-gateway-host'));
+          if (inspection.length === 1 && inspection[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const read = (inspection[0].steps ?? []).filter(entry => entry.name === 'Read fixed gateway host metadata without changing host state');
+            if (inspection[0].status !== 'completed' || inspection[0].conclusion !== 'success' || read.length !== 1 || read[0].conclusion !== 'success') throw new Error('Gateway host inspection is incomplete; no installation or publication certified.');
+            console.log('Read-only host inspection; no installation or publication certified.');
+            process.exit(0);
+          }
+          const credential = payload.jobs.filter(entry => publisherJob(entry, 'install-record-gateway-credentials'));
+          if (credential.length === 1 && credential[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const install = (credential[0].steps ?? []).filter(entry => entry.name === 'Install only the dedicated listener credential');
+            if (credential[0].status !== 'completed' || credential[0].conclusion !== 'success' || install.length !== 1 || install[0].conclusion !== 'success') throw new Error('Dedicated listener credential is incomplete; no gateway activation or client publication certified.');
+            console.log('Dedicated listener credential only; no gateway activation or client publication certified.');
+            process.exit(0);
+          }
+          const bootstrap = payload.jobs.filter(entry => publisherJob(entry, 'bootstrap-record-gateway'));
+          if (bootstrap.length === 1 && bootstrap[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const install = (bootstrap[0].steps ?? []).filter(entry => entry.name === 'Install inert prerequisites through the existing protected provider');
+            if (bootstrap[0].status !== 'completed' || bootstrap[0].conclusion !== 'success' || install.length !== 1 || install[0].conclusion !== 'success') throw new Error('Gateway bootstrap is incomplete; no activation or client publication is certified.');
+            console.log('Gateway bootstrap only; no gateway activation or client publication certified.');
+            process.exit(0);
+          }
+          const gateway = payload.jobs.filter((entry) => publisherJob(entry, 'publish-record-gateway'));
+          const gatewayOnly = gateway.length === 1 && gateway[0].conclusion !== 'skipped' &&
+            jobs.length === 1 && jobs[0].conclusion === 'skipped' &&
+            payload.jobs.filter(entry => publisherJob(entry, 'retain-runtime')).every(entry => entry.conclusion === 'skipped');
+          if (gatewayOnly) {
+            const builds = payload.jobs.filter(entry => entry?.name === 'build-record-gateway');
+            const proofNames = ['Activate only the prepared independent service', 'Verify authenticated gateway record delivery', 'Ensure the reserved gateway canary account is retired'];
+            const proofsComplete = proofNames.every(name => {
+              const matching = (gateway[0].steps ?? []).filter(entry => entry.name === name);
+              return matching.length === 1 && matching[0].status === 'completed' && matching[0].conclusion === 'success';
+            });
+            if (builds.length !== 1 || builds[0].conclusion !== 'success' || gateway[0].status !== 'completed' || gateway[0].conclusion !== 'success' || !proofsComplete) throw new Error('Independent gateway installation or authenticated verification is incomplete; no client publication is certified.');
+            console.log('Gateway component only; client publication and client E2E remain unclaimed.');
+            process.exit(0);
+          }
+          const retained = payload.jobs.filter((entry) => publisherJob(entry, 'retain-runtime'));
           const retentionSucceeded = retained.length === 1 && retained[0].status === 'completed' && retained[0].conclusion === 'success' &&
             ['Verify both origins still serve the qualified immutable runtime', 'Record qualified retained runtime'].every((name) =>
               (retained[0].steps ?? []).filter((entry) => entry.name === name && entry.status === 'completed' && entry.conclusion === 'success').length === 1);
@@ -185,12 +487,30 @@ jobs:
             entry?.conclusion === 'skipped' ||
             (entry?.conclusion === 'cancelled' && (entry.steps ?? []).length === 0);
           const cancelledBeforeOrigin =
-            jobs.every(neverOpened) &&
+            jobs.length === 1 && jobs.every(neverOpened) &&
             retained.every(inconclusive) &&
             payload.jobs.some((entry) => entry?.conclusion === 'cancelled') &&
             payload.jobs.every((entry) => entry?.conclusion === 'success' || inconclusive(entry));
+          // Preparation now precedes the production caller's lock. A pending
+          // caller can be superseded after all read-only preparation succeeded,
+          // before GitHub creates any nested writer job. This is not a publish
+          // verdict: unknown/renamed jobs, failures or any child execution refuse.
+          const preparationNames = new Set([
+            'publish-needed', 'build-and-store', 'build-record-gateway',
+            ...[1,2,3,4].map(n => `client-tests (${n})`),
+            'client-publication / admit',
+            'client-publication / Admit The Selected Client Publication Window',
+            'client-publication / build-and-store',
+            ...Array.from({length:16}, (_, i) => `client-publication / client-tests (${i + 1})`),
+          ]);
+          const cancelledBeforeTransaction = process.env.SOURCE_CONCLUSION === 'cancelled' &&
+            jobs.length === 0 && retained.length === 0 && payload.jobs.length > 0 &&
+            new Set(payload.jobs.map(entry => entry.name)).size === payload.jobs.length &&
+            payload.jobs.every(entry => entry.status === 'completed' &&
+              ((preparationNames.has(entry.name) && (entry.conclusion === 'success' || inconclusive(entry))) ||
+               (['production', 'client-publication / production'].includes(entry.name) && ['cancelled', 'skipped'].includes(entry.conclusion) && (entry.steps ?? []).length === 0)));
           const superseded =
-            (jobs.length === 0 && payload.jobs.every(inconclusive)) || cancelledBeforeOrigin;
+            (jobs.length === 0 && payload.jobs.every(inconclusive)) || cancelledBeforeOrigin || cancelledBeforeTransaction;
           if (superseded) {
             console.log(
               'The source publisher was superseded before it reached the origin; ' +
@@ -312,7 +632,7 @@ jobs:
         run: node scripts/ci/check-live-seo-contract.mjs --sha "${{ needs.publication-gate.outputs.client_target_sha }}"
 
   production-e2e:
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     # A verified publish and a safe forward stand-down both certify the live
     # player route. A failed/skipped origin job makes the gate red, never green
     # without executing the browser suite. Optional downstream failures cannot
@@ -969,8 +1289,16 @@ jobs:
 
           # Certify Stats first among the broader route checks. Cashier has its
           # own preceding release gate so this suite cannot hide its verdict.
-          run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
-          stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
+          # This journey starts well after the job-level LIVE_SHA read. Qualify
+          # its current published test/harness source without repinning the job
+          # or any other suite/certificate. UNKNOWN never uses the stale pin.
+          stats_pin_rc=0
+          stats_pin="$(node scripts/ci/downline-journey-pin.mjs)" || stats_pin_rc=$?
+          [ "$stats_pin_rc" -eq 0 ] || stats_pin=UNKNOWN
+          DOWNLINE_JOURNEY_SHA="$stats_pin" run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          stats_rc=$?
+          if [ "$stats_pin_rc" -ne 0 ] && [ "$stats_pin_rc" -ne 3 ]; then stats_rc=$stats_pin_rc; fi
+          [ $stats_rc -ne 0 ] && rc=$stats_rc
 
           # Financial Admin is the staff-scoped sibling of the Stats and Club
           # Data deep certificates. It runs against this job's disposable,
@@ -1374,7 +1702,7 @@ jobs:
   # This independent verdict retains real-hand/reconnect coverage after every
   # publication, and exact immutable engine certification after engine cutover.
   live-table-e2e:
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     if: needs.publication-gate.outputs.should_run == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
@@ -1384,17 +1712,20 @@ jobs:
     # The opt-in adds a separate 20m observation plus 2m setup/retention.
     # Two proven natural MTT closures may each require another complete subject:
     # 2 x (390s startup + 15m maximum HUD clock + 60s reserve) = 45m.
-    # Preserve the existing 76/98-minute overhead and optional multirun budget.
-    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && (toJSON(github.event.client_payload.mobile_multirun) == 'true' || toJSON(github.event.client_payload.horse_social) == 'true') && 143 || 121 }}
+    # Preserve the existing 76/98-minute overhead and optional multirun budget,
+    # plus five minutes for the bounded isolated notice proof (cleanup unchanged).
+    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && (toJSON(github.event.client_payload.mobile_multirun) == 'true' || toJSON(github.event.client_payload.horse_social) == 'true') && 148 || 126 }}
     permissions:
       contents: read
     # An explicit passive observation owns a distinct serialized queue. Ordinary
     # publication jobs otherwise replace it while pending (38933600568, three
-    # zero-step attempts). Both lanes create fresh disposable Auth principals;
+    # zero-step attempts). Horse social proof has the same passive ownership:
+    # 40784165630 was replaced by a publication before any test step ran.
+    # These lanes create fresh disposable Auth principals;
     # their table cases are read-only and cleanup owns only that exact account.
     # Client browser checks retain their original shared write-serialization.
     concurrency:
-      group: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 'post-deploy-live-table-multirun-production' || 'post-deploy-live-table-production' }}
+      group: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 'post-deploy-live-table-multirun-production' || github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' && toJSON(github.event.client_payload.mobile_multirun) == 'null' && 'post-deploy-live-table-horse-social-production' || 'post-deploy-live-table-production' }}
       cancel-in-progress: false
     outputs:
       client_sha: ${{ steps.live.outputs.sha }}
@@ -1627,6 +1958,7 @@ jobs:
               tests/e2e/global-setup.ts \
               tests/e2e/production-live-table-realtime.spec.ts \
               tests/e2e/production-live-table-multirun.spec.ts \
+              tests/e2e/production-seat-move-announcement.spec.ts \
               tests/e2e/support
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, an ancestor of this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
@@ -1712,9 +2044,10 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           E2E_REQUIRE_AUTH: '1'
-          # Observe the assigned live Diamond club; setup joins this same target
-          # through the public player door before the spectator cases run.
-          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          # Observe chip cash games through the prepared Midway member club.
+          # Diamond Arena disables play and cannot supply the cash witness
+          # (run 41168425572). Setup joins this same public player door.
+          E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
           # The SPIN and SNG subjects are hosted only by the fixture union, and
           # public.tables carries a RESTRICTIVE policy (poker_arena_table_access)
           # that hides a union table from an account with no membership inside
@@ -1731,6 +2064,30 @@ jobs:
           npx playwright test tests/e2e/production-live-table-realtime.spec.ts
           --project=webkit-live-table-realtime --reporter=line,json --workers=1 --retries=0
           --output=test-results/live-table-realtime
+
+      # The move notice is presentation-only. Exercise the actual served
+      # consumer in this lane's reserved spectator browser, without moving
+      # a production seat or waiting for the unrelated staff-page sweep.
+      - name: Verify seat-move notices in the served spectator browser
+        id: seat_move_notice
+        if: "!cancelled() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'"
+        # 150s case plus authentication/membership setup and report headroom.
+        timeout-minutes: 5
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          E2E_UNION_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/seat-move-announcement.json
+        run: |
+          set -euo pipefail
+          npx playwright test tests/e2e/production-seat-move-announcement.spec.ts \
+            --project=chromium --reporter=line,json --workers=1 --retries=0 \
+            --output=test-results/seat-move-announcement
+          node scripts/ci/assert-e2e-actually-ran.mjs e2e-report/seat-move-announcement.json
 
       - name: Observe natural horse chat, reactions and throwables
         id: horse_social
@@ -1773,7 +2130,7 @@ jobs:
       # 39034908810 lost its whole natural observation because one MTT subject
       # table closed before its level changed. The failed case still fails
       # the job, so nothing is hidden; a cancelled run still stops here.
-      - name: ${{ toJSON(github.event.client_payload.mobile_multirun_target) == '3' && 'Observe natural three-run only hands on mobile' || 'Observe natural two-run and three-run hands on mobile' }}
+      - name: ${{ toJSON(github.event.client_payload.mobile_multirun_target) == '1' && 'Observe natural once decisions on mobile' || toJSON(github.event.client_payload.mobile_multirun_target) == '3' && 'Observe natural three-run only hands on mobile' || 'Observe natural two-run and three-run hands on mobile' }}
         id: multirun
         if: "!cancelled() && github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && steps.gameplay.outputs.resumed == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'"
         env:
@@ -1789,6 +2146,8 @@ jobs:
           MOBILE_MULTIRUN_TARGET_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun_target) }}
           MOBILE_MULTIRUN_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun) }}
           ENGINE_TRIGGER_JSON: ${{ toJSON(github.event.client_payload.engine_sha) }}
+          HORSE_SOCIAL_JSON: ${{ toJSON(github.event.client_payload.horse_social) }}
+          CLIENT_NAVIGATION_JSON: ${{ toJSON(github.event.client_payload.client_navigation) }}
           EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
           PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/live-table-multirun.json
         run: >-
@@ -1803,6 +2162,7 @@ jobs:
           name: mobile-natural-multirun-proof
           path: |
             test-results/live-table-multirun/**/mobile-live-table-*
+            test-results/live-table-multirun/**/trace.zip
             e2e-report/live-table-multirun.json
           if-no-files-found: error
           retention-days: 3
@@ -1867,6 +2227,7 @@ jobs:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
           RUNTIME_RESUMED: ${{ steps.gameplay.outputs.resumed }}
           LIVE_COVERAGE_COMPLETE: ${{ steps.live_coverage.outputs.complete }}
+          SEAT_MOVE_NOTICE_OUTCOME: ${{ steps.seat_move_notice.outcome }}
           HORSE_SOCIAL_REQUESTED: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' }}
           HORSE_SOCIAL_OUTCOME: ${{ steps.horse_social.outcome }}
           MULTIRUN_REQUESTED: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' }}
@@ -1880,6 +2241,10 @@ jobs:
           fi
           if [ "${MULTIRUN_REQUESTED:-false}" = 'true' ] && [ "${MULTIRUN_OUTCOME:-}" != 'success' ]; then
             echo "NON-VERDICT: the requested natural mobile multirun certificate did not pass." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "${SEAT_MOVE_NOTICE_OUTCOME:-}" != 'success' ]; then
+            echo "NON-VERDICT: the served seat-move notice did not pass its isolated browser proof." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if ! [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -1930,7 +2295,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mobile-live-table-proof
-          path: test-results/live-table-realtime/**/mobile-live-table-*
+          path: |
+            test-results/live-table-realtime/**/mobile-live-table-*
+            test-results/seat-move-announcement/**/mobile-live-table-*
           if-no-files-found: ignore
           retention-days: 3
 
@@ -1968,7 +2335,7 @@ jobs:
   # an engine dependency to the independent client publication certificate.
   club-channel-lifecycle-e2e:
     name: Exact engine club channel lifecycle
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     if: "needs.publication-gate.outputs.should_run == 'true' && needs.publication-gate.outputs.client_navigation != 'true' && github.event_name == 'repository_dispatch' && github.event.client_payload.engine_sha != ''"
     runs-on: ubuntu-latest
     # Up to 15m schedule lead + 12m thaw prerequisite + 15m case/fixture
@@ -2174,6 +2541,7 @@ jobs:
   # record-post-deploy-verdict.mjs and records nothing.
   post-deploy-verdict:
     needs:
+      - certification-cleanup-safety
       - publication-gate
       - seo-contract
       - production-e2e
@@ -2218,6 +2586,7 @@ jobs:
           GATE_RESULT: ${{ needs.publication-gate.result }}
           GATE_SHOULD_RUN: ${{ needs.publication-gate.outputs.should_run }}
           LANES: |
+            ${{ needs.certification-cleanup-safety.result }}|Installed certification cleanup protects live tables
             ${{ needs.seo-contract.result }}|The Live SEO Contract Holds
             ${{ needs.production-e2e.result }}|Client browser verification
             ${{ needs.live-table-e2e.result }}|Live-table and engine verification
@@ -2277,6 +2646,8 @@ jobs:
   stood-down-is-not-green:
     name: A stood-down run is marked superseded, not passed
     needs:
+      - private-record-client-proof
+      - stats-pagination-proof
       - publication-gate
       - post-deploy-verdict
       - club-channel-lifecycle-e2e

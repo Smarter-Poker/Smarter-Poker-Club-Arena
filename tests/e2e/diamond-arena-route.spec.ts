@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 /**
  * THE DIAMOND ARENA ROUTE ON A PHONE (D8, 2026-09-20)
  *
@@ -38,6 +39,15 @@ const AWAY_ROUTE = 'wallet';
 const SCHEME_ATTR = 'data-arena-scheme';
 const ARENA_PATH = '/clubs/diamond-arena';
 const CLOSED_COPY = 'Not Open Yet';
+
+function arenaDoorBudgetMs(cardCount: number): number {
+  // The case opens AND closes every live card. Keep its complete catalogue
+  // proof finite and inside the existing 80-minute multi-suite client job.
+  const budget = 30_000 + cardCount * 1_000;
+  if (!Number.isSafeInteger(cardCount) || cardCount < 0 || budget > 12 * 60_000)
+    throw new Error(`Arena catalogue exceeds its complete door-proof budget: ${cardCount}`);
+  return budget;
+}
 
 const ORIENTATIONS = [
   ['portrait', { width: 375, height: 812 }],
@@ -227,6 +237,17 @@ for (const [orientation, viewport] of ORIENTATIONS) {
       expect(seats.error, 'own seat state could not be verified').toBeNull();
       expect(registrations.error, 'own registration state could not be verified').toBeNull();
       const context = authority.context!;
+      // This case certifies both cash and tournament doors. The account's saved
+      // MTT tab legitimately hides cash, so choose the complete board explicitly.
+      await openLobbyGameSection(page, 'ALL');
+      const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
+      await allGames.click();
+      await expect(allGames).toHaveAttribute('aria-selected', 'true');
+      const allStatuses = page
+        .getByLabel('Game Status', { exact: true })
+        .getByRole('button', { name: 'All', exact: true });
+      await allStatuses.click();
+      await expect(allStatuses).toHaveAttribute('aria-pressed', 'true');
       const cards = page.getByTestId('lobby-game-row');
       await cards.first().waitFor({ state: 'visible', timeout: 20_000 });
       const cashCards = page.locator('[data-testid="lobby-game-row"][data-kind="cash"]');
@@ -241,9 +262,12 @@ for (const [orientation, viewport] of ORIENTATIONS) {
           description: 'the lobby read returned no open cash table; no stake ladder is owed',
         });
       } else {
+        await expect(cashCards.first(), 'the arena stake ladder did not render').toBeVisible();
         expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
       }
-      for (const card of await cashCards.all()) {
+      const cashCatalogue = await cashCards.all();
+      test.setTimeout(arenaDoorBudgetMs(cashCatalogue.length));
+      for (const card of cashCatalogue) {
         const id = await card.getAttribute('data-id');
         const status = await card.getAttribute('data-status');
         await card.getByRole('button', { name: /^Details:/ }).click();
@@ -269,8 +293,11 @@ for (const [orientation, viewport] of ORIENTATIONS) {
         }
         await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
       }
+      await openLobbyGameSection(page, 'MTT');
       const tournamentCards = page.locator('[data-testid="lobby-game-row"][data-kind="mtt"]');
-      for (const card of await tournamentCards.all()) {
+      const tournamentCatalogue = await tournamentCards.all();
+      test.setTimeout(arenaDoorBudgetMs(cashCatalogue.length + tournamentCatalogue.length));
+      for (const card of tournamentCatalogue) {
         const id = await card.getAttribute('data-id');
         const status = await card.getAttribute('data-status');
         await card.getByRole('button', { name: /^Details:/ }).click();

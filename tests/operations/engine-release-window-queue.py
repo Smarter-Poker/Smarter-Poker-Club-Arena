@@ -19,7 +19,7 @@ RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_bre
 def run_queue(certificates, *, now=100, deadline=1000, certificate_deadline=900,
               supersede_on=0, cancellation=False, already_released=False, legacy=False,
               checkpoint_exits=(0,), intent_after_defer=False, waiting_since=0):
-    with tempfile.TemporaryDirectory(prefix='engine-window-queue-') as temp:
+    with tempfile.TemporaryDirectory(prefix='engine-window-queue-', dir=ROOT.parent) as temp:
         directory = Path(temp)
         sequence = directory / 'certificate-sequence'
         sequence.write_text('0')
@@ -52,6 +52,8 @@ BREAK_ENTRY_BUDGET_MS=0
 REQUEST_ROOT={shlex.quote(str(directory))}
 CHECKPOINT_SEQUENCE={shlex.quote(str(checkpoint_sequence))}
 LOCK_HELD=0
+FLOOR_DISPOSITION=legacy
+record_floor_runtime_entry() {{ :; }}
 RECOVERY_WAIT_STARTED_EPOCH={waiting_since}
 LEGACY_CHECKPOINT_REQUIRED={int(legacy)}
 LEGACY_CHECKPOINT_ATTEMPTED=0
@@ -101,8 +103,13 @@ LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
 CHECKPOINT_A0_SHA=a0ab287d902879280f0c915e44f5222c5db4d7df
 CHECKPOINT_8825_SHA=8825af51817f379c4261658ca29ecc9d8d81932d
+CHECKPOINT_EED_SHA=eed06fe51dea622069c661a6213d5b031ff3a9e3
 CHECKPOINT_PREDECESSOR_SHA="$CHECKPOINT_8825_SHA"
 legacy_checkpoint_countdown() {{ event "COUNTDOWN:$LOCK_HELD"; printf '%s\\n' $((NOW + 299)); }}
+# The Lightning hold (2026-10-30) is placed on every legacy pass before the
+# entry clock; here it only records that it was asked, unlocked.
+hold_lightning_when_counting_down() {{ event "LIGHTNING_HOLD:$LOCK_HELD"; }}
+release_lightning_hold_if_break_over() {{ :; }}
 timeout() {{ printf '%s\\n' "$CHECKPOINT_8825_SHA"; }}
 prove_rollback_readiness() {{ event "ROLLBACK_PROOF:$LOCK_HELD:$BREAK_END_EPOCH"; }}
 # The helper's exit code per invocation: 0 ran, 75 deferred above its durable
@@ -128,6 +135,8 @@ maintenance_certificate() {{
   esac
 }}
 {HELPERS}
+# Queue boundary doubles: native process budget is exercised separately.
+legacy_entry_read() {{ "$@"; }}
 {RECOVERY}
 {QUEUE}
   [ "$LOCK_HELD" = 1 ] || exit 95
@@ -222,6 +231,8 @@ class WindowQueueTests(unittest.TestCase):
         self.assertEqual([e for e in events if e.startswith('CERTIFICATE:')],
                          ['CERTIFICATE:1:0:260000', 'CERTIFICATE:2:1:245000'])
         self.assertNotIn('LEGACY_CHECKPOINT:1:1', events)
+        # An ordinary (non-legacy) release never asks Lightning to hold.
+        self.assertNotIn('LIGHTNING_HOLD:0', events)
 
     def test_legacy_checkpoint_is_read_against_the_legacy_reserve_after_it_ran(self):
         # Run 35615604946: the checkpoint enters at the 285000ms threshold and
@@ -238,6 +249,10 @@ class WindowQueueTests(unittest.TestCase):
         self.assertLess(checkpoint, events.index('CERTIFICATE:2:1:245000'))
         self.assertEqual(events[-1], 'PREPARE_ALLOWED:1000:900:0')
         self.assertEqual(events.count('LOCK'), 1)
+        # Lightning is asked to hold on the legacy pass, unlocked, before the
+        # countdown is read and before any checkpoint.
+        self.assertLess(events.index('LIGHTNING_HOLD:0'), events.index('COUNTDOWN:0'))
+        self.assertNotIn('LIGHTNING_HOLD:1', events)
 
     def test_legacy_checkpoint_that_breaks_the_legacy_reserve_dies_before_prepare(self):
         result, events = run_queue([(2, 275000), (2, 244999)], legacy=True)

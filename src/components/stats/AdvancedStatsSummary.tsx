@@ -33,6 +33,7 @@ export interface AdvancedStatsInput {
   total_hands?: number;
   total_profit?: number;
   hours_played?: number;
+  cash_hours_played?: number;
   showdowns_won?: number;
   showdowns_total?: number;
   aggression_factor?: number;
@@ -84,7 +85,7 @@ const AnimatedNumber: React.FC<{
 
 function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
   const totalHands = n(d.total_hands);
-  const hoursPlayed = n(d.hours_played);
+  const hoursPlayed = n(d.cash_hours_played);
   const totalProfit = n(d.total_profit);
   const showdownsWon = n(d.showdowns_won);
   const showdownsTotal = n(d.showdowns_total);
@@ -94,12 +95,13 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
   return [
     {
       id: 'hourly',
-      measured: d.metric_availability?.hours_played === true && hoursPlayed > 0,
+      measured: d.metric_availability?.cash_hours_played === true && hoursPlayed > 0,
       label: 'Hourly Rate',
       value: hourlyRate,
       format: (val) => `${val >= 0 ? '+' : ''}${compactChips(val)}`,
       unit: '/hr',
-      description: 'Cash Profit Per Hour Played In This Window',
+      description:
+        'Cash Profit Per Recorded Cash Hand Hour In This Window. Overlapping Tables Count Once.',
     },
     {
       id: 'totalHands',

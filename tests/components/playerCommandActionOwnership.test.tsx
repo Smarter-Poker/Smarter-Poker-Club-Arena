@@ -1,3 +1,4 @@
+vi.unmock('../../src/core/MasterBus');
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -11,6 +12,7 @@ const state = vi.hoisted(() => ({
   } as Record<string, string>,
   viewerId: 'viewer-1',
   viewerRole: 'owner',
+  viewerRoleError: null as Error | null,
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   getMemberDetail: vi.fn(),
@@ -31,6 +33,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('react-router-dom', () => ({
   useParams: () => state.params,
+  useLocation: () => ({ pathname: `/clubs/${state.params.clubId}/members/${state.params.userId}` }),
   useSearchParams: () => [new URLSearchParams(), vi.fn()],
   useNavigate: () => state.navigate,
 }));
@@ -49,6 +52,10 @@ vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
     if (options.event === 'wallet_changed') state.walletChannel = options;
   },
 }));
+vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
+  useClubWorkspace: () => ({ clubUUID: '22222222-2222-4222-8222-222222222222' }),
+}));
+
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: state.viewerId }, isHydrating: false }),
 }));
@@ -73,14 +80,20 @@ vi.mock('../../src/lib/supabase', () => ({
         select: self,
         eq: self,
         abortSignal: self,
-        maybeSingle: async () =>
-          table === 'club_diamond_wallets'
-            ? state.wallet()
-            : { data: { role: state.viewerRole }, error: null },
+        maybeSingle: async () => {
+          if (table === 'club_diamond_wallets') return state.wallet();
+          if (state.viewerRoleError) throw state.viewerRoleError;
+          return { data: { role: state.viewerRole }, error: null };
+        },
       });
       return chain;
     },
-    rpc: (...args: unknown[]) => ({ abortSignal: () => state.rpc(...args) }),
+    rpc: (...args: unknown[]) => ({
+      setHeader() {
+        return this;
+      },
+      abortSignal: () => state.rpc(...args),
+    }),
   },
 }));
 
@@ -102,6 +115,10 @@ vi.mock('../../src/services/ClubRosterService', async () => {
   };
 });
 
+import ClubPrivateDataBoundary from '../../src/components/auth/ClubPrivateDataBoundary';
+import { masterBus } from '../../src/core/MasterBus';
+import { useUserStore } from '../../src/stores/useUserStore';
+import { STATS_CACHE_PREFIX } from '../../src/lib/statsCache';
 import MemberManagementPage from '../../src/pages/MemberManagementPage';
 import PromoVaultPage from '../../src/pages/PromoVaultPage';
 import { MemberAccessDeniedError } from '../../src/services/ClubRosterService';
@@ -113,7 +130,7 @@ const memberDetail = {
     alias: 'River Shark',
     username: 'rivershark',
     display_name: 'River Shark',
-    avatar_url: null,
+    avatar_url: null as string | null,
     role: 'player',
     role_rank: 70,
     nickname: 'The Closer',
@@ -196,6 +213,7 @@ function deferred<T>() {
 }
 beforeEach(() => {
   state.viewerRole = 'owner';
+  state.viewerRoleError = null;
   state.memberChannel = null;
   state.walletChannel = null;
   state.wallet.mockResolvedValue({ data: { balance: 100 }, error: null });
@@ -352,6 +370,9 @@ it('wallet events update the displayed member without replacing a dirty note or 
   await user.click(name);
   await user.clear(name);
   await user.type(name, 'Keep This Draft');
+  const cardReads = state.rpc.mock.calls.filter(([name]) =>
+    ['ca_club_member_win_loss', 'ca_club_member_upline_chain'].includes(name)
+  ).length;
   await act(async () =>
     state.memberChannel?.onPayload({
       eventType: 'UPDATE',
@@ -364,8 +385,14 @@ it('wallet events update the displayed member without replacing a dirty note or 
   );
   expect(screen.getByText('777.00')).toBeInTheDocument();
   expect(name).toHaveValue('Keep This Draft');
+  expect(
+    state.rpc.mock.calls.filter(([name]) =>
+      ['ca_club_member_win_loss', 'ca_club_member_upline_chain'].includes(name)
+    )
+  ).toHaveLength(cardReads);
   expect(state.updateMemberNotes).not.toHaveBeenCalled();
   expect(state.getMemberDetail).toHaveBeenCalledTimes(1);
+  expect(state.getDownline).toHaveBeenCalledTimes(1);
 });
 it('late wallet refresh cannot restore old-viewer financial access', async () => {
   const pending = deferred<typeof memberDetail>();
@@ -508,41 +535,146 @@ it('complete access loss removes the old record and cannot be restored by a dela
   expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
 });
 
-it('updates every record section on a source event while preserving an unsaved note', async () => {
+it('updates live stats and downline fees without replacing identity or an unsaved note', async () => {
   render(<MemberManagementPage />);
   await screen.findByText('River Shark');
+  fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
+  const selectedRange = state.getMemberDetail.mock.calls.at(-1)?.[2];
+  const cardReads = state.rpc.mock.calls.filter(
+    ([name]) => name === 'ca_club_member_win_loss'
+  ).length;
   const nickname = screen.getByDisplayValue('The Closer');
   fireEvent.change(nickname, { target: { value: 'Unsaved Local Name' } });
-  state.getMemberDetail.mockResolvedValue({
+  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
     ...memberDetail,
     identity: { ...memberDetail.identity, alias: 'Updated Shark', nickname: 'Remote Name' },
     presence: { is_online: false, is_seated: false },
     stats: { ...memberDetail.stats, hands: 321, total_winnings: -44 },
     downline: { downline_direct: 3, downline_total: 8 },
-  });
+    range: { ...activeRange, is_overall: activeRange?.from === null },
+  }));
   await act(async () =>
     state.recordChannel?.onPayload({ payload: { user_id: state.params.userId } })
   );
-  expect(await screen.findByText('Updated Shark')).toBeInTheDocument();
-  expect(screen.getByText('Last Active')).toBeInTheDocument();
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+  expect(screen.queryByText('Updated Shark')).not.toBeInTheDocument();
+  expect(state.getMemberDetail.mock.calls.at(-1)?.[2]).toEqual(selectedRange);
   expect(screen.getByText('321')).toBeInTheDocument();
-  expect(screen.getByText('-44')).toBeInTheDocument();
+  expect(state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_win_loss')).toHaveLength(
+    cardReads + 1
+  );
+  expect(screen.getByText('-44.00')).toBeInTheDocument();
+  expect(state.getDownline).toHaveBeenCalledTimes(3);
+  expect(state.getDownline.mock.calls.at(-1)?.[3]).toEqual(selectedRange);
   expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
 });
 
-it('reconciles on focus and a recovered record subscription', async () => {
+it.each(['record_changed', 'SUBSCRIBED'])(
+  'applies the verified avatar on %s without replacing identity or note drafts',
+  async (event) => {
+    const view = render(<MemberManagementPage />);
+    await screen.findByText('River Shark');
+    fireEvent.change(screen.getByDisplayValue('The Closer'), {
+      target: { value: 'Unsaved Local Name' },
+    });
+    fireEvent.change(screen.getByDisplayValue('Strong Late Position Pressure'), {
+      target: { value: 'Unsaved Local Remark' },
+    });
+    state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+      ...memberDetail,
+      identity: {
+        ...memberDetail.identity,
+        alias: 'Remote Alias',
+        nickname: 'Remote Nickname',
+        remark: 'Remote Remark',
+        avatar_url: '/avatars/table/free_shark@2x.webp',
+      },
+      range: { ...activeRange, is_overall: activeRange?.from === null },
+    }));
+    await act(async () => {
+      if (event === 'record_changed') state.recordChannel?.onPayload({});
+      else state.recordChannel?.onSubscriptionStatus?.('SUBSCRIBED');
+    });
+    expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('/avatars/table/free_shark@2x.webp')
+    );
+    expect(screen.getByText('River Shark')).toBeInTheDocument();
+    expect(screen.queryByText('Remote Alias')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Unsaved Local Remark')).toBeInTheDocument();
+  }
+);
+
+it('applies an authoritative avatar removal without retaining the old image', async () => {
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
+  });
+  const view = render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
+  const authoritativeRemoval = deferred<typeof memberDetail>();
+  const initialReadCount = state.getMemberDetail.mock.calls.length;
+  state.getMemberDetail.mockImplementation(() => authoritativeRemoval.promise);
+  await act(async () => state.recordChannel?.onPayload({}));
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(initialReadCount + 1));
+  expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
+  const activeRange = state.getMemberDetail.mock.calls.at(-1)?.[2];
+  await act(async () => {
+    authoritativeRemoval.resolve({
+      ...memberDetail,
+      range: { ...activeRange, is_overall: activeRange?.from === null },
+    });
+  });
+  await waitFor(() => expect(view.container.querySelector('.mm-avatar img')).toBeNull());
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+});
+
+it('does not apply another member avatar from an unmatched record response', async () => {
+  const view = render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+    ...memberDetail,
+    identity: {
+      ...memberDetail.identity,
+      user_id: '33333333-3333-4333-8333-333333333333',
+      avatar_url: '/avatars/table/free_shark@2x.webp',
+    },
+    range: { ...activeRange, is_overall: activeRange?.from === null },
+  }));
+  await act(async () => state.recordChannel?.onPayload({}));
+  expect(view.container.querySelector('.mm-avatar img')).toBeNull();
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+});
+
+it('ignores focus and checks only authority on a recovered record subscription', async () => {
   render(<MemberManagementPage />);
   await screen.findByText('River Shark');
   const baseline = state.getMemberDetail.mock.calls.length;
   await act(async () => window.dispatchEvent(new Event('focus')));
-  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(baseline));
-  const focused = state.getMemberDetail.mock.calls.length;
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(baseline);
+  const focused = baseline;
   await act(async () => state.recordChannel?.onSubscriptionStatus?.('SUBSCRIBED'));
   await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(focused));
+  expect(state.getDownline).toHaveBeenCalledTimes(1);
 });
 
 it('coalesces source bursts and reads again after an event arrives during a read', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   render(<MemberManagementPage />);
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+  // The hook mock exposes callbacks during render. Finish bootstrap and its
+  // authority effect before delivering events to the subscribed record.
+  await act(async () => initial.resolve(memberDetail));
   await screen.findByText('River Shark');
   const pending = deferred<typeof memberDetail>();
   state.getMemberDetail.mockReturnValueOnce(pending.promise);
@@ -570,4 +702,403 @@ it('refreshes role options when the viewer authority changes on the mounted reco
   await act(async () => state.recordChannel?.onPayload({}));
   expect(await screen.findByRole('button', { name: /^Sub Agent/ })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
+});
+
+it('keeps an edited record and its sections stable across ambient browser events', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const input = screen.getByDisplayValue('The Closer');
+  fireEvent.change(input, { target: { value: 'Unsaved Local Draft' } });
+  const detailReads = state.getMemberDetail.mock.calls.length;
+  const downlineReads = state.getDownline.mock.calls.length;
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(detailReads);
+  expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+  expect(screen.getByDisplayValue('Unsaved Local Draft')).toBe(input);
+});
+
+it('withdraws note and role authority on a record event without refreshing the workspace', async () => {
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+  });
+  state.getGrantableRoles.mockResolvedValue(['admin']);
+  render(<MemberManagementPage />);
+  await screen.findByRole('button', { name: /^Admin/ });
+  const downlineReads = state.getDownline.mock.calls.length;
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: {
+      ...memberDetail.capabilities,
+      can_view_notes: false,
+      can_edit_notes: false,
+      can_manage_role: false,
+    },
+  });
+  state.viewerRole = 'player';
+  await act(async () => state.recordChannel?.onPayload({}));
+  await waitFor(() =>
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument()
+  );
+  expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
+  expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+});
+
+it('keeps the chosen ledger dates fixed across a day boundary until an explicit choice', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-29T23:59:59Z'));
+  try {
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }))
+    );
+    const reads = state.getMemberDetail.mock.calls.length;
+    const downlineReads = state.getDownline.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(reads);
+    expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('keeps the real boundary and record mounted on recipient access invalidation while clearing caches', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    // Visible notes can precede the cards' deferred initial reads. Finish the
+    // bootstrap and observe each initial RPC before measuring ambient rereads.
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => initial.resolve(memberDetail));
+    await waitFor(() => {
+      expect(
+        state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_win_loss')
+      ).toHaveLength(1);
+      expect(
+        state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_upline_chain')
+      ).toHaveLength(1);
+    });
+    const nickname = await screen.findByRole('textbox', { name: 'Nickname' });
+    fireEvent.change(nickname, { target: { value: 'Mounted Boundary Draft' } });
+    const downlineReads = state.getDownline.mock.calls.length;
+    const cardReads = state.rpc.mock.calls.filter(([name]) =>
+      ['ca_club_member_win_loss', 'ca_club_member_upline_chain'].includes(name)
+    ).length;
+    const key =
+      STATS_CACHE_PREFIX +
+      JSON.stringify([
+        2,
+        state.viewerId,
+        state.params.userId,
+        '22222222-2222-4222-8222-222222222222',
+      ]);
+    localStorage.setItem(key, 'private');
+    const authorityReads = state.getMemberDetail.mock.calls.length;
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: 'other-club',
+        userId: state.viewerId,
+      });
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: 'other-viewer',
+      });
+    });
+    expect(localStorage.getItem(key)).toBe('private');
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(authorityReads);
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+      });
+    });
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Nickname' })).toBe(nickname);
+    expect(nickname).toHaveValue('Mounted Boundary Draft');
+    expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+    expect(
+      state.rpc.mock.calls.filter(([name]) =>
+        ['ca_club_member_win_loss', 'ca_club_member_upline_chain'].includes(name)
+      )
+    ).toHaveLength(cardReads);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('the mounted boundary delivers authoritative access withdrawal without rereading downline', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    // Resolve bootstrap inside act so the resolved-club authority effect owns
+    // the next event, matching the coalescing fixture above. Visible markup
+    // alone does not establish that passive-effect handoff.
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => initial.resolve(memberDetail));
+    await screen.findByRole('textbox', { name: 'Nickname' });
+    const authorityReads = state.getMemberDetail.mock.calls.length;
+    const reads = state.getDownline.mock.calls.length;
+    state.getMemberDetail.mockRejectedValueOnce(new MemberAccessDeniedError());
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+        scope: 'club',
+        scopeId: '22222222-2222-4222-8222-222222222222',
+      });
+    });
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(authorityReads + 1);
+    const authorityCall = state.getMemberDetail.mock.calls.at(-1);
+    expect(authorityCall?.[2]).toBeUndefined();
+    expect(authorityCall?.[3]).toBeInstanceOf(AbortSignal);
+    expect(authorityCall?.[3].aborted).toBe(false);
+    expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(state.getDownline).toHaveBeenCalledTimes(reads);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('an all-club recipient invalidation withdraws mounted note and role authority in place', async () => {
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+  });
+  state.getGrantableRoles.mockResolvedValue(['admin']);
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await screen.findByRole('button', { name: /^Admin/ });
+    const heading = screen.getByText('River Shark');
+    const reads = state.getDownline.mock.calls.length;
+    state.getMemberDetail.mockResolvedValue({
+      ...memberDetail,
+      capabilities: {
+        ...memberDetail.capabilities,
+        can_view_notes: false,
+        can_edit_notes: false,
+        can_manage_role: false,
+      },
+    });
+    state.viewerRole = 'player';
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', { userId: state.viewerId });
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument()
+    );
+    expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
+    expect(screen.getByText('River Shark')).toBe(heading);
+    expect(state.getDownline).toHaveBeenCalledTimes(reads);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('a boundary access denial during the initial read cannot be undone by its late allowed answer', async () => {
+  state.viewerId = 'initial-denial-viewer';
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    state.getMemberDetail.mockRejectedValueOnce(new MemberAccessDeniedError());
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+      });
+    });
+    expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
+    await act(async () => initial.resolve(memberDetail));
+    expect(screen.getByText('Member Not Found')).toBeInTheDocument();
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('a positive boundary authority check fences the old initial response and admits one fresh record', async () => {
+  state.viewerId = 'initial-allowed-viewer';
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const initial = deferred<typeof memberDetail>();
+  const authority = deferred<typeof memberDetail>();
+  const fresh = deferred<typeof memberDetail>();
+  state.getMemberDetail
+    .mockReturnValueOnce(initial.promise)
+    .mockReturnValueOnce(authority.promise)
+    .mockReturnValueOnce(fresh.promise);
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+      });
+    });
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(2);
+    await act(async () => initial.resolve(memberDetail));
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
+    await act(async () => authority.resolve(memberDetail));
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    await act(async () => fresh.resolve(memberDetail));
+    expect(await screen.findByText('River Shark')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Nickname' })).toHaveValue('The Closer');
+    expect(state.getDownline).toHaveBeenCalledTimes(2);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('an old initial answer arriving before the authority denial remains unverified', async () => {
+  state.viewerId = 'initial-reverse-denial-viewer';
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const initial = deferred<typeof memberDetail>();
+  let deny!: (reason: unknown) => void;
+  const authority = new Promise<typeof memberDetail>((_resolve, reject) => {
+    deny = reject;
+  });
+  state.getMemberDetail.mockReturnValueOnce(initial.promise).mockReturnValueOnce(authority);
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+      });
+    });
+    await act(async () => initial.resolve(memberDetail));
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
+    await act(async () => deny(new MemberAccessDeniedError()));
+    expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(state.getDownline).toHaveBeenCalledTimes(1);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('renders the member before an independent downline request settles', async () => {
+  const downline = deferred<never[]>();
+  state.getDownline.mockReturnValueOnce(downline.promise);
+  render(<MemberManagementPage />);
+  expect(await screen.findByText('River Shark')).toBeInTheDocument();
+  await act(async () => downline.resolve([]));
+});
+
+it('does not apply a delayed live stats response after a newer explicit range read', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const pending = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(pending.promise);
+  await act(async () => state.recordChannel?.onPayload({}));
+  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+    ...memberDetail,
+    identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
+    stats: { ...memberDetail.stats, hands: 777 },
+    range: { ...activeRange, is_overall: false },
+  }));
+  fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+  expect(await screen.findByText('777')).toBeInTheDocument();
+  await act(async () =>
+    pending.resolve({
+      ...memberDetail,
+      identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_shark@2x.webp' },
+      stats: { ...memberDetail.stats, hands: 999 },
+    })
+  );
+  expect(screen.getByText('777')).toBeInTheDocument();
+  expect(screen.queryByText('999')).not.toBeInTheDocument();
+  expect(document.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
+});
+
+it('keeps a verified member visible when its separate viewer-role read fails closed', async () => {
+  state.viewerRoleError = new Error('role transport unavailable');
+  render(<MemberManagementPage />);
+  expect(await screen.findByText('River Shark')).toBeInTheDocument();
+  await act(async () => {});
+  expect(screen.queryByText('The Member Ledger Did Not Respond')).not.toBeInTheDocument();
+  expect(state.toast.error).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
+});
+
+it('cannot restore a downline that settles after financial access is withdrawn', async () => {
+  const downline = deferred<Array<{ user_id: string; alias: string }>>();
+  state.getDownline.mockReturnValueOnce(downline.promise);
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    stats: null,
+    wallets: null,
+    downline: null,
+    capabilities: { ...memberDetail.capabilities, can_view_financials: false },
+  });
+  await act(async () => state.recordChannel?.onPayload({}));
+  await act(async () =>
+    downline.resolve([{ user_id: '33333333-3333-4333-8333-333333333333', alias: 'Cyan Rail' }])
+  );
+  expect(screen.queryByText('Cash Hands')).not.toBeInTheDocument();
+  expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
 });

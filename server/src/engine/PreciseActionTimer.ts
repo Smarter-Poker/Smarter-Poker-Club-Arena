@@ -64,6 +64,49 @@ export interface TimerEvent {
 
 export class PreciseActionTimer {
   private deadlines: Map<string, ActionDeadline> = new Map();
+  private weeklyPauses = new Map<
+    string,
+    { owners: Set<string>; startedAt: number; timers: Map<string, number> }
+  >();
+
+  pauseForWeeklyPayout(tableId: string, owner: string): void {
+    this.holdDecisionClocks(tableId, owner);
+  }
+
+  holdDecisionClocks(tableId: string, owner: string): void {
+    if (!owner) throw new Error('Weekly payout pause requires an owner');
+    let pause = this.weeklyPauses.get(tableId);
+    if (!pause) {
+      pause = { owners: new Set(), startedAt: this.now(), timers: new Map() };
+      this.weeklyPauses.set(tableId, pause);
+      for (const [key, dl] of this.deadlines) {
+        if (dl.tableId !== tableId || dl.isPaused) continue;
+        pause.timers.set(key, this.now());
+        this.pauseTimer(tableId, dl.playerId);
+      }
+    }
+    pause.owners.add(owner);
+  }
+
+  resumeFromWeeklyPayout(tableId: string, owner: string): void {
+    this.releaseDecisionClocks(tableId, owner);
+  }
+
+  releaseDecisionClocks(tableId: string, owner: string): void {
+    const pause = this.weeklyPauses.get(tableId);
+    if (!pause || !pause.owners.delete(owner) || pause.owners.size) return;
+    this.weeklyPauses.delete(tableId);
+    for (const [key, pausedAt] of pause.timers) {
+      const dl = this.deadlines.get(key);
+      if (!dl) continue;
+      dl.startedAt += Math.max(0, this.now() - pausedAt);
+      this.resumeTimer(tableId, dl.playerId);
+    }
+  }
+
+  isParkedForWeeklyPayout(tableId: string, owner: string): boolean {
+    return this.weeklyPauses.get(tableId)?.owners.has(owner) === true;
+  }
   private onEvent?: (event: TimerEvent) => void;
   /**
    * The scheduler that does the actual ticking + expiry firing. Can be
@@ -145,6 +188,12 @@ export class PreciseActionTimer {
       callback: () => this.onExpired(tableId, playerId),
     });
 
+    const weekly = this.weeklyPauses.get(tableId);
+    if (weekly) {
+      weekly.timers.set(key, this.now());
+      this.pauseTimer(tableId, playerId);
+    }
+
     this.emitEvent({
       type: 'TIMER_STARTED',
       tableId,
@@ -188,7 +237,12 @@ export class PreciseActionTimer {
    * Get the absolute deadline timestamp.
    */
   getDeadline(tableId: string, playerId: string): number {
-    return this.deadlines.get(this.key(tableId, playerId))?.deadline ?? 0;
+    const key = this.key(tableId, playerId);
+    const dl = this.deadlines.get(key);
+    if (dl && this.weeklyPauses.get(tableId)?.timers.has(key)) {
+      return this.now() + dl.pausedRemainingMs;
+    }
+    return dl?.deadline ?? 0;
   }
 
   /**
@@ -240,6 +294,7 @@ export class PreciseActionTimer {
    * Resume the timer after pause.
    */
   resumeTimer(tableId: string, playerId: string): void {
+    if (this.weeklyPauses.has(tableId)) return;
     const dl = this.deadlines.get(this.key(tableId, playerId));
     if (!dl || !dl.isPaused) return;
 
@@ -269,6 +324,7 @@ export class PreciseActionTimer {
     const key = this.key(tableId, playerId);
     if (this.deadlines.has(key)) {
       this.deadlines.delete(key);
+      this.weeklyPauses.get(tableId)?.timers.delete(key);
       this.scheduler.cancel(tableId, this.eventId(playerId));
       this.emitEvent({ type: 'TIMER_CANCELLED', tableId, playerId });
     }
@@ -373,5 +429,6 @@ export class PreciseActionTimer {
       this.scheduler.cancel(dl.tableId, this.eventId(dl.playerId));
     }
     this.deadlines.clear();
+    this.weeklyPauses.clear();
   }
 }

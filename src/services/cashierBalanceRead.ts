@@ -8,23 +8,11 @@ const amount = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-/**
- * THE CREDIT LINE A SEND MAY STILL DRAW (2026-10-09), read exactly as
- * fn_agent_wallet_send_core does: an agent who is not prepaid
- * (coalesce(is_prepaid, true) is false) with a positive credit_limit may send
- * past the float, and the shortfall is drawn against credit_limit -
- * credit_used. Everyone else - prepaid, no line, no agents row - has none.
- * The cashiers used to cap a send at the float alone, so a credit agent with
- * an empty float could not send at all while the server would have allowed it.
- */
+/** Credit is a tracking agreement, never additional spendable chips. */
 export function creditHeadroomOf(
-  row: { is_prepaid?: unknown; credit_limit?: unknown; credit_used?: unknown } | null | undefined
+  _row: { is_prepaid?: unknown; credit_limit?: unknown; credit_used?: unknown } | null | undefined
 ): number {
-  if (!row || row.is_prepaid !== false) return 0;
-  const limit = amount(row.credit_limit) ?? 0;
-  if (limit <= 0) return 0;
-  const used = amount(row.credit_used) ?? 0;
-  return Math.max(0, Math.round((limit - used) * 100) / 100);
+  return 0;
 }
 
 /** A column the server reads through coalesce(..., 0). */
@@ -41,7 +29,7 @@ export interface CashierBalanceSnapshot {
   /** Club Bank or the viewer's Agent Wallet, by walletType. null = unavailable, never 0. */
   bank: number | null;
   clubBank: number | null;
-  /** What a send may draw past the float: the Agent Wallet's credit line only, 0 otherwise. */
+  /** Compatibility field for older consumers. Tracking credit never funds a send. */
   credit: number;
   /** The club's promo pot (clubs.promo_balance through the role-checked panel). */
   promoPot: number | null;

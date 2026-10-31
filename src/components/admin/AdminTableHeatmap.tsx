@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * AdminTableHeatmap — "God View" table activity heatmap
  * Ported from Hub's AdminTableHeatmap.js → CA TSX
@@ -59,7 +60,11 @@ export default function AdminTableHeatmap({
   onAction,
 }: AdminTableHeatmapProps) {
   const { user } = useAuthUser();
-  const [viewMode, setViewMode] = useState<ViewMode>('density');
+  const [viewMode, setViewMode] = usePlayerPreference<ViewMode>(
+    'adminTableHeatmap.viewMode',
+    'density',
+    'global'
+  );
   const [fetchedTables, setFetchedTables] = useState<TableRow[]>([]);
   const [readError, setReadError] = useState(false);
   const [loading, setLoading] = useState(true);

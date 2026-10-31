@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * DOWNLINE RAKE — live.
  *
@@ -37,46 +38,101 @@ const AGENT_ROLES = new Set(['super_agent', 'agent', 'sub_agent']);
 const PAGE_SIZE = 500;
 
 type Crumb = { userId: string; name: string };
+type RakeSnapshot = {
+  scope: string;
+  rows: DownlineRakeRow[];
+  summary: DownlineRakeSummary;
+  liveAt: Date;
+  hasMore: boolean;
+};
 
-export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) {
-  const [clubId, setClubId] = useState<string>(roles[0]?.club_id ?? '');
-  const [win, setWin] = useState<RakeWindowKey>('week');
-  const [search, setSearch] = useState('');
+export default function DownlineRakePanel({
+  roles,
+  liveRevision = 0,
+  viewerId,
+}: {
+  roles: AgentRoleRow[];
+  liveRevision?: number;
+  viewerId?: string;
+}) {
+  const [savedClubId, setClubId] = usePlayerPreference<string>(
+    'downlineRake.club',
+    roles[0]?.club_id ?? '',
+    'global'
+  );
+  const clubId = roles.some((role) => role.club_id === savedClubId)
+    ? savedClubId
+    : (roles[0]?.club_id ?? '');
+  const [win, setWin] = usePlayerPreference<RakeWindowKey>('downlineRake.window', 'week', clubId);
+  const [search, setSearch] = usePlayerPreference('downlineRake.search', '', clubId);
   const [debounced, setDebounced] = useState('');
-  const [rows, setRows] = useState<DownlineRakeRow[]>([]);
-  const [summary, setSummary] = useState<DownlineRakeSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<RakeSnapshot | null>(null);
+  const [loadingRead, setLoading] = useState(true);
+  const [readError, setError] = useState<{ scope: string; message: string } | null>(null);
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
-  const [liveAt, setLiveAt] = useState<Date | null>(null);
   const [rowLimit, setRowLimit] = useState(PAGE_SIZE);
-  const [hasMore, setHasMore] = useState(false);
 
-  const inFlight = useRef(false);
+  const inFlight = useRef<{ key: string; controller: AbortController } | null>(null);
   const pending = useRef(false);
   const latestLoad = useRef<(quiet?: boolean) => Promise<void>>(async () => undefined);
+  const mounted = useRef(true);
 
   // Debounce the search box so typing does not fire a query per keystroke.
   useEffect(() => {
+    if (search === debounced) return;
     const t = setTimeout(() => {
       setRowLimit(PAGE_SIZE);
       setDebounced(search);
     }, 300);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, debounced]);
 
   const focusUserId = crumbs.length ? crumbs[crumbs.length - 1].userId : undefined;
+  const scope = JSON.stringify([viewerId, clubId, win, debounced, focusUserId]);
+  const requestKey = JSON.stringify([scope, rowLimit]);
+  const latestScope = useRef(requestKey);
+  latestScope.current = requestKey;
+  const current = snapshot?.scope === scope ? snapshot : null;
+  const rows = current?.rows ?? [];
+  const summary = current?.summary ?? null;
+  const liveAt = current?.liveAt ?? null;
+  const hasMore = current?.hasMore ?? false;
+  const error = readError?.scope === scope ? readError.message : null;
+  // An unverified new scope is loading, never an empty downline.
+  const loading = loadingRead || (!current && !error);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      inFlight.current?.controller.abort();
+      inFlight.current = null;
+      pending.current = false;
+    };
+  }, []);
 
   const load = useCallback(
     async (quiet = false) => {
-      // Coalesce: a burst of live events must not stack up requests.
-      if (inFlight.current) {
+      if (!mounted.current) return;
+      // Record events coalesce behind the current read. A new scope cancels
+      // its predecessor immediately and owns every subsequent state update.
+      if (inFlight.current?.key === requestKey) {
         pending.current = true;
         return;
       }
-      inFlight.current = true;
-      if (!quiet) setLoading(true);
-      setError(null);
+      inFlight.current?.controller.abort();
+      const request = { key: requestKey, controller: new AbortController() };
+      inFlight.current = request;
+      pending.current = false;
+      const ownsRead = () =>
+        mounted.current &&
+        inFlight.current === request &&
+        latestScope.current === requestKey &&
+        !request.controller.signal.aborted;
+      if (!quiet) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const { since, until } = windowToRange(win);
         const args = {
@@ -84,6 +140,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
           clubId: clubId || undefined,
           since,
           until,
+          signal: request.controller.signal,
         };
         const [r, s] = await Promise.all([
           AgentRakeService.getDownlineRake({
@@ -93,50 +150,42 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
           }),
           AgentRakeService.getDownlineRakeSummary(args),
         ]);
-        setRows(r.slice(0, rowLimit));
-        setHasMore(r.length > rowLimit);
-        setSummary(s);
-        setLiveAt(new Date());
+        if (!ownsRead()) return;
+        if (!s) throw new Error('Downline rake summary was not returned');
+        setSnapshot({
+          scope,
+          rows: r.slice(0, rowLimit),
+          hasMore: r.length > rowLimit,
+          summary: s,
+          liveAt: new Date(),
+        });
+        setError(null);
       } catch (e) {
-        setError(describeRakeError(e));
+        if (!ownsRead()) return;
+        setError({ scope, message: describeRakeError(e) });
         reportError(e, 'DownlineRakePanel.load');
       } finally {
-        inFlight.current = false;
-        setLoading(false);
-        if (pending.current) {
-          pending.current = false;
-          void latestLoad.current(true);
+        if (ownsRead()) {
+          inFlight.current = null;
+          setLoading(false);
+          if (pending.current) {
+            pending.current = false;
+            void latestLoad.current(true);
+          }
         }
       }
     },
-    [clubId, win, debounced, focusUserId, rowLimit]
+    [clubId, win, debounced, focusUserId, rowLimit, requestKey, scope]
   );
   latestLoad.current = load;
 
+  const requestedScope = useRef<string | null>(null);
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  // Live: refresh when commission is written (i.e. rake was earned), and poll
-  // as a fallback in case the socket drops. Both are quiet refreshes so the
-  // table never flashes a spinner while someone is reading it.
-  useEffect(() => {
-    let debounceTimer: number | undefined;
-
-    const bump = () => {
-      window.clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => void load(true), 2500);
-    };
-
-    const unsub = AgentRakeService.subscribeToRake(clubId || undefined, bump);
-    const timer = window.setInterval(() => void load(true), 30_000);
-
-    return () => {
-      unsub();
-      window.clearTimeout(debounceTimer);
-      window.clearInterval(timer);
-    };
-  }, [clubId, load]);
+    const quiet = requestedScope.current === requestKey;
+    requestedScope.current = requestKey;
+    void load(quiet);
+    // The parent owns record_changed/pulse coalescing and reconnect reads.
+  }, [load, requestKey, liveRevision]);
 
   const totals = useMemo(() => {
     const shown = rows.reduce((s, r) => s + Number(r.rake_generated || 0), 0);
@@ -147,7 +196,6 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
     if (!AGENT_ROLES.has(r.role)) return;
     setRowLimit(PAGE_SIZE);
     setCrumbs((c) => [...c, { userId: r.player_id, name: r.username ?? 'Agent' }]);
-    setSearch('');
   };
 
   const popTo = (i: number) => {
@@ -266,7 +314,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
 
           <div className="dlr-read-status">
             <span>
-              {liveAt && <>Verified 30-Second Poll / Last Checked {liveAt.toLocaleTimeString()}</>}
+              {liveAt && <>Live Record Updates / Last Checked {liveAt.toLocaleTimeString()}</>}
             </span>
             {debounced && (
               <span>

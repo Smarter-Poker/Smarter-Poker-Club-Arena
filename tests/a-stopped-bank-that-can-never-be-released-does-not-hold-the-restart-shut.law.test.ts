@@ -63,6 +63,10 @@ const TRANSACTION = readFileSync(
   join(ROOT, 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
+const entryRead = TRANSACTION.slice(
+  TRANSACTION.indexOf('legacy_entry_read() {'),
+  TRANSACTION.indexOf('legacy_entry_trace() {')
+);
 const BREAK = readFileSync(join(ROOT, 'server/src/maintenance/MaintenanceBreak.ts'), 'utf8');
 
 const PREDECESSOR = '778075b419d078c58565c284c0ca7c5225bb773a';
@@ -81,7 +85,7 @@ function inflightHelper(rc: number): string {
   // a certificate that leaks it into the captured figure fails here.
   writeFileSync(
     path,
-    `#!/bin/sh\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
+    `#!/bin/sh\nif [ "\${3:-}" = --weekly-payout-only ]; then echo database-proves-no-weekly-owner; exit 0; fi\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
   );
   chmodSync(path, 0o755);
   return path;
@@ -108,6 +112,7 @@ function certificate({
   );
   const body = JSON.stringify({
     running: true,
+    weeklyPayout: null,
     ...(releaseSha === undefined ? {} : { releaseSha }),
     ...(hands === 'absent' ? {} : { handsInFlightTotal: hands }),
     maintenance: {
@@ -129,6 +134,7 @@ function certificate({
 MIN_BREAK_REMAINING_MS=285000
 ENV_FILE=/dev/null
 INFLIGHT_HANDS="$MOCK_INFLIGHT"
+${entryRead}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper}
 maintenance_certificate`,
@@ -279,7 +285,7 @@ describe('5. stdout is the verdict and nothing else', () => {
 
 describe('4. the shape of the gate is unchanged', () => {
   it('keeps the allow-list an allow-list and admits only through the database branch', () => {
-    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file');
+    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2\n');
     const admission = TRANSACTION.slice(from, TRANSACTION.indexOf('\n}', from));
     expect(admission.match(/return 0/g)).toHaveLength(1);
     expect(admission).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE/);

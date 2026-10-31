@@ -113,6 +113,10 @@ interface Travel {
   direction: number;
   /** The scroller's content height at the last read; 0 until first read. */
   height: number;
+  /** The visible panel also changes when the footer returns. */
+  viewport: number;
+  /** Keep the footer visible through the remainder of a bottom-edge flick. */
+  endReached: boolean;
 }
 
 export interface HideOnScroll {
@@ -197,28 +201,36 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
       const y = scrollTopOf(source);
       const limit = scrollLimitOf(source);
 
-      /* Too small to be "the page" any more - and if the bar is down, PUT IT
-         BACK (corrected 2026-09-06). This used to `return` bare, which strands
-         the footer: a list that collapses under a filter, images that unload,
-         or a soft keyboard cutting clientHeight can all drop a scroller below
-         this floor WHILE the bar is hidden, and from there no amount of
-         scrolling can reveal it - only a route change. The travel entry is
-         dropped too, so if the scroller grows back the next event starts from a
-         fresh anchor instead of comparing against a stale one. */
-      if (limit < MIN_SCROLLER_RANGE) {
-        travel.delete(source);
-        setHidden(false);
-        return;
-      }
-
-      // The first real flick is travel too, not merely an anchor at its end.
+      const viewport = isDocumentScroller(source)
+        ? window.innerHeight
+        : (source as Element).clientHeight;
       const state = travel.get(source) ?? {
         last: 0,
         anchor: 0,
         direction: 0,
         height: 0,
+        viewport,
+        endReached: false,
       };
       travel.set(source, state);
+      const resized = state.viewport !== viewport;
+      state.viewport = viewport;
+
+      // A footer reveal shrinks TournamentDetails' panel by the footer's
+      // height. Scroll anchoring/clamping from that resize is not a swipe.
+      // Retain the sample even for a short range so its next resize cannot
+      // restart direction detection from zero.
+      if (limit < MIN_SCROLLER_RANGE || (resized && inputDirection === 0)) {
+        state.last = y;
+        state.anchor = y;
+        state.direction = 0;
+        state.height = contentHeightOf(source);
+        if (limit < MIN_SCROLLER_RANGE || y >= limit - 1) {
+          state.endReached = true;
+          setHidden(false);
+        }
+        return;
+      }
 
       /* THE PAGE MOVING IS NOT THE READER MOVING (2026-10-19). When content
          ABOVE the viewport changes height - the live lobby re-rendering a card
@@ -252,9 +264,17 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
         state.last = y;
         state.anchor = y;
         state.direction = 0;
-        if (y >= limit - 1) setHidden(false);
+        if (y >= limit - 1) {
+          state.endReached = true;
+          setHidden(false);
+        }
         return;
       }
+
+      // New content below the reader creates a genuinely new reading range.
+      // An anchoring-only change already returned above; do not keep the old
+      // end state when a filter/live update extends the list.
+      if (previous > 0 && grew > 0) state.endReached = false;
 
       const direction = y > state.last ? 1 : y < state.last ? -1 : 0;
       if (direction !== 0 && direction !== state.direction) {
@@ -266,6 +286,9 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
 
       // At the top of the page the bar is always present.
       if (y <= 0) {
+        state.endReached = false;
+        state.anchor = y;
+        state.direction = 0;
         setHidden(false);
         return;
       }
@@ -283,8 +306,20 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
          the true bottom is routinely `limit - 0.5` and an exact `>=` never
          fires - on precisely the class of device this reveal was written for. */
       if (y >= limit - 1) {
+        state.endReached = true;
+        state.anchor = y;
+        state.direction = 0;
         setHidden(false);
         return;
+      }
+
+      // Reaching the end reveals the footer and creates new scroll range in
+      // bounded panels. The same continuing touch momentum/wheel gesture must
+      // not hide it in that new range, then clamp/reveal/hide it repeatedly.
+      // Leave this state only after a real upward run away from the end.
+      if (state.endReached) {
+        if (direction === -1 && anchor - y > THRESHOLD) state.endReached = false;
+        else return;
       }
 
       if (direction === 1 && y - anchor > THRESHOLD) setHidden(true);

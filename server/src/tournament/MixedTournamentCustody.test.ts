@@ -59,6 +59,7 @@ function server(): any {
     tournamentRetirementCustody: new TournamentRetirementCustody(),
     drainedF06TournamentCustody: new Map(),
     completedF06TournamentCustody: new Map(),
+    completedF06DiagnosticWindows: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
     tournamentManagerLeaseReleaseOperations: new Map(),
     tournamentManagerPendingLeaseReleases: new Map(),
@@ -687,7 +688,9 @@ it('an original that still holds process work has no readable drained identity',
   expect(m.lastF06CustodyRefusal()).toEqual({
     path: 'mixed',
     refused: 'physical_identity_unreadable',
+    detail: `${engines[0][0]}:read_continuation_pending`,
   });
+  expect(mocks.rpc).not.toHaveBeenCalled();
   (engines[0][1] as any).readContinuationTasks.clear();
 });
 it('an original missing from the manager registry names the clause of the originals gate', async () => {
@@ -716,7 +719,9 @@ it('an unreadable physical identity is refused by name', async () => {
   expect(m.lastF06CustodyRefusal()).toEqual({
     path: 'mixed',
     refused: 'physical_identity_unreadable',
+    detail: `${engines[0][0]}:capture_unavailable`,
   });
+  expect(mocks.rpc).not.toHaveBeenCalled();
 });
 it('a physical map with an extra global engine names the stale clause before prepare', async () => {
   const { s, m } = await mixedStopped();
@@ -1355,4 +1360,33 @@ it('receipt-only successor consumes separately absent original move before compl
   managers.push(ordinary);
   expect(ordinary.isF06RecoveryOwner()).toBe(false);
   expect(ordinary.getTournamentLeaseGeneration()).not.toBe(transfer.successorGeneration);
+});
+
+it('seals the real terminal mixed continuation without retaining its old manager or engines', async () => {
+  const { s, m, engines } = await recoverableMixedScene();
+  const entry = s.completedF06DiagnosticWindows.get(id(1)).sealed[0];
+  expect(entry.status).toBe('sealed');
+  expect(s.inspectCompletedF06Custody(entry)?.sourceTableIds).toEqual(
+    engines.map(([id]) => id).sort()
+  );
+  expect(entry).not.toHaveProperty('original');
+  expect(s.drainedF06TournamentCustody.has(id(1))).toBe(false);
+  expect(m.captureDrainedF06Originals()).not.toBeNull();
+});
+
+it('a retained original with no installed lifecycle stays refused before the first custody RPC', async () => {
+  const { m, engines } = await mixedStopped();
+  const [tableId, engine] = engines[0] as [string, any];
+  engine.f06TableLifecycle = null;
+  engine.f06MovementAdmission = null;
+  const retainedPermit = engine.getF06RetainedPermit();
+  expect(await m.captureMixedF06Custody(id(9))).toBeNull();
+  expect(m.lastF06CustodyRefusal()).toEqual({
+    path: 'mixed',
+    refused: 'physical_identity_unreadable',
+    detail: `${tableId}:lifecycle_missing`,
+  });
+  expect(mocks.rpc).not.toHaveBeenCalled();
+  expect(engine.getF06RetainedPermit()).toEqual(retainedPermit);
+  expect(engine.f06TableLifecycle).toBeNull();
 });

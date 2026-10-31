@@ -1,0 +1,7 @@
+# PLO8 cash heads-up matched commitment exposure
+
+The matched-risk helper excluded PLO8, so its caller reverted to the horse's entire physical stack when computing cash heads-up commitment SPR and invested share. A controller-derived river pair reproduced the discrepancy: the same 82 units of opponent exposure produced an accepted 82-unit all-in for a matching stack, but a flat 36-unit call when the horse covered 900 additional units.
+
+PLO8 now uses the existing pot-limit Omaha matched-exposure arithmetic and canonical legal wager construction. Whole-pot expected share, high/low decomposition, scoop/quarter awareness, call prices, policy thresholds and range modeling are unchanged. This is a physical-risk correction, with no hand-strength special case. Tournament, bomb/multiple-board, multiway, binding commitment cap and already-all-in opponent exclusions remain.
+
+Regression coverage uses actual controller menus and accepted actions with every nonhero private card masked from the chooser. Separate physical showdown fixtures verify quarter, half, three-quarter, scoop and no-qualifying-low payouts. Further cases preserve passive low-only/nonnut choices, under-minimum all-in rights, legal minimum full raises with exactly returned unmatched excess, and the existing domain exclusions. Source qualification does not establish live installation or profitability; protected delivery and affected-live evidence remain required.

@@ -727,6 +727,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V57'
   ),
   flag(
+    'v61RiverOnePairShade',
+    'Hold em one-pair (or board-paired two pair) river calls are shaded 6-12 equity points against the price unless the bettor reads as an over-bluffer; measured 14-day review stack-offs won 14-22% at prices demanding 20-40%; explicit off arm retained',
+    'V61'
+  ),
+  flag(
+    'v62RiverBettorPolarity',
+    '2026-10-30 Hold\'em river bettor polarity: a river wager\'s sampled hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum by bet size; OPT-IN since 18:50 UTC after the mirror league resolved it negative against horses (-3.67 +/- 1.02 bb/100 at 200bb) while V61 alone resolved +1.30 +/- 0.41; re-enable only after a recalibrated stratum resolves positive',
+    'V62'
+  ),
+  flag(
+    'tournamentFlatBump',
+    'league calibration arm (2026-10-30): tournament call bar facing a single open raised by 0 < x <= 0.2; inert unless set; +0.06 measured -1.11 +/- 0.51 bb/100 at 100bb and +0.41 +/- 0.31 at 40bb in the MTT mirror',
+    'V62-league'
+  ),
+  flag(
+    'v60CashPressure',
+    'Dan 2026-10-24 NLH cash pressure: blinds and late position value 3-bet a single open from their measured hand shares, re-steal volume matches the tournament layer, and the opener defends a 3-bet from the top 10% in position and top 8% out of it up to 100bb; explicit off arm retained for the neutrality corpus',
+    'V60'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
@@ -2112,6 +2132,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.002
   ),
   receipt(
+    'v61_river_one_pair_shade',
+    'HorseLogic (V61)',
+    'Hold em one-pair river call shaded against the price',
+    'V61',
+    'decide',
+    0.001
+  ),
+  receipt(
     'v38_river_fold',
     'HorseEvEngine via HorseLogic (V38)',
     'MDF river fold',
@@ -3320,6 +3348,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic committed and ordinary raise branches',
     'opt-in river Omaha weak set/trips flatted after clearing the unchanged call bar',
     'V55'
+  ),
+  receipt(
+    'v62_river_bettor_polarity',
+    'HorseLogic to HorseEval river-polar Hold\'em sampler',
+    'a river bettor\'s sampled hand was kept by the V62 size-class likelihood that a human bets it',
+    'V62',
+    'decide',
+    0.001
   ),
   receipt(
     'v56_omaha_pressure_range',

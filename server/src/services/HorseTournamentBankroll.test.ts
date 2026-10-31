@@ -142,13 +142,17 @@ describe('WIRING - the registration pool actually consults it', () => {
     expect(TOURNEY).toContain(
       'const walletPool = pool.filter((horse) => !ticketHintIds.has(horse.id));'
     );
-    expect(TOURNEY).toContain(': orderedTickets.concat(orderedWallets).slice(0, count);');
+    expect(TOURNEY).toContain(': orderedTickets.concat(orderedWallets).slice(0, count * 4 + 6);');
     expect(TOURNEY).toContain(
       'const recoveryTickets = orderedTickets.slice(0, Math.max(count, 25));'
     );
     expect(TOURNEY).toContain(
       'orderedWallets.slice(0, Math.max(0, count - recoveryTickets.length))'
     );
+    expect(TOURNEY).toContain(
+      'const admissionLimit = redeemTickets ? Math.max(count, recoveryTickets.length) : count;'
+    );
+    expect(TOURNEY).toContain('if (registered >= admissionLimit) break;');
     expect(TOURNEY).not.toMatch(/const horses = eligible\.slice\(rot\)/);
   });
 });

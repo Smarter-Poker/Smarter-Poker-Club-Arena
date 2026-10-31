@@ -1,3 +1,5 @@
+import type { V31ControlRequest, V31ControlAck } from './v31ReloadControl.js';
+import { mainHorseHistoryRetentionBudget } from './ownPublicHistoryBudget.js';
 import { readHorseOwnPublicHistory } from '../../services/HorseOwnPublicHistory.js';
 import { HorseObserverParticipantRegistry } from './observerParticipants.js';
 import { availableParallelism } from 'node:os';
@@ -238,6 +240,9 @@ export { horseDecisionShard };
 
 export interface LiveHorseDecisionWorkerShardStatus {
   index: number;
+  isolateMemory?: LiveHorseDecisionWorkerStatus['isolateMemory'];
+  isolateMemoryAgeMs?: number | null;
+  mainHistoryCache?: LiveHorseDecisionWorkerStatus['mainHistoryCache'];
   phase: LiveHorseDecisionWorkerPhase;
   queueDepth: number;
   inFlightJobs: number;
@@ -250,6 +255,9 @@ export interface LiveHorseDecisionWorkerShardStatus {
 }
 
 export interface LiveHorseDecisionLaneStatus extends LiveHorseDecisionWorkerStatus {
+  /** Number of main-owned client caches represented by the aggregate. */
+  mainHistoryCacheClientCount?: number;
+  mainHistoryRetentionBudget?: ReturnType<typeof mainHorseHistoryRetentionBudget.status>;
   workerCount: number;
   /** The journal shards the disk admitted at construction (null: no journal). */
   journalShardCapacity: number | null;
@@ -260,6 +268,9 @@ export interface LiveHorseDecisionLaneStatus extends LiveHorseDecisionWorkerStat
 
 /** The public surface every caller uses; the sole client and the lane both offer it. */
 export interface LiveHorseDecisionLane {
+  requestV31Control?(
+    request: V31ControlRequest
+  ): Promise<Array<V31ControlAck & { worker: number }>>;
   ready(): Promise<HorseDecisionWorkerReadiness>;
   status(): LiveHorseDecisionLaneStatus;
   decideFast(
@@ -359,6 +370,27 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     return this.clients.length;
   }
 
+  async requestV31Control(
+    request: V31ControlRequest
+  ): Promise<Array<V31ControlAck & { worker: number }>> {
+    const outcomes = await Promise.allSettled(
+      this.clients.map((client) => client.requestV31Control(request))
+    );
+    return outcomes.map((outcome, worker) =>
+      outcome.status === 'fulfilled'
+        ? { ...outcome.value, worker }
+        : {
+            type: 'V31_STORE_CONTROL_ACK',
+            operation: request.operation,
+            requestId: request.requestId,
+            ok: false,
+            count: 0,
+            dataset: null,
+            error: 'worker_control_outcome_unknown',
+            worker,
+          }
+    );
+  }
   private shard(fence: string): LiveHorseDecisionWorkerClient {
     return this.clients[horseDecisionShard(fence, this.clients.length)]!;
   }
@@ -406,6 +438,20 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
 
   status(): LiveHorseDecisionLaneStatus {
     const all = this.clients.map((client) => client.status());
+    const caches = all.flatMap((s) => (s.mainHistoryCache ? [s.mainHistoryCache] : []));
+    const mainHistoryCache = caches.length
+      ? caches.reduce((sum, s) => ({
+          owner: 'main' as const,
+          entries: sum.entries + s.entries,
+          maxEntries: sum.maxEntries + s.maxEntries,
+          decodedPacketCount: sum.decodedPacketCount + s.decodedPacketCount,
+          serializedPacketCount: sum.serializedPacketCount + s.serializedPacketCount,
+          acknowledgedCount: sum.acknowledgedCount + s.acknowledgedCount,
+          pendingCount: sum.pendingCount + s.pendingCount,
+          retainedSerializedUtf8Bytes:
+            sum.retainedSerializedUtf8Bytes + s.retainedSerializedUtf8Bytes,
+        }))
+      : null;
     const first = all[0]!;
     const phase = all.reduce<LiveHorseDecisionWorkerPhase>(
       (worst, s) => (PHASE_RANK[s.phase] > PHASE_RANK[worst] ? s.phase : worst),
@@ -463,11 +509,19 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
       solverPolicyArtifact: first.solverPolicyArtifact,
       governor: governor ? { ...governor } : null,
       statusSampledAt: minOf(all.map((s) => s.statusSampledAt)),
+      isolateMemory: null,
+      isolateMemoryAgeMs: null,
+      mainHistoryCache,
+      mainHistoryCacheClientCount: caches.length,
+      mainHistoryRetentionBudget: mainHorseHistoryRetentionBudget.status(),
       workerCount: all.length,
       journalShardCapacity: this.journalShardCapacity ?? null,
       journalCapacityUnreadable: this.journalCapacityUnreadable,
       workers: all.map((s, index) => ({
         index,
+        isolateMemory: s.isolateMemory ?? null,
+        isolateMemoryAgeMs: s.isolateMemoryAgeMs ?? null,
+        mainHistoryCache: s.mainHistoryCache ?? null,
         phase: s.phase,
         queueDepth: s.queueDepth,
         inFlightJobs: s.inFlightJobs,

@@ -39,8 +39,8 @@ function lastRuleFor(css: string, selector: string): string {
 }
 
 describe('the My Wallets count line', () => {
-  const CSS = read('src/pages/ClubHomeMobilePremium.css');
-  const PAGE = read('src/pages/ClubHomePage.tsx');
+  const CSS = read('src/components/wallet/CashierMyWallets.css');
+  const PAGE = read('src/components/wallet/CashierMyWallets.tsx');
   const WALLET = read('src/components/wallet/DynamicWallet.tsx');
 
   /**
@@ -113,7 +113,7 @@ describe('the My Wallets count line', () => {
    * overflow fallback.
    */
   it('is centred on the painted title, and wide enough that no count can overflow', () => {
-    const body = lastRuleFor(CSS, '.club-home--unified-mobile .lobby-wallets-trigger__copy small');
+    const body = lastRuleFor(CSS, '.cashier-my-wallets .lobby-wallets-trigger__copy small');
 
     const left = Number(body.match(/left:\s*([\d.]+)%/)?.[1]);
     const width = Number(body.match(/width:\s*([\d.]+)%/)?.[1]);

@@ -53,6 +53,7 @@ class BreakHarness extends TournamentManagerBase {
 
   forceBreakState(): void {
     this.onBreak = true;
+    (this as any).breakCountdownAnchor = { generation: 0, startedAt: '2026-10-31T03:00:00.000Z' };
   }
 
   breakIsActive(): boolean {
@@ -86,8 +87,37 @@ class BreakHarness extends TournamentManagerBase {
 
 function stubBreakPersistence(result: Promise<unknown> = Promise.resolve({ error: null })) {
   const eq = vi.fn(() => result);
-  const update = vi.fn(() => ({ eq }));
-  const from = vi.spyOn(supabase, 'from').mockReturnValue({ update } as never);
+  let row: Record<string, unknown> = {
+    id: TOURNAMENT_ID,
+    on_break: true,
+    break_started_at: '2026-10-31T03:00:00.000Z',
+    break_ends_at: null,
+  };
+  const update = vi.fn((patch: Record<string, unknown>) => ({
+    eq: (...args: unknown[]) => {
+      const pending = (eq as (...args: unknown[]) => Promise<any>)(...args);
+      const receipt = () =>
+        pending.then((response) => {
+          if (!response.error) row = { ...row, ...patch };
+          return { ...response, data: response.error ? null : { ...row } };
+        });
+      const chain: any = {
+        eq: () => chain,
+        is: () => chain,
+        select: () => chain,
+        maybeSingle: () => receipt(),
+      };
+      return Object.assign(chain, {
+        then: (resolve: any, reject: any) => receipt().then(resolve, reject),
+      });
+    },
+  }));
+  const from = vi.spyOn(supabase, 'from').mockReturnValue({
+    update,
+    select: () => ({
+      eq: () => ({ maybeSingle: async () => ({ data: { ...row }, error: null }) }),
+    }),
+  } as never);
   return { from, update, eq };
 }
 
@@ -173,6 +203,82 @@ describe('break release requires persistence and current ownership', () => {
 });
 
 describe('tournament break lifecycle fence', () => {
+  it.each([false, true])(
+    'does not restart a break after a delayed duplicate eligibility read (released=%s)',
+    async (released) => {
+      const delayedEligibility = deferred<boolean>();
+      const manager = new BreakHarness();
+      manager.activate();
+      manager.breakDecision = delayedEligibility.promise;
+      const persist = stubBreakPersistence();
+      const engine = { pauseAfterHand: vi.fn(), resumeDealing: vi.fn() };
+      manager.addTableEngine(engine);
+      const delayedPause = manager.pauseForBreak(300_000);
+
+      manager.breakDecision = Promise.resolve(true);
+      await manager.pauseForBreak(300_000);
+      await manager.beginBreakCountdown(300_000);
+      if (released) await manager.resumeFromBreak();
+      const writes = persist.update.mock.calls.length;
+      const broadcasts = manager.broadcastCall.mock.calls.length;
+
+      delayedEligibility.resolve(true);
+      await delayedPause;
+      expect(persist.update).toHaveBeenCalledTimes(writes);
+      expect(manager.broadcastCall).toHaveBeenCalledTimes(broadcasts);
+      expect(engine.pauseAfterHand).toHaveBeenCalledOnce();
+      expect(manager.breakIsActive()).toBe(!released);
+      if (released) {
+        await manager.pauseForBreak(300_000);
+        expect(engine.pauseAfterHand).toHaveBeenCalledTimes(2);
+        expect(manager.breakIsActive()).toBe(true);
+      }
+      manager.fence();
+    }
+  );
+
+  it.each([
+    { boundary: 'persistence', nextBreak: false },
+    { boundary: 'broadcast', nextBreak: false },
+    { boundary: 'persistence', nextBreak: true },
+    { boundary: 'broadcast', nextBreak: true },
+  ])(
+    'does not repark released tables after delayed break-start $boundary (next break=$nextBreak)',
+    async ({ boundary, nextBreak }) => {
+      const persistence = deferred<unknown>();
+      const notification = deferred<boolean>();
+      const manager = new BreakHarness();
+      manager.activate();
+      const persist = stubBreakPersistence();
+      const engine = { pauseAfterHand: vi.fn(), resumeDealing: vi.fn() };
+      manager.addTableEngine(engine);
+      if (boundary === 'persistence') persist.eq.mockImplementationOnce(() => persistence.promise);
+      else manager.broadcastCall.mockImplementationOnce(() => notification.promise);
+      const pausing = manager.pauseForBreak(300_000);
+      await vi.waitFor(() =>
+        expect(
+          boundary === 'persistence' ? persist.eq : manager.broadcastCall
+        ).toHaveBeenCalledOnce()
+      );
+      await manager.resumeFromBreak();
+      expect(engine.resumeDealing).toHaveBeenCalledOnce();
+      if (nextBreak) await manager.pauseForBreak(300_000);
+      const pauses = engine.pauseAfterHand.mock.calls.length;
+      const announcements = manager.broadcastCall.mock.calls.length;
+      persistence.resolve({ error: null });
+      notification.resolve(true);
+      await pausing;
+      expect(manager.broadcastCall).toHaveBeenCalledTimes(announcements);
+      expect(engine.pauseAfterHand).toHaveBeenCalledTimes(pauses);
+      expect(manager.breakIsActive()).toBe(nextBreak);
+      if (!nextBreak) {
+        await manager.pauseForBreak(300_000);
+        expect(engine.pauseAfterHand).toHaveBeenCalledOnce();
+      }
+      manager.fence();
+    }
+  );
+
   it('cannot begin a break after eligibility returns to a fenced manager', async () => {
     const eligibility = deferred<boolean>();
     const manager = new BreakHarness();
@@ -229,6 +335,31 @@ describe('tournament break lifecycle fence', () => {
     expect(engine.pauseAfterHand).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    'does not announce a released countdown (new break=%s)',
+    async (newBreak) => {
+      const persistence = deferred<unknown>();
+      const manager = new BreakHarness();
+      manager.activate();
+      manager.forceBreakState();
+      const persist = stubBreakPersistence();
+      persist.eq.mockImplementationOnce(() => persistence.promise);
+      const countingDown = manager.beginBreakCountdown(300_000);
+      await vi.waitFor(() => expect(persist.eq).toHaveBeenCalledOnce());
+      await manager.resumeFromBreak();
+      expect(manager.breakIsActive()).toBe(false);
+      if (newBreak) await manager.pauseForBreak(300_000);
+      const announced = manager.broadcastCall.mock.calls.length;
+      persistence.resolve({ error: null });
+      await countingDown;
+      expect(manager.broadcastCall).toHaveBeenCalledTimes(announced);
+      expect(
+        manager.broadcastCall.mock.calls.some(([event]) => event === 'tournament_break_started')
+      ).toBe(false);
+      manager.fence();
+    }
+  );
+
   it('does not announce a countdown when its persistence returns after the fence', async () => {
     const persistence = deferred<unknown>();
     const manager = new BreakHarness();
@@ -262,7 +393,10 @@ describe('a break start refreshes the Horse tournament context after its write',
     const pausing = manager.pauseForBreak(300_000);
     await vi.waitFor(() => expect(persist.eq).toHaveBeenCalledOnce());
     expect(persist.update).toHaveBeenCalledWith(
-      expect.objectContaining({ on_break: true, break_ends_at: null })
+      expect.objectContaining({
+        on_break: true,
+        break_ends_at: null,
+      })
     );
     // The write is still in flight: the row has not paused the clock yet.
     expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();

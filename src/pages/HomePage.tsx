@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * CLUB ARENA — Home Page (World Hub Cinematic Design)
@@ -26,7 +27,7 @@ import { unionRouteRef } from '../utils/unionIdResolver';
    club is resolved, so it inherits the same rule. See InTabLobbyContext.tsx. */
 import { useAppNavigate, useInTabLobby } from '../context/InTabLobbyContext';
 import { COUNT_UNKNOWN } from '../lib/countFigure';
-import { DIAMOND_ARENA_CLUB_ID, DIAMOND_ARENA_ENTRY, SHARK_CLUB_ID } from '../lib/constants';
+import { DIAMOND_ARENA_CLUB_ID, SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
 import { UnionService } from '../services/UnionService';
@@ -214,14 +215,13 @@ function HomePageInner() {
   // #1: Keyboard shortcuts active flag
   const [showShortcutHint, setShowShortcutHint] = useState(false);
 
-  // #2: Pinned clubs (persisted in localStorage)
-  const [pinnedClubIds, setPinnedClubIds] = useState<string[]>(() => {
-    try {
-      return savedPinnedClubIds(localStorage.getItem(STORAGE_KEYS.PINNED_CLUBS));
-    } catch {
-      return []; // storage itself unavailable
-    }
-  });
+  // Pinned clubs follow the account across sessions and devices.
+  const [savedPins, setPinnedClubIds] = usePlayerPreference<string[]>(
+    'home:pinnedClubs',
+    [],
+    'global'
+  );
+  const pinnedClubIds = savedPinnedClubIds(JSON.stringify(savedPins));
 
   // #4: Leave confirmation modal
   const [leaveConfirm, setLeaveConfirm] = useState<{ visible: boolean; club: UserClub } | null>(
@@ -790,17 +790,14 @@ function HomePageInner() {
   ]);
 
   // #2: Pin/unpin club
-  const togglePinClub = useCallback((clubId: string) => {
-    setPinnedClubIds((prev) => {
-      const next = prev.includes(clubId) ? prev.filter((id) => id !== clubId) : [...prev, clubId];
-      try {
-        localStorage.setItem(STORAGE_KEYS.PINNED_CLUBS, JSON.stringify(next));
-      } catch {
-        /* */
-      }
-      return next;
-    });
-  }, []);
+  const togglePinClub = useCallback(
+    (clubId: string) => {
+      setPinnedClubIds((prev) =>
+        prev.includes(clubId) ? prev.filter((id) => id !== clubId) : [...prev, clubId]
+      );
+    },
+    [setPinnedClubIds]
+  );
 
   // #4: Leave club with confirmation
   const handleLeaveClub = useCallback(
@@ -830,7 +827,10 @@ function HomePageInner() {
   // JOIN A CLUB LOGIC
   // ═══════════════════════════════════════════════════════════════════════════════
   const displayClubs = useMemo(() => {
-    const clubs = [...userClubs];
+    // Owner closure, October 30: hide Diamond for every role, including cached memberships.
+    const clubs = userClubs.filter(
+      (club) => club.id !== DIAMOND_ARENA_CLUB_ID && club.slug !== 'diamond-arena'
+    );
 
     /* Inject Shark Club as the public featured demo, but ONLY once we actually
        know what the player's clubs are. Two separate ways that goes wrong, and
@@ -849,15 +849,6 @@ function HomePageInner() {
        The cold-start skeleton further down already covers the loading moment
        properly, so there is nothing to fill here. */
     const stillLoadingFirstList = isLoading && userClubs.length === 0;
-    if (!loadFailed && !stillLoadingFirstList) {
-      /* Diamond access is automatic for every authenticated player, so it is
-         an entry destination rather than a chip-club membership. ClubsService
-         deliberately excludes it from userClubs; add the access card only
-         after the authoritative directory request succeeds. */
-      if (!clubs.some((c) => c.id === DIAMOND_ARENA_CLUB_ID)) {
-        clubs.push(DIAMOND_ARENA_ENTRY);
-      }
-    }
     if (
       !loadFailed &&
       !stillLoadingFirstList &&

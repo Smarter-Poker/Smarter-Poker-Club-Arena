@@ -1,3 +1,4 @@
+import type { IsolateMemorySample } from '../../observability/isolateMemory.js';
 import type {
   HorsePlanBatchBinding,
   HorsePlanContext,
@@ -195,6 +196,8 @@ export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
   /** Private individual read hydration, not a caller policy control or action authority. */
   ownPublicHistory?: import('./ownPublicHistory.js').HorseOwnPublicHistoryPacket;
   ownPublicHistoryState?: 'pending' | 'available' | 'unavailable';
+  /** Original request-bound cache diagnostic, not a loaded-history qualification. */
+  ownPublicHistoryProvenance?: import('./ownPublicHistoryProvenance.js').HorseHistoryReadProvenance;
   /** Existing nearest-size evidence, separately validated at the same <=10 cap. */
   durableOpponentDonorProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
@@ -521,6 +524,8 @@ export interface HorseDecisionWorkerAck extends HorseDecisionFence {
 
 export interface HorseDecisionWorkerStatusResult extends HorseDecisionFence {
   type: 'STATUS_RESULT';
+  /** Optional diagnostic, independent of readiness and policy authority. */
+  isolateMemory?: IsolateMemorySample | null;
   requestId: number;
   solverStores: HorseDecisionWorkerReady['solverStores'];
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'];
@@ -568,3 +573,6 @@ export type HorseDecisionWorkerResponse =
   | HorseDecisionWorkerCancelled
   | HorseDecisionWorkerError
   | { type: 'STOPPED' };
+
+/** Administrative control is separate from fenced action/FIFO request types. */
+export type { V31ControlRequest, V31ControlAck } from './v31ReloadControl.js';

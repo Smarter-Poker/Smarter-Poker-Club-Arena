@@ -25,6 +25,7 @@ vi.mock('../services/supabase.js', () => ({
   default: {},
 }));
 
+import { MAX_SOCKETS_PER_USER } from './EngineWebSocketServer.js';
 import { ChannelWebSocketServer } from './ChannelWebSocketServer.js';
 
 // Minimal ws double — just enough surface for onUpgraded + the sweep.
@@ -147,5 +148,35 @@ describe('ChannelWebSocketServer heartbeat compatibility', () => {
     ws._receiveRaw('not json');
     sweep(server);
     expect(ws.closed.length).toBeGreaterThan(0);
+  });
+});
+
+describe('channel admission owns the per-user limit', () => {
+  it('preserves ten admitted sockets and refuses only the eleventh arrival', async () => {
+    expect(MAX_SOCKETS_PER_USER).toBe(10);
+    const server = new ChannelWebSocketServer();
+    const sockets: FakeWs[] = [];
+    try {
+      for (let index = 0; index < MAX_SOCKETS_PER_USER; index++) {
+        sockets.push(upgraded(server, 'channel-cap-boundary'));
+        expect(server.connectionCount()).toBe(index + 1);
+        expect(sockets.every((ws) => ws.closed.length === 0)).toBe(true);
+      }
+      const refused = upgraded(server, 'channel-cap-boundary');
+      expect(refused.closed).toEqual([{ code: 4429, reason: 'too_many_sockets' }]);
+      expect(server.connectionCount()).toBe(10);
+      expect(sockets.every((ws) => ws.closed.length === 0)).toBe(true);
+      // A normal departure frees one slot; delayed teardown must not evict its replacement.
+      sockets[0].close(1000, 'tab left');
+      const replacement = upgraded(server, 'channel-cap-boundary');
+      sockets.push(replacement);
+      sockets[0].handlers.get('close')?.();
+      expect(server.connectionCount()).toBe(10);
+      expect(replacement.closed).toEqual([]);
+      expect(sockets.slice(1).every((ws) => ws.closed.length === 0)).toBe(true);
+    } finally {
+      for (const ws of sockets) ws.close(1000, 'test cleanup');
+      await server.close();
+    }
   });
 });

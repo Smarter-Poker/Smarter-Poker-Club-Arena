@@ -16,6 +16,15 @@ const PLAYER_ID = '33333333-3333-4333-8333-333333333333';
 const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 const recoveryHydrations = vi.hoisted(() => new Set<Promise<unknown>>());
 
+// These cases own cashier reads, recovery and their realtime callbacks. The
+// unrelated maintenance presentation must not start a real shared engine
+// transport whose reconnect work outlives this file's DOM environment.
+vi.mock('../src/hooks/useMaintenanceBreak', () => ({
+  useMaintenanceBreak: () => ({
+    maintenanceBreak: { active: false, phase: 'idle', breakEndsAtMs: null, reason: '' },
+  }),
+}));
+
 vi.mock('../src/services/CashierResilience', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/services/CashierResilience')>();
   return {

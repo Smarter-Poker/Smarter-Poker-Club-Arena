@@ -62,6 +62,7 @@ import {
   CASH_VARIANTS,
   CASH_VARIANT_LONG,
   cashGameCreateRefusalText,
+  cashGameCreateServerMessage,
   cashTemplateBlurb,
   cashTemplateNote,
   cashTemplateVariantAvailable,
@@ -488,7 +489,7 @@ export default function CashGameCreateFlow({
         // string (tests/a-control-that-says-none-must-mean-none.law.test.ts).
         const refusal = cashGameCreateRefusalText(err);
         if (!refusal) reportError(err, 'CashGameCreateFlow.create_failed');
-        const serverMessage = err instanceof Error && err.message ? err.message : null;
+        const serverMessage = cashGameCreateServerMessage(err);
         toast.error(refusal ?? serverMessage ?? 'Could Not Create The Game');
         // The club holds a rung this screen did not know about: re-read the
         // ladder so the chip greys out instead of refusing a second time.

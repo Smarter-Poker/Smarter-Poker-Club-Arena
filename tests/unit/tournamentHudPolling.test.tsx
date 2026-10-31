@@ -39,6 +39,7 @@ const fx = vi.hoisted(() => ({
   standings: new Map<string, { change: () => void; status: (status: string) => void }>(),
   channels: [] as Array<{ topic: string; state: string; joinPush: { ref: string } }>,
   tournamentReads: [] as string[],
+  rowSignals: [] as AbortSignal[],
   playerReads: [] as string[],
   tournamentAnswer: (_id: string): unknown => ({ data: null, error: null }),
   playersAnswer: (_id: string): unknown => ({ data: [], error: null }),
@@ -131,6 +132,12 @@ vi.mock('../../src/lib/supabase', () => ({
         in: () => chain,
         order: () => chain,
         range: () => chain,
+        limit: () => chain,
+        gt: () => chain,
+        abortSignal: (signal: AbortSignal) => {
+          fx.rowSignals.push(signal);
+          return chain;
+        },
         maybeSingle: () => answer(),
         then: (ok: any, no: any) => answer().then(ok, no),
       };
@@ -268,6 +275,7 @@ beforeEach(() => {
   fx.standings.clear();
   fx.channels.length = 0;
   fx.tournamentReads.length = 0;
+  fx.rowSignals.length = 0;
   fx.playerReads.length = 0;
   fx.tournamentAnswer = () => ok(running());
   fx.playersAnswer = () => ({ data: [], error: null });
@@ -280,6 +288,38 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+describe('the tournament dock shows actual paid finishing places', () => {
+  const payouts = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      place: index + 1,
+      percentage: 100 / count,
+    }));
+  it('places the event-specific paid count between Left and Avg and refreshes from the event row', async () => {
+    fx.tournamentAnswer = () =>
+      ok(running({ prize_pool_finalized: true, payout_structure: JSON.stringify(payouts(11)) }));
+    await mount({ playersRemaining: 13, averageStack: 75000 });
+    const value = () =>
+      screen.getByText('Paid').parentElement?.querySelector('.tournament-dock__value')?.textContent;
+    expect(value()).toBe('11');
+    const labels = [...document.querySelectorAll('.tournament-dock__label')].map(
+      (el) => el.textContent
+    );
+    expect(labels.slice(-3)).toEqual(['Left', 'Paid', 'Avg']);
+    fx.tournamentAnswer = () =>
+      ok(running({ prize_pool_finalized: true, payout_structure: payouts(3) }));
+    await broadcast('late_reg_closed');
+    expect(value()).toBe('3');
+  });
+  it.each([null, [], 'invalid', [{ place: 1, percentage: 0 }]])(
+    'does not fabricate a Paid count from %j',
+    async (payout_structure) => {
+      fx.tournamentAnswer = () => ok(running({ prize_pool_finalized: true, payout_structure }));
+      await mount();
+      expect(screen.queryByText('Paid')).toBeNull();
+    }
+  );
 });
 
 // ─── 1. PRODUCTION-SHAPED FAILURES ──────────────────────────────────────────
@@ -1003,5 +1043,52 @@ describe('settled hands across the entire MTT update the HUD', () => {
       await vi.advanceTimersByTimeAsync(100);
     });
     expect(rank()).toBe('2');
+  });
+});
+
+describe('the original HUD read has a finite ownership boundary', () => {
+  it('aborts a hung row and lets a queued level event obtain its real anchor', async () => {
+    await mount();
+    const stuck = deferred<unknown>();
+    fx.tournamentAnswer = () => stuck.promise;
+    await emit('TOURNAMENT_LEVEL_UP', { tournament_id: 't1', new_level: 1 });
+    const signal = fx.rowSignals.at(-1);
+    fx.tournamentAnswer = () => ok(running({ current_level: 2 }));
+    await emit('TOURNAMENT_LEVEL_UP', { tournament_id: 't1', new_level: 2 });
+    await advance(10_000);
+    expect(signal?.aborted).toBe(true);
+    expect(screen.getByText('75 / 150')).toBeTruthy();
+    stuck.resolve(ok(running({ current_level: 1 })));
+    await flush();
+    expect(screen.getByText('75 / 150')).toBeTruthy();
+    expect(screen.queryByText('50 / 100')).toBeNull();
+  });
+
+  it('rejects an older row after a named committed level and deduplicates carriers', async () => {
+    await mount();
+    const stuck = deferred<unknown>();
+    fx.tournamentAnswer = () => stuck.promise;
+    await emit('TOURNAMENT_LEVEL_UP', { tournament_id: 't1', new_level: 2 });
+    await emit('BLIND_LEVEL_CHANGE', { tournamentId: 't1', level: 3 });
+    expect(fx.tournamentReads).toHaveLength(2);
+    stuck.resolve(ok(running({ current_level: 1 })));
+    await flush();
+    expect(screen.queryByText('50 / 100')).toBeNull();
+    expect(screen.getByText('25 / 50')).toBeTruthy();
+    fx.tournamentAnswer = () => ok(running({ current_level: 2 }));
+    await emit('TOURNAMENT_UPDATED', { tournamentId: 't1', status: 'late_reg_closed' });
+    expect(screen.getByText('75 / 150')).toBeTruthy();
+  });
+
+  it('cancels a hung original on retirement without painting a late answer', async () => {
+    const stuck = deferred<unknown>();
+    fx.tournamentAnswer = () => stuck.promise;
+    const view = await mount();
+    const signal = fx.rowSignals.at(-1);
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
+    stuck.resolve(ok(running()));
+    await flush();
+    expect(hudBar()).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within, waitFor } from '@testing-library/react';
 import { EMPTY_OVERALL } from '../../src/pages/stats/playerStatsPageModel';
 import OverviewTab from '../../src/pages/stats/OverviewTab';
 import { playerStyleFromStats } from '../../src/components/stats/playerStyleFromStats';
@@ -46,6 +46,37 @@ function overview(available: boolean, cashHands = 100) {
 }
 
 describe('recorded rates remain distinct from unavailable values', () => {
+  it('uses measured cash hand time rather than tournament time for cash hourly rate', async () => {
+    render(
+      <AdvancedStatsSummary
+        initialData={{
+          total_profit: 100,
+          hours_played: 10,
+          cash_hours_played: 2,
+          metric_availability: { hours_played: true, cash_hours_played: true },
+        }}
+      />
+    );
+    const card = screen.getByText('Hourly Rate').closest('[role="button"]') as HTMLElement;
+    await waitFor(() => expect(within(card).getByText('+50')).toBeInTheDocument(), {
+      timeout: 2000,
+    });
+  });
+
+  it('does not substitute measured total hours for missing cash-time coverage', () => {
+    render(
+      <AdvancedStatsSummary
+        initialData={{
+          total_profit: 100,
+          hours_played: 10,
+          cash_hours_played: 0,
+          metric_availability: { hours_played: true, cash_hours_played: false },
+        }}
+      />
+    );
+    const card = screen.getByText('Hourly Rate').closest('[role="button"]') as HTMLElement;
+    expect(within(card).getByText('Not Yet Measured')).toBeInTheDocument();
+  });
   it('does not coach from unmeasured advanced rates', () => {
     const result = findLeaks(
       {

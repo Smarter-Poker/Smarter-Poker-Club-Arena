@@ -26,7 +26,7 @@ const episode = (n: number, spanMinutes: number, reason: string) =>
   }));
 
 const STOOD_DOWN = 'stood down before cutover; protected main had moved to 96c00643d';
-const CUTOVER_FAILED =
+const SEALED_UNPROVED =
   'the release sealed but production identity could not be independently proved';
 
 describe('the engine deploy starvation alarm', () => {
@@ -51,7 +51,7 @@ describe('the engine deploy starvation alarm', () => {
       assess({ rows: episode(30, 215.8, STOOD_DOWN), lastShipped: null, now: NOW }).starving
     ).toBe(true);
     expect(
-      assess({ rows: episode(9, 739.4, CUTOVER_FAILED), lastShipped: null, now: NOW }).starving
+      assess({ rows: episode(9, 739.4, SEALED_UNPROVED), lastShipped: null, now: NOW }).starving
     ).toBe(true);
   });
 
@@ -79,19 +79,47 @@ describe('the engine deploy starvation alarm', () => {
     expect(ATTEMPTS_THRESHOLD).toBeGreaterThan(1);
   });
 
-  it('distinguishes a starving pipeline from releases that genuinely broke', () => {
+  it('distinguishes superseded requests from unproved sealed releases', () => {
     // Same count and span; different half of the pipeline at fault. Sending an
     // agent to look at the engine when the release lane stood down is the four
     // and a half hours this alarm exists to save.
-    const broken = assess({ rows: episode(4, 200, CUTOVER_FAILED), lastShipped: null, now: NOW });
+    const broken = assess({ rows: episode(4, 200, SEALED_UNPROVED), lastShipped: null, now: NOW });
     expect(broken.starving).toBe(true);
     expect(broken.supersededCount).toBe(0);
-    expect(broken.verdict).toContain('reached cutover and did not complete');
+    expect(broken.verdict).toContain('production identity is unproved');
   });
 
   it('reports nothing to worry about when the last attempt shipped', () => {
     const verdict = assess({ rows: [], lastShipped: '2026-09-12T04:55:00Z', now: NOW });
     expect(verdict.starving).toBe(false);
     expect(verdict.attempts).toBe(0);
+  });
+});
+
+describe('the starvation report retains the release stage evidence', () => {
+  it('never calls a refused prerequisite a completed cutover attempt', () => {
+    const verdict = assess({
+      rows: episode(
+        4,
+        200,
+        'release refused before host intake; production database prerequisite job ended failure'
+      ),
+      lastShipped: null,
+      now: NOW,
+    });
+    expect(verdict.starving).toBe(true);
+    expect(verdict.verdict).toContain('before host intake');
+    expect(verdict.verdict).not.toContain('reached cutover');
+  });
+  it('does not infer cutover from an incomplete or unknown transaction', () => {
+    for (const reason of [
+      'the durable Hetzner release transaction did not complete; production still runs the previously sealed release',
+      'release outcome unknown; no sealed production identity was established',
+      'deployment job did not run; no host intake or production identity was proved',
+    ]) {
+      const verdict = assess({ rows: episode(4, 200, reason), lastShipped: null, now: NOW });
+      expect(verdict.starving).toBe(true);
+      expect(verdict.verdict).not.toContain('reached cutover');
+    }
   });
 });

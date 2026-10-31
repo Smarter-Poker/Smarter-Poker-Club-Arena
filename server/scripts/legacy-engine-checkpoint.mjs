@@ -106,7 +106,11 @@ function remoteValue(response) {
  *  object when the call's outcome is unknown (see the guard's `progress`).
  *  Observability only: a fixed set of keys, each held to its shape, or absent. */
 function progressSummary(value) {
-  if (!value || typeof value !== 'object' || value.schema !== 'legacy-engine-checkpoint-progress/v1')
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    value.schema !== 'legacy-engine-checkpoint-progress/v1'
+  )
     return null;
   const out = {};
   for (const key of ['elapsedMs', 'attemptedTables', 'completedCalls', 'verifiedTables']) {
@@ -253,21 +257,61 @@ function connectInspector(endpoint, deadline, createWebSocket) {
     ended = false;
   const fail = (reason) => {
     ended = true;
-    for (const waiter of pending.values()) waiter.reject(refused(reason));
+    // A ready-made error (one that already names its operation and cause)
+    // is delivered as it is; a bare reason is wrapped exactly as before.
+    for (const waiter of pending.values())
+      waiter.reject(reason instanceof Error ? reason : refused(reason));
     pending.clear();
+  };
+  /* A PROTOCOL REFUSAL SAYS WHICH ONE (2026-10-30, run 41071578166). The
+     owner-window release of 82f1e5632 reached the guard call on the serving
+     EED predecessor and the whole outcome was the one word
+     `inspector protocol refused`: three different events share it - an
+     inspector response over the 64 KiB carrier, a CDP error object for the
+     request in flight, and an unparseable frame - and nothing recorded which
+     request it answered or what the inspector said. Observability only, as
+     with `lost()` above: `reason` stays exactly `inspector protocol refused`,
+     the refusal is still a refusal and `retryAllowed` is still false. What
+     changes is that the operation, the cause and the inspector's own error
+     code/message (sanitised to the same 512-character carrier class) ride on
+     the error and reach `transportDetail`. */
+  const protocolRefusal = (detail) => {
+    const error = refused('inspector protocol refused');
+    error.transportDetail = detail.replace(/[^\w .,:/=()+-]+/g, ' ').slice(0, 512);
+    return error;
+  };
+  const describeCdpError = (value) => {
+    const code = Number.isSafeInteger(value?.code) ? value.code : 'unknown';
+    const text = typeof value?.message === 'string' ? value.message.slice(0, 160) : 'unknown';
+    const data = typeof value?.data === 'string' ? value.data.slice(0, 160) : '';
+    return `code=${code},message=${text}${data ? `,data=${data}` : ''}`;
   };
   socket.addEventListener('message', ({ data }) => {
     try {
-      if (typeof data !== 'string' || Buffer.byteLength(data) > 65536)
-        throw refused('inspector protocol refused');
+      if (typeof data !== 'string' || Buffer.byteLength(data) > 65536) {
+        const bytes = typeof data === 'string' ? Buffer.byteLength(data) : -1;
+        let answered = 'unparsed';
+        try {
+          const id = JSON.parse(data)?.id;
+          answered = pending.get(id)?.operation ?? `id ${String(id)}`;
+        } catch {
+          answered = 'unparsed';
+        }
+        throw protocolRefusal(`op=${answered},cause=oversize_response,bytes=${bytes}`);
+      }
       const message = JSON.parse(data),
         waiter = pending.get(message.id);
       if (!waiter) return;
       pending.delete(message.id);
-      if (message.error) waiter.reject(refused('inspector protocol refused'));
+      if (message.error)
+        waiter.reject(
+          protocolRefusal(
+            `op=${waiter.operation},cause=cdp_error,method=${waiter.method},${describeCdpError(message.error)}`
+          )
+        );
       else waiter.resolve(message.result);
-    } catch {
-      fail('inspector protocol refused');
+    } catch (error) {
+      fail(detailOf(error) ? error : 'inspector protocol refused');
       socket.close();
     }
   });
@@ -311,7 +355,7 @@ function connectInspector(endpoint, deadline, createWebSocket) {
         // Computed inside the executor, exactly as before, so a budget that is
         // already spent still arrives as a rejection and never as a throw.
         const startedAt = Date.now();
-        const allowanceMs = remaining(requestDeadline, 20000, operation, startedAt);
+        const allowanceMs = remaining(requestDeadline, 35000, operation, startedAt);
         const requestExpiresAt = startedAt + allowanceMs;
         let timer;
         const expireRequest = () => {
@@ -333,6 +377,8 @@ function connectInspector(endpoint, deadline, createWebSocket) {
         };
         timer = setTimeout(expireRequest, allowanceMs);
         pending.set(id, {
+          operation,
+          method,
           resolve(value) {
             clearTimeout(timer);
             resolve(value);
@@ -412,8 +458,7 @@ export const CHECKPOINT_DEFERRABLE_REFUSALS = Object.freeze([
  * (CLAUDE.md 10.86 rules 1 and 2 - an unreadable answer is not an empty one).
  */
 export function deferrableCheckpointRefusal(outcome) {
-  const isRecord = (value) =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
+  const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   if (!isRecord(outcome) || outcome.ok !== false || outcome.retryAllowed !== false) return false;
   // A retained debugger session is an unknown process state, never a deferral.
   if (outcome.inspectorClosed !== true || outcome.cleanupConnections !== 0) return false;
@@ -437,6 +482,315 @@ export function deferrableCheckpointRefusal(outcome) {
   );
 }
 
+// Serialized into the existing owned inspector, with no ambient application inputs.
+export function readLegacyCensusMemory() {
+  const heap = process.getBuiltinModule('node:v8').getHeapStatistics();
+  return {
+    usedHeapBytes: heap.used_heap_size,
+    availableHeapBytes: heap.total_available_size,
+    availableProcessBytes:
+      typeof process.availableMemory === 'function' ? process.availableMemory() : null,
+  };
+}
+
+export function legacyCensusMemoryAdmission(value) {
+  const fields = ['usedHeapBytes', 'availableHeapBytes', 'availableProcessBytes'];
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Object.keys(value).length !== fields.length ||
+    !fields.every((key) => Number.isSafeInteger(value[key]) && value[key] > 0)
+  )
+    return null;
+  const reserve = 32 * 1024 * 1024;
+  // V8's native census retains local/global handles and a result vector before
+  // constructing its JS array. Reserve well beyond the result array alone.
+  // This is admission, never an increase to the predecessor's heap or memory.
+  const requiredHeapBytes = value.usedHeapBytes + reserve;
+  const requiredProcessBytes = value.usedHeapBytes * 8 + reserve;
+  if (!Number.isSafeInteger(requiredProcessBytes)) return null;
+  return {
+    ...value,
+    requiredHeapBytes,
+    requiredProcessBytes,
+    ok:
+      value.availableHeapBytes >= requiredHeapBytes &&
+      value.availableProcessBytes >= requiredProcessBytes,
+  };
+}
+
+export function legacyCensusRoot() {
+  const roots = [
+    this.gameServer.GameServer.prototype,
+    this.engine.ServerTableEngine.prototype,
+    this.manager.TournamentManager.prototype,
+    this.lightningWorker.LightningClusterWorker.prototype,
+    this.lightningHost.LightningHandHost.prototype,
+  ];
+  const isProxy = process.getBuiltinModule('node:util').types.isProxy;
+  // Every queried concrete class must reach this exact realm root, without
+  // traversing a Proxy or overlapping another concrete class's chain.
+  for (let i = 0; i < roots.length; i++) {
+    let cursor = roots[i],
+      depth = 0;
+    while (cursor !== Object.prototype) {
+      if (++depth > 256) throw new Error('native census root refused');
+      if (
+        cursor === null ||
+        isProxy(cursor) ||
+        roots.some((root, index) => index !== i && cursor === root)
+      )
+        throw new Error('native census root refused');
+      cursor = Object.getPrototypeOf(cursor);
+    }
+  }
+  return Object.prototype;
+}
+
+// Bind only cached modules before the synchronous census. No application
+// prototype changes cross an Inspector request or an async boundary.
+export function bindLegacyCensusModules(holderKey, workDeadlineMs) {
+  if (
+    typeof holderKey !== 'string' ||
+    !/^__legacyEngineCensus_[0-9a-f]{32}$/.test(holderKey) ||
+    !Number.isSafeInteger(workDeadlineMs) ||
+    workDeadlineMs <= Date.now() ||
+    workDeadlineMs > Date.now() + 40000 ||
+    Object.getOwnPropertyDescriptor(globalThis, holderKey)
+  )
+    throw new Error('native census binding refused');
+  const holder = Object.create(null);
+  Object.defineProperties(holder, {
+    modules: { value: this },
+    deadline: { value: workDeadlineMs },
+    schema: { value: 'legacy-marked-census/v1' },
+  });
+  Object.defineProperty(globalThis, holderKey, { value: holder, configurable: true });
+  return true;
+}
+
+// Only an unentered, exact owned module binding may be retired separately.
+// An active/unknown marked census must restore and remove its own holder.
+export function retireLegacyCensusBinding(holderKey, workDeadlineMs) {
+  if (typeof holderKey !== 'string' || !/^__legacyEngineCensus_[0-9a-f]{32}$/.test(holderKey))
+    throw new Error('native census binding refused');
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, holderKey);
+  if (!descriptor) return true;
+  const holder = descriptor.value;
+  if (
+    !holder ||
+    process.getBuiltinModule('node:util').types.isProxy(holder) ||
+    Object.getPrototypeOf(holder) !== null ||
+    Object.getOwnPropertyDescriptor(holder, 'schema')?.value !== 'legacy-marked-census/v1' ||
+    Object.getOwnPropertyDescriptor(holder, 'deadline')?.value !== workDeadlineMs ||
+    Object.getOwnPropertyDescriptor(holder, 'marker')
+  )
+    throw new Error('native census binding is not unentered');
+  if (!delete globalThis[holderKey]) throw new Error('native census binding cleanup refused');
+  return true;
+}
+
+export function collectMarkedLegacyCensus(holderKey, workDeadlineMs) {
+  const getPrototypeOf = Object.getPrototypeOf;
+  const setPrototypeOf = Object.setPrototypeOf;
+  const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+  const defineProperty = Object.defineProperty;
+  const isExtensible = Object.isExtensible;
+  const root = Object.prototype;
+  const isProxy = process.getBuiltinModule('node:util').types.isProxy;
+  if (typeof holderKey !== 'string' || !/^__legacyEngineCensus_[0-9a-f]{32}$/.test(holderKey))
+    throw new Error('native census binding refused');
+  const holder = getOwnPropertyDescriptor(globalThis, holderKey)?.value;
+  if (
+    !holder ||
+    isProxy(holder) ||
+    getPrototypeOf(holder) !== null ||
+    getOwnPropertyDescriptor(holder, 'schema')?.value !== 'legacy-marked-census/v1' ||
+    getOwnPropertyDescriptor(holder, 'deadline')?.value !== workDeadlineMs ||
+    !Number.isSafeInteger(workDeadlineMs)
+  )
+    throw new Error('native census binding refused');
+  let session;
+  try {
+    if (workDeadlineMs <= Date.now() || workDeadlineMs > Date.now() + 40000)
+      throw new Error('native census deadline exhausted');
+    const modules = getOwnPropertyDescriptor(holder, 'modules')?.value;
+    const roots = [
+      modules.gameServer.GameServer.prototype,
+      modules.engine.ServerTableEngine.prototype,
+      modules.manager.TournamentManager.prototype,
+      modules.lightningWorker.LightningClusterWorker.prototype,
+      modules.lightningHost.LightningHandHost.prototype,
+    ];
+    const tops = [];
+    for (let index = 0; index < roots.length; index++) {
+      let cursor = roots[index];
+      for (let depth = 0; ; depth++) {
+        if (depth >= 256 || cursor === null || isProxy(cursor))
+          throw new Error('native census root refused');
+        for (let other = 0; other < roots.length; other++)
+          if (other !== index && cursor === roots[other])
+            throw new Error('native census root refused');
+        const parent = getPrototypeOf(cursor);
+        if (parent === root) {
+          if (!isExtensible(cursor)) throw new Error('native census root not extensible');
+          if (!tops.includes(cursor)) tops.push(cursor);
+          break;
+        }
+        cursor = parent;
+      }
+    }
+    const marker = Object.create(root);
+    defineProperty(holder, 'marker', { value: marker });
+    const { Session } = process.getBuiltinModule('node:inspector');
+    session = new Session();
+    session.connect();
+    const post = (method, params) => {
+      let called = false,
+        result,
+        error;
+      session.post(method, params, (failure, response) => {
+        called = true;
+        error = failure;
+        result = response;
+      });
+      if (!called) throw new Error('native census synchronous response refused');
+      if (error || result?.exceptionDetails) throw new Error('native census protocol refused');
+      return result;
+    };
+    const markerHandle = post('Runtime.evaluate', {
+      expression: `globalThis[${JSON.stringify(holderKey)}].marker`,
+      disableBreaks: true,
+      objectGroup: 'legacy-marked-native-census',
+    });
+    if (!markerHandle?.result?.objectId) throw new Error('native census marker unavailable');
+    if (Date.now() >= workDeadlineMs) throw new Error('native census deadline exhausted');
+    const changed = [];
+    let census;
+    try {
+      for (const top of tops) {
+        setPrototypeOf(top, marker);
+        changed.push(top);
+      }
+      // The outer Runtime.evaluate has disableBreaks:true. The same native
+      // dispatch owns insertion, this synchronous query and exact restoration;
+      // queued remote cleanup and application callbacks cannot observe a marker.
+      census = post('Runtime.queryObjects', {
+        prototypeObjectId: markerHandle.result.objectId,
+        objectGroup: 'legacy-marked-native-census',
+      });
+    } finally {
+      let failed = false;
+      for (let index = changed.length - 1; index >= 0; index--) {
+        try {
+          setPrototypeOf(changed[index], root);
+        } catch {
+          failed = true;
+        }
+      }
+      for (const top of tops) if (getPrototypeOf(top) !== root) failed = true;
+      if (failed) throw new Error('native census prototype restoration refused');
+    }
+    if (Date.now() >= workDeadlineMs) throw new Error('native census deadline exhausted');
+    if (!census?.objects?.objectId) throw new Error('native census unavailable');
+    post('Runtime.callFunctionOn', {
+      objectId: census.objects.objectId,
+      functionDeclaration: `function() { Object.defineProperty(globalThis[${JSON.stringify(holderKey)}], 'objects', { value: this }); return true; }`,
+      returnByValue: true,
+    });
+    return getOwnPropertyDescriptor(holder, 'objects')?.value;
+  } finally {
+    try {
+      session?.disconnect();
+    } finally {
+      if (getOwnPropertyDescriptor(globalThis, holderKey)?.value !== holder)
+        throw new Error('native census binding ownership changed');
+      if (!delete globalThis[holderKey]) throw new Error('native census binding cleanup refused');
+    }
+  }
+}
+
+export function projectLegacyCensus(modules, workDeadlineMs) {
+  const startedAt = Date.now();
+  if (
+    !Number.isSafeInteger(workDeadlineMs) ||
+    workDeadlineMs <= startedAt ||
+    workDeadlineMs > startedAt + 40000
+  )
+    throw new Error('native census projection deadline refused');
+  const roots = [
+    modules.gameServer.GameServer.prototype,
+    modules.engine.ServerTableEngine.prototype,
+    modules.manager.TournamentManager.prototype,
+    modules.lightningWorker.LightningClusterWorker.prototype,
+    modules.lightningHost.LightningHandHost.prototype,
+  ];
+  const out = [[], [], [], [], []];
+  const limits = [4000, 4000, 2000, 4000, 4000];
+  const getPrototypeOf = Object.getPrototypeOf;
+  const isProxy = process.getBuiltinModule('node:util').types.isProxy;
+  const membership = new WeakMap([[Object.prototype, 0]]);
+  roots.forEach((root, index) => membership.set(root, 1 << index));
+  let cachedPrototypes = roots.length + 1;
+  const classify = (prototype) => {
+    if (prototype === null || isProxy(prototype)) return 0;
+    const cached = membership.get(prototype);
+    if (cached !== undefined) return cached;
+    const path = [];
+    let cursor = prototype,
+      mask = 0;
+    while (cursor !== null) {
+      // Native queryObjects excludes Proxy chains too. Never execute a trap
+      // while projecting unrelated objects from the broad native result.
+      if (isProxy(cursor)) break;
+      const known = membership.get(cursor);
+      if (known !== undefined) {
+        mask = known;
+        break;
+      }
+      if (path.length >= 256) throw new Error('native census topology refused');
+      path.push(cursor);
+      cursor = getPrototypeOf(cursor);
+    }
+    for (const item of path) {
+      if (cachedPrototypes >= 4096) throw new Error('native census topology refused');
+      membership.set(item, mask);
+      cachedPrototypes++;
+    }
+    return mask;
+  };
+  for (let index = 0; index < this.length; index++) {
+    if ((index & 1023) === 0 && Date.now() >= workDeadlineMs)
+      throw new Error('native census projection deadline exhausted');
+    const value = this[index];
+    if (isProxy(value)) continue;
+    const mask = classify(getPrototypeOf(value));
+    for (let group = 0; group < roots.length; group++)
+      if (mask & (1 << group)) {
+        if (out[group].length >= limits[group]) throw new Error('native census count refused');
+        out[group].push(value);
+      }
+  }
+  return out;
+}
+
+// Metadata already returned with each native projected array. These counts are
+// diagnostic only: unknown descriptors never imply an empty physical owner.
+function nativeCensusArrayCount(value, limit) {
+  if (
+    value?.type !== 'object' ||
+    value.subtype !== 'array' ||
+    value.className !== 'Array' ||
+    typeof value.description !== 'string' ||
+    value.description.length > 11
+  )
+    return null;
+  const match = /^Array\((0|[1-9][0-9]{0,3})\)$/.exec(value.description);
+  if (!match) return null;
+  const count = Number(match[1]);
+  return Number.isSafeInteger(count) && count <= limit ? count : null;
+}
+
 export async function runLegacyEngineCheckpoint({
   pid,
   instanceId,
@@ -444,11 +798,18 @@ export async function runLegacyEngineCheckpoint({
   moduleExpression,
   guard,
   custodyIntent = null,
+  discoverEngines = false,
   port = 9229,
   workBudgetMs = 20000,
   cleanupBudgetMs = 5000,
+  checkpointDeadlineMs = null,
   createWebSocket = (endpoint) => new WebSocket(endpoint),
 }) {
+  const startedAt = Date.now();
+  // The outer client is killed at the supplied absolute deadline. Reserve
+  // one second INSIDE it to serialize/flush its bounded receipt and exit;
+  // cleanup may still use at most its original five-second ceiling.
+  const receiptReserveMs = checkpointDeadlineMs === null ? 0 : 1000;
   if (
     !Number.isSafeInteger(pid) ||
     pid < 1 ||
@@ -467,15 +828,27 @@ export async function runLegacyEngineCheckpoint({
     workBudgetMs > 20000 ||
     !Number.isSafeInteger(cleanupBudgetMs) ||
     cleanupBudgetMs < 100 ||
-    cleanupBudgetMs > 5000
+    cleanupBudgetMs > 5000 ||
+    (checkpointDeadlineMs !== null &&
+      (!Number.isSafeInteger(checkpointDeadlineMs) ||
+        checkpointDeadlineMs <= startedAt + cleanupBudgetMs + receiptReserveMs ||
+        checkpointDeadlineMs > startedAt + 40000))
   )
     throw refused('legacy checkpoint invocation identity refused');
-  const deadline = Date.now() + workBudgetMs;
+  // The production caller starts this one absolute budget before its entry
+  // proof. Unused entry time belongs to the census, not to another window.
+  // Cleanup keeps its own reserved slice inside the same forty seconds.
+  const deadline =
+    checkpointDeadlineMs === null
+      ? startedAt + workBudgetMs
+      : checkpointDeadlineMs - cleanupBudgetMs - receiptReserveMs;
+  const effectiveWorkBudgetMs = deadline - startedAt;
   let signalled = false,
     endpoint,
     connection,
     result,
     failure;
+  let censusBinding = null;
   let checkpointInvoked = false,
     inspectorClosed = false,
     cleanupConnections = 0,
@@ -484,14 +857,15 @@ export async function runLegacyEngineCheckpoint({
   // Which operation the transport is on. It is the name an unknown outcome
   // reports; it takes part in no decision and no branch reads it.
   let operation = 'inspectorEntry';
-  const startedAt = deadline - workBudgetMs;
+  let censusMemory = null,
+    nativeCensusCounts = null;
   const describeLoss = (error) =>
     [
       detailOf(error) ??
         `op=${operation},cause=${
           error instanceof CheckpointTransportError ? 'transport_refused' : 'unexpected_error'
         }`,
-      `budgetMs=${workBudgetMs}`,
+      `budgetMs=${effectiveWorkBudgetMs}`,
       `spentMs=${Date.now() - startedAt}`,
       `invoked=${checkpointInvoked ? 'yes' : 'no'}`,
     ]
@@ -541,53 +915,213 @@ export async function runLegacyEngineCheckpoint({
       )
     );
     if (!modules?.objectId) throw refused('cached modules unavailable');
-    operation = 'serverPrototype';
-    const prototype = remoteValue(
+    let objects,
+      server,
+      engineObjects = null,
+      managerObjects = null,
+      lightningWorkerObjects = null,
+      lightningHostObjects = null;
+    if (discoverEngines) {
+      operation = 'censusMemoryAdmission';
+      const memory = remoteValue(
+        await connection.request(
+          'Runtime.evaluate',
+          {
+            expression: `(${readLegacyCensusMemory.toString()})()`,
+            returnByValue: true,
+          },
+          deadline,
+          operation
+        )
+      );
+      censusMemory = legacyCensusMemoryAdmission(memory?.value);
+      if (!censusMemory?.ok) throw refused('native census memory headroom refused');
+      operation = 'broadPrototype';
+      const prototype = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration: legacyCensusRoot.toString(),
+            objectGroup: 'legacy-broad-census',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!prototype?.objectId) throw refused('native census root unavailable');
+      const holderKey = `__legacyEngineCensus_${process.getBuiltinModule('node:crypto').randomUUID().replaceAll('-', '')}`;
+      censusBinding = { holderKey, deadline };
+      operation = 'bindNativeCensusModules';
+      const binding = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration: bindLegacyCensusModules.toString(),
+            arguments: [{ value: holderKey }, { value: deadline }],
+            returnByValue: true,
+          },
+          deadline,
+          operation
+        )
+      );
+      if (binding?.value !== true) throw refused('native census binding unavailable');
+      operation = 'queryObjects';
+      const broadValue = remoteValue(
+        await connection.request(
+          'Runtime.evaluate',
+          {
+            expression: `(${collectMarkedLegacyCensus.toString()})(${JSON.stringify(holderKey)}, ${deadline})`,
+            disableBreaks: true,
+            awaitPromise: false,
+            objectGroup: 'legacy-broad-census',
+          },
+          deadline,
+          operation
+        )
+      );
+      const broad = { objects: broadValue };
+      if (!broad.objects?.objectId) throw refused('native census unavailable');
+      operation = 'projectNativePrototypes';
+      const projected = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: broad.objects.objectId,
+            functionDeclaration: projectLegacyCensus.toString(),
+            arguments: [{ objectId: modules.objectId }, { value: deadline }],
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!projected?.objectId) throw refused('native census projection unavailable');
+      const groups = [];
+      const countFields = [
+        ['gameServers', 4000],
+        ['tableEngines', 4000],
+        ['tournamentManagers', 2000],
+        ['lightningWorkers', 4000],
+        ['lightningHosts', 4000],
+      ];
+      for (let index = 0; index < 5; index++) {
+        const group = remoteValue(
+          await connection.request(
+            'Runtime.callFunctionOn',
+            {
+              objectId: projected.objectId,
+              functionDeclaration: `function() { return this[${index}]; }`,
+              objectGroup: 'legacy-checkpoint',
+            },
+            deadline,
+            'projectedCensusGroup'
+          )
+        );
+        if (!group?.objectId) throw refused('native census group unavailable');
+        nativeCensusCounts ??= {
+          schema: 'legacy-native-census-counts/v1',
+          gameServers: null,
+          tableEngines: null,
+          tournamentManagers: null,
+          lightningWorkers: null,
+          lightningHosts: null,
+        };
+        const [field, limit] = countFields[index];
+        nativeCensusCounts[field] = nativeCensusArrayCount(group, limit);
+        groups.push(group.objectId);
+      }
+      // The five small arrays retain their own independent handles. Do not
+      // pin every unrelated heap object through the guard's private captures.
+      operation = 'releaseBroadCensus';
       await connection.request(
-        'Runtime.callFunctionOn',
+        'Runtime.releaseObjectGroup',
         {
-          objectId: modules.objectId,
-          functionDeclaration: 'function() { return this.gameServer.GameServer.prototype; }',
+          objectGroup: 'legacy-broad-census',
+        },
+        deadline,
+        operation
+      );
+      objects = { objects: { objectId: groups[0] } };
+      [engineObjects, managerObjects, lightningWorkerObjects, lightningHostObjects] =
+        groups.slice(1);
+      operation = 'serverSingleton';
+      server = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: groups[0],
+            objectGroup: 'legacy-checkpoint',
+            functionDeclaration:
+              'function() { if (this.length !== 1) throw new Error("singleton refused"); return this[0]; }',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!server?.objectId) throw refused('singleton unavailable');
+    } else {
+      operation = 'serverPrototype';
+      const prototype = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration: 'function() { return this.gameServer.GameServer.prototype; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!prototype?.objectId) throw refused('cached prototype unavailable');
+      operation = 'queryObjects';
+      objects = await connection.request(
+        'Runtime.queryObjects',
+        {
+          prototypeObjectId: prototype.objectId,
           objectGroup: 'legacy-checkpoint',
         },
         deadline,
         operation
-      )
-    );
-    if (!prototype?.objectId) throw refused('cached prototype unavailable');
-    operation = 'queryObjects';
-    const objects = await connection.request(
-      'Runtime.queryObjects',
-      {
-        prototypeObjectId: prototype.objectId,
-        objectGroup: 'legacy-checkpoint',
-      },
-      deadline,
-      operation
-    );
-    operation = 'serverSingleton';
-    const server = remoteValue(
-      await connection.request(
-        'Runtime.callFunctionOn',
-        {
-          objectId: objects.objects.objectId,
-          functionDeclaration:
-            'function() { if (this.length !== 1) throw new Error("singleton refused"); return this[0]; }',
-          objectGroup: 'legacy-checkpoint',
-        },
-        deadline,
-        operation
-      )
-    );
-    if (!server?.objectId) throw refused('singleton unavailable');
+      );
+      operation = 'serverSingleton';
+      server = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: objects.objects.objectId,
+            functionDeclaration:
+              'function() { if (this.length !== 1) throw new Error("singleton refused"); return this[0]; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!server?.objectId) throw refused('singleton unavailable');
+    }
     checkpointInvoked = true;
     operation = 'guardCall';
-    const response = remoteValue(
+    // Retain the returned Promise in the existing owned object group before
+    // awaiting it. CDP's direct awaitPromise can lose an otherwise unrooted
+    // pending Promise to GC and report "Promise was collected" after effects
+    // have begun. Await this same invocation; never call the guard again.
+    const pendingGuard = remoteValue(
       await connection.request(
         'Runtime.callFunctionOn',
         {
           objectId: server.objectId,
-          functionDeclaration: guard.toString(),
+          // Observe rejection synchronously so Node cannot treat an immediate
+          // guard rejection as unhandled between these two CDP requests. Keep
+          // and return the ORIGINAL Promise: awaitPromise must still receive
+          // its rejection, and no result or guard invocation is substituted.
+          functionDeclaration: `function (...args) {
+            const pendingCheckpoint = (${guard.toString()}).apply(this, args);
+            pendingCheckpoint.catch(() => {});
+            return pendingCheckpoint;
+          }`,
           arguments: [
             {
               value: {
@@ -599,10 +1133,34 @@ export async function runLegacyEngineCheckpoint({
             },
             { objectId: objects.objects.objectId },
             { objectId: modules.objectId },
+            ...(discoverEngines
+              ? [
+                  { objectId: engineObjects },
+                  { objectId: managerObjects },
+                  { objectId: lightningWorkerObjects },
+                  { objectId: lightningHostObjects },
+                ]
+              : []),
           ],
-          awaitPromise: true,
-          returnByValue: true,
+          awaitPromise: false,
+          returnByValue: false,
+          objectGroup: 'legacy-checkpoint',
         },
+        deadline,
+        operation
+      )
+    );
+    if (
+      pendingGuard?.type !== 'object' ||
+      pendingGuard.subtype !== 'promise' ||
+      !pendingGuard.objectId
+    )
+      throw refused('checkpoint promise unavailable');
+    operation = 'guardAwait';
+    const response = remoteValue(
+      await connection.request(
+        'Runtime.awaitPromise',
+        { promiseObjectId: pendingGuard.objectId, returnByValue: true },
         deadline,
         operation
       )
@@ -615,11 +1173,16 @@ export async function runLegacyEngineCheckpoint({
         ? error.message
         : 'inspector operation outcome unknown';
     // Only an outcome nobody can state needs describing; a refusal that named
-    // itself already has. The description never becomes the refusal.
+    // itself already has. The description never becomes the refusal. A
+    // protocol refusal carries its own operation/cause/inspector error.
     if (/outcome unknown/.test(failure)) transportDetail = describeLoss(error);
+    else if (failure === 'inspector protocol refused') transportDetail = detailOf(error);
   } finally {
     if (signalled) {
-      const cleanupDeadline = Date.now() + cleanupBudgetMs;
+      const cleanupDeadline = Math.min(
+        Date.now() + cleanupBudgetMs,
+        checkpointDeadlineMs === null ? Infinity : checkpointDeadlineMs - receiptReserveMs
+      );
       let shutdownRequested = false;
       try {
         // One cleanup-only reconnection at most: no imports or guard calls.
@@ -661,6 +1224,28 @@ export async function runLegacyEngineCheckpoint({
               // The record is a courtesy to the reader, never a condition.
             }
           }
+          if (censusBinding) {
+            const retired = remoteValue(
+              await connection.request(
+                'Runtime.evaluate',
+                {
+                  expression: `(${retireLegacyCensusBinding.toString()})(${JSON.stringify(censusBinding.holderKey)}, ${censusBinding.deadline})`,
+                  disableBreaks: true,
+                  returnByValue: true,
+                },
+                cleanupDeadline,
+                'inspectorCleanupCensusBinding'
+              )
+            );
+            if (retired?.value !== true) throw refused('native census binding cleanup refused');
+          }
+          if (discoverEngines)
+            await connection.request(
+              'Runtime.releaseObjectGroup',
+              { objectGroup: 'legacy-broad-census' },
+              cleanupDeadline,
+              'inspectorCleanupBroadRelease'
+            );
           operation = 'inspectorCleanupRelease';
           await connection.request(
             'Runtime.releaseObjectGroup',
@@ -737,12 +1322,61 @@ export async function runLegacyEngineCheckpoint({
       ...(progress ? { progress } : {}),
       // Which operation was lost, and how much of the budget it was given.
       ...(transportDetail ? { transportDetail } : {}),
+      ...(censusMemory ? { censusMemory } : {}),
+      ...(nativeCensusCounts ? { nativeCensusCounts } : {}),
       retryAllowed: false,
       checkpointInvoked,
       inspectorClosed,
       cleanupConnections,
     };
-  return { ...result, inspectorClosed, checkpointInvoked, cleanupConnections, retryAllowed: false };
+  return {
+    ...result,
+    ...(censusMemory ? { censusMemory } : {}),
+    inspectorClosed,
+    checkpointInvoked,
+    cleanupConnections,
+    retryAllowed: false,
+  };
+}
+
+// Publish only the existing validated summary. Await the actual stream callback
+// before the CLI exits, including under pipe backpressure, inside its reserved
+// second and original absolute deadline. A lost receipt never authorizes retry.
+export function publishLegacyCheckpointReceipt(result, deadlineMs) {
+  // Keep 100ms of the reserved second for CLI exit and outer forwarding even
+  // when publication itself times out. Never wait at the shell kill boundary.
+  const expiresAt = Math.min(deadlineMs - 100, Date.now() + 900);
+  if (!Number.isSafeInteger(deadlineMs) || expiresAt <= Date.now()) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const stream = result.ok ? process.stdout : process.stderr;
+    let timer,
+      ended = false;
+    const finish = (ok) => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(timer);
+      // A failed write callback can precede its stream error event. Keep our
+      // one-shot listener for that pending error until it fires or this CLI
+      // exits; never let a late EPIPE print an uncaught native exception.
+      if (ok) stream.removeListener('error', failed);
+      resolve(ok);
+    };
+    const failed = () => finish(false);
+    const expire = () => {
+      const left = expiresAt - Date.now();
+      if (left > 0) timer = setTimeout(expire, left);
+      else finish(false);
+    };
+    stream.once('error', failed);
+    timer = setTimeout(expire, Math.max(1, expiresAt - Date.now()));
+    try {
+      stream.write(JSON.stringify(result) + '\n', (error) =>
+        finish(!error && Date.now() <= expiresAt)
+      );
+    } catch {
+      finish(false);
+    }
+  });
 }
 
 if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eval1]')) {
@@ -754,15 +1388,20 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
       '758610f3f844406bbbaee2f5100ced36d84fb943',
       'a0ab287d902879280f0c915e44f5222c5db4d7df',
       '8825af51817f379c4261658ca29ecc9d8d81932d',
+      'eed06fe51dea622069c661a6213d5b031ff3a9e3',
     ].includes(checkpointRelease)
   )
     throw refused('checkpoint predecessor profile refused');
+  const retainedEed = checkpointRelease === 'eed06fe51dea622069c661a6213d5b031ff3a9e3';
   const mixedImports =
-    checkpointRelease === '8825af51817f379c4261658ca29ecc9d8d81932d'
+    retainedEed || checkpointRelease === '8825af51817f379c4261658ca29ecc9d8d81932d'
       ? ", import('file:///app/dist/tournament/TournamentManager.js'), import('file:///app/dist/tournament/TournamentManagerBase.js'), import('file:///app/dist/services/F06HandPermit.js'), import('file:///app/dist/services/TournamentRetirementCustody.js')"
       : '';
+  const retainedImports = retainedEed
+    ? ", import('file:///app/dist/engine/ServerTableEngine.js'), import('file:///app/dist/engine/HandController.js'), import('file:///app/dist/engine/PrivateHandContinuation.js'), import('file:///app/dist/lightning/LightningRegistry.js'), import('file:///app/dist/lightning/LightningSupervisor.js'), import('file:///app/dist/lightning/LightningClusterWorker.js'), import('file:///app/dist/lightning/LightningFormationGate.js'), import('file:///app/dist/lightning/LightningHandHost.js')"
+    : '';
   const checkpointModuleExpression = `process.getBuiltinModule('node:vm').runInThisContext(
-    "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement}))",
+    "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}${retainedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement,engine,controller,privateContinuation,lightningRegistry,lightningSupervisor,lightningWorker,lightningFormation,lightningHost])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement,engine,controller,privateContinuation,lightningRegistry,lightningSupervisor,lightningWorker,lightningFormation,lightningHost}))",
     { importModuleDynamically: process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })`;
   const checkpointResult = await runLegacyEngineCheckpoint({
     pid: 1,
@@ -770,19 +1409,24 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     instanceId: process.argv[2],
     releaseSha: checkpointRelease,
     moduleExpression: checkpointModuleExpression,
-    guard: legacyEngineCheckpointGuard,
+    guard: retainedEed ? retainedOriginalCheckpointGuard : legacyEngineCheckpointGuard,
+    discoverEngines: retainedEed,
     custodyIntent: JSON.parse(process.argv[4] ?? 'null'),
+    checkpointDeadlineMs: Number(process.argv[5]),
   }).catch(() => ({
     ok: false,
     reason: 'legacy checkpoint invocation refused',
     retryAllowed: false,
   }));
-  (checkpointResult.ok ? console.log : console.error)(JSON.stringify(checkpointResult));
+  const receiptPublished = await publishLegacyCheckpointReceipt(
+    checkpointResult,
+    Number(process.argv[5])
+  );
+  if (!receiptPublished) process.exit(1);
   // A failed cleanup may retain a client socket. End this helper after its
   // bounded attempt without sending another WebSocket close to the engine.
   // 75 is `legacy-engine-checkpoint.sh`'s deferral, and it is reachable here
   // ONLY on a receipt that proves this attempt touched nothing. Anything else,
   // including an unreadable or partial receipt, is 1 and ends the release.
-  if (!checkpointResult.ok)
-    process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);
+  if (!checkpointResult.ok) process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);
 }

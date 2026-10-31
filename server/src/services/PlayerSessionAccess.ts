@@ -1,4 +1,4 @@
-import { supabase } from './supabase.js';
+import { supabase } from './supabase/client.js';
 
 export type PlayerSessionVerdict = 'alive' | 'revoked' | 'unknown';
 interface SessionDatabase {

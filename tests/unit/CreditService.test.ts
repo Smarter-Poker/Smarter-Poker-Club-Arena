@@ -5,7 +5,7 @@
  *
  * Tests:
  * - Credit status calculation (utilization thresholds)
- * - Drawn credit, independent of credit capacity and wallet balance
+ * - Tracking credit minus the funded Agent Wallet, before rakeback
  * - Prepaid agents have zero debt
  * - Next settlement date (always next Sunday)
  * - Grace period remaining logic
@@ -230,52 +230,46 @@ describe('CreditService', () => {
   // DEBT FORMULA
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('drawn credit', () => {
-    it('does not bill an unused credit line', async () => {
+  describe('tracking credit wallet shortfall', () => {
+    it.each([
+      [500, 504.72, 0],
+      [2500, 2000, 500],
+      [500, 0, 500],
+      [500.01, 500, 0.01],
+      [0, 200, 0],
+    ])('line %s minus wallet %s requires %s before rakeback', async (line, wallet, expected) => {
       creditRead.data = {
-        credit_limit: 10000,
-        credit_used: 0,
-        agent_wallet_balance: 0,
+        credit_limit: line,
+        credit_used: 999,
+        agent_wallet_balance: wallet,
         is_prepaid: false,
       };
-      expect((await CreditService.calculateDebt('agent')).debtOwed).toBe(0);
-      expect(creditRead.select).toHaveBeenCalledWith(expect.stringContaining('credit_used'));
+      expect((await CreditService.calculateDebt('agent')).debtOwed).toBe(expected);
+      expect(creditRead.select).toHaveBeenCalledWith(
+        expect.stringContaining('agent_wallet_balance')
+      );
     });
-    it('preserves the debt even when the agent wallet exceeds the credit line', async () => {
-      creditRead.data = {
-        credit_limit: 10000,
-        credit_used: 75.23,
-        agent_wallet_balance: 20000,
-        is_prepaid: false,
-      };
-      expect((await CreditService.calculateDebt('agent')).debtOwed).toBe(75.23);
-    });
-    it('uses drawn credit for each club agent', async () => {
+    it('uses the same shortfall for every club agent', async () => {
       creditRead.data = [
-        { id: 'a', credit_limit: 10000, credit_used: 25.17, agent_wallet_balance: 0 },
+        { id: 'a', credit_limit: 500, credit_used: 25.17, agent_wallet_balance: 400.13 },
       ];
-      expect((await CreditService.calculateClubDebt('club'))[0].debtOwed).toBe(25.17);
+      expect((await CreditService.calculateClubDebt('club'))[0].debtOwed).toBe(99.87);
     });
     it('keeps prepaid accounts at zero debt', async () => {
-      creditRead.data = {
-        credit_limit: 10000,
-        credit_used: 0,
-        agent_wallet_balance: 0,
-        is_prepaid: true,
-      };
+      creditRead.data = { credit_limit: 0, agent_wallet_balance: 500, is_prepaid: true };
       expect((await CreditService.calculateDebt('agent')).debtOwed).toBe(0);
     });
-    it.each([null, undefined, 'NaN', Infinity, -1])(
-      'refuses unknown or invalid debt %s',
+    it.each([null, undefined, 'NaN', Infinity, -1, '0.001'])(
+      'refuses an unknown or invalid wallet %s',
       async (value) => {
         creditRead.data = {
-          credit_limit: 10000,
-          credit_used: value,
-          agent_wallet_balance: 0,
+          credit_limit: 500,
+          credit_used: 0,
+          agent_wallet_balance: value,
           is_prepaid: false,
         };
         await expect(CreditService.calculateDebt('agent')).rejects.toThrow(
-          'Drawn credit is unavailable'
+          'Credit tracking balance is unavailable'
         );
       }
     );

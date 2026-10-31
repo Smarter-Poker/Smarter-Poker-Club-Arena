@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  REGISTRATION APPROVALS PANEL (2026-08-23 — parity follow-up)
@@ -53,32 +54,61 @@ interface Props {
   authorizedToRegister: boolean;
 }
 
-export default function RegistrationApprovalsPanel({
+export default function RegistrationApprovalsPanel(props: Props) {
+  const { isAdmin } = useClubRole(props.clubId);
+  // The approval list, pending reads and actions belong to one event and
+  // permission scope. Navigation must never reuse another event's list.
+  return (
+    <RegistrationApprovalScope
+      key={JSON.stringify([props.tournamentId, props.clubId, props.authorizedToRegister, isAdmin])}
+      {...props}
+      isAdmin={isAdmin}
+    />
+  );
+}
+
+function RegistrationApprovalScope({
   tournamentId,
   clubId,
   authorizedToRegister,
-}: Props) {
-  const { isAdmin } = useClubRole(clubId);
+  isAdmin,
+}: Props & { isAdmin: boolean }) {
   const toast = useToast();
 
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [nameById, setNameById] = useState<Record<string, string>>({});
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('registrationApprovals.search', '', clubId);
   const [loading, setLoading] = useState(true);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
+  const [failed, setFailed] = useState(false);
+  const [reload, setReload] = useState(0);
   const loadApprovals = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('tournament_registration_approvals')
-      .select('user_id, created_at')
-      .eq('tournament_id', tournamentId)
-      .order('created_at', { ascending: false });
-    if (error) {
-      reportError(error, 'RegistrationApprovalsPanel.load_approvals');
-      return;
+    const rows: ApprovalRow[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      let query = supabase
+        .from('tournament_registration_approvals')
+        .select('user_id, created_at')
+        .eq('tournament_id', tournamentId)
+        .order('user_id', { ascending: true })
+        .limit(1000);
+      if (cursor !== null) query = query.gt('user_id', cursor);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      if (!Array.isArray(data)) throw new Error('Registration approvals unavailable');
+      rows.push(...(data as ApprovalRow[]));
+      if (data.length < 1000) break;
+      const next = data[data.length - 1]?.user_id;
+      if (typeof next !== 'string' || !next || (cursor !== null && next <= cursor))
+        throw new Error('Registration approval cursor unavailable');
+      cursor = next;
     }
-    setApprovals((data as ApprovalRow[]) ?? []);
+    rows.sort(
+      (a, b) => b.created_at.localeCompare(a.created_at) || a.user_id.localeCompare(b.user_id)
+    );
+    return rows;
   }, [tournamentId]);
 
   useEffect(() => {
@@ -87,7 +117,7 @@ export default function RegistrationApprovalsPanel({
     (async () => {
       setLoading(true);
       try {
-        const [memberships] = await Promise.all([
+        const [memberships, approvalRows] = await Promise.all([
           MembershipService.getClubMembers(clubId),
           loadApprovals(),
         ]);
@@ -99,10 +129,13 @@ export default function RegistrationApprovalsPanel({
           opts.push({ userId: m.userId, username: name });
           names[m.userId] = name;
         }
+        setApprovals(approvalRows);
+        setFailed(false);
         setMembers(opts);
         setNameById(names);
       } catch (err) {
         reportError(err, 'RegistrationApprovalsPanel.load_members');
+        if (!cancelled) setFailed(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -110,7 +143,7 @@ export default function RegistrationApprovalsPanel({
     return () => {
       cancelled = true;
     };
-  }, [clubId, isAdmin, authorizedToRegister, loadApprovals]);
+  }, [clubId, isAdmin, authorizedToRegister, loadApprovals, reload]);
 
   const approvedIds = useMemo(() => new Set(approvals.map((a) => a.user_id)), [approvals]);
 
@@ -121,6 +154,16 @@ export default function RegistrationApprovalsPanel({
       .filter((m) => (q ? m.username.toLowerCase().includes(q) : true))
       .slice(0, 25);
   }, [members, approvedIds, search]);
+
+  const refreshApprovals = async () => {
+    try {
+      setApprovals(await loadApprovals());
+      setFailed(false);
+    } catch (error) {
+      reportError(error, 'RegistrationApprovalsPanel.load_approvals');
+      setFailed(true);
+    }
+  };
 
   const approve = async (userId: string) => {
     setBusyUserId(userId);
@@ -141,7 +184,7 @@ export default function RegistrationApprovalsPanel({
         return;
       }
       toast.success('Player approved to register.');
-      await loadApprovals();
+      await refreshApprovals();
     } finally {
       setBusyUserId(null);
     }
@@ -161,7 +204,7 @@ export default function RegistrationApprovalsPanel({
         return;
       }
       toast.success('Approval revoked.');
-      await loadApprovals();
+      await refreshApprovals();
     } finally {
       setBusyUserId(null);
     }
@@ -177,8 +220,8 @@ export default function RegistrationApprovalsPanel({
       eyebrow="Registration"
       title="Authorized To Register"
       titleId="registration-approvals-title"
-      pill={`${approvals.length} Approved`}
-      pillInk={approvals.length > 0 ? 'green' : 'muted'}
+      pill={failed ? 'Unavailable' : `${approvals.length} Approved`}
+      pillInk={!failed && approvals.length > 0 ? 'green' : 'muted'}
       foot="foot"
     >
       <p className="sc-copy regApprovals__hint">
@@ -189,6 +232,19 @@ export default function RegistrationApprovalsPanel({
         <p className="sc-copy sc-copy--center regApprovals__state" aria-busy="true">
           Loading Members...
         </p>
+      ) : failed ? (
+        <>
+          <p className="sc-copy sc-copy--center regApprovals__state" role="alert">
+            Could Not Load Registration Approvals.
+          </p>
+          <button
+            type="button"
+            className="regApprovals-word"
+            onClick={() => setReload((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </>
       ) : (
         <>
           {approvals.length > 0 && (

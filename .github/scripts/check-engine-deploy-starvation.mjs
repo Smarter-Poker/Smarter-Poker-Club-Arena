@@ -16,9 +16,11 @@
  *
  * THE THRESHOLD, AND THE MEASUREMENT IT CAME FROM (CLAUDE.md 10.84).
  *
- * The engine restarts at most once per hour, inside the announced :55 break
- * (CLAUDE.md 13), so a queue of unshipped attempts is NORMAL - up to about two
- * breaks of latency is the documented, accepted worst case
+ * The historical measurement below used hourly engine breaks. The current
+ * engine schedule is daily at 04:00 America/Chicago (CLAUDE.md 13). This
+ * read-only observer retains the measured count/time thresholds; it grants
+ * no release, retry, emergency or maintenance authority. The historical
+ * accepted latency was about two hourly breaks
  * (docs/changelog/2026-09-10-every-engine-merge-starts-its-own-train.md:
  * "Worst-case latency is about two breaks"). Beyond that it is not latency,
  * it is starvation.
@@ -49,6 +51,9 @@ export const SPAN_MINUTES_THRESHOLD = 120;
 
 /** A stand-down is the release lane refusing code that was never the problem. */
 const STOOD_DOWN = /stood down before cutover|is stale; protected main requires/i;
+const BEFORE_INTAKE = /release refused before host intake|deployment job did not run/i;
+const SEALED_WITHOUT_PROOF =
+  /the release sealed but production identity could not be independently proved/i;
 
 /**
  * The whole decision, as a pure function, so it can be proved against real
@@ -59,20 +64,27 @@ export function assess({ rows, lastShipped, now = Date.now() }) {
   if (!rows.length) {
     return { starving: false, attempts: 0, spanMinutes: 0, supersededCount: 0, lastShipped };
   }
-  const spanMinutes =
-    Math.round(((now - new Date(rows[0].at).getTime()) / 60000) * 10) / 10;
+  const spanMinutes = Math.round(((now - new Date(rows[0].at).getTime()) / 60000) * 10) / 10;
   const attempts = rows.length;
   const supersededCount = rows.filter((r) => STOOD_DOWN.test(r.reason || '')).length;
+  const beforeIntakeCount = rows.filter((r) => BEFORE_INTAKE.test(r.reason || '')).length;
+  const sealedWithoutProofCount = rows.filter((r) =>
+    SEALED_WITHOUT_PROOF.test(r.reason || '')
+  ).length;
   const starving = attempts >= ATTEMPTS_THRESHOLD && spanMinutes >= SPAN_MINUTES_THRESHOLD;
   // When most of the backlog stood down, the code being offered was never the
   // problem and re-pushing it will not help. Say so, because the instinct is
   // to go looking at the engine - which is where four and a half hours went
   // on 2026-09-12.
   const verdict = !starving
-    ? `Within the accepted envelope (fires at >= ${ATTEMPTS_THRESHOLD} attempts AND >= ${SPAN_MINUTES_THRESHOLD} minutes, about two maintenance breaks).`
+    ? `Within the accepted envelope (fires at >= ${ATTEMPTS_THRESHOLD} attempts AND >= ${SPAN_MINUTES_THRESHOLD} minutes).`
     : supersededCount * 2 >= attempts
       ? `THE PIPELINE IS THE PROBLEM, NOT THE CODE: ${supersededCount} of ${attempts} attempts stood down before cutover because protected main had moved.`
-      : 'The releases reached cutover and did not complete; read the reasons above before re-pushing.';
+      : beforeIntakeCount > 0
+        ? `${beforeIntakeCount} of ${attempts} attempts stopped before host intake; inspect their production prerequisites and the remaining recorded outcomes before re-pushing.`
+        : sealedWithoutProofCount === attempts
+          ? 'The release transactions sealed, but production identity is unproved; read the reasons above before retrying.'
+          : 'No release is independently proved shipped; inspect the recorded outcomes before inferring activation or retrying.';
   return { starving, attempts, spanMinutes, supersededCount, verdict, lastShipped };
 }
 

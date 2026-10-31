@@ -1,0 +1,17 @@
+{
+  "name": "@smarter-poker/production-alerts-native-wakeup",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.mjs"
+    ]
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.90.1"
+  },
+  "engines": {
+    "node": ">=22.23.2"
+  }
+}

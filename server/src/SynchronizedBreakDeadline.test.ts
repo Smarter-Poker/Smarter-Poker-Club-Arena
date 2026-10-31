@@ -29,6 +29,9 @@ function manager(id: string) {
     currentLevel: 0,
     onBreak: true,
     breakCountdownStarted: false,
+    synchronizedBreakStartGeneration: 0,
+    synchronizedBreakEndsAtMs: 0,
+    breakCountdownAnchor: { generation: 0, startedAt: '2026-09-10T12:55:00.000Z' },
     captureLifecycleToken: () => 1,
     lifecycleIsCurrent: () => true,
     isRunning: () => true,
@@ -72,15 +75,45 @@ async function settle(turns = 10) {
 
 function persistence(delayMs = 0) {
   const writes: { id: string; deadline: string }[] = [];
-  vi.spyOn(supabase, 'from').mockReturnValue({
-    update: (patch: { break_ends_at: string }) => ({
-      eq: async (_column: string, id: string) => {
-        writes.push({ id, deadline: patch.break_ends_at });
-        vi.setSystemTime(Date.now() + delayMs);
-        return { error: null };
+  const rows = new Map<string, Record<string, unknown>>();
+  vi.spyOn(supabase, 'from').mockImplementation(() => {
+    let patch: { break_ends_at: string } | undefined;
+    const predicates = new Map<string, unknown>();
+    const query = {
+      select: () => query,
+      update: (value: { break_ends_at: string }) => {
+        patch = value;
+        return query;
       },
-    }),
-  } as never);
+      eq: (column: string, value: unknown) => {
+        predicates.set(column, value);
+        return query;
+      },
+      is: (column: string, value: unknown) => {
+        predicates.set(column, value);
+        return query;
+      },
+      maybeSingle: async () => {
+        const id = predicates.get('id') as string;
+        const row = rows.get(id) ?? {
+          id,
+          on_break: true,
+          break_started_at: '2026-09-10T12:55:00.000Z',
+          break_ends_at: null,
+        };
+        if ([...predicates].some(([key, value]) => row[key] !== value))
+          return { data: null, error: null };
+        if (patch) {
+          writes.push({ id, deadline: patch.break_ends_at });
+          Object.assign(row, patch);
+          rows.set(id, row);
+          vi.setSystemTime(Date.now() + delayMs);
+        }
+        return { data: { ...row }, error: null };
+      },
+    };
+    return query as never;
+  });
   return writes;
 }
 
@@ -99,12 +132,14 @@ describe('Synchronized Break Deadline', () => {
       ['quick', Date.parse('2026-09-10T12:55:00.000Z')],
       ['slow', Date.parse('2026-09-10T12:55:40.000Z')],
     ]);
-    owner.waitForAllTablesParked.mockImplementation(async (managers: { tournamentId: string }[]) => {
-      expect(managers).toHaveLength(1);
-      const at = parkedAt.get(managers[0].tournamentId)!;
-      await vi.advanceTimersByTimeAsync(Math.max(0, at - Date.now()));
-      return true;
-    });
+    owner.waitForAllTablesParked.mockImplementation(
+      async (managers: { tournamentId: string }[]) => {
+        expect(managers).toHaveLength(1);
+        const at = parkedAt.get(managers[0].tournamentId)!;
+        await vi.advanceTimersByTimeAsync(Math.max(0, at - Date.now()));
+        return true;
+      }
+    );
     const writes = persistence();
     await owner.triggerSynchronizedBreak();
 
@@ -394,23 +429,56 @@ describe('A table the maintenance break holds is parked', () => {
     expect(participant.areAllTablesParked()).toBe(true);
   });
 
-  it('starts the countdown after a liveness ceiling, naming the event it waited on', async () => {
-    const participant = manager('wedged-event');
+  it('never substitutes five minutes of waiting for a completed hand', async () => {
+    const participant = manager('slow-event');
     const owner = server([participant]);
-    participant.areAllTablesParked = () => false;
+    const started = Date.now();
+    participant.areAllTablesParked = () => Date.now() >= started + 301_000;
     owner.sleep = async (milliseconds: number) => {
       vi.setSystemTime(Date.now() + milliseconds);
     };
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const started = Date.now();
     const parked = await (GameServer.prototype as any).waitForAllTablesParked.call(owner, [
       participant,
     ]);
     expect(parked).toBe(true);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(5 * 60 * 1000);
-    expect(Date.now() - started).toBeLessThan(5 * 60 * 1000 + 1_000);
-    expect(warn.mock.calls.some(([line]) => String(line).includes('wedged-e'))).toBe(true);
+    expect(Date.now() - started).toBe(301_000);
+  });
+
+  it.each(['new-break', 'stopped-manager'])(
+    'retires the old unproven drain when its owner changes: %s',
+    async (change) => {
+      const participant = manager('retired-event');
+      const owner = server([participant]);
+      participant.areAllTablesParked = () => false;
+      owner.sleep = async () => {
+        if (change === 'new-break') owner.synchronizedBreakGeneration++;
+        if (change === 'stopped-manager') participant.isRunning = () => false;
+      };
+      const parked = await (GameServer.prototype as any).waitForAllTablesParked.call(owner, [
+        participant,
+      ]);
+      expect(parked).toBe(false);
+    }
+  );
+
+  it('returns an unproven drain when shutdown interrupts a hand beyond five minutes', async () => {
+    const participant = manager('unresolved-event');
+    const owner = server([participant]);
+    const started = Date.now();
+    participant.areAllTablesParked = () => false;
+    owner.sleep = async (milliseconds: number) => {
+      vi.setSystemTime(Date.now() + milliseconds);
+      if (Date.now() - started >= 301_000) owner.running = false;
+    };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const parked = await (GameServer.prototype as any).waitForAllTablesParked.call(owner, [
+      participant,
+    ]);
+    expect(parked).toBe(false);
+    expect(Date.now() - started).toBe(301_000);
   });
 });
 

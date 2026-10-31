@@ -76,7 +76,7 @@ describe('the merged cashier balance read', () => {
     expect(read.credit).toBe(0);
   });
 
-  it('the credit line rides with the Agent Wallet only, beside the role-checked club figures', async () => {
+  it('tracking credit never enlarges the funded Agent Wallet beside the role-checked club figures', async () => {
     state.agent = {
       data: {
         agent_wallet_balance: 5,
@@ -90,7 +90,7 @@ describe('the merged cashier balance read', () => {
     const agent = await readCashierBalances(CLUB, USER, 'agent_wallet', signal);
     expect(agent).toMatchObject({
       bank: 5,
-      credit: 60,
+      credit: 0,
       promoPot: 7,
       promoFloat: 3,
       hasFloat: true,

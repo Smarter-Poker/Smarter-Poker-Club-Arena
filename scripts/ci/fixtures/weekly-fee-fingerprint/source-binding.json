@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "sourceFiles": {
+    "supabase/migrations/20261029074755_weekly_tournament_fee_fingerprint_serializes_its_economic_fi.sql": "25f5a304610d270f597bf9be771ffcba9d183c191d79c42e777cf75b8651b52f",
+    "scripts/ci/test-weekly-fee-fingerprint-postgres.py": "ed20a42ca6b82ebe6a628b345ab541d4266af09818a5ff88d162d51875631e78",
+    "tests/weekly-fee-fingerprint-source.test.ts": "6fb53c57d238ca12e62ff2ed76dbd1a98858037c2e07407b48549df6c9b5cc07",
+    "scripts/ci/fixtures/weekly-fee-fingerprint/fingerprint-before.sql": "33e113ff80a928b492e73c38e92d541b7352e94f0593da52e540652659080dc1",
+    "scripts/ci/fixtures/weekly-fee-fingerprint/fingerprint-after.sql": "a424d5ecad2b3562df2a816a3457b288d2fd3500238dd604bbaf61d65eb33691",
+    "scripts/ci/fixtures/weekly-fee-fingerprint/actual-authority.json": "db0df887d75214f3212a7f21f2d2b7cd0238940f31797bc77b69e1e40eec3689",
+    "scripts/ci/fixtures/weekly-fee-fingerprint/source-contract.json": "67adc9bfd27d43bc388c10669bb11fcdb15cc171432edee6e606757a37f7fe1f",
+    "scripts/ci/fixtures/weekly-fee-fingerprint/qualification-evidence.json": "8e5b2968072014193711fb1cec3225de181c2127666aa15359e0ff672e052191"
+  },
+  "limits": "Own maintained semantic/installer sources only. Existing required floor callback checked structurally so concurrent additive qualifications remain independent."
+}

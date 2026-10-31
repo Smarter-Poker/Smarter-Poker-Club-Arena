@@ -1,3 +1,5 @@
+import type { HorsePlanReadCapture } from './HorsePlanReadReceipt.js';
+import type { HorseRangeConsumptionCapture } from './HorseRangeConsumptionReceipt.js';
 import { smallPotNearNutRiverValue } from './HorseNearNutRiverValue.js';
 import {
   multiwayRiverLine,
@@ -11,6 +13,7 @@ import {
 } from '../services/horseCorrectiveReview/liveKernel.js';
 import { hasPhysicalImpliedDraw } from './HorseOmahaImpliedDraw.js';
 import { horsePlanHandKey } from './HorseDecisionEffects.js';
+import { headsUpCashCommitment } from './HorseHeadsUpCommitment.js';
 import {
   observePhase6Lookup,
   createPhase6Attribution,
@@ -2046,6 +2049,10 @@ export interface HorseDecideOpts {
    *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
    *  (default: enabled; league matchup v51_river_flat). */
   v51RiverFlat?: boolean;
+  /** V61 (2026-10-29): Hold'em one-pair river calls are shaded 6-12 equity
+   * points against the price unless the bettor's read says they over-bluff.
+   * Default on; explicit false keeps the unshaded V38 verdict. */
+  v61RiverOnePairShade?: boolean;
   /** V55: river Omaha sets/trips on a board permitting stronger hands do
    * not turn a qualified call into a raise. Opt-in until the separate
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
@@ -2061,6 +2068,24 @@ export interface HorseDecideOpts {
   /** Dan 2026-10-25 NLH tournament aggression (wider opens/3-bets/defence,
    *  more turn barrels). Default on; false is the historical arm. */
   v57TournamentAggression?: boolean;
+  /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
+  v60CashPressure?: boolean;
+  /** V62 (2026-10-30) Hold'em river bettor polarity: a river wager's sampled
+   *  hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum
+   *  by bet size (HorseEval V62_BLUFF_SHARE / V62_VALUE_MIX), placed exactly
+   *  from the bettor's band on the board. OPT-IN (default off) since
+   *  2026-10-30 18:50 UTC: the paired-deal mirror league resolved it negative
+   *  against horse opponents, which are most of the fleet's opponents -
+   *  20,000 duplicate pairs each: -3.67 +/- 1.02 bb/100 at 200bb,
+   *  -0.48 +/- 0.22 at 40bb, -0.40 +/- 0.55 at 100bb (its bluff shares are
+   *  the measured HUMAN pool's; the old brain bluffs rivers more) - while
+   *  V61 alone resolved +1.30 +/- 0.41. V61 yields to V62 only when V62 is
+   *  on. Re-enable by default only after a recalibrated stratum resolves
+   *  significant positive in the mirror and the human-field twin. */
+  v62RiverBettorPolarity?: boolean;
+  /** League calibration arm (2026-10-30): tournament call bar facing a
+   *  single open is raised by this amount (0 < x <= 0.2); inert otherwise. */
+  tournamentFlatBump?: number;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -2625,22 +2650,32 @@ function maniacCallDown(
       Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
       (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0));
     const required = exactRake === null ? Math.min(0.99, rawRequired) : rawRequired;
-    // A 240-deal estimate close to the price can reject a profitable call
-    // through sampling noise (retained PLO4 potter hand 74 after full-pot
-    // sizing). Refine that boundary once, with a fixed bounded sample; do
-    // not lower the price, survival premium or realization requirement.
+    // Preserve the existing refinement policy only outside the fixed-budget
+    // domains below. No recovery lowers the price, survival premium or
+    // realization requirement.
     const rawRecoveryMean = Math.max(0, Math.min(1, eq + betSelectionPenalty));
     const uncertainty =
       2 * Math.sqrt(Math.max(0.01, rawRecoveryMean * (1 - rawRecoveryMean)) / recoverySamples);
-    // A heads-up preflop all-in also realizes its sampled equity in full.
-    // Its close rejection needs the same bounded confirmation as postflop;
-    // ordinary preflop flats retain their separate realization policy.
-    // PLO4/PLO5/PLO6 high use their original fixed batch. Retrying only below-price
-    // outcomes (and replacing them with a fresh mean) favors continuation.
-    // Keep the existing price/range model, without outcome-selected samples.
-    const fixedOmahaRecovery = vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount);
+    // Outside the fixed-budget domains, heads-up preflop all-ins share the
+    // existing postflop refinement eligibility; ordinary preflop flats do not.
+    // NLH and PLO4/PLO5/PLO6 high retain their original governed batch.
+    // Retrying only below-price outcomes, then replacing a selected low mean
+    // with a fresh one, biases recovery toward continuation. A noisy false
+    // negative does not justify another attempt selected by that outcome.
+    // Keep the existing price, range and total original sampling allowance.
+    // The already selected variant capabilities own the game, including
+    // default NLH callers whose optional game-state tag is absent or empty.
+    const fixedHoldemRecovery =
+      vi.holeCount === 2 &&
+      !vi.isOmaha &&
+      !vi.isHiLo &&
+      !vi.isFixedLimit &&
+      !vi.isPotLimit &&
+      !vi.isShortDeck;
+    const fixedRecovery =
+      fixedHoldemRecovery || (vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount));
     const canRefineRecovery =
-      !fixedOmahaRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
+      !fixedRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
     if (canRefineRecovery && eq < required && required - eq <= uncertainty) {
       const extra = iterations * 4;
       const refined =
@@ -3768,6 +3803,19 @@ function v54OpponentProfile(
   }
 }
 
+/**
+ * V61 (2026-10-29): how far a hold'em one-pair river bluff-catch is priced
+ * below its raw read, by the price faced (toCall over the pot it is called
+ * into). Measured over 14 days of NLH review stack-offs: under a fifth of the
+ * pot those calls were about break-even (17-18% won against ~20% needed), at
+ * a quarter to a half they won 21-22% against ~29%, and at a half to a full
+ * pot 14% against ~40%. Zero below a fifth, twelve points from half a pot.
+ */
+export function v61RiverOnePairShade(toCall: number, pot: number): number {
+  if (!(toCall > 0) || !(pot > 0)) return 0;
+  return Math.min(0.12, Math.max(0, (toCall / pot - 0.2) * 0.4));
+}
+
 export class HorseLogic {
   /** Original post-observation boundary, shared with the admitted worker path.
    * The caller owns scope cleanup when it captures before decide(). */
@@ -3808,7 +3856,9 @@ export class HorseLogic {
     gameState: HorseGameStateV2,
     style: HorseStyle = 'balanced',
     mods: HorseProfileMods = {},
-    opts: HorseDecideOpts = {}
+    opts: HorseDecideOpts = {},
+    rangeCapture?: HorseRangeConsumptionCapture,
+    planReadCapture?: HorsePlanReadCapture
   ): HorseDecision {
     try {
       if (
@@ -3831,7 +3881,15 @@ export class HorseLogic {
           return shortAllInCallFloorOutsideGraph(
             holdemPremiumAggressionOutsideGraph(
               pairedBoardFoldOutsideGraph(
-                this.decideInternal(player, gameState, style, mods, opts),
+                this.decideInternal(
+                  player,
+                  gameState,
+                  style,
+                  mods,
+                  opts,
+                  rangeCapture,
+                  planReadCapture
+                ),
                 player,
                 gameState,
                 opts
@@ -3850,7 +3908,15 @@ export class HorseLogic {
       return shortAllInCallFloorOutsideGraph(
         holdemPremiumAggressionOutsideGraph(
           pairedBoardFoldOutsideGraph(
-            this.decideInternal(player, gameState, style, mods, opts),
+            this.decideInternal(
+              player,
+              gameState,
+              style,
+              mods,
+              opts,
+              rangeCapture,
+              planReadCapture
+            ),
             player,
             gameState,
             opts
@@ -3863,6 +3929,7 @@ export class HorseLogic {
         gameState
       );
     } catch (err) {
+      planReadCapture?.refuse();
       // Absolute safety net: never let a horse hang the table.
       // V13: it used to swallow the error entirely. This is the innermost and
       // most consequential catch in the brain — if a systematic defect were
@@ -3900,7 +3967,9 @@ export class HorseLogic {
     gs: HorseGameStateV2,
     styleName: HorseStyle,
     mods: HorseProfileMods,
-    opts: HorseDecideOpts = {}
+    opts: HorseDecideOpts = {},
+    rangeCapture?: HorseRangeConsumptionCapture,
+    planReadCapture?: HorsePlanReadCapture
   ): HorseDecision {
     phase7EquityEvidence = null;
     phase10EquityEvidence = null;
@@ -4076,7 +4145,9 @@ export class HorseLogic {
           opts.streetIQ !== false,
           opts.handReading !== false,
           v7,
-          opts
+          opts,
+          rangeCapture,
+          planReadCapture
         );
       }
       // MANIAC CALL-DOWN, inside the reference like the floor call-down, so
@@ -6006,6 +6077,11 @@ export class HorseLogic {
       omahaSuitedPremium: suitedPremium,
       holdemPremiumPair,
       tournamentAggression: (opts.v57TournamentAggression ?? true) !== false,
+      cashAggression: (opts.v60CashPressure ?? true) !== false,
+      isShortDeck: vi.isShortDeck === true,
+      ...(typeof opts.tournamentFlatBump === 'number'
+        ? { tournamentFlatBump: opts.tournamentFlatBump }
+        : {}),
       effectiveStackBB: (() => {
         let cover = 0;
         for (const p of gs.players) {
@@ -6364,7 +6440,9 @@ export class HorseLogic {
     useIQ: boolean = true,
     useHR: boolean = true,
     useV7: boolean = true,
-    opts: HorseDecideOpts = {}
+    opts: HorseDecideOpts = {},
+    rangeCapture?: HorseRangeConsumptionCapture,
+    planReadCapture?: HorsePlanReadCapture
   ): HorseDecision {
     const planHandKey = horsePlanHandKey(gs.actionHistory, opts.mindPlanContext);
     const useSizeReads = opts.v7SizeReads ?? useV7;
@@ -6603,6 +6681,35 @@ export class HorseLogic {
           noteFire('v56_omaha_pressure_range');
       }
     }
+    // ═══ V62 RIVER BETTOR POLARITY (2026-10-30) ═══ Single-board Hold'em,
+    // facing a river wager from a bettor without an over-bluffer read: the
+    // sampler keeps that bettor's hand by the likelihood they bet it at this
+    // size (HorseEval V62_KEEP). The read says WHO wagered on the river; the
+    // exploit read (callDownMod above 1 = a measured over-bluffer) keeps the
+    // full contact range so a credible bluffer is still called down.
+    let polar62 = false;
+    if (
+      // Opt-in since 2026-10-30 (see the option's note): the mirror league
+      // resolved it negative against horse opponents; V61 carries the
+      // measured correction by default.
+      opts.v62RiverBettorPolarity === true &&
+      isRiver &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !vi.isFixedLimit &&
+      extraBoards.length === 0 &&
+      gs.bombPot !== true &&
+      exploit.callDownMod <= 1 &&
+      oppReads &&
+      oppReads.some((read) => read?.lastStage === 'river')
+    ) {
+      oppReads = oppReads.map((read) =>
+        read && read.lastStage === 'river' ? { ...read, riverPolar: true } : read
+      );
+      polar62 = true;
+      if (tele15) noteFire('v62_river_bettor_polarity');
+    }
     let equity: number;
     /**
      * ═══ V36 BOMB POTS (Dan 2026-09-02) ═══════════════════════════════════
@@ -6681,7 +6788,8 @@ export class HorseLogic {
         hiLoSplit,
         oppReads,
         outcomes7,
-        player.knownDeadCards
+        player.knownDeadCards,
+        rangeCapture?.begin(0, gs.players, opponents, mcOpps, bands, oppReads)
       );
       if (outcomes7) outcomeBoards7.push(outcomes7);
       boardEq36.push(equity);
@@ -6707,7 +6815,7 @@ export class HorseLogic {
       for (const card of [...(player.knownDeadCards ?? []), ...boards.flat()]) {
         visibleCards.set(physicalKey(card), card);
       }
-      for (const b of boards) {
+      for (const [boardIndex, b] of boards.entries()) {
         const boardKeys = new Set(b.map(physicalKey));
         const otherVisibleCards = [...visibleCards.values()].filter(
           (card) => !boardKeys.has(physicalKey(card))
@@ -6730,7 +6838,8 @@ export class HorseLogic {
           perBoardSplit,
           oppReadsPerBoard,
           undefined,
-          otherVisibleCards
+          otherVisibleCards,
+          rangeCapture?.begin(boardIndex, gs.players, opponents, mcOpps, bands, oppReadsPerBoard)
         );
         boardEq36.push(eb);
         sum += eb;
@@ -6877,7 +6986,9 @@ export class HorseLogic {
       (hiLoSplit.quarter >= 0.2 || (hiLoSplit.lo > 0.4 && hiLoSplit.hi < 0.18));
     if (scoopy) mw -= 0.04;
     if (quartered) mw += 0.08;
-    const spr = pot > 0 ? stack / pot : 10;
+    const matchedCommitment = headsUpCashCommitment(player, gs);
+    const commitmentStack = matchedCommitment?.exposure ?? stack;
+    const spr = pot > 0 ? commitmentStack / pot : 10;
 
     // ═══ V4: street IQ — initiative, position, made class, scare, geometry ═══
     let initiative: 'hero' | 'opp' | 'none' = 'none';
@@ -7467,6 +7578,7 @@ export class HorseLogic {
     // planned barrels continue on safe cards; unplanned stabs give up.
     const handKey = useBarrels ? planHandKey : null;
     const barrelPlan = useBarrels ? HorseMind.getPlan(handKey, player.user_id) : undefined;
+    if (useBarrels) planReadCapture?.note('barrel', handKey, player.user_id, street, barrelPlan);
     /**
      * ═══ V39 THE NEXT CARD, READ AGAINST WHAT THE BET EXPECTED (2026-09-03) ═══
      * The bet on the previous street recorded which cards were good for hero
@@ -7487,6 +7599,8 @@ export class HorseLogic {
             `${newCard39.rank}${newCard39.suit[0]}`
           )
         : undefined;
+    if (useBarrels && prevStreet39 && newCard39)
+      planReadCapture?.note('outlook', handKey, player.user_id, prevStreet39, outlook39);
     if (tele15 && outlook39) noteFire(`v39_outlook_${outlook39}`);
     // ═══ TOURNAMENT AGGRESSION (Dan 2026-10-25) ═══════════════════════════
     // Real players called the tournament horses passive and scared. In 48
@@ -9462,15 +9576,17 @@ export class HorseLogic {
     let planCallOnly23 = false;
     if (useV23Plan && raisedAfterAggr) {
       const plan23 = HorseMind.getRaisePlan(planHandKey, player.user_id, street);
+      planReadCapture?.note('raise', planHandKey, player.user_id, street, plan23);
       // V28: the postflop mirror of the V25 commitment law — a stack that
       // already put ~30% of itself in this hand does not raise-FOLD at any
       // reasonable price. investedShare is hero's total commitment this hand
-      // over what he started it with.
+      // over what he started it with. Qualified cash HU uses the same
+      // matchable exposure as the commitment branch below.
       const invested28 = Math.max(
         0,
         Number((player as { totalInvested?: number }).totalInvested ?? 0)
       );
-      const investedShare28 = invested28 > 0 ? invested28 / (stack + invested28) : 0;
+      const investedShare28 = invested28 > 0 ? invested28 / (commitmentStack + invested28) : 0;
       if (plan23 === 'foldToRaise' && potOdds >= 0.15 && investedShare28 < 0.3) {
         if (tele15) noteFire('v23_plan_fold');
         return {
@@ -9504,10 +9620,13 @@ export class HorseLogic {
       isRiver &&
       cat === 4 &&
       made40?.weak === true;
+    // Covering chips cannot change the existing cash HU commitment policy.
+    // Physical stack still owns survival and legality. The same qualified
+    // exposure prices retained-plan commitment and supplies a bounded wager.
     const committed =
       spr < 1.2 ||
       toCall >= stack ||
-      (investedNow > 0 && investedNow / (stack + investedNow) >= 0.3);
+      (investedNow > 0 && investedNow / (commitmentStack + investedNow) >= 0.3);
     if (committed) {
       // V20: the flat-call bar here was potOdds + 0.02 regardless of how many
       // players were in or how many of them were ALL IN — the exact door the
@@ -9524,7 +9643,9 @@ export class HorseLogic {
       // a fresh flush/straight completion hero does not beat (and cannot
       // block) got the same call bar as a blank. The A4-two-pair-calls-a-jam
       // -on-a-three-diamond-river hand from the review table pays this.
-      const scare21 = useV21 && dangered ? 0.05 : 0;
+      // V62: the polar river sampler already carries the completed draws in
+      // the bettor's value stratum, so the scare margin is not added twice.
+      const scare21 = useV21 && dangered && !polar62 ? 0.05 : 0;
       if (tele15 && scare21 > 0) noteFire('v21_scare_commit');
       // ═══ V23 PKO BOUNTY PRICING (2026-08-28) ═══ calling off against an
       // all-in hero COVERS pays the bounty on top of the pot — the required
@@ -9587,7 +9708,37 @@ export class HorseLogic {
           return { action: 'fold', thinkTime: 0, continuationGuard: 'dominated_commitment_floor' };
         }
       }
-      const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23;
+      // ═══ V61 ONE-PAIR RIVER BLUFF-CATCH SHADE, committed branch ═══ a
+      // hero who bet the river and was raised, or whose stack is already
+      // mostly in, prices the call here rather than in the V38 block below.
+      // Measured over the same 14 days: after betting the river, one-pair
+      // and board-paired two-pair calls of the raise won 14-15% in cash and
+      // tournaments alike at an average price of 0.38 (-178,000bb), while
+      // better hands won 35-37%. Same gate as below: single-board hold'em,
+      // the bluff-catch class, no over-bluffer read on the opponent.
+      let shade61c = 0;
+      if (
+        (opts.v61RiverOnePairShade ?? true) !== false &&
+        // V62 sampled this bettor polar: the model carries what the shade
+        // corrected for, so the price shade is not stacked on top of it.
+        !polar62 &&
+        isRiver &&
+        !vi.isOmaha &&
+        !vi.isShortDeck &&
+        vi.holeCount === 2 &&
+        !multiBoard36 &&
+        !gs.bombPot &&
+        exploit.callDownMod <= 1 &&
+        cat > 0 &&
+        (cat <= 2 || (cat === 3 && pairedBoard)) &&
+        toCall > 0 &&
+        pot > 0
+      ) {
+        shade61c = v61RiverOnePairShade(toCall, pot);
+        if (shade61c > 0 && tele15) noteFire('v61_river_one_pair_shade');
+      }
+      const required =
+        potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23 + shade61c;
       if (eq15 >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
         // V15: a dominated flush/straight that still clears the (penalized)
         // bar CALLS rather than jams — shoving it has zero fold equity
@@ -9632,7 +9783,7 @@ export class HorseLogic {
           if (tele15) noteFire('v51_river_flat');
           return { action: 'call', amount: toCall, thinkTime: 0 };
         }
-        return { action: 'all_in', thinkTime: 0 };
+        return matchedCommitment?.wager ?? { action: 'all_in', thinkTime: 0 };
       }
       // V34: a solver-approved draw call is honored here too — the committed
       // bar must never fold a hand the solver's own range priced as a call.
@@ -10188,8 +10339,44 @@ export class HorseLogic {
       );
       const risk38 = risk > 0 && stack > 0 ? risk : 0;
       if (isRiver) {
+        // ═══ V61 ONE-PAIR RIVER BLUFF-CATCH SHADE (2026-10-29) ═══ Hold'em,
+        // one board: a one-pair hand (or two pair sharing the board's pair)
+        // calling a river wager is a bluff-catcher, and the range read it is
+        // priced against is too bluff-heavy. Measured over 14 days of NLH
+        // review stack-offs (cash and tournament alike): those calls won
+        // 17-18% when the price was under a quarter of the pot, 21-22% at a
+        // quarter to a half, and 14% at a half to a full pot, against the
+        // 20/29/40% the price demands; -1,146,000bb between them. The shade
+        // scales with the price and is withheld when the bettor's read says
+        // they over-bluff (respect below 1), so a credible bluffer is still
+        // called down. Under a fifth of the pot the measured calls were about
+        // break-even, so the shade starts there and reaches its 12-point cap
+        // at half the pot. Omaha, multiple boards and bomb pots keep their own
+        // pricing; the committed branch above carries the same shade.
+        let shade61 = 0;
+        if (
+          (opts.v61RiverOnePairShade ?? true) !== false &&
+          !polar62 &&
+          !vi.isOmaha &&
+          !vi.isShortDeck &&
+          vi.holeCount === 2 &&
+          !multiBoard36 &&
+          !gs.bombPot &&
+          // the measured over-bluffer read, as the committed branch reads it:
+          // `respect` also carries the style's callRespect offset, which sat
+          // at 0.96 for a neutral read with the mind on and left the shade
+          // unfired in production until 2026-10-30.
+          exploit.callDownMod <= 1 &&
+          cat > 0 &&
+          (cat <= 2 || (cat === 3 && pairedBoard)) &&
+          toCall > 0 &&
+          pot > 0
+        ) {
+          shade61 = v61RiverOnePairShade(toCall, pot);
+          if (shade61 > 0 && tele15) noteFire('v61_river_one_pair_shade');
+        }
         const v = riverCallVerdict({
-          equity: eqRead38,
+          equity: clamp01(eqRead38 - shade61),
           pot,
           toCall,
           stack,

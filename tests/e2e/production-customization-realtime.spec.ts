@@ -339,6 +339,10 @@ async function openStudio(
     timeout: PRODUCTION_RESPONSE_TIMEOUT,
   });
   await expectPreviewAvatarsLoaded(studio);
+  // The catalog tab is itself durable. Reopening after editing card backs
+  // correctly restores Cards; count Look tiles only after choosing Looks.
+  await activateCategory(studio, 'Looks');
+  await expect(studio.locator('.tsc__catalog')).toHaveAttribute('data-theme-tab', 'themes');
   const selectedLooks = grid.locator('.theme-asset[aria-pressed="true"]');
   if (expectedLook === 'coordinated') {
     await expect(selectedLooks).toHaveCount(1, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
@@ -850,9 +854,9 @@ test.describe('production Table Studio realtime contract', () => {
         await expect
           .poll(() => accountSignalReceived.get(page), { timeout: PRODUCTION_RESPONSE_TIMEOUT })
           .toBe(true);
-        await expect(page.locator('#profile-heading')).toHaveText(alias, {
-          timeout: PRODUCTION_RESPONSE_TIMEOUT,
-        });
+        await expect
+          .poll(() => rawProfileHeading(page), { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+          .toBe(alias);
         await expect
           .poll(
             () =>
@@ -872,7 +876,9 @@ test.describe('production Table Studio realtime contract', () => {
       await expect(mobilePage.locator('html')).toHaveAttribute('data-theme', 'dark');
       await primaryPage.emulateMedia({ colorScheme: 'dark' });
       await expect(primaryPage.locator('html')).toHaveAttribute('data-theme', 'dark');
-      await expect(otherPage.locator('#profile-heading')).toHaveText(otherName);
+      await expect
+        .poll(() => rawProfileHeading(otherPage), { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBe(otherName);
       await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode);
       const accountReadback = await primaryAccount.client
         .from('profiles')

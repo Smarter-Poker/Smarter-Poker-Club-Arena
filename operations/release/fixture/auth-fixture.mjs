@@ -198,9 +198,14 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
       );
       return LEDGER_ATTRIBUTION_ID;
     },
-    async createUsers() {
+    async createUsers(kind = 'cash') {
+      assert.ok(kind === 'cash' || kind === 'tournament');
       const users = [];
-      for (const name of ['actor-one', 'actor-two', 'spectator']) {
+      const names =
+        kind === 'cash'
+          ? ['actor-one', 'actor-two', 'spectator']
+          : ['tourney-one', 'tourney-two', 'tourney-three'];
+      for (const name of names) {
         const email = `component-${name}@smarter-poker.invalid`;
         const password = randomBytes(32).toString('base64url');
         const user = await request('/admin/users', {

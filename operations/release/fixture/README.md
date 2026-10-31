@@ -40,6 +40,41 @@ admission remain separate requirements.
 
 ## Pinned inputs
 
+### Optional tournament player UI observation
+
+The existing native controller accepts `--tournament-player-ui` in place of
+`--financial-route`. It retains the same COMPATIBILITY request, exact hosted
+artifact provenance, current full-schema contract, immutable runtime, internal
+network, separate observer identity and mandatory outer cleanup. Its fixture
+startup uses `--scenario=tournament-player-ui`; this is not an input to the
+ordinary product certificate path.
+
+The finite browser run covers Call Any and Call Bet Amount in the three
+formats, automatic paid rebuy return in its supported MTT venue, and persisted
+finish reports in MTT/SPIN/SNG. Short formats retain their existing freezeout
+configuration. Three additional real local GoTrue actors join the existing
+fixture club and are funded through its canonical bank; tournaments use the
+canonical creation, idempotent registration and owner-start doors. The engine
+alone creates chairs and starts play. Every played action and purchase is a
+real authenticated page button click. The private fact operation accepts only
+bound cohort/actor indexes and the original purchase token, never SQL or
+caller-selected identities.
+
+With a real admitted request already present, the foreground command is:
+
+```sh
+python3 operations/release/native/qualify-components.py "$CONTROL_CHECKOUT" "$OWNED_OUTPUT" --tournament-player-ui
+```
+
+As with the existing modes, the owning approved hosted job supplies the
+configured request/operation environment; do not invent a request, readiness
+flag, credential, publisher or alternative pipeline. The output is
+`tournament-player-ui-observations.json` with `product_certificate:false`.
+Contract tests are included in the existing representative test glob; they
+are not proof the connected application scenario ran. This addition has not
+yet established a qualified runtime/engine/web/schema tuple or a connected UI
+pass.
+
 The Dockerfile pins Linux amd64 platform manifests, verified through the official
 Docker Registry API on 2026-09-11. Other architectures deliberately fail closed.
 

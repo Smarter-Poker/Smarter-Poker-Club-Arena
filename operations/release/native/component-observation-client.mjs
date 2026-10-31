@@ -4,6 +4,7 @@ import path from 'node:path';
 import { lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { validateTournamentRead } from './tournament-player-observations.mjs';
 import {
   OBSERVATION_SOCKET,
   REQUEST_BYTES,
@@ -45,6 +46,7 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
   const sockets = new Set();
   let financial = null,
     financialDeadline = null;
+  const tournamentDeadline = now() + 240000;
   async function read(kind, value) {
     assert.ok(!closed && !busy, 'OBSERVATION_CLIENT_UNAVAILABLE');
     busy = true;
@@ -67,7 +69,10 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
           stat.gid === observerGid &&
           (stat.mode & 0o7777) === 0o660
       );
-      if (kind === 'financial_facts') {
+      if (kind === 'tournament_player_facts') {
+        validateTournamentRead(value);
+        assert.ok(now() < tournamentDeadline, 'OBSERVATION_TOURNAMENT_DEADLINE');
+      } else if (kind === 'financial_facts') {
         validateFinancial(value);
         if (!financial) {
           financial = Object.freeze({ ...value });
@@ -89,11 +94,22 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
         request_id: randomUUID(),
         binding,
         read: kind,
-        ...(kind === 'catalogue' ? {} : kind === 'financial_facts' ? { financial } : { hand }),
+        ...(kind === 'catalogue'
+          ? {}
+          : kind === 'tournament_player_facts'
+            ? { tournament: value }
+            : kind === 'financial_facts'
+              ? { financial }
+              : { hand }),
       };
       const encoded = Buffer.from(JSON.stringify(request) + '\n');
       assert.ok(encoded.length <= REQUEST_BYTES);
-      const readDeadline = kind === 'financial_facts' ? financialDeadline : deadline;
+      const readDeadline =
+        kind === 'tournament_player_facts'
+          ? tournamentDeadline
+          : kind === 'financial_facts'
+            ? financialDeadline
+            : deadline;
       const budget = kind === 'catalogue' ? READ_MS : Math.min(READ_MS, readDeadline - now());
       assert.ok(budget > 0);
       const result = await new Promise((resolve, reject) => {
@@ -149,6 +165,7 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
     handPresence: (hand) => read('hand_presence', hand),
     handFacts: (hand) => read('hand_facts', hand),
     financialFacts: (financial) => read('financial_facts', financial),
+    tournamentPlayerFacts: (value) => read('tournament_player_facts', value),
     close() {
       closed = true;
       for (const socket of sockets) socket.destroy();

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import argparse,json,os,re,sys,hashlib
 sys.dont_write_bytecode=True
 from satellite_qualifier_fixture import compose,module,function_sql
+from satellite_value_ticket_concurrency import qualify as qualify_concurrent_consumption
 
 def main():
  ap=argparse.ArgumentParser(description=__doc__)
@@ -139,6 +140,7 @@ def main():
   diamond_seed=diamond_seed.replace('PERFORM 1; /* Reuse the actual one-platform Diamond arena. */', "INSERT INTO auth.users(id) SELECT owner_id FROM public.clubs WHERE id=club AND owner_id IS NOT NULL ON CONFLICT(id) DO NOTHING; INSERT INTO public.users(id,username) SELECT owner_id,'native_diamond_platform_owner' FROM public.clubs WHERE id=club AND owner_id IS NOT NULL ON CONFLICT(id) DO NOTHING; INSERT INTO public.profiles(id,username,display_name) SELECT owner_id,'native_diamond_platform_owner','Native Diamond Platform Owner' FROM public.clubs WHERE id=club AND owner_id IS NOT NULL ON CONFLICT(id) DO NOTHING;")
   composed.write_text(seed+'\n'+scene.read_text()+'\n'+diamond_seed+'\n'+(fixture/'native-diamond-cases.sql').read_text()+"\nSET CONSTRAINTS ALL IMMEDIATE;\nROLLBACK;\n")
   e.sql(db,file=composed,label='funded-value-ticket-cases',seconds=180)
+  qualify_concurrent_consumption(e,root,native,db,output,seed,scene.read_text(),diamond_seed,(fixture/'native-diamond-cases.sql').read_text())
   e.report.update(passed=True,status='passed')
  finally:
   e.close()

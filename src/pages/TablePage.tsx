@@ -29421,7 +29421,10 @@ function LiveTablePage({
 
             {/* 2026-04-14 CRITICAL FIX: require both seats > 0 so the
                  between-hands 0===0 case doesn't briefly mount ActionPanel. */}
-            {isHeroTurnContext &&
+            {tableState.heroSeat > 0 &&
+            tableState.currentPlayerSeat > 0 &&
+            tableState.currentPlayerSeat === tableState.heroSeat &&
+            tableState.isHandInProgress &&
             heroDecisionReady &&
             /* "only after all cards are dealt out does the action start" —
                released by DealAnimation.onComplete, or by the 2.6s ceiling in

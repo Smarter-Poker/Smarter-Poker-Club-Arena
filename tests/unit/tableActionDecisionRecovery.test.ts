@@ -145,7 +145,7 @@ describe('authoritative decision readiness', () => {
   it('shares readiness across the actual panel, keyboard and submit paths without stopping the clock', () => {
     expect(page).toContain('const heroDecisionReady = tableDecisionIsReady({');
     expect(page).toContain('isHeroTurn: isHeroTurnContext && heroDecisionReady');
-    expect(page).toMatch(/\{isHeroTurnContext &&\s+heroDecisionReady &&/);
+    expect(page).toMatch(/tableState\.isHandInProgress &&\s+heroDecisionReady &&/);
     const timer = page.slice(
       page.indexOf('const { clock: actionClock'),
       page.indexOf('const { clock: actionClock') + 1600

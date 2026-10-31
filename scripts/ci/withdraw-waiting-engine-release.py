@@ -163,6 +163,7 @@ def terminal(request, invocation=None):
 # This narrow capability retires an expired announcement from the pinned
 # generation whose original recovery cannot terminalize announcement-only work.
 CANCEL_SCHEMA = 'expired-announcement-cancellation/v1'
+EMPTY_CANCEL_SCHEMA = 'expired-announcement-cancellation/empty-retry-v1'
 CANCEL_CONTROL = 'bd11ad35ca27843fd2f4910e5a8fc6a76d8c9d4e'
 CANCEL_HASHES = {
     'engine-release-database-proof.py': '7034aa6f2d42a7a321c1e610fa517acd165367512aa8f3e62aaee719a4703155',
@@ -240,12 +241,18 @@ def own_wants_edge(unit):
 
 
 def unit_snapshot(unit):
-    names = ['MainPID', 'InvocationID', 'ActiveState', 'SubState', 'Result',
-             'ExecMainCode', 'ExecMainStatus', 'ControlGroup']
+    is_path = unit.endswith('.path')
+    names = (['InvocationID', 'ActiveState', 'SubState', 'Result'] if is_path else
+             ['MainPID', 'InvocationID', 'ActiveState', 'SubState', 'Result',
+              'ExecMainCode', 'ExecMainStatus', 'ControlGroup'])
     args = ['systemctl', 'show', unit, '--all']
     for name in names: args += ['-p', name]
     value = dict(line.split('=', 1) for line in command(args).splitlines())
     require(set(value) == set(names))
+    if is_path:
+        # Path units have no Service process/Exec/cgroup properties. Null records
+        # inapplicability; native GetUnitProcesses supplies actual empty proof.
+        value.update(unitType='path', MainPID=None, ExecMainCode=None, ExecMainStatus=None, ControlGroup=None)
     return value
 
 
@@ -306,17 +313,59 @@ def loaded_stop_contract(unit, key, allow_masked=False):
 def cgroup_empty(path):
     require(isinstance(path, str) and path.startswith('/system.slice/') and '..' not in path.split('/'))
     target = CGROUP / path.lstrip('/')
-    if not os.path.lexists(target): return True
+    try: os.lstat(target)
+    except FileNotFoundError as error:
+        require(error.errno == errno.ENOENT)
+        return True
     require(target.resolve(strict=True) == target and target.is_dir())
     values = dict(line.split() for line in (target / 'cgroup.events').read_text().splitlines())
     return values.get('populated') == '0'
 
 
-def quiet_units(units, original_group):
+def prove_unit_empty(unit):
+    """Positive native enumeration includes cgroup descendants and main/control PIDs."""
+    before = unit_snapshot(unit)
+    is_path = unit.endswith('.path')
+    require(before['MainPID'] is None and before.get('unitType') == 'path' if is_path else before['MainPID'] == '0')
+    prefix = ['busctl', '--system', '--timeout=5s']
+    lookup = prefix + ['call', 'org.freedesktop.systemd1', '/org/freedesktop/systemd1',
+                       'org.freedesktop.systemd1.Manager', 'GetUnit', 's', unit]
+    resolved = shlex.split(command(lookup))
+    require(len(resolved) == 2 and resolved[0] == 'o'
+            and re.fullmatch(r'/org/freedesktop/systemd1/unit/[A-Za-z0-9_]+', resolved[1]) is not None)
+    prop = prefix + ['get-property', 'org.freedesktop.systemd1', resolved[1]]
+    identity = prop + ['org.freedesktop.systemd1.Unit', 'Id']
+    require(shlex.split(command(identity)) == ['s', unit])
+    if not is_path:
+        require(shlex.split(command(prop + ['org.freedesktop.systemd1.Service', 'ControlPID'])) == ['u', '0'])
+    require(shlex.split(command(prefix + ['call', 'org.freedesktop.systemd1', '/org/freedesktop/systemd1',
+        'org.freedesktop.systemd1.Manager', 'GetUnitProcesses', 's', unit])) == ['a(sus)', '0'])
+    if before['ControlGroup']: require(cgroup_empty(before['ControlGroup']))
+    require(shlex.split(command(identity)) == ['s', unit] and shlex.split(command(lookup)) == resolved)
+    require(unit_snapshot(unit) == before)
+    return before
+
+
+def empty_retry_admission(unit, state, key, evidence):
+    require(key == '41177442979-1' and 'engine-release-requests/'+key+'.awaiting-certificate' not in evidence['originals'])
+    require(state['MainPID'] == '0' and state['ActiveState'] == 'activating' and state['SubState'] == 'auto-restart')
+    raw = command(['systemctl', 'show', unit, '--all', '-p', 'Type', '-p', 'Restart', '-p', 'RestartUSec'])
+    require(dict(line.split('=', 1) for line in raw.splitlines()) ==
+            {'Type': 'oneshot', 'Restart': 'on-failure', 'RestartUSec': '30s'})
+    require(prove_unit_empty(unit) == state)
+
+
+def quiet_units(units, original_group, native_empty=False):
     states = [unit_snapshot(unit) for unit in units]
-    require(all(row['MainPID'] == '0' and row['ActiveState'] in {'inactive', 'failed'}
+    require(all((row['MainPID'] == '0' or (row.get('unitType') == 'path' and row['MainPID'] is None)) and row['ActiveState'] in {'inactive', 'failed'}
                 and (not row['ControlGroup'] or cgroup_empty(row['ControlGroup'])) for row in states))
-    require(cgroup_empty(original_group))
+    if native_empty:
+        require([prove_unit_empty(unit) for unit in units] == states)
+        if original_group is not None: require(cgroup_empty(original_group))
+    else:
+        require(cgroup_empty(original_group))
+        for unit, row in zip(units, states):
+            if row.get('unitType') == 'path': require(prove_unit_empty(unit) == row)
     return states
 
 
@@ -463,12 +512,14 @@ def unchanged_evidence(actual, expected, key):
 
 
 def validate_cancellation_reply(answer, request):
-    require(isinstance(answer, dict) and answer.get('schema') == CANCEL_SCHEMA and answer.get('request') == request
+    require(isinstance(answer, dict) and answer.get('schema') in {CANCEL_SCHEMA, EMPTY_CANCEL_SCHEMA} and answer.get('request') == request
             and answer.get('result') == 'cancelled-expired-announcement' and answer.get('servingInstanceUnchanged') is True
             and answer.get('originalTerminalEdgesRetired') is True and answer.get('quiescent') is True
             and answer.get('stopDisposition') in {'requested', 'not-needed-already-quiescent'})
+    if answer['schema'] == EMPTY_CANCEL_SCHEMA:
+        require(answer.get('stopDisposition') == 'not-needed-already-quiescent')
     require(isinstance(answer.get('actualUnitStates'), list) and len(answer['actualUnitStates']) == 3)
-    require(all(row.get('MainPID') == '0' and row.get('ActiveState') in {'inactive', 'failed'} for row in answer['actualUnitStates']))
+    require(all((row.get('MainPID') == '0' or (row.get('unitType') == 'path' and row.get('MainPID') is None)) and row.get('ActiveState') in {'inactive', 'failed'} for row in answer['actualUnitStates']))
 
 
 def cancellation_directory(directory):
@@ -491,6 +542,7 @@ def cancellation_child_class(argv, key, evidence):
 def cancel_announced(request):
     require(os.getuid() == 0)
     key = request['runKey']; units = cancel_units(key)
+    quiescence_deadline = None
     directory = ROOT / 'engine-release-cancellations'
     cancellation_directory(directory)
     lockfd = os.open(directory / (key + '.lock'), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -504,7 +556,7 @@ def cancel_announced(request):
         quiet_path = directory / (key + '.quiescent.json')
         if os.path.lexists(receipt_path):
             receipt = json.loads(regular(receipt_path, 0o600)); validate_cancellation_reply(receipt, request)
-            require(masked(units)); quiet_units(units, receipt['originalControlGroup'])
+            require(masked(units)); quiet_units(units, receipt['originalControlGroup'], receipt['schema'] == EMPTY_CANCEL_SCHEMA)
             require(container_identity(request) == receipt['container']); health_pair(request)
             return receipt
         for unit in units: own_wants_edge(unit)
@@ -517,33 +569,70 @@ def cancel_announced(request):
             stop_contract = loaded_stop_contract(units[0], key)
             state = unit_snapshot(units[0])
             require(state['ActiveState'] in {'active', 'activating'} and INVOCATION_PATTERN(state['InvocationID']))
-            parent = process(int(state['MainPID']))
-            require(bash_command(parent['argv'], [str(PARENT / 'engine-release-unit-wrapper-v1.sh'), 'start', key]))
-            require(state['ControlGroup'].startswith('/system.slice/') and state['ControlGroup'].endswith('/' + units[0]))
-            require((PROC / str(parent['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
-            children = (PROC / str(parent['pid']) / 'task' / str(parent['pid']) / 'children').read_text().split()
-            candidates = [process(int(pid)) for pid in children]
-            matches = [row for row in candidates if cancellation_child_class(row['argv'], key, evidence) != 'unproven']
-            require(len(matches) == 1 and matches[0]['parent'] == parent['pid'])
-            require((PROC / str(matches[0]['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
-            engine_pid = command(['docker', 'container', 'inspect', '--format', '{{.State.Pid}}', 'club-arena-engine'])
-            require(engine_pid.isdigit() and int(engine_pid) > 1)
-            require(not (PROC / engine_pid / 'cgroup').read_text().strip().startswith('0::' + state['ControlGroup']))
-            require(all(row['MainPID'] == '0' and row['ActiveState'] in {'inactive', 'failed'} for row in [unit_snapshot(unit) for unit in units[1:]]))
-            require(announcement_evidence(request) == evidence and container_identity(request) == container)
-            health_pair(request); require(unit_snapshot(units[0]) == state and process(parent['pid']) == parent)
-            intent = {'schema': CANCEL_SCHEMA, 'request': request, 'container': container, 'evidence': evidence,
-                      'originalUnit': state, 'originalProcess': parent, 'originalChild': matches[0], 'stopContract': stop_contract}
+            if state['MainPID'] == '0':
+                empty_retry_admission(units[0], state, key, evidence)
+                for unit in units[1:]:
+                    row = prove_unit_empty(unit)
+                    require(row['ActiveState'] in {'inactive', 'failed'})
+                require(announcement_evidence(request) == evidence and container_identity(request) == container)
+                health_pair(request); empty_retry_admission(units[0], state, key, evidence)
+                intent = {'schema': EMPTY_CANCEL_SCHEMA, 'admission': 'positive-empty-auto-restart',
+                          'request': request, 'container': container, 'evidence': evidence,
+                          'originalUnit': state, 'originalProcess': None, 'originalChild': None, 'stopContract': stop_contract}
+            else:
+                parent = process(int(state['MainPID']))
+                require(bash_command(parent['argv'], [str(PARENT / 'engine-release-unit-wrapper-v1.sh'), 'start', key]))
+                require(state['ControlGroup'].startswith('/system.slice/') and state['ControlGroup'].endswith('/' + units[0]))
+                require((PROC / str(parent['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
+                children = (PROC / str(parent['pid']) / 'task' / str(parent['pid']) / 'children').read_text().split()
+                candidates = [process(int(pid)) for pid in children]
+                matches = [row for row in candidates if cancellation_child_class(row['argv'], key, evidence) != 'unproven']
+                require(len(matches) == 1 and matches[0]['parent'] == parent['pid'])
+                require((PROC / str(matches[0]['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
+                engine_pid = command(['docker', 'container', 'inspect', '--format', '{{.State.Pid}}', 'club-arena-engine'])
+                require(engine_pid.isdigit() and int(engine_pid) > 1)
+                require(not (PROC / engine_pid / 'cgroup').read_text().strip().startswith('0::' + state['ControlGroup']))
+                require(all((row['MainPID'] == '0' or (row.get('unitType') == 'path' and row['MainPID'] is None)) and row['ActiveState'] in {'inactive', 'failed'} for row in [unit_snapshot(unit) for unit in units[1:]]))
+                require(announcement_evidence(request) == evidence and container_identity(request) == container)
+                health_pair(request); require(unit_snapshot(units[0]) == state and process(parent['pid']) == parent)
+                intent = {'schema': CANCEL_SCHEMA, 'request': request, 'container': container, 'evidence': evidence,
+                          'originalUnit': state, 'originalProcess': parent, 'originalChild': matches[0], 'stopContract': stop_contract}
             save_once(intent_path, intent)
         allowed = {'engine-release-requests/' + key + '.' + suffix for suffix in ('request', 'intent', 'awaiting-certificate')}
         allowed |= {'engine-release-generation-pins/' + key + '.generation', 'engine-image-leases/' + key + '.lease'}
         allowed |= {'engine-intake-requests/' + key + '.' + suffix for suffix in ('request', 'intent')}
-        require(set(intent) == {'schema', 'request', 'container', 'evidence', 'originalUnit', 'originalProcess', 'originalChild', 'stopContract'} and intent['schema'] == CANCEL_SCHEMA)
+        empty_admission = intent.get('schema') == EMPTY_CANCEL_SCHEMA
+        schema = intent['schema']
+        require(set(intent) == {'schema', 'request', 'container', 'evidence', 'originalUnit', 'originalProcess', 'originalChild', 'stopContract'} | ({'admission'} if empty_admission else set())
+                and schema in {CANCEL_SCHEMA, EMPTY_CANCEL_SCHEMA})
+        if empty_admission:
+            require(intent['admission'] == 'positive-empty-auto-restart' and intent['originalProcess'] is None and intent['originalChild'] is None)
+            require(intent['originalUnit']['MainPID'] == '0' and intent['originalUnit']['SubState'] == 'auto-restart')
+        original_group = intent['originalUnit']['ControlGroup'] or (None if empty_admission else '')
         require(set(intent['evidence']['originals']) <= allowed and all(re.fullmatch('[0-9a-f]{64}', value) for value in intent['evidence']['originals'].values()))
+        if empty_admission and not os.path.lexists(issued_path):
+            require(key == '41177442979-1' and 'engine-release-requests/'+key+'.awaiting-certificate' not in intent['evidence']['originals'])
+            require(announcement_evidence(request) == intent['evidence'])
+            require(container_identity(request) == intent['container']); health_pair(request)
+            loaded_stop_contract(units[0], key, allow_masked=masked(units))
+            # Mask only. Even a successor racing this point is never signalled.
+            for unit in units:
+                path = SYSTEMD / unit
+                if os.path.lexists(path): require(path.is_symlink() and os.readlink(path) == '/dev/null')
+                else: os.symlink('/dev/null', path); fsync_directory(SYSTEMD)
+            command(['systemctl', 'daemon-reload']); require(masked(units))
+            quiescence_deadline = time.monotonic() + 60
+            while True:
+                try: quiet_units(units, original_group, native_empty=True); break
+                except (ValueError, OSError, subprocess.SubprocessError):
+                    if time.monotonic() >= quiescence_deadline:
+                        raise ValueError('Empty retry masked; natural quiescence remains unknown; no stop issued')
+                    time.sleep(1)
+            unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
         # A bounded expired retry may end after its immutable intent was saved.
         # Prevent another retry without rebinding or signalling a new invocation.
         current = unit_snapshot(units[0])
-        if (not os.path.lexists(issued_path) and current != intent['originalUnit']
+        if (not empty_admission and not os.path.lexists(issued_path) and current != intent['originalUnit']
                 and not (current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'})):
             require(key == '41177442979-1' and 'engine-release-requests/'+key+'.awaiting-certificate' not in intent['evidence']['originals'])
             for original in [intent['originalProcess'], intent['originalChild']]:
@@ -569,13 +658,14 @@ def cancel_announced(request):
             current = unit_snapshot(units[0])
             if not (current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'}):
                 raise ValueError('Changed invocation masked; waiting for natural quiescence without issuing stop')
-            quiet_units(units, intent['originalUnit']['ControlGroup'])
+            quiet_units(units, original_group, empty_admission)
             unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
         if not os.path.lexists(issued_path):
             current = unit_snapshot(units[0])
             already_quiet = current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'}
+            if empty_admission: require(already_quiet)
             if already_quiet:
-                quiet_units(units, intent['originalUnit']['ControlGroup'])
+                quiet_units(units, original_group, empty_admission)
                 unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
             else:
                 require(announcement_evidence(request) == intent['evidence'])
@@ -590,7 +680,7 @@ def cancel_announced(request):
             command(['systemctl', 'daemon-reload'])
             require(masked(units))
             if already_quiet:
-                quiet_units(units, intent['originalUnit']['ControlGroup'])
+                quiet_units(units, original_group, empty_admission)
                 unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
             else:
                 loaded_stop_contract(units[0], key, allow_masked=True)
@@ -599,7 +689,7 @@ def cancel_announced(request):
                 require(process(intent['originalProcess']['pid']) == intent['originalProcess'])
                 require(process(intent['originalChild']['pid']) == intent['originalChild'])
             health_pair(request); require(container_identity(request) == container)
-            save_once(issued_path, {'schema': CANCEL_SCHEMA, 'intentHash': digest(regular(intent_path, 0o600).encode()),
+            save_once(issued_path, {'schema': schema, 'intentHash': digest(regular(intent_path, 0o600).encode()),
                                    'stopDisposition': 'not-needed-already-quiescent' if already_quiet else 'requested'})
             # One stop of this exact release only. A lost response never sends it again.
             if not already_quiet:
@@ -607,20 +697,22 @@ def cancel_announced(request):
                 except (OSError, subprocess.SubprocessError): pass
         else:
             issued = json.loads(regular(issued_path, 0o600))
-            require(set(issued) == {'schema', 'intentHash', 'stopDisposition'} and issued['schema'] == CANCEL_SCHEMA
+            require(set(issued) == {'schema', 'intentHash', 'stopDisposition'} and issued['schema'] == schema
                     and issued['intentHash'] == digest(regular(intent_path, 0o600).encode())
                     and issued['stopDisposition'] in {'requested', 'not-needed-already-quiescent'})
+        if empty_admission:
+            require(json.loads(regular(issued_path, 0o600))['stopDisposition'] == 'not-needed-already-quiescent')
         require(masked(units))
-        deadline = time.monotonic() + 60
+        deadline = quiescence_deadline if quiescence_deadline is not None else time.monotonic() + 60
         while True:
-            try: states = quiet_units(units, intent['originalUnit']['ControlGroup']); break
+            try: states = quiet_units(units, original_group, empty_admission); break
             except (ValueError, OSError, subprocess.SubprocessError):
                 if time.monotonic() >= deadline: raise ValueError('Cancellation stop outcome unknown; no repeat stop')
                 time.sleep(1)
         require(container_identity(request) == container); health_pair(request)
         if not os.path.lexists(quiet_path):
             unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
-            save_once(quiet_path, {'schema': CANCEL_SCHEMA, 'actualUnitStates': states})
+            save_once(quiet_path, {'schema': schema, 'actualUnitStates': states})
         quiet = json.loads(regular(quiet_path, 0o600))
         # Once the honest quiescence receipt exists, cleanup can resume after any
         # partial unlink. Historical window and announcement entry never change.
@@ -637,11 +729,11 @@ def cancel_announced(request):
             if os.path.lexists(edge):
                 edge.unlink(); fsync_directory(edge.parent)
         require(all(not os.path.lexists(ROOT / relative) for relative in allowed))
-        require(masked(units)); quiet_units(units, intent['originalUnit']['ControlGroup'])
+        require(masked(units)); quiet_units(units, original_group, empty_admission)
         require(container_identity(request) == container); health_pair(request)
-        receipt = {'schema': CANCEL_SCHEMA, 'request': request, 'result': 'cancelled-expired-announcement',
+        receipt = {'schema': schema, 'request': request, 'result': 'cancelled-expired-announcement',
                    'servingInstanceUnchanged': True, 'originalTerminalEdgesRetired': True, 'quiescent': True,
-                   'container': container, 'originalControlGroup': intent['originalUnit']['ControlGroup'],
+                   'container': container, 'originalControlGroup': original_group,
                    'actualUnitStates': quiet['actualUnitStates'], 'stopDisposition': json.loads(regular(issued_path, 0o600))['stopDisposition'], 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
         save_once(receipt_path, receipt)
         return receipt

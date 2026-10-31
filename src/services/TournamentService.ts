@@ -1144,7 +1144,7 @@ class TournamentService {
     if (config.tableSize !== undefined) p.tableSize = clampInt(config.tableSize, 2, 10);
     if (config.acceleratedMtt !== undefined) p.acceleratedMtt = config.acceleratedMtt;
     if (config.addonBreakMinutes !== undefined) {
-      p.addonBreakMinutes = clampInt(config.addonBreakMinutes, 1, 10);
+      p.addonBreakMinutes = 1;
     }
     if (config.bigBlindAnte !== undefined) p.bigBlindAnte = config.bigBlindAnte;
     if (config.authorizedToRegister !== undefined) {

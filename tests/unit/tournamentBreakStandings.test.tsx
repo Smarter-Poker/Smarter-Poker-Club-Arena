@@ -102,6 +102,7 @@ describe('live break standings', () => {
     await flush();
     expect(players()).toBe('73');
     expect(hero()).toContain('#73');
+    state.total = 72; // This legacy counter drains; it is not the entrant total.
     state.rows = state.rows.map((r, i) =>
       i === 0 ? { ...r, status: 'eliminated', chips: 0 } : i === 1 ? { ...r, chips: 50000 } : r
     );

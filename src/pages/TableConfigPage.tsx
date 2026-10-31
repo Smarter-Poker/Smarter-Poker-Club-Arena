@@ -1673,12 +1673,13 @@ export default function TableConfigPage({
                 <p className="config-free-buy__text">{FREE_BUY_HELPER}</p>
                 <Slider
                   label="Add-On Break Length"
-                  value={config.addOnBreakLengthMinutes}
-                  onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
+                  value={1}
+                  onChange={() => {}}
+                  disabled
                   min={1}
-                  max={10}
+                  max={1}
                   suffix=" min"
-                  tooltip="On A Free Buy The Add-On Is Open From The Start Through Late Registration. Play Then Pauses For This Many Minutes Of Add-On Break Before It Closes."
+                  tooltip="On A Free Buy The Add-On Is Open From The Start Through Late Registration. Every Table Finishes Its Hand, Then Pauses For 60 Seconds Before The Add-On Closes."
                 />
               </div>
             ) : (

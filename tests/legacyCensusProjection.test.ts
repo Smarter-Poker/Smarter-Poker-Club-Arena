@@ -259,12 +259,12 @@ describe('legacy native heap census projection', () => {
     ).toBeNull();
     const exact = {
       usedHeapBytes: 1024,
-      availableHeapBytes: 33554944,
+      availableHeapBytes: 33554774,
       availableProcessBytes: 33562624,
     };
     expect(legacyCensusMemoryAdmission(exact)).toMatchObject({
       ok: true,
-      requiredHeapBytes: 33554944,
+      requiredHeapBytes: 33554774,
       requiredProcessBytes: 33562624,
     });
     expect(
@@ -279,7 +279,7 @@ describe('legacy native heap census projection', () => {
     ).toBe(false);
   });
 
-  it('admits half the used heap: a full predecessor still refuses, a fresh one is admitted', () => {
+  it('admits the strict used/3 bound: a full predecessor still refuses, a fresh one is admitted', () => {
     // The 13:55Z 2026-10-31 production reading: still refused.
     expect(
       legacyCensusMemoryAdmission({
@@ -287,16 +287,16 @@ describe('legacy native heap census projection', () => {
         availableHeapBytes: 322107592,
         availableProcessBytes: 50471874560,
       })
-    ).toMatchObject({ ok: false, requiredHeapBytes: 1956505824 + 33554432 });
-    // A predecessor about an hour after restart (~2.0 GB live of a ~4.2 GB
+    ).toMatchObject({ ok: false, requiredHeapBytes: 1304337216 + 33554432 });
+    // A predecessor about an hour after restart (2.7 GB live of a ~4.2 GB
     // limit), which the full-second-heap rule refused: admitted.
     expect(
       legacyCensusMemoryAdmission({
-        usedHeapBytes: 2_100_000_000,
-        availableHeapBytes: 2_135_000_000,
+        usedHeapBytes: 2_700_000_000,
+        availableHeapBytes: 1_535_000_000,
         availableProcessBytes: 50_000_000_000,
       })
-    ).toMatchObject({ ok: true, requiredHeapBytes: 1_050_000_000 + 33554432 });
+    ).toMatchObject({ ok: true, requiredHeapBytes: 900_000_000 + 33554432 });
     // The rule never admits less than the derived worst case (usedHeap / 3).
     for (const used of [1024, 64 * 1024 * 1024, 2_000_000_000, 3_913_011_648]) {
       const admission = legacyCensusMemoryAdmission({

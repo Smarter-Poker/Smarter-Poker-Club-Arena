@@ -516,10 +516,13 @@ export function legacyCensusMemoryAdmission(value) {
   // reserve), three times that worst case, which an engine with a ~2 GB live
   // working set on a ~4.2 GB limit can never meet: the 13:55Z break refused at
   // used 3,913,011,648 / available 322,107,592, and a freshly restarted
-  // predecessor read ~2.0 GB live within an hour. Half the used heap is 1.5x
-  // the derived worst case, and the measurement is taken after a full
-  // collection (censusGarbageCollection), so it is live heap, not garbage.
-  const requiredHeapBytes = Math.ceil(value.usedHeapBytes / 2) + reserve;
+  // predecessor read 2.0-2.7 GB live within an hour. used/3 is a strict upper
+  // bound, not an estimate (with pointer compression: 4-byte pointers and
+  // 12-byte objects, the same ratio); the census measured in production costs
+  // about 280 MB at 35M objects and 3.9 GB used, a fifth of it. The reserve
+  // still covers the inspector's own wrappers, and the reading is taken after
+  // a full collection (censusGarbageCollection): live heap, not garbage.
+  const requiredHeapBytes = Math.ceil(value.usedHeapBytes / 3) + reserve;
   const requiredProcessBytes = value.usedHeapBytes * 8 + reserve;
   if (!Number.isSafeInteger(requiredProcessBytes)) return null;
   return {

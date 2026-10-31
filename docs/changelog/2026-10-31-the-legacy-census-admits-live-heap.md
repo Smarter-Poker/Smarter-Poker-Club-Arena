@@ -23,17 +23,25 @@ restart. Every :55 and 04:00 attempt that needed the census was refused.
    next major collection, and `Runtime.queryObjects` begins with exactly that
    collection anyway, so the reading is now live heap. A lost answer is an
    unknown outcome and refuses like every other inspector operation.
-2. `requiredHeapBytes = ceil(usedHeap / 2) + 32 MiB` (was `usedHeap + 32 MiB`).
+2. `requiredHeapBytes = ceil(usedHeap / 3) + 32 MiB` (was `usedHeap + 32 MiB`).
    The broad census queries `Object.prototype`, so its JS-heap cost is one
    array of 8-byte pointers, one per matching object, and every matching
-   JSObject is at least three words (24 bytes): at most `usedHeap / 3`. Half
-   the used heap is 1.5x that derived worst case. The off-heap handles and
+   JSObject is at least three words (24 bytes) already counted in used heap:
+   the array is strictly at most `usedHeap / 3` (the same ratio with pointer
+   compression: 4-byte pointers, 12-byte objects). The census measured in
+   production for #8908 costs about 280 MB at 35M objects and 3.9 GB used, a
+   fifth of the bound. The off-heap handles and
    result vector are unchanged under `requiredProcessBytes = 8 x usedHeap +
    32 MiB`.
 
 The 13:55Z reading is still refused under the new rule (pinned); a fresh
-predecessor near 2 GB live is admitted (pinned); the rule never admits less
-than `usedHeap / 3 + 32 MiB` (pinned). The transport harness asserts the
+predecessor at 2.7 GB live is admitted (pinned); the rule never admits less
+than `usedHeap / 3 + 32 MiB` (pinned). The rule passes while live heap is
+under about 3.15 GB of the ~4.2 GB limit.
+
+#8908 (bounded native census through a pinned V8 addon) is the complete
+answer for a long-running predecessor at 3.9 GB; this change is the minimal
+Inspector-path correction and does not conflict with it. The transport harness asserts the
 collection precedes the admission on both the success and refusal paths.
 
 ## Not changed

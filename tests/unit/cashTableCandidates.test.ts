@@ -3,6 +3,7 @@ import {
   CASH_SPECTATOR_ACTION,
   CASH_TABLE_CARD_SELECTOR,
   collectVisibleCashCandidates,
+  selectClassicCashCandidate,
 } from '../e2e/support/cashTableCandidates';
 
 const TABLE = '11111111-1111-4111-8111-111111111111';
@@ -83,5 +84,54 @@ describe('production cash spectator candidate selection', () => {
     { target: 'tournament' },
   ])('rejects an ineligible card or inaccessible action: %j', (options) => {
     expect(card(options)).toEqual([]);
+  });
+});
+
+const ORDINARY = '22222222-2222-4222-8222-222222222222';
+const CLUSTER = '33333333-3333-4333-8333-333333333333';
+const candidates = [
+  { id: TABLE, players: 9 },
+  { id: ORDINARY, players: 4 },
+];
+const ordinary = { id: ORDINARY, cluster_id: CLUSTER, cluster: { cluster_mode: 'must_move' } };
+
+describe('classic hero subject mode', () => {
+  it('selects the exact ordinary-mode row instead of the busier Lightning table', () => {
+    expect(
+      selectClassicCashCandidate(candidates, [
+        { id: TABLE, cluster_id: CLUSTER, cluster: { cluster_mode: 'lightning' } },
+        ordinary,
+      ])
+    ).toEqual(candidates[1]);
+  });
+  it.each(['lightning', 'pending_on', 'pending_off', 'draining', 'unknown', null, undefined])(
+    'refuses nonordinary or unknown mode %s',
+    (mode) => {
+      expect(
+        selectClassicCashCandidate(
+          [candidates[0]],
+          [{ id: TABLE, cluster_id: CLUSTER, cluster: { cluster_mode: mode } }]
+        )
+      ).toBeUndefined();
+    }
+  );
+  it.each([
+    {},
+    { id: TABLE },
+    { id: TABLE, cluster_id: CLUSTER },
+    { id: TABLE, cluster_id: 'bad', cluster: { cluster_mode: 'must_move' } },
+    { id: TABLE, cluster_id: CLUSTER, cluster: null },
+    { id: TABLE, cluster_id: CLUSTER, cluster: [{ cluster_mode: 'must_move' }] },
+    { id: ORDINARY, cluster_id: CLUSTER, cluster: { cluster_mode: 'must_move' } },
+  ])('refuses missing, malformed or mismatched catalogue authority %j', (row) => {
+    expect(selectClassicCashCandidate([candidates[0]], [row])).toBeUndefined();
+  });
+  it('refuses duplicate catalogue identity rather than choosing one mode', () => {
+    expect(() =>
+      selectClassicCashCandidate(candidates, [
+        ordinary,
+        { ...ordinary, cluster: { cluster_mode: 'lightning' } },
+      ])
+    ).toThrow('Duplicate cash catalogue identity');
   });
 });

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -10,6 +11,148 @@ const COHORT = JSON.parse(
 );
 const ORIGIN = 'https://engine.smarter.poker';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Responses stay transient for strict control validation. The sole return
+// boundary emits explicit public fields, never a recursively copied receipt.
+const SHA = /^[a-f0-9]{40}$/;
+const MONEY_HASH = /^[a-f0-9]{32}$/;
+const INSTANCE = /^[1-9][0-9]*-[0-9a-f]{8}$/;
+const enums =
+  (...values) =>
+  (value) =>
+    values.includes(value);
+const uuid = (value) => typeof value === 'string' && UUID.test(value);
+const bool = (value) => typeof value === 'boolean';
+const count = (value) => Number.isSafeInteger(value) && value >= 0;
+const amount = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const matches = (pattern) => (value) => typeof value === 'string' && pattern.test(value);
+function fields(value, spec) {
+  const output = {};
+  for (const [key, valid] of Object.entries(spec))
+    if (valid(value?.[key])) output[key] = value[key];
+  return output;
+}
+function responseDigest(value) {
+  return {
+    kind: 'serialized_response_sha256_not_economic_validation',
+    sha256: createHash('sha256').update(JSON.stringify(value)).digest('hex'),
+  };
+}
+const publicTuple = {
+  operation_id: uuid,
+  tournament_id: uuid,
+  nonce: uuid,
+  current_generation: (v) => v === null || uuid(v),
+  quiescence_generation: uuid,
+  instance_id: matches(INSTANCE),
+  release_sha: matches(SHA),
+};
+function publicRuntime(value) {
+  return {
+    ...fields(value, {
+      ...publicTuple,
+      state: enums('prepared', 'acknowledged', 'stop_requested', 'quiesced', 'settled'),
+      abort_fenced: bool,
+      custody_certified: bool,
+      disposition_committed: bool,
+      runtime_retired: bool,
+    }),
+    response_digest: responseDigest(value),
+  };
+}
+function publicCanonical(value) {
+  const output = {
+    ...fields(value, {
+      ...publicTuple,
+      ok: bool,
+      state: enums('stop_requested', 'quiesced', 'settled'),
+      tournament_status: enums(
+        'RUNNING',
+        'BREAK',
+        'COMPLETED',
+        'CANCELLED',
+        'REGISTERING',
+        'LATE_REG'
+      ),
+      current_boundary_valid: bool,
+      money_hash: matches(MONEY_HASH),
+      pending: bool,
+    }),
+    response_digest: responseDigest(value),
+  };
+  if (value.receipt === null) output.receipt = null;
+  else if (value.receipt && typeof value.receipt === 'object')
+    output.receipt = publicSettlement(value.receipt);
+  return output;
+}
+function publicSettlement(value) {
+  const output = {
+    ...fields(value, {
+      ...publicTuple,
+      ok: bool,
+      success: bool,
+      fully_settled: bool,
+      receipt_version: (v) => v === 3,
+      mode: enums('started_operator_abort'),
+      status: enums('CANCELLED'),
+      asset: enums('chips', 'diamonds'),
+      total_refunded: amount,
+      unused_overlay_returned: amount,
+      refunded_count: count,
+    }),
+    response_digest: responseDigest(value),
+  };
+  if (value?.financial && typeof value.financial === 'object')
+    output.financial = fields(value.financial, {
+      fully_settled: bool,
+      asset: enums('chips', 'diamonds'),
+      total_refunded: amount,
+      unused_overlay_returned: amount,
+    });
+  if (value?.quiescence && typeof value.quiescence === 'object')
+    output.quiescence = fields(value.quiescence, {
+      generation: uuid,
+      money_hash: matches(MONEY_HASH),
+    });
+  return output;
+}
+function publicResult(result) {
+  const output = {
+    request: fields(result.request, {
+      action: enums('prepare', 'read', 'abort_read', 'abort_ack', 'abort_settle'),
+      tournamentId: uuid,
+      operationId: uuid,
+      nonce: uuid,
+      generation: uuid,
+      sha: matches(SHA),
+      instance: matches(INSTANCE),
+      moneyHash: matches(MONEY_HASH),
+    }),
+    outcome: result.outcome,
+  };
+  for (const key of ['before', 'after']) {
+    if (!result[key]) continue;
+    output[key] = fields(result[key], {
+      releaseSha: matches(SHA),
+      version: matches(/^[a-f0-9]{8}$/),
+      instanceId: matches(INSTANCE),
+      running: bool,
+      status: enums('ok'),
+    });
+    output[key].maintenance = fields(result[key].maintenance, {
+      phase: enums('idle'),
+      active: bool,
+    });
+  }
+  for (const key of ['canonicalBefore', 'canonicalAfter'])
+    if (result[key]) output[key] = publicCanonical(result[key]);
+  if (result.settlement) output.settlement = publicSettlement(result.settlement);
+  if (result.runtime) output.runtime = publicRuntime(result.runtime);
+  if (result.mutationAcknowledgement === 'unknown') output.mutationAcknowledgement = 'unknown';
+  if (result.reason)
+    output.reason =
+      'Outcome Unknown. Read Same Operation And Canonical Disposition Before Any Repeat';
+  return output;
+}
 export async function controlOriginalRecovery(
   input,
   { fetchImpl = fetch, serviceIdentity, supabaseUrl } = {}
@@ -144,7 +287,7 @@ export async function controlOriginalRecovery(
       // This one read is a durable observation, never another mutation/retry.
       result.canonicalAfter = canonical(await rpc('fn_ca_tournament_abort_stop_state', ids));
       result.after = await health();
-      if (result.mutationAcknowledgement === 'unknown') return result;
+      if (result.mutationAcknowledgement === 'unknown') return publicResult(result);
       if (input.action === 'abort_read') result.outcome = 'original_abort_readback';
       else if (
         input.action === 'abort_settle' &&
@@ -169,7 +312,7 @@ export async function controlOriginalRecovery(
         result.runtime?.runtime_retired === true
       )
         result.outcome = 'original_abort_runtime_retired';
-      return result;
+      return publicResult(result);
     }
     // Exactly one explicit control request; timeout/ACK loss never retries.
     const response = await fetchImpl(`${ORIGIN}/admin/tournament-original-recovery-prepare`, {
@@ -204,12 +347,12 @@ export async function controlOriginalRecovery(
     result.runtime = runtime;
     result.after = await health();
     result.outcome = 'prepared_readback';
-    return result;
+    return publicResult(result);
   } catch {
     // Never serialize error/request objects: they can carry authorization.
     result.reason =
       'Outcome Unknown. Read Same Operation And Canonical Disposition Before Any Repeat';
-    return result;
+    return publicResult(result);
   }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

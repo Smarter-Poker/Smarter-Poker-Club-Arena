@@ -80,16 +80,6 @@ const backendToolPaths = [
   'scripts/ci/fixtures/accounting-migration-admission/preimages.json',
   'scripts/ci/fixtures/accounting-migration-admission/qualify.py',
   'scripts/ci/fixtures/launch-reset/maintenance-thaw-repair/qualify.py',
-  'scripts/ops/lightning-pilot-access.mjs',
-  'scripts/ops/lightning-pilot-access.test.mjs',
-  'scripts/ops/lightning-pilot-player.mjs',
-  'scripts/ops/lightning-pilot-player.test.mjs',
-  'scripts/ops/lightning-pilot-replay-batch.mjs',
-  'scripts/ops/lightning-pilot-replay-batch.test.mjs',
-  'scripts/ops/lightning-pilot-stage.mjs',
-  'scripts/ops/lightning-pilot-stage.test.mjs',
-  'scripts/ops/lightning-pilot-witness.mjs',
-  'scripts/ops/lightning-pilot-witness.test.mjs',
   'scripts/dev/test-lightning-matcher-parity.sh',
   'scripts/dev/test-lightning-private-pool-status.sh',
   'scripts/dev/fixtures/lightning-private-pool-status.sql',
@@ -168,7 +158,7 @@ test('actual lazy shared-server module/watch graph excludes engine-only churn an
       'package-lock.json',
       'vite.config.ts',
       'scripts/new-build.mjs',
-      'scripts/ops/lightning-pilot-unknown.mjs',
+      'scripts/ops/unknown-tool.mjs',
       'scripts/ci/unknown.json',
       'scripts/ci/fixtures/unseen/package.json',
       'scripts/dev/fixtures/unknown.sql',
@@ -281,7 +271,7 @@ test('reviewed backend tools remain runtime inputs when read by a real build or 
     put(
       cwd,
       'src/main.js',
-      'window.readTool = () => import("../scripts/ops/lightning-pilot-access.mjs"); window.readNative = () => import("../scripts/ci/fixtures/native-input.mjs");'
+      'window.readTool = () => import("../scripts/ci/accounting-migration-admission.mjs"); window.readNative = () => import("../scripts/ci/fixtures/native-input.mjs");'
     );
     for (const path of backendToolPaths) put(cwd, path, 'export const value = 1;');
     put(cwd, 'scripts/ci/fixtures/native-input.mjs', 'export const value = 1;');
@@ -311,12 +301,12 @@ test('reviewed backend tools remain runtime inputs when read by a real build or 
     const inputs = makeRuntimeInputs(baseline, observations, cwd);
     assert.equal(inputs.complete, true);
     assert.ok(
-      inputs.files.some((entry) => entry.path === 'scripts/ops/lightning-pilot-access.mjs')
+      inputs.files.some((entry) => entry.path === 'scripts/ci/accounting-migration-admission.mjs')
     );
     assert.ok(inputs.files.some((entry) => entry.path === 'scripts/ci/fixtures/native-input.mjs'));
     assert.ok(inputs.directories.includes('scripts/ci/fixtures/accounting-migration-admission/'));
     for (const path of [
-      'scripts/ops/lightning-pilot-access.mjs',
+      'scripts/ci/accounting-migration-admission.mjs',
       'scripts/ci/fixtures/native-input.mjs',
       'scripts/ci/fixtures/accounting-migration-admission/new-proof.json',
       'scripts/ci/fixtures/accounting-migration-admission/qualify.py',

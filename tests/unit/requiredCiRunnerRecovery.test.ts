@@ -209,7 +209,7 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       changes: 'f9d317d1503f4dc8a8945bb2b9238bcfa89b2ea551a970dd23ddb3d531f4a481',
       source_windows: 'a9830648dfc81b5558d0e9a45d75307210fa1535926da65e087f6647e1fa4189',
       stub_gate: '166528cc83e7d0c075c59b6facb1a6782f3e2eda6c334f9608b933319aca9c80',
-      fixture_native: '0df5b9e9f46fe331ce65fbdeaed5584c18e4756fddc7b4e3f417fc4694d2e2ff',
+      fixture_native: '8949ac7f86b74f267efb996eecddb67f8c59f93d3e40a8bc407530ec3b1644ec',
       typecheck: '07758ff6fff680beb77a9e38725eecc5776b94db14cdc3499783c049ce771750',
       typecheck_compile: '88a03bf85dc749608900101f598720ad93c957e5b5bf75791c589c9e25228168',
       unit_shards: 'a694772adb1e9b9c9cf9e8ff24d9a655deb26d18b5d1f191b120ac3b4516c474',
@@ -300,9 +300,38 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
   it('preserves every native qualification stage and cleanup requirement', () => {
     const normalized = structuredClone(native);
     expect(normalized.jobs['native-smoke']['runs-on']).toBe('ubuntu-24.04');
+    expect(normalized.on.workflow_call.inputs.connected_ui_observations.default).toBe(false);
+    expect(ci.jobs.fixture_native.permissions).toEqual({ contents: 'read', actions: 'read' });
+    expect(ci.jobs.fixture_native.secrets).toBeUndefined();
+    const job = normalized.jobs['native-smoke'];
+    expect(job['timeout-minutes']).toBe('${{ inputs.connected_ui_observations && 120 || 55 }}');
+    const budget = new Function('inputs', `return (${job['timeout-minutes'].slice(3, -2)});`);
+    expect(budget({ connected_ui_observations: false })).toBe(55);
+    expect(budget({})).toBe(55);
+    expect(budget({ connected_ui_observations: true })).toBe(120);
+    const defaultSteps = job.steps.filter(
+      (step: { if?: string }) =>
+        !step.if ||
+        new Function(
+          'inputs',
+          'always',
+          `return (${step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, '')});`
+        )({ connected_ui_observations: false }, () => true)
+    );
+    expect(defaultSteps).toHaveLength(8);
+    expect(defaultSteps.slice(2).map((step: { name: string }) => step.name)).toEqual([
+      'Native alert intake survives actual process death without duplicate queue submission',
+      'Install locked fixture test dependencies on the disposable CI runner',
+      'Compile the actual engine for isolated EV actors',
+      'Check financial route and fixture ownership boundaries',
+      'Build exact committed fixture and smoke native services',
+      'Preserve sanitized native smoke and cleanup observations',
+    ]);
+    // Whole reviewed native workflow identity now includes the guarded manual
+    // private-capture branch; every default stage and55m budget is asserted above.
     normalized.jobs['native-smoke']['runs-on'] = expression('ubuntu-24.04');
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '9d89b70e835f0476c8b3d4abf5d5c11c07e7b77a83b5bd95aacfae472153c457'
+      '0cca7581c1985d4f2a7f040108ae80c4041740862d2881b96943266b95394e7f'
     );
   });
 });

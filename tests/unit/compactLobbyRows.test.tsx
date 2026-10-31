@@ -77,8 +77,11 @@ describe('compact lobby selection is a pre-commit detail step', () => {
     expect(
       within(list)
         .getAllByRole('columnheader')
-        .map((h) => h.querySelector('button')?.childNodes[0]?.textContent)
+        .map((h) => h.querySelector('button, .compact-lobby__heading')?.childNodes[0]?.textContent)
     ).toEqual(['Game', 'Stakes', 'Players', 'Status']);
+    expect(
+      within(list).getByRole('columnheader', { name: 'Game' }).querySelector('button')
+    ).toBeNull();
     fireEvent.click(within(list).getByRole('button', { name: /^Details:/ }));
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(game);
     for (const writer of Object.values(writers)) expect(writer).not.toHaveBeenCalled();

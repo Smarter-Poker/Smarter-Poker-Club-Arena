@@ -1,5 +1,7 @@
 # Lightning: Remaining Work For Full Functionality And Launch
 
+> **Owner update, 2026-10-31: the Lightning Internal Pilot is removed.** Lightning runs live in Midway Union. Owner: "REMOVE THE LIGHTNING INTERNAL PILOT, AND ANY AND ALL TRACES OF IT IF ITS NO LONGER NEEDED FOR ANYTHING." Club 95087 is retired (migration `20261031184340`), and its tooling, workflows, engine seat scope and database objects are gone. Every pilot step, run and target below is history only; nothing here should be dispatched again.
+
 Owner update, 2026-10-12: fixed calendar waits are removed. No minimum elapsed-day or batch-age requirement applies. Empty-pool elapsed time is not qualification. Active play, the retained sample/coverage targets and the 54 final gates determine readiness.
 
 ## Current Eligible Styles

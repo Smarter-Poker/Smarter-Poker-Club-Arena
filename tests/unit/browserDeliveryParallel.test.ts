@@ -73,7 +73,11 @@ describe('browser qualification parallel delivery', () => {
       readFileSync('.github/workflows/component-fixture-native-smoke.yml', 'utf8')
     ).jobs['native-smoke'];
     expect(job['runs-on']).toBe('ubuntu-24.04');
-    expect(job['timeout-minutes']).toBe(55);
+    expect(job['timeout-minutes']).toBe('${{ inputs.connected_ui_observations && 120 || 55 }}');
+    const budget = new Function('inputs', `return (${job['timeout-minutes'].slice(3, -2)});`);
+    expect(budget({ connected_ui_observations: false })).toBe(55);
+    expect(budget({})).toBe(55);
+    expect(budget({ connected_ui_observations: true })).toBe(120);
     expect(job['continue-on-error']).toBeUndefined();
     expect(ci.jobs.fixture_native.uses).toBe(
       './.github/workflows/component-fixture-native-smoke.yml'

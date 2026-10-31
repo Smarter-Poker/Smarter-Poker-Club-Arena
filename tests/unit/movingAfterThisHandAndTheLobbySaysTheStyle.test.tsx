@@ -492,7 +492,7 @@ describe('the mobile card says the style', () => {
   });
 });
 
-describe('the Stakes menu counts styles', () => {
+describe('style counts and direct Stakes sorting', () => {
   const rows = [
     table({ id: 'a', cluster_id: 'g1', role: 'main', main_index: 1, cluster_template: 'classic' }),
     table({ id: 'a2', cluster_id: 'g1', role: 'main', main_index: 2, cluster_template: 'classic' }),
@@ -521,7 +521,7 @@ describe('the Stakes menu counts styles', () => {
     expect(styleCountsLine(CASH_STYLES, {})).toBe('Classic 0 / Lightning Games 0 / Madness 0');
   });
 
-  it('the menu shows the line and a figure beside each style; without counts it is as it was', () => {
+  it('Stakes sorts directly without a popup, with or without legacy counts', () => {
     const ctx = {
       waitlistedIds: new Set<string>(),
       seatedIds: new Set<string>(),
@@ -551,12 +551,8 @@ describe('the Stakes menu counts styles', () => {
     );
     const bar = document.querySelector('.arena-lobby-card-list') as HTMLElement;
     fireEvent.click(within(bar).getByRole('button', { name: /stakes/i }));
-    const menu = within(bar).getByRole('group', { name: 'Stakes' });
-    expect(within(menu).getByTestId('lt-style-counts').textContent).toBe(
-      'Classic 12 / Lightning Games 6 / Madness 0'
-    );
-    expect(within(menu).getByRole('button', { name: 'Classic, 12 Games' })).toBeTruthy();
-    expect(within(menu).getByRole('button', { name: 'Lightning Games, 6 Games' })).toBeTruthy();
+    expect(within(bar).queryByRole('group', { name: 'Stakes' })).toBeNull();
+    expect(within(bar).getByText('Classic')).toBeTruthy();
     unmount();
 
     render(
@@ -576,23 +572,15 @@ describe('the Stakes menu counts styles', () => {
     );
     const bar2 = document.querySelector('.arena-lobby-card-list') as HTMLElement;
     fireEvent.click(within(bar2).getByRole('button', { name: /stakes/i }));
-    const menu2 = within(bar2).getByRole('group', { name: 'Stakes' });
-    expect(within(menu2).queryByTestId('lt-style-counts')).toBeNull();
-    expect(within(menu2).getByRole('button', { name: 'Classic' })).toBeTruthy();
+    expect(within(bar2).queryByRole('group', { name: 'Stakes' })).toBeNull();
+    expect(within(bar2).getByText('Classic')).toBeTruthy();
   });
 
-  it('the page counts from the rows already loaded, before the style filter, and passes them down', () => {
+  it('the page keeps style filtering in the dedicated Filters control', () => {
     const page = read('src/pages/ClubHomePage.tsx');
-    expect(page).toMatch(/const styleCounts = useMemo\(\s*\(\) =>\s*countStylesOnBoard\(/);
-    expect(page).toMatch(
-      /styleChoices: sSpec\.styles,\s*selectedStyles: sVal\.styles \?\? \[\],\s*styleCounts,/
-    );
-    /* Derived from `tables`, the state the lobby already holds - no fetch. */
-    const block = page.slice(
-      page.indexOf('const styleCounts = useMemo('),
-      page.indexOf('const filteredTables = useMemo(')
-    );
-    expect(block).not.toMatch(/supabase|fetch\(|rpc\(/);
+    expect(page).not.toMatch(/const styleCounts = useMemo|onStylesChange|onVariantsChange/);
+    expect(page).toContain('persistAdvFilters(resolvedClubId, next)');
+    expect(page).toContain('<AdvancedFilters');
   });
 });
 

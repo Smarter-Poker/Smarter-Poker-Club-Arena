@@ -1111,3 +1111,6 @@ import { registerMobileActionStripCases } from './support/mobileActionStripCases
 registerMobileActionStripCases();
 
 registerCssPreloadRetryCase();
+
+import { registerObserverUpstreamGuardCases } from './support/observerUpstreamGuardCases';
+registerObserverUpstreamGuardCases();

@@ -417,6 +417,15 @@ export function financialActorDescriptor(fixture, users) {
   return { version: 1, club_id: fixture.club_id, table_id: fixture.table_id, users: actors };
 }
 
+export function requireFixtureSchemaMode(template, preflight = false) {
+  assert.equal(typeof preflight, 'boolean');
+  assert.equal(template.source_contract.current_database_contract_ready, !preflight);
+  assert.deepEqual(
+    template.source_contract.exclusions,
+    preflight ? ['native-preflight-pending'] : []
+  );
+}
+
 export function fixtureTemplate(value) {
   assert.deepEqual(Object.keys(value).sort(), [
     'actor_count',

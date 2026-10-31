@@ -1,7 +1,7 @@
 # Linux amd64 only. Each FROM pins the platform manifest, not a mutable tag.
 # See README.md for primary-source provenance and the native qualification gap.
 FROM node:22.23.2-bookworm-slim@sha256:4d676821dff059fd00d277ee4261ef34ea712317fed0737c03941481b5760c96 AS node
-FROM supabase/gotrue:v2.196.0@sha256:7e813221b93fbf54b515036438550e483bfaf057b9db52fe9bc1ce91c47e817e AS auth
+FROM supabase/gotrue:v2.197.0@sha256:839f529492d116b4e8b7777c953a27c381d34c15a744b1bcefde5eefaa1f9f9f AS auth
 FROM postgrest/postgrest:v14.5@sha256:bb289d00570b569525e1e22fb77c49cd17c17ca3f41da9ee2b4351a35027551b AS postgrest
 
 FROM node AS dependencies
@@ -84,7 +84,7 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
 
 WORKDIR /opt/qualification
 # These are trusted, reviewed runtime files, never supplied by a candidate archive.
-COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs tournament-admission.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs safeupdate-provider.mjs service-preimage.mjs role-alignment.mjs role-alignment-render.mjs role-alignment-installer.sql role-alignment-native.json role-alignment-aligned.json role-alignment-graph.sql role-alignment-membership.sql /opt/qualification/runtime/
+COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs tournament-admission.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs safeupdate-provider.mjs service-preimage.mjs role-alignment.mjs current-application-roles.mjs role-alignment-render.mjs role-alignment-installer.sql role-alignment-native.json role-alignment-aligned.json role-alignment-graph.sql role-alignment-membership.sql /opt/qualification/runtime/
 RUN node --input-type=module -e "import {adaptRealtimeLauncher,adaptRealtimeConfiguration} from '/opt/qualification/runtime/fixture-server.mjs'; await adaptRealtimeLauncher(); await adaptRealtimeConfiguration();" \
     && printf '#!/bin/sh\nexec /usr/local/bin/node /opt/qualification/runtime/fixture-server.mjs "$@"\n' > /usr/local/bin/fixture-server \
     && chmod 0555 /usr/local/bin/fixture-server \

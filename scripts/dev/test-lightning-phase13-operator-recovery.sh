@@ -343,4 +343,3 @@ request_race after
 "${PSQL[@]}" -f "$request_migration"
 echo 'PASS: exact global-request migration reapplication and original operator security configuration'
 
-node --test "$root/scripts/ops/prepare-lightning-private-pilot.test.mjs"

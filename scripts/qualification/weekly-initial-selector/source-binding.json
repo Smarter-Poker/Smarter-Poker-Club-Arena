@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 271225,
-      "sha256": "259bee10d1c6dd86ed1afe99578f04e5f1e6253b2b9e01a95c5887ab90ee4938"
+      "bytes": 271245,
+      "sha256": "769e0c1f62492aafd8863d0cd7122386cebe9e4bc727a1ac7b03b8567b401a7f"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1774,5 +1774,70 @@
       "sha256": "259bee10d1c6dd86ed1afe99578f04e5f1e6253b2b9e01a95c5887ab90ee4938"
     },
     "qualification": "Current source identity only; no financial/native execution or installation is recertified. Historical records unchanged."
+  },
+  "isolatedConnectedUiSourceAudit20261031": {
+    "scope": "Current source identity only for isolated connected UI qualification; no financial qualification, SQL, oracle, profile or historical evidence restamped.",
+    "file": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 260243,
+      "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
+    },
+    "current": {
+      "bytes": 260263,
+      "sha256": "f2eccd7b1c58bf3677f9647bcfea51831f647be47b19c41b64bf2e65f0bc9693"
+    },
+    "reason": "Add actions:read only to the existing native reusable caller permission ceiling; all other CI jobs and financial behavior unchanged.",
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "protectedMainIntegration20261031": {
+    "scope": "Current source binding only. Preserve protected postpaid statement qualification and private connected UI readonly permission together; no historical result or financial input recertified.",
+    "previous_main_ci": {
+      "bytes": 261967,
+      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+    },
+    "current_ci": {
+      "bytes": 261987,
+      "sha256": "c1d61a5219586c70e99141545b903ee0274992a6c61e0f3a37a311f9be37c37a"
+    },
+    "execution_performed": false,
+    "qualificationStateChanged": false
+  },
+  "protectedLatencyIntegration20261031": {
+    "scope": "Current source binding only: preserve protected delivery-latency contracts and private connected qualification together; original qualification data and assertions unchanged.",
+    "changes": {
+      "files:.github/workflows/ci.yml": {
+        "previous_main": {
+          "bytes": 262364,
+          "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
+        },
+        "current": {
+          "bytes": 262384,
+          "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+        }
+      }
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "browserArtifactMainIntegration20261031": {
+    "scope": "Source-only merge of conditional disposable browser artifact and protected main changes; preserve both parent audit histories, all qualification fields and safeguards.",
+    "previousBranchCiPin": {
+      "bytes": 271225,
+      "sha256": "259bee10d1c6dd86ed1afe99578f04e5f1e6253b2b9e01a95c5887ab90ee4938"
+    },
+    "previousMainCiPin": {
+      "bytes": 262384,
+      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+    },
+    "currentCiPin": {
+      "bytes": 271245,
+      "sha256": "769e0c1f62492aafd8863d0cd7122386cebe9e4bc727a1ac7b03b8567b401a7f"
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
   }
 }

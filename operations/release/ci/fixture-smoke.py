@@ -10,10 +10,12 @@ import stat
 import subprocess
 import sys
 import uuid
+import importlib.util
+import time
 
 FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
          'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
-         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'role-alignment.mjs', 'role-alignment-render.mjs', 'role-alignment-installer.sql', 'role-alignment-native.json', 'role-alignment-aligned.json', 'role-alignment-graph.sql', 'role-alignment-membership.sql', 'actors.mjs', 'financial-route-phase.mjs',
+         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'role-alignment.mjs', 'current-application-roles.mjs', 'role-alignment-render.mjs', 'role-alignment-installer.sql', 'role-alignment-native.json', 'role-alignment-aligned.json', 'role-alignment-graph.sql', 'role-alignment-membership.sql', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (
@@ -258,7 +260,7 @@ def smoke_records(output):
                          'extension_version': '1.6.4', 'native_functions': 7,
                          'metadata_api': 'schedule-alter-unschedule-rollback',
                          'application_ddl': 'denied', 'background_jobs': 'disabled',
-                         'production_binary_parity': False, 'complete_cron_acl_parity': False}, 'auth': '2.196.0', 'mfa': 'aal2',
+                         'production_binary_parity': False, 'complete_cron_acl_parity': False}, 'auth': '2.197.0', 'mfa': 'aal2',
                 'safeupdate': {'library': 'safeupdate-1.4', 'source': '104f78d27b607076b49f22927ba33828fd0a98a0', 'fresh_session': 'authenticator-native-loaded', 'protected_setting_read': 'sql-and-http-42501', 'sql_refusals': 'update-delete-cte-21000', 'ordinary_disable': '42501', 'http': 'unfiltered-denied-filtered-committed', 'probe_cleanup': 'rows-restored-objects-absent', 'production_binary_parity': False, 'complete_role_graph_parity': False, 'production_pre_request_parity': False},
                 'ledger_attribution': 'banned-without-session',
                 'service_roles': {'auth_admin_inheritance': 'disabled',
@@ -450,7 +452,8 @@ def service_preimage(output, path):
     return proof, raw
 
 
-def execute(repo, output, expected, run=command):
+def execute(repo, output, expected, run=command, connected=None):
+    work_deadline = time.monotonic() + 100 * 60
     receipt = {'version': 1, 'scope': 'pull-request-native-service-smoke',
                'product_certificate': False, 'status': 'failed',
                'stage': 'source', 'cleanup': {'container_absent': False, 'peer_absent': False, 'preimage_absent': False,
@@ -471,6 +474,7 @@ def execute(repo, output, expected, run=command):
     image_id = None
     build_started = False
     failed = False
+    connected_result = None
     try:
         require(re.fullmatch('[0-9a-f]{40}', expected))
         revision = run(['git', 'rev-parse', 'HEAD'], repo, env).strip()
@@ -503,6 +507,9 @@ def execute(repo, output, expected, run=command):
         receipt['stage'] = 'authenticated-ev-cashout'
         run(['python3', 'tests/fixtures/ev-cashout-lifecycle/run-native.py', str(repo), image_id, str(output)], repo, env, timeout=240)
         receipt['ev_cashout'] = json.loads((output / 'ev-cashout-lifecycle.json').read_text())
+        if connected is not None:
+            receipt['stage'] = 'isolated-connected-ui'
+            connected_result = connected(repo, output, expected, image_id, receipt, work_deadline=work_deadline)
     except Exception as error:
         # Never serialize command output, environment, service logs, or tokens.
         if isinstance(error, NativeSmokeFailure):
@@ -542,17 +549,67 @@ def execute(repo, output, expected, run=command):
             private_preimage.unlink(missing_ok=True)
         except Exception:
             failed = True
+        try:
+            report = connected_result['report'] if connected_result is not None else None
+            report_path = output / 'connected-ui-observations.json'
+            if connected is not None and report is None and report_path.exists():
+                fd = os.open(report_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                try:
+                    info = os.fstat(fd)
+                    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and
+                            info.st_uid == os.getuid() and 0 < info.st_size <= 16 * 1024 * 1024)
+                    with os.fdopen(fd, 'rb', closefd=False) as stream:
+                        raw = stream.read(16 * 1024 * 1024 + 1)
+                    require(len(raw) == info.st_size)
+                    report = json.loads(raw)
+                finally:
+                    os.close(fd)
+            if report is not None:
+                require(report.get('version') == 1 and report.get('scope') == 'isolated-connected-ui-observations' and
+                        report.get('product_certificate') is False and report.get('runtime_image') == image_id and
+                        report.get('provenance', {}).get('control_sha') == expected and
+                        isinstance(report.get('cleanup'), dict))
+                report['cleanup']['runtime_image_removed'] = receipt['cleanup']['image_removed']
+                report['cleanup']['mandatory_smoke_cleanup'] = receipt['cleanup']
+                report['cleanup']['complete'] = report['cleanup'].get('complete') is True and all(receipt['cleanup'].values())
+                report['cleanup']['images_removed'] = report['cleanup'].get('images_removed', True) is True and receipt['cleanup']['image_removed']
+                report['mandatory_native_service_smoke'] = {
+                    'source_sha': expected, 'observations': receipt.get('observations'),
+                    'service_preimage_sha256': receipt.get('service_preimage', {}).get('catalog_sha256'),
+                    'actual_ev_cashout_passed': receipt.get('ev_cashout', {}).get('status') == 'passed'}
+                report['success'] = connected_result is not None and connected_result['cases_complete'] and not failed
+                if report['success']:
+                    report['stage'] = 'complete'
+                elif report.get('stage') == 'outer-runtime-cleanup':
+                    report['stage'] = 'outer-cleanup-failed'
+                report_path.write_text(json.dumps(report, indent=2) + '\n')
+        except Exception:
+            failed = True
+            # Unvalidated bytes must never be uploaded under the fixed name.
+            (output / 'connected-ui-observations.json').unlink(missing_ok=True)
         if not failed:
             receipt.update({'status': 'passed', 'stage': 'complete'})
         (output / 'native-smoke-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+
     return 1 if failed else 0
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 4:
+    if len(sys.argv) not in (4, 5) or (len(sys.argv) == 5 and sys.argv[4] != '--connected-observations'):
         sys.exit(2)
+    connected = None
+    if len(sys.argv) == 5:
+        spec = importlib.util.spec_from_file_location('connected_ui', Path(__file__).parents[1] / 'native/observe-connected-ui.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        try:
+            module.context(sys.argv[3])
+        except Exception:
+            print('RELEASE_OBSERVATION_PROTECTED_PREFLIGHT_FAILED', file=sys.stderr)
+            sys.exit(1)
+        connected = module.observe
     def interrupted(signum, frame):
         raise InterruptedError('native_smoke_interrupted')
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
-    sys.exit(execute(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(), sys.argv[3]))
+    sys.exit(execute(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(), sys.argv[3], connected=connected))

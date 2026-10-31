@@ -83,7 +83,6 @@ import LobbyTable, {
 import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
-  countStylesOnBoard,
   cashStyleKeyOf,
   isCensusTable,
   isClusterFront,
@@ -3657,16 +3656,6 @@ function ClubHomePageContent({
     return withClusterFigures(rows) as unknown as TableData[];
   }, [tables, lightningStates]);
 
-  const styleCounts = useMemo(
-    () =>
-      countStylesOnBoard(
-        (boardTables as unknown as LobbyTableRow[]).filter(
-          (t) => gameType === 'ALL' || cashKind(t) === gameType
-        )
-      ),
-    [boardTables, gameType]
-  );
-
   const filteredTables = useMemo(() => {
     if (!showsCash) return [];
     /* Deliberate shadow: every reference below reads the STAMPED rows, so a
@@ -5983,56 +5972,6 @@ function ClubHomePageContent({
                 orderChosen={
                   viewPrefs.sortByTab[gameType as keyof typeof viewPrefs.sortByTab] != null
                 }
-                /* THE VARIANT SELECTOR (Dan 2026-09-03): the Variant heading
-                 opens the tab's games - No Limit / Pineapple / Short Deck,
-                 PLO / PLO5 / PLO6 / PLO8o - with an All option. It reads and
-                 writes the SAME saved `games` filter the Advanced Filters
-                 sheet does, so the two can never disagree. LIMIT has the
-                 same menu (2026-10-24): its spec has carried FLH / FLO8 chips
-                 since the limit games shipped, so the heading on that tab was
-                 the one cash Variant heading with no way to pick a game. */
-                {...(() => {
-                  const vSpec =
-                    gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
-                      ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
-                      : null;
-                  if (!vSpec) return {};
-                  const vVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(vSpec);
-                  return {
-                    variantChoices: vSpec.games,
-                    selectedVariants: vVal.games,
-                    onVariantsChange: (games: string[]) => {
-                      haptic.selection();
-                      const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
-                      setAdvFilters(next);
-                      if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                    },
-                  };
-                })()}
-                /* THE STAKES MENU (Dan 2026-09-04): the Stakes heading opens the
-                 game styles - Classic / Action / Madness, with All - and the
-                 two stakes sorts. Every cash tab that has a Stakes column has
-                 it, and it reads and writes the SAME saved `styles` filter
-                 the Advanced Filters sheet does. */
-                {...(() => {
-                  const sSpec =
-                    gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
-                      ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
-                      : null;
-                  if (!sSpec?.styles) return {};
-                  const sVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(sSpec);
-                  return {
-                    styleChoices: sSpec.styles,
-                    selectedStyles: sVal.styles ?? [],
-                    styleCounts,
-                    onStylesChange: (styles: string[]) => {
-                      haptic.selection();
-                      const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
-                      setAdvFilters(next);
-                      if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                    },
-                  };
-                })()}
               />
             )}
 

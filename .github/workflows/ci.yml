@@ -331,6 +331,7 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
     permissions:
       contents: read
+      actions: read
     uses: ./.github/workflows/component-fixture-native-smoke.yml
     with:
       source_sha: ${{ github.event.pull_request.head.sha }}

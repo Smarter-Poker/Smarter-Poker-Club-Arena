@@ -75,6 +75,14 @@ hero bet 8, villain raised to 24 (toCall 16 into 44) on `Qh7d2s4c9h`.
 Two pair of hero's own cards (`Qs9c`), a set (`7s7c`), the flop, the turn and
 Omaha are identical on and off (asserted).
 
+Pins moved in the same change: `HorseV51RiverFlat.test.ts` "ablated"
+reproduces the historical one-pair re-jam over a river raise, which V67 now
+answers with its call/fold exit, so the ablation disables V67 too (as V66
+did for `HorsePhase8Replay` review 399521). `HorseHeadsUpCommitment.test.ts`
+"preserves callOnce on river" reads the plan pin with V67 off; with V67 on
+it asserts the plan still never escalates (call or fold). `callOnce` allows a
+call after a raise and forbids escalation; it never mandated one.
+
 ## League (duplicate-deal, 6000 pairs, equity governor off; a = V67 on, b = off)
 
 Mirror (seed 2026103109) and human-field twin (seed 2026103110):

@@ -98,9 +98,19 @@ describe('cash heads-up matched commitment', () => {
           { stage: street, seat: 2, userId: 'villain', action: 'raise', amount: 20, timestamp: 2 },
         ];
         HorseMind.noteRaisePlan(horsePlanHandKey(s.gs.actionHistory), 'hero', street, 'callOnce');
-        expect(
-          HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { v7AdaptiveMC: false }).action
-        ).toBe('call');
+        // V67 prices a raised river one pair against the raise (callOnce
+        // allows a call, it never mandates one), so the plan pin is read
+        // with V67 off; with it on the plan still never escalates.
+        const plan = { v7AdaptiveMC: false, v67RiverBetRaisedOnePair: false };
+        expect(HorseLogic.decide(s.hero, s.gs, 'balanced', {}, plan).action).toBe('call');
+        if (street === 'river') {
+          HorseMind.reset();
+          seedFastRandom(1);
+          HorseMind.noteRaisePlan(horsePlanHandKey(s.gs.actionHistory), 'hero', street, 'callOnce');
+          expect(['call', 'fold']).toContain(
+            HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { v7AdaptiveMC: false }).action
+          );
+        }
       }
     }
   );

@@ -600,5 +600,9 @@
   "cashLinkUnionHashWorkflowComposition20261028": {
     "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
     "execution_performed": false
+  },
+  "reportingProtectedMainRecovery20261031": {
+    "scope": "source-only integration; no prior financial verdict recertified",
+    "change": "Retain current protected workflow hash and every newer audit record; original reporting SQL and two native fixtures unchanged."
   }
 }

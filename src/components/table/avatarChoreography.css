@@ -213,10 +213,15 @@
 /* The persistent slump. Matches spAvatarFold's 100% frame exactly. Pairs with
    the existing `.seat--folded .seat__avatar--bust .seat__avatar-img`
    brightness dim — that rule handles colour, this one handles posture. */
+/* A completed fold animation retains its final frame until its gesture
+   class retires, even if the next hand has already cleared seat--folded. */
+.seat__avatar-wrap--fold,
 .seat--folded .seat__avatar-wrap {
   /* Shared with crown layout: reserve the final posture, never the current
      interpolated gesture frame. The animation itself still plays in full. */
   --sp-avatar-rest-transform: translateY(3px) scale(0.97);
+}
+.seat--folded .seat__avatar-wrap {
   transform: var(--sp-avatar-rest-transform);
   transition: transform calc(0.3s * var(--animation-speed, 1)) var(--ease-out, ease-out);
 }

@@ -1234,15 +1234,37 @@ for (const [width, heightOverride] of occupiedViewports)
                 box.top +
                 box.height * ((file && crowns[file]) || 0) -
                 document.querySelector('.table-page')!.getBoundingClientRect().top;
+              // Live hand admission can clear folded seat state before the
+              // final fold gesture class is retired. Its retained CSS final
+              // frame must use the same semantic resting anchor.
+              seat.classList.remove('seat--folded');
+              wrap.classList.add('seat__avatar-wrap--fold');
+              await frame();
+              const foldGesture = wrap
+                .getAnimations()
+                .find(
+                  (animation) =>
+                    animation instanceof CSSAnimation && animation.animationName === 'spAvatarFold'
+                );
+              if (!foldGesture) throw new Error('Real Fold Animation Missing');
+              await foldGesture.finished;
+              await frame();
+              const retainedBox = head.getBoundingClientRect();
+              const retainedFoldGap =
+                retainedBox.top +
+                retainedBox.height * ((file && crowns[file]) || 0) -
+                document.querySelector('.table-page')!.getBoundingClientRect().top;
               seat.className = originalSeat;
+              wrap.className = originalWrap;
               document.dispatchEvent(new Event('fixture-next-hand'));
               await frame();
-              return { raisedShift, restingShift, foldedShift, gap };
+              return { raisedShift, restingShift, foldedShift, gap, retainedFoldGap };
             }, AVATAR_CROWN_TOP);
             expect(anchoring.restingShift).toBeCloseTo(anchoring.raisedShift, 1);
             if (width > 768) {
               expect(anchoring.foldedShift).toBeLessThan(anchoring.restingShift);
               expect(anchoring.gap).toBeLessThan(0);
+              expect(anchoring.retainedFoldGap).toBeLessThan(0);
             } else {
               // Folding may reclaim crown space, but cannot consume the
               // newly reserved revealed-hand lane.

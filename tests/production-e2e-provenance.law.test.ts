@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   classifyTrustedLineage,
@@ -639,6 +639,52 @@ describe('a retained runtime superseded before the browsers start', () => {
     return { ...r, output: readFileSync(output, 'utf8') };
   };
 
+  it('aligns client fixture source and artwork with both older and newer page assertions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'client-fixture-source-'));
+    const repo = join(root, 'repo');
+    try {
+      for (const path of ['tests/e2e/support', 'src/components/lobby', 'public/assets'])
+        mkdirSync(join(repo, path), { recursive: true });
+      git(repo, 'init', '-q');
+      const fixtureCommit = (label: string) => {
+        writeFileSync(join(repo, 'src/components/lobby/existing.css'), label);
+        writeFileSync(join(repo, 'public/assets/fixture.svg'), label);
+        writeFileSync(join(repo, 'tests/e2e/global-setup.ts'), label);
+        writeFileSync(join(repo, 'tests/e2e/support/auth.txt'), label);
+        return commit(repo, label);
+      };
+      const retained = fixtureCommit('retained');
+      const older = fixtureCommit('older-page');
+      const here = fixtureCommit('trusted-harness');
+      writeFileSync(join(repo, 'src/components/lobby/LobbyFilterLabel.css'), 'new-live-label');
+      const later = fixtureCommit('newer-page');
+      const clientStep = alignSteps()[0];
+      for (const [live, label] of [
+        [older, 'older-page'],
+        [later, 'newer-page'],
+      ]) {
+        git(repo, 'checkout', '-q', '-f', here);
+        const result = runAlign(clientStep, live, here, retained, repo);
+        expect(result.status, result.stderr + result.stdout).toBe(0);
+        expect(result.output).toContain(`specs=${live}`);
+        expect(readFileSync(join(repo, 'tests/e2e/spec.txt'), 'utf8')).toBe(label);
+        expect(readFileSync(join(repo, 'src/components/lobby/existing.css'), 'utf8')).toBe(label);
+        expect(readFileSync(join(repo, 'public/assets/fixture.svg'), 'utf8')).toBe(label);
+        const expectedHarness = live === older ? 'trusted-harness' : label;
+        expect(readFileSync(join(repo, 'tests/e2e/global-setup.ts'), 'utf8')).toBe(expectedHarness);
+        expect(readFileSync(join(repo, 'tests/e2e/support/auth.txt'), 'utf8')).toBe(
+          expectedHarness
+        );
+        if (live === later)
+          expect(
+            readFileSync(join(repo, 'src/components/lobby/LobbyFilterLabel.css'), 'utf8')
+          ).toBe('new-live-label');
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   // Isolated SSD runs on 2026-10-12 took 5.3-7.4 seconds. Keep all assertions
   // and allow bounded headroom for Git/filesystem work, rather than timing out
   // after the check already completed its synchronous work.
@@ -646,7 +692,9 @@ describe('a retained runtime superseded before the browsers start', () => {
     const root = mkdtempSync(join(tmpdir(), 'retained-superseded-'));
     const repo = join(root, 'repo');
     try {
-      spawnSync('mkdir', ['-p', join(repo, 'tests/e2e')]);
+      spawnSync('mkdir', ['-p', join(repo, 'tests/e2e'), join(repo, 'src'), join(repo, 'public')]);
+      writeFileSync(join(repo, 'src/fixture.css'), 'source');
+      writeFileSync(join(repo, 'public/fixture.svg'), 'art');
       git(repo, 'init', '-q');
       const before = commit(repo, 'before');
       const retained = commit(repo, 'retained');

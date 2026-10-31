@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exact current R2/R3 and owned global phase on the existing native board.
-Also: every prepared scope is paid and owed scopes catch up hourly (20261031190020).
+Also: every prepared scope is paid and owed scopes catch up hourly (20261031190020);
+refusals and deferrals reach Production Alerts (20261031201339).
 Reuse only the maintained family's setup, not its unrelated cases. The original
 standalone bank owner runs; its external mint and precomputed inventory/prep are
 explicit adapters. Wallet/ledger/invoice execution and ordering are real PG17.
@@ -32,6 +33,9 @@ extra=r'''
     # every case below runs the CURRENT owners.
     catch_up=next((R/'supabase/migrations').glob('20261031190020_*')).read_text()
     q(catch_up[catch_up.index('-- native:begin'):catch_up.index('-- native:end')])
+    # Slot refusals and deferrals reach Production Alerts (20261031201339).
+    alerts=next((R/'supabase/migrations').glob('20261031201339_*')).read_text()
+    q(alerts[alerts.index('-- native:begin'):alerts.index('-- native:end')])
     # The complete original financial owners execute. Only existing external
     # precomputation and mint transport are adapters, explicitly not live proof.
     q("CREATE FUNCTION caw2_u(label text)RETURNS uuid LANGUAGE sql IMMUTABLE AS $$SELECT md5('owned-phase-second-board:'||label)::uuid$$;")
@@ -123,6 +127,20 @@ extra=r'''
      "VALUES('2026-10-05 07:00Z','2026-10-12 07:00Z',2,'2026-10-12 08:58Z','2026-10-12 09:00Z','2026-10-12 09:04Z','2026-10-12 09:05Z','[{}]');",'weekly_accounting_payout_pauses_slot_check')
     owned_case('a-boundary-cannot-own-a-scope-the-week-no-longer-owes',owed+"UPDATE weekly_accounting_payout_pauses SET scope_plan=scope_plan||jsonb_build_array(scope_plan->0);"+ack(1)+at('2026-10-12 09:00Z')+
      "SELECT smarter_private.weekly_payout_execute(caw_u('owned-run'));",'weekly_payout_prepared_scope_changed')
+    sink=("CREATE TEMP TABLE fixture_alerts(source text,event_key text,alertname text,status text,severity text,payload jsonb);"
+     "CREATE OR REPLACE FUNCTION public.fn_record_operational_alert(p_source text,p_event_key text,p_alertname text,p_status text,p_severity text,p_payload jsonb)RETURNS bigint LANGUAGE sql AS $f$INSERT INTO fixture_alerts VALUES(p_source,p_event_key,p_alertname,p_status,p_severity,p_payload)RETURNING 1::bigint$f$;")
+    def alerted(name,status,severity,n=1):return "SELECT caw_assert((SELECT count(*) FROM fixture_alerts WHERE source='weekly-payout' AND alertname='"+name+"' AND status='"+status+"' AND severity='"+severity+"')="+str(n)+",'alert-"+name+"');"
+    owned_case('a-refused-slot-reaches-production-alerts-once',owed+sink+at('2026-10-12 09:01Z')+stage('weekly_payout_financial_refused','refused')+alerted('WeeklyPayoutSlotRefused','firing','warning')+
+     at('2026-10-12 09:10Z')+stage('weekly_payout_prepared','retry-prepared')+alerted('WeeklyPayoutSlotRefused','firing','warning'))
+    owned_case('a-scope-deferred-at-execution-reaches-production-alerts',owed+sink+"SET LOCAL fixture.refuse_club2='on';"+ack(1)+at('2026-10-12 09:00Z')+
+     "SELECT caw_assert((smarter_private.weekly_payout_due()->>'success')='true','subset-paid');"+alerted('WeeklyPayoutScopeDeferred','firing','warning')+paid("caw_u('club')"))
+    owned_case('a-scope-deferred-at-preparation-reaches-production-alerts',owed+sink+"DELETE FROM weekly_accounting_payout_pauses;SET LOCAL fixture.refuse_club2='on';"+at('2026-10-12 08:52Z')+
+     stage('weekly_payout_prepared','final-subset')+alerted('WeeklyPayoutScopeDeferred','firing','warning'))
+    owned_case('a-week-owing-after-its-last-slot-reaches-production-alerts',owed+sink+"DELETE FROM weekly_accounting_payout_pauses;"+at('2026-10-12 15:58Z')+
+     "SELECT caw_assert(smarter_private.weekly_payout_due() IS NULL,'no-ninth');"+alerted('WeeklyPayoutUnpaidAfterLastSlot','firing','critical'))
+    owned_case('an-alert-failure-never-changes-the-payout-outcome',owed+"CREATE OR REPLACE FUNCTION public.fn_record_operational_alert(text,text,text,text,text,jsonb)RETURNS bigint LANGUAGE plpgsql AS $f$BEGIN RAISE EXCEPTION 'fixture-alert-down';END$f$;"+
+     at('2026-10-12 09:01Z')+stage('weekly_payout_financial_refused','refused-without-alert')+"SELECT caw_assert((SELECT phase='released' FROM weekly_accounting_payout_pauses WHERE attempt_no=1),'released-anyway');"+
+     at('2026-10-12 09:10Z')+stage('weekly_payout_prepared','next-slot-anyway'))
     # Commit only this isolated synthetic board so a second PostgreSQL backend
     # can ACK the original DUE while its original statement is waiting. The
     # observed server wait event supplies synchronization; no guessed delay.

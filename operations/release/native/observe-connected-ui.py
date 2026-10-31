@@ -202,6 +202,22 @@ def validate_schema_preflight(preflight, capture):
     return mapping['restored_digest'], mapping
 
 
+def published_web_source(run, info, engine_sha):
+    """Independent immutable web producer; the engine has its own protected SHA.
+    Actual ancestry for BOTH is checked against this protected control below.
+    """
+    web_sha = run.get('head_sha')
+    require(isinstance(engine_sha, str) and re.fullmatch('[0-9a-f]{40}', engine_sha) and
+            isinstance(web_sha, str) and re.fullmatch('[0-9a-f]{40}', web_sha) and
+            run['repository']['id'] == native.REPOSITORY_ID and
+            run['head_repository']['id'] == native.REPOSITORY_ID and
+            run['event'] == 'push' and run['head_branch'] == 'main' and
+            run['conclusion'] == 'success' and
+            run['path'] == '.github/workflows/publish-club-arena.yml' and
+            info['name'] == 'club-arena-dist-' + web_sha)
+    return web_sha
+
+
 def write_schema_zip(path, sql, template):
     with zipfile.ZipFile(path, 'x') as archive:
         archive.writestr('schema.sql', sql)
@@ -295,12 +311,8 @@ def observe(repo, output, expected, runtime_image, smoke_receipt, *, work_deadli
             info = native.provider(f'/repos/{REPO}/actions/artifacts/{web_id}')
             run = native.provider(f'/repos/{REPO}/actions/runs/{web_run}')
             engine_sha = os.environ['FIXTURE_ENGINE_SOURCE_SHA']
-            require(re.fullmatch('[0-9a-f]{40}', engine_sha) and run['head_sha'] == engine_sha and
-                    run['repository']['id'] == native.REPOSITORY_ID and run['head_repository']['id'] == native.REPOSITORY_ID and
-                    run['event'] == 'push' and run['head_branch'] == 'main' and run['conclusion'] == 'success' and
-                    run['path'] == '.github/workflows/publish-club-arena.yml' and
-                    info['name'] == 'club-arena-dist-' + engine_sha)
-            web = {'source_sha': engine_sha, 'artifact_id': web_id, 'build_run_id': web_run,
+            web_sha = published_web_source(run, info, engine_sha)
+            web = {'source_sha': web_sha, 'artifact_id': web_id, 'build_run_id': web_run,
                    'archive_digest': info['digest']}
             archive = temp / 'original-web.zip'
             native.download_artifact(web, archive)
@@ -309,6 +321,7 @@ def observe(repo, output, expected, runtime_image, smoke_receipt, *, work_deadli
                 web['identity'] = 'sha256:' + web['manifest_digest']
             native.validate_web(archive, web, template['supabase_host'])
             native.command(['git', '-C', str(repo), 'merge-base', '--is-ancestor', engine_sha, expected])
+            native.command(['git', '-C', str(repo), 'merge-base', '--is-ancestor', web_sha, expected])
             context_tar = temp / 'engine-source.tar'
             context_paths = ['server/Dockerfile', 'server/package.json', 'server/package-lock.json',
                 'server/tsconfig.json', 'server/tsconfig.runtime.json', 'server/tsconfig.emit.json',
@@ -358,7 +371,7 @@ def observe(repo, output, expected, runtime_image, smoke_receipt, *, work_deadli
                     supabase_host=template['supabase_host'], cleanup_report=cleanup, output=output)
                 report['scenes'].append({'mode': mode, 'native': result, 'cleanup': cleanup['fixtures'][-1]})
                 report['executed'] += result['executed']
-            require(report['executed'] == 14 and len(report['scenes']) == 2)
+            require(report['executed'] == 15 and len(report['scenes']) == 2)
             cases_complete = True
             report['stage'] = 'outer-runtime-cleanup'
     finally:

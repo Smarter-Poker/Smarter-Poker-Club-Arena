@@ -285,7 +285,7 @@ export default function DetailOverviewTab({
     startAtMs - Date.now() > -86_400_000;
 
   useEffect(() => {
-    if (isCompleted || isBagged || isCancelled || startsWhenFull) return;
+    if (isCompleted || isBagged || isCancelled || (startsWhenFull && !isRunning)) return;
     if (!isRunning && !startsWithinADay) return;
     const id = setInterval(() => setTick((n) => (n + 1) % 86_400), 1000);
     return () => clearInterval(id);
@@ -665,6 +665,20 @@ export default function DetailOverviewTab({
       { key: 'entries', label: 'Entries', value: chips(field.entries) },
     ];
 
+    if (isRunning || isCompleted) {
+      const started = Date.parse(String(t.started_at ?? ''));
+      const end = isCompleted ? Date.parse(String(t.ended_at ?? '')) : serverNow();
+      const elapsed = Math.floor((end - started) / 1000);
+      rows.push({
+        key: 'running-time',
+        label: 'Running Time',
+        value:
+          Number.isFinite(elapsed) && elapsed >= 0
+            ? `${Math.floor(elapsed / 3600).toLocaleString()}h ${Math.floor((elapsed % 3600) / 60)}m ${elapsed % 60}s`
+            : 'Unavailable',
+      });
+    }
+
     if (t.is_bounty) {
       /* THE HEAD AT THE EVENT'S UNIT (2026-09-21): `money` at a chip event,
          exactly as before, and whole Diamonds that say so at a Diamond one. */
@@ -745,6 +759,7 @@ export default function DetailOverviewTab({
     field.entries,
     mysteryBounty?.inventory,
     overviewUnitCents,
+    tick,
   ]);
 
   /* ── Podium, for a finished event. ── */

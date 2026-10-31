@@ -12,6 +12,7 @@ import { signUpDialog } from '../components/tournament/signUpDialog';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
 import { markTournamentEntered } from '../utils/tournamentEntryNavigation';
+import { withTournamentRegistrationReadBoundary } from '../services/TournamentRegistrationReadBoundary';
 
 /**
  * How hard we look for the seat the server was meant to give us.
@@ -286,12 +287,15 @@ export function useTournamentRegistration() {
 
         const findMySeat = async (): Promise<SeatLookup> => {
           try {
-            const { data: tp, error } = await supabase
-              .from('tournament_players')
-              .select('table_id')
-              .eq('tournament_id', t.id)
-              .eq('user_id', currentUserId)
-              .maybeSingle();
+            const { data: tp, error } = await withTournamentRegistrationReadBoundary((signal) =>
+              supabase
+                .from('tournament_players')
+                .select('table_id')
+                .eq('tournament_id', t.id)
+                .eq('user_id', currentUserId)
+                .abortSignal(signal)
+                .maybeSingle()
+            );
             /* A read that FAILED is not "no seat yet" - and it is not a pending
              seat either. Three distinct outcomes, three distinct things said
              to the player (#795). */

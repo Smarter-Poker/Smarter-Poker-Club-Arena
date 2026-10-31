@@ -204,7 +204,14 @@ async function oracle() {
     assert.deepEqual(await observer.handFacts(hand), {
       count: 1,
       rows: [
-        { hand_number: 2, pot_size: '3.00', rake_amount: '0.00', action_count: 1, player_count: 2 },
+        {
+          hand_number: 2,
+          pot_size: '3.00',
+          rake_amount: '0.00',
+          action_count: 1,
+          player_count: 2,
+          public_actions: [],
+        },
       ],
       seat_count: 0,
     });

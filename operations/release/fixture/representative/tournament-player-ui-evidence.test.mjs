@@ -214,8 +214,29 @@ test('wire collector cannot reuse an old arm across socket generations or archiv
   });
   assert.equal(wire.readArm(wire, key).to_call_at_set, 4);
   assert.equal('cards' in wire.readArm(wire, key), false);
+  emit({
+    type: 'EVENT',
+    payload: {
+      type: 'player_action',
+      hand_number: 7,
+      user_id: id(2),
+      seat: 2,
+      action: 'raise',
+      amount: 6,
+      stage: 'preflop',
+      cards: ['private-canary'],
+      deck: 'private-canary',
+    },
+  });
+  const publicAction = wire.readActions({ tableId: id(1), handNumber: 7 })[0];
+  assert.equal(publicAction.action, 'raise');
+  assert.equal(publicAction.seat, 2);
+  assert.equal(publicAction.stage, 'preflop');
+  assert.equal('cards' in publicAction, false);
+  assert.equal('deck' in publicAction, false);
   socket.emit('close');
   emit(snapshot);
+  assert.deepEqual(wire.readActions({ tableId: id(1), handNumber: 7 }), []);
   assert.equal(wire.readArm(wire, key), undefined);
   wire.close();
   assert.equal(page.listenerCount('websocket'), 0);
@@ -234,4 +255,120 @@ test('gapped dealer state fails the same wire generation without accepting a lat
   emit({ type: 'DELTA', prev: 0, seq: 3, patch: [] });
   assert.throws(() => wire.state(id(1)), /PLAYER_UI_WIRE_REFUSED/);
   wire.close();
+});
+
+// The action oracle rejects plausible-looking wire/DB tuples unless they bind
+// all four real browser intents, their original turns and player-origin history.
+import { verifyBrowserActionHistory } from '../../native/component-observation-protocol.mjs';
+function browserActionEvidence() {
+  const ids = ['a1000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000002'];
+  const actions = ['raise', 'call', 'all_in', 'fold'].map((action, i) => ({
+    action,
+    table_id: 'c1000000-0000-4000-8000-000000000001',
+    user_id: ids[[0, 1, 1, 0][i]],
+    seat: [1, 2, 2, 1][i],
+    hand_number: 42,
+    street: i < 2 ? 'preflop' : 'flop',
+    amount: [6, 4, 194, 0][i],
+    before_stack: [199, 198, 194, 194][i],
+    before_bet: [1, 2, 0, 0][i],
+    before_current_bet: [2, 6, 0, 194][i],
+    status: 200,
+    success: true,
+    requests: 1,
+    idempotency_key: 'key-' + i,
+    action_context: 'original-turn-' + i,
+  }));
+  const public_actions = actions.map((a, i) => ({
+    ordinal: i + 3,
+    user_id: a.user_id,
+    seat: a.seat,
+    action: a.action,
+    amount: a.amount,
+    street: a.street,
+    origin: 'player',
+  }));
+  return {
+    tableId: 'c1000000-0000-4000-8000-000000000001',
+    hand: { hand_number: 42, next_hand_number: 43 },
+    actions,
+    facts: {
+      count: 1,
+      seat_count: 0,
+      rows: [
+        {
+          hand_number: 42,
+          pot_size: '12',
+          rake_amount: '0',
+          action_count: 7,
+          player_count: 2,
+          public_actions,
+        },
+      ],
+    },
+    events: actions.map((a) => ({
+      type: 'player_action',
+      table_id: 'c1000000-0000-4000-8000-000000000001',
+      hand_number: 42,
+      user_id: a.user_id,
+      seat: a.seat,
+      action: a.action,
+      amount: a.amount,
+      stage: a.street,
+      replayed: false,
+    })),
+  };
+}
+test('four browser intents match their same owned saved hand with raise-TO and full remaining all-in', () => {
+  const value = browserActionEvidence();
+  assert.deepEqual(verifyBrowserActionHistory(value), {
+    table_id: value.tableId,
+    hand_number: 42,
+    accepted_http_count: 4,
+    wire_event_count: 4,
+    history_count: 1,
+    actions: value.facts.rows[0].public_actions,
+  });
+});
+test('browser action acceptance refuses missing/duplicate/refused/replayed/forced/private/wrong-hand evidence', () => {
+  const changes = [
+    (x) => (x.actions[2].action = 'call'),
+    (x) => (x.actions[0].requests = 2),
+    (x) => (x.actions[0].status = 400),
+    (x) => (x.actions[0].success = false),
+    (x) => (x.actions[0].action_context = ''),
+    (x) => (x.actions[1].idempotency_key = x.actions[0].idempotency_key),
+    (x) => (x.actions[0].hand_number = 41),
+    (x) => (x.actions[0].table_id = 'd1000000-0000-4000-8000-000000000001'),
+    (x) => (x.events[0].table_id = 'd1000000-0000-4000-8000-000000000001'),
+    (x) => (x.actions[1].action_context = x.actions[0].action_context),
+    (x) => (x.events[0].replayed = true),
+    (x) => x.events.push({ ...x.events[0] }),
+    (x) => x.events.shift(),
+    (x) => x.events.reverse(),
+    (x) => (x.facts.rows[0].public_actions[3].origin = 'forced'),
+    (x) => (x.facts.rows[0].public_actions[3].origin = 'pre_action'),
+    (x) => (x.facts.rows[0].public_actions[0].cards = ['private-canary']),
+    (x) => (x.facts.rows[0].public_actions[0].street = 'flop'),
+    (x) => (x.facts.rows[0].public_actions[0].user_id = x.actions[1].user_id),
+    (x) => (x.facts.rows[0].public_actions[0].amount = 5),
+    (x) => {
+      x.actions[2].amount = 100;
+      x.events[2].amount = 100;
+      x.facts.rows[0].public_actions[2].amount = 100;
+    },
+    (x) => {
+      x.actions[1].amount = 6;
+      x.events[1].amount = 6;
+      x.facts.rows[0].public_actions[1].amount = 6;
+    },
+    (x) => x.facts.rows[0].public_actions.push({ ...x.facts.rows[0].public_actions[3] }),
+    (x) => (x.facts.count = 2),
+    (x) => (x.facts.seat_count = 1),
+  ];
+  for (const change of changes) {
+    const value = browserActionEvidence();
+    change(value);
+    assert.throws(() => verifyBrowserActionHistory(value));
+  }
 });

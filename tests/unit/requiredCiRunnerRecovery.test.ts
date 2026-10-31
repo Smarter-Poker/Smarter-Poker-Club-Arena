@@ -97,6 +97,40 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
     expect(tournamentSteps[tournamentIndex]).toStrictEqual(tournamentStep);
     tournamentSteps.splice(tournamentIndex, 1);
 
+    const accounting = normalized.jobs.accounting_postgres;
+    expect(accounting.strategy).toEqual({
+      'fail-fast': false,
+      matrix: { shard: [1, 2, 3, 4, 5, 6, 7] },
+    });
+    expect(accounting.name).toBe(
+      'Accounting transactions (PostgreSQL 17) shard $' + '{{ matrix.shard }}/7'
+    );
+    accounting.strategy.matrix.shard = [1, 2, 3, 4];
+    accounting.name = 'Accounting transactions (PostgreSQL 17) shard $' + '{{ matrix.shard }}/4';
+    for (const [name, from, to] of [
+      ['Weekly recompute commits bounded parts and preserves real payouts', 2, 5],
+      ['Retain exact weekly recompute qualification', 2, 5],
+      ['Full weekly accounting activation, rollback and concurrent authority', 2, 6],
+      ['Preserve weekly accounting qualification evidence', 2, 6],
+      ['Certified V31 PostgreSQL 17 behavior gate', 4, 7],
+    ] as const) {
+      const selected = accounting.steps.filter((step: { name: string }) => step.name === name);
+      expect(selected).toHaveLength(1);
+      expect(selected[0].if.match(/matrix\.shard == \d/g)).toEqual(['matrix.shard == ' + to]);
+      selected[0].if = selected[0].if.replace('matrix.shard == ' + to, 'matrix.shard == ' + from);
+    }
+    const installers = accounting.steps.filter(
+      (step: { name: string }) =>
+        step.name === 'Install PostgreSQL 17 tools without a default database service'
+    );
+    expect(installers).toHaveLength(1);
+    expect(createHash('sha256').update(JSON.stringify(installers[0])).digest('hex')).toBe(
+      'b0961ac4782f86fbf4158a3eb0d3d3a6d650ae86d662a4bd4d73b552849d37dd'
+    );
+    const newInstallCase =
+      '  5|6|7)\n    # Isolated weekly recompute, full weekly activation and V31 use\n    # the common PG17 tools; no native compiler or fixture builder.\n    # The shared install/readiness check below retains pg_cron,\n    # including the full weekly activation fixture on shard 6.\n    ;;\n';
+    expect(installers[0].run.split(newInstallCase)).toHaveLength(2);
+    installers[0].run = installers[0].run.replace(newInstallCase, '');
     // Normalize only reviewed routing changes; the existing whole-job hashes
     // still enforce every command, assertion, timeout, artifact and ordering.
     const remappedSteps = [
@@ -118,7 +152,12 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
           ? `always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)`
           : previous;
       expect(selected[0].if).toBe(
-        oldCondition.replace(/matrix.shard == [34]/, 'matrix.shard == 2')
+        oldCondition.replace(
+          /matrix.shard == [34]/,
+          name === 'Backed payout discovery preserves every conservation term'
+            ? 'matrix.shard == 3'
+            : 'matrix.shard == 2'
+        )
       );
       selected[0].if = oldCondition;
     }
@@ -138,6 +177,42 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       );
       selected[0].if = previous;
     }
+    // Pin the entire reviewed producer and transfer pair before reconstructing
+    // the former browser shape. The historical job hash still protects every
+    // original build command, browser assertion, timeout and step ordering.
+    const browserBuild = normalized.jobs['css-beats-build'];
+    const browserJob = normalized.jobs['css-beats-e2e'];
+    const exactHash = (value: unknown) =>
+      createHash('sha256').update(JSON.stringify(value)).digest('hex');
+    expect(exactHash(browserBuild)).toBe(
+      '1d75a0c1c211190a532d247c4f6009f2c876ffe0f0775465ab0732f4005462bc'
+    );
+    expect(browserJob.needs).toEqual(['changes', 'css-beats-build']);
+    browserJob.needs = 'changes';
+    const transferNames = ["Download this run's browser build", "Verify this run's browser build"];
+    for (const name of transferNames)
+      expect(browserJob.steps.filter((step: { name: string }) => step.name === name)).toHaveLength(
+        1
+      );
+    const transferStart = browserJob.steps.findIndex(
+      (step: { name: string }) => step.name === transferNames[0]
+    );
+    expect(
+      browserJob.steps
+        .slice(transferStart, transferStart + 2)
+        .map((step: { name: string }) => step.name)
+    ).toEqual(transferNames);
+    expect(exactHash(browserJob.steps.slice(transferStart, transferStart + 2))).toBe(
+      'ff193edb18cbf4c4ddc745ada4cac0d08e589b177afc226b5e40b0b647aadc15'
+    );
+    browserJob.steps.splice(transferStart, 2);
+    for (const name of ['Cache optimized dist media', 'Build this commit']) {
+      const selected = browserJob.steps.filter((step: { name: string }) => step.name === name);
+      expect(selected).toHaveLength(1);
+      expect(selected[0].if).toBe("needs.changes.outputs.server != 'true'");
+      delete selected[0].if;
+    }
+    delete normalized.jobs['css-beats-build'];
     normalizeFrameCoverAddition(normalized.jobs.accounting_postgres);
     normalizePostpaidQualityAddition(normalized.jobs.accounting_postgres);
     const formerClientRoute = '$' + '{{ ' + trusted + " && 'ca-linux-4core' || 'ubuntu-latest' }}";

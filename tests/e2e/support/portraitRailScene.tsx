@@ -273,7 +273,9 @@ export function Review() {
                         }}
                         position={i === 1 ? 'SB' : null}
                         isActive={false}
-                        lastAction={revealed && i % 3 === 0 ? 'all_in' : 'call'}
+                        lastAction={
+                          revealed && i % 3 === 0 ? 'all_in' : i % 2 === 0 ? 'check' : 'call'
+                        }
                         lastBetAmount={
                           /* data-bets="0,3,5" bets only those chairs; absent, every chair bets. */
                           document.documentElement.dataset.bets === undefined ||

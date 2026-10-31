@@ -451,6 +451,44 @@ test('the published table explains controlled seat moves without moving a player
     expect(refusedSynthetic.http).toBeGreaterThan(0);
     expect(forwardedSyntheticUpstream).toBe(0);
     expect(heroDiagnostics).toEqual([]);
+    // Verify equal sizing in the published client using its real mapped
+    // player rows. Synthetic input remains confined to this guarded browser.
+    await page.evaluate(() => document.fonts.ready);
+    const equalSeatSizing = await page
+      .locator('.table-page .seat:not(.seat--empty)')
+      .evaluateAll((seats) =>
+        seats.map((seat) => {
+          const size = (selector: string) => {
+            const box = seat.querySelector(selector)?.getBoundingClientRect();
+            return box ? { width: box.width, height: box.height } : null;
+          };
+          return {
+            hero: seat.classList.contains('seat--hero'),
+            avatar: size('.seat__avatar'),
+            panel: size('.seat__info'),
+            action: size('.seat__action'),
+          };
+        })
+      );
+    expect(equalSeatSizing.length).toBeGreaterThanOrEqual(2);
+    const heroSize = equalSeatSizing.find((seat) => seat.hero)!;
+    expect(heroSize).toBeTruthy();
+    for (const seat of equalSeatSizing)
+      for (const part of ['avatar', 'panel'] as const) {
+        expect(seat[part]).toBeTruthy();
+        expect(Math.abs(seat[part]!.width - heroSize[part]!.width)).toBeLessThan(1.5);
+        expect(Math.abs(seat[part]!.height - heroSize[part]!.height)).toBeLessThan(1.5);
+      }
+    const actions = equalSeatSizing.flatMap((seat) => (seat.action ? [seat.action] : []));
+    for (const action of actions) {
+      expect(Math.abs(action.width - actions[0].width)).toBeLessThan(1.5);
+      expect(Math.abs(action.height - actions[0].height)).toBeLessThan(1.5);
+    }
+    evidence.equalSeatSizing = equalSeatSizing;
+    await info.attach('mobile-published-equal-seat-sizing', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
     const afterSynthetic = await readBuild();
     expect(afterSynthetic).toEqual(evidence.before);
     evidence.heroDiagnostic = {

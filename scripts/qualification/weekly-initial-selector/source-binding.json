@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 262624,
-      "sha256": "e0f9a6c8b5d3eac8c7627272aad96f7237eb630fe6c3fe58b4d78be88421c6b9"
+      "bytes": 271973,
+      "sha256": "6e5b8c4ccce1adc8c0858295bab3e2f24994b249d89d5967d93e38802f05eab9"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1763,6 +1763,18 @@
     "qualificationStateChanged": false,
     "qualification": "Source binding only; not financial/native recertification, installation or live proof. Exact-candidate required checks remain necessary."
   },
+  "browserArtifactAndShardBalance20261031": {
+    "reason": "Full server qualification shares one exact-run sealed disposable browser harness; UI-only or unknown classification retains the original parallel local builds. All browser suites, production artifact separation and free runners remain. Move only the unchanged isolated backed-payout scan from accounting shard 2 to shard 3.",
+    "previous": {
+      "bytes": 262364,
+      "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
+    },
+    "current": {
+      "bytes": 271225,
+      "sha256": "259bee10d1c6dd86ed1afe99578f04e5f1e6253b2b9e01a95c5887ab90ee4938"
+    },
+    "qualification": "Current source identity only; no financial/native execution or installation is recertified. Historical records unchanged."
+  },
   "isolatedConnectedUiSourceAudit20261031": {
     "scope": "Current source identity only for isolated connected UI qualification; no financial qualification, SQL, oracle, profile or historical evidence restamped.",
     "file": ".github/workflows/ci.yml",
@@ -1810,6 +1822,59 @@
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false
   },
+  "browserArtifactMainIntegration20261031": {
+    "scope": "Source-only merge of conditional disposable browser artifact and protected main changes; preserve both parent audit histories, all qualification fields and safeguards.",
+    "previousBranchCiPin": {
+      "bytes": 271225,
+      "sha256": "259bee10d1c6dd86ed1afe99578f04e5f1e6253b2b9e01a95c5887ab90ee4938"
+    },
+    "previousMainCiPin": {
+      "bytes": 262384,
+      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+    },
+    "currentCiPin": {
+      "bytes": 271245,
+      "sha256": "769e0c1f62492aafd8863d0cd7122386cebe9e4bc727a1ac7b03b8567b401a7f"
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "sevenShardIsolatedQualificationSourceAudit20261031": {
+    "scope": "Current source identity for seven isolated accounting shards: weekly recompute and evidence on 5, full weekly activation and evidence on 6, V31 admission on 7. Preserve every command, assertion, artifact, historical audit, qualification status and four server shards.",
+    "updatedCurrentBindings": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 271245,
+          "sha256": "769e0c1f62492aafd8863d0cd7122386cebe9e4bc727a1ac7b03b8567b401a7f"
+        },
+        "current": {
+          "bytes": 271733,
+          "sha256": "9ac798784d875b1e3d0d4ad9b22b24b5cf8c80b1836095234978020fb260cdb4"
+        }
+      }
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "sevenShardDeadlineIdentitySourceAudit20261031": {
+    "scope": "Current source binding correction for seven-shard BBJ job identity and clarified installer comment only. Deadline, assertions and qualification statuses remain unchanged.",
+    "updatedCurrentBindings": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 271733,
+          "sha256": "9ac798784d875b1e3d0d4ad9b22b24b5cf8c80b1836095234978020fb260cdb4"
+        },
+        "current": {
+          "bytes": 271733,
+          "sha256": "e539e5040954d7389b78d26b1a32ca70cf58007d3cd22ba5ef462254970df4c0"
+        }
+      }
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false
+  },
   "addonEntryLevelQualification20261031": {
     "reason": "Adds isolated PostgreSQL add-on entry-level boundary regression to required accounting shard 4. Existing financial commands, assertions and historical certificates unchanged. Current source identity only; no financial or live certification.",
     "previous": {
@@ -1819,6 +1884,17 @@
     "current": {
       "bytes": 262624,
       "sha256": "e0f9a6c8b5d3eac8c7627272aad96f7237eb630fe6c3fe58b4d78be88421c6b9"
+    }
+  },
+  "addonProtectedMainComposition20261031": {
+    "reason": "Preserve seven-shard and browser-artifact main changes plus exact add-on regression. Current source identity only; every historical certificate and qualification state unchanged.",
+    "previousMain": {
+      "bytes": 271733,
+      "sha256": "e539e5040954d7389b78d26b1a32ca70cf58007d3cd22ba5ef462254970df4c0"
+    },
+    "current": {
+      "bytes": 271973,
+      "sha256": "6e5b8c4ccce1adc8c0858295bab3e2f24994b249d89d5967d93e38802f05eab9"
     }
   }
 }

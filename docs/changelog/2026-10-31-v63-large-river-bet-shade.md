@@ -105,6 +105,11 @@ function.
   wager unshaded, a set unshaded.
 - `server/src/engine/HorseV28Postflop.test.ts` A1 (short stack calls a
   covering jam) stays green; the uniform-slope cut turned it red.
+- `server/src/engine/HorseV17.test.ts` call-side blocker: its fixture moved
+  from a 0.8-pot wager (32 into 40) to 0.65 pot (26 into 40). Under V63 an
+  ace-high catcher calls the 0.8-pot wager about 0.3% of the time, so the
+  blocking-versus-unblocking comparison had become two zeros; at 0.65 pot
+  it calls about half the time and the ordering it pins is measurable.
 - `server/src/benchmark/HoldemLiveMeasure.test.ts`: five receipt features.
 
 ## How to read the effect live

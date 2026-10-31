@@ -139,12 +139,16 @@ describe('V17 river delayed probe', () => {
 });
 
 describe('V17 call-side blocker', () => {
-  function callFreq(hole: Card[], trials = 400): number {
+  function callFreq(hole: Card[], trials = 400, bet = 26): number {
     let calls = 0;
     for (let s = 1; s <= trials; s++) {
       seedFastRandom(s * 7433);
       const hero = seat(1, 'hero', { cards: hole, bet: 0 });
-      const opp = seat(3, 'opp', { bet: 32 });
+      // 26 into 40 (0.65 pot, r = 0.39): with the V63 one-pair river shade
+      // the catcher calls about half the time here, so the blocker ordering
+      // is measured where it can show. The original 32 into 40 (0.8 pot)
+      // took both frequencies to ~0 under V63 and the comparison was noise.
+      const opp = seat(3, 'opp', { bet });
       const gs: HorseGameStateV2 = {
         players: [hero, opp],
         communityCards: [
@@ -154,15 +158,15 @@ describe('V17 call-side blocker', () => {
           c('7', 'clubs'),
           c('2', 'diamonds'),
         ],
-        pot: 72,
-        currentBet: 32,
-        minRaise: 32,
+        pot: 40 + bet,
+        currentBet: bet,
+        minRaise: bet,
         stage: 'river',
         gameVariant: 'nlh',
         bigBlind: 2,
         dealerSeat: 3,
         actionHistory: [
-          { seat: 3, userId: 'opp', action: 'bet', amount: 32, timestamp: 1, stage: 'river' },
+          { seat: 3, userId: 'opp', action: 'bet', amount: bet, timestamp: 1, stage: 'river' },
         ] as ActionRecord[],
         gameMode: 'cash',
         format: 'cash',

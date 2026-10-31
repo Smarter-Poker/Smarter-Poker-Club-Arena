@@ -665,7 +665,7 @@ export default function DetailOverviewTab({
       { key: 'entries', label: 'Entries', value: chips(field.entries) },
     ];
 
-    if (isRunning || isCompleted || isBagged) {
+    if (isRunning || isCompleted) {
       const started = Date.parse(String(t.started_at ?? ''));
       const end = isCompleted ? Date.parse(String(t.ended_at ?? '')) : serverNow();
       const elapsed = Math.floor((end - started) / 1000);
@@ -759,7 +759,6 @@ export default function DetailOverviewTab({
     field.entries,
     mysteryBounty?.inventory,
     overviewUnitCents,
-    isBagged,
     tick,
   ]);
 

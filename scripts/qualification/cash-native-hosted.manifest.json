@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 261102,
-      "sha256": "8fa7d5fcead6ebfa0b5db36a3f65797497e658482287b11e8c9125f8bed2bf7c"
+      "bytes": 259426,
+      "sha256": "b919bc7b15034b51014d730f5d6a61c0a82a1cd53ad0ac1d9b29ae03347c6c76"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 117348,
-      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
+      "bytes": 116628,
+      "sha256": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c"
     }
   },
   "nativePgCron": {
@@ -5549,6 +5549,36 @@
     "execution_performed": false,
     "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
   },
+  "standardHostedRunnerCostSourceAudit20261031": {
+    "scope": "Current CI source identity only: route the existing jobs to standard GitHub-hosted Ubuntu runners in this public repository. Preserve all tests, financial/native qualification commands, shard matrices, worker CPU clamps, deadlines, permissions, dependencies, required verdicts and historical evidence.",
+    "previousCiPin": {
+      "bytes": 260283,
+      "sha256": "ee357f77ae898d976025839707e3ff7e530b56ae41b5c2be0d59a03fb72d9b02"
+    },
+    "currentCiPin": {
+      "bytes": 258607,
+      "sha256": "6b0dffe8d3d0d8a05530a57f41f8219107bfa8cb856a9a7b9f95cc487826d749"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false,
+    "qualification": "Source binding only; no financial, native, installed or live certification is restamped. Exact-head protected checks and publication remain required."
+  },
+  "standardHostedRunnerFixturePinAudit20261031": {
+    "scope": "Bind the current reviewed fixtureNativeCi source: only four runner-route assertions changed to ubuntu-latest. Preserve all qualification, financial inputs, assertions and historical evidence.",
+    "path": "tests/unit/fixtureNativeCi.test.ts",
+    "previousPin": {
+      "bytes": 117348,
+      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
+    },
+    "currentPin": {
+      "bytes": 116628,
+      "sha256": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c"
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
   "weeklyBoundaryFrameCoverEnforcementSourceAudit20261031": {
     "scope": "Current CI source identity only: 12 additive lines enforce the original pending cash-boundary frame-cover native qualification in existing accounting shard 2 and retain its result in an always-running artifact step. Every prior workflow command, cash business input, fixture, case, financial assertion, profile, budget, runner, permission and dependency remains unchanged.",
     "reason": "Bind the reviewed workflow addition that enforces index installation, original row/club-total equivalence and concurrent visibility regression protection for the demonstrated Midway timeout.",
@@ -5575,6 +5605,24 @@
       "bytes": 261102,
       "sha256": "8fa7d5fcead6ebfa0b5db36a3f65797497e658482287b11e8c9125f8bed2bf7c"
     },
+    "execution_performed": false
+  },
+  "standardHostedRunnerProtectedMainIntegrationAudit20261031": {
+    "scope": "Preserve both branches source audits and protected-main qualification additions while retaining standard hosted runner routing. Refresh only current combined CI identity.",
+    "priorStandardCiPin": {
+      "bytes": 258607,
+      "sha256": "6b0dffe8d3d0d8a05530a57f41f8219107bfa8cb856a9a7b9f95cc487826d749"
+    },
+    "protectedMainCiPin": {
+      "bytes": 261102,
+      "sha256": "8fa7d5fcead6ebfa0b5db36a3f65797497e658482287b11e8c9125f8bed2bf7c"
+    },
+    "combinedCiPin": {
+      "bytes": 259426,
+      "sha256": "b919bc7b15034b51014d730f5d6a61c0a82a1cd53ad0ac1d9b29ae03347c6c76"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
     "execution_performed": false
   }
 }

@@ -867,7 +867,9 @@ jobs:
             # then silently regain the signed-out fallback it just lost, on
             # exactly the runs where production is behind. A fix that disables
             # itself under the condition it was written for is worse than none.
-            git checkout "$LIVE" -- tests/e2e
+            # Local CSS/component/art fixtures execute with these assertions.
+            # Retarget their inputs too; a later spec can import new source.
+            git checkout "$LIVE" -- tests/e2e src public
             # Authentication and support are harness authority, not page-version
             # assertions. Never let deploy lag
             # roll either guard back to an older, weaker implementation.
@@ -894,7 +896,9 @@ jobs:
             # one, and restoring $HERE's harness over it would be exactly the
             # roll-back-to-a-weaker-guard that the ancestor branch above exists
             # to prevent, pointed the other way.
-            git checkout "$LIVE" -- tests/e2e
+            # Local CSS/component/art fixtures execute with these assertions.
+            # Retarget their inputs too; a later spec can import new source.
+            git checkout "$LIVE" -- tests/e2e src public
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, a later commit than this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
             echo "The whole suite was re-targeted onto \`$LIVE\` so the assertions match the bundle the browser loads." >> $GITHUB_STEP_SUMMARY

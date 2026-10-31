@@ -238,6 +238,15 @@ export function tournamentSignals(entry: LobbyEntry): TournamentSignal[] {
   return out;
 }
 
+/** Format identity, independent of whether its live pool is currently joinable. */
+function isLightningCashRow(entry: LobbyEntry): boolean {
+  return (
+    entry.kind === 'cash' &&
+    !entry.game?.noLightning &&
+    cashTemplateKey(entry.game?.template ?? '') === 'madness'
+  );
+}
+
 /** The live clock line: "Starts In 4:31" or "Late Reg Ends In 12:03". */
 export function tournamentClockLine(
   entry: LobbyEntry,
@@ -650,7 +659,7 @@ const COL_NAME: ColumnDef = {
       return (
         <span className="lt-name lt-name--cash" title={e.name}>
           <span className="lt-name__line1">
-            {cashTemplateKey(e.game?.template ?? '') === 'madness' && !e.game?.noLightning ? (
+            {isLightningCashRow(e) ? (
               <LightningGamesIcon />
             ) : e.live ? (
               <i className="lt-live" aria-hidden="true" title="Live" />
@@ -1312,6 +1321,7 @@ const LobbyRow = memo(function LobbyRow({
       data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
       className={`lt-row lt-row--${entry.status} ${tournamentRowClasses(entry)}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
+      data-lightning-format={isLightningCashRow(entry) ? 'true' : undefined}
       data-lightning={entry.kind === 'cash' && entry.game?.lightning ? 'on' : undefined}
       data-cash-format={
         entry.kind === 'cash' && entry.game?.template
@@ -1978,6 +1988,7 @@ export default function LobbyTable({
                 data-testid="lobby-game-row"
                 data-id={entry.id}
                 data-kind={entry.kind}
+                data-lightning-format={isLightningCashRow(entry) ? 'true' : undefined}
                 data-lightning={entry.kind === 'cash' && entry.game?.lightning ? 'on' : undefined}
                 data-cash-format={
                   entry.kind === 'cash' && entry.game?.template
@@ -1994,6 +2005,7 @@ export default function LobbyTable({
                 onClick={() => onSelect(entry)}
               >
                 <td>
+                  {isLightningCashRow(entry) && <LightningGamesIcon />}
                   <FavCell entry={entry} ctx={rowCtx} />
                   <button
                     type="button"

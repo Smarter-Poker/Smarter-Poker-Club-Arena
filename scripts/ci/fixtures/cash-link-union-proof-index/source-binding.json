@@ -12,7 +12,7 @@
     "tests/cash-link-union-index-keeps-original-proof.law.test.ts": "35ec76b09d23ac523ed70c33f1f5dfb649c4b3be447c9db1f1cb9715a27f1f67",
     "docs/laws.d/cash-link-union-index-keeps-original-proof.md": "e1034936d88a46c9d0e59a786f238183b933d25d1d8fb59d905f4d99d2e41dbb",
     "docs/changelog/2026-10-28-cash-link-union-proof-index.md": "d85de7845b24f6dbecaa56a934001822336a5e2dc52cbd690f7fc1c2d008c6cf",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "61789751ea646f39e5572f7ae7fb6ab84d70e506ba76ab26989c5f160065405d",
     "scripts/ci/contract-index-recovery.mjs": "f348be2a919456e08ec9293bfc0f36b6af0be254588d379bfd3cca297e55bd7c",
     "scripts/ci/contract-index-recovery.test.mjs": "c8f09af1ecbcdfdd74594ea79276a5d1721fd8122a7db5ea22bc32481e3ba55e",
     "scripts/ci/apply-recorded-migration.mjs": "9f8decd52f72c8894baf565f3aa150397cc10bca2489f3b1b0812d2f91caf307",
@@ -30,5 +30,14 @@
     "ordering": "Exact failed HASH275 removal; new Boolean proof_gate_hand Btree build/validation; old proof-hand271 retirement last, one shared600s. Real original non-inlined SQL function uses bounded week-to-Boolean-hand lookup with0 read-time proof evaluations; index build computes proof MD5 once per global row. Valid-selector continuation never rebuilds/drops it; completed physical state resumes only pure qualification/same-byte atomic history.",
     "sourceOwners": "All functions including original 0c3 linked reader and all source65/generation owners unchanged.",
     "capacityLimit": "Native counter and plans only; production duration not certified."
+  },
+  "workflowClosingMarginAudit20261031": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639",
+    "currentSHA256": "61789751ea646f39e5572f7ae7fb6ab84d70e506ba76ab26989c5f160065405d",
+    "reviewedWorkflowCommit": "3fe040de1a0d064690bf353119860371c9bf40a0",
+    "change": "Only the existing job cap changes10 to11 minutes plus a measured closing-margin comment. Parsed YAML equality confirms all30 steps, commands, triggers, free Ubuntu, concurrency and failure behavior are identical.",
+    "evidence": "Run41224174509/job124604739907 completed every declared qualification at9m58s and cleanup at9m59s, then explicit10m maximum cancelled its verdict. Prior run41222243369 succeeded in8m42s as a comparable same-workflow baseline; whole hosted merge-input equality is not claimed.",
+    "qualificationBoundary": "Reviewed active workflow-source maintenance only. All other pins, historical audits, source/corpus/runtime/deadline/money identities and old qualification tuples remain unchanged. No new financial/native/production certification; required current-head hosted qualification remains pending."
   }
 }

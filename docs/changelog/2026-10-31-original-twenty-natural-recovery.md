@@ -47,3 +47,10 @@ remain identical. Prior run41222243369 passed in8m42s as a comparable same-
 workflow baseline; whole hosted merge-input equality is not claimed. This
 changes no native runtime deadline, financial rule, weekly STOP or production
 operation.
+
+Nine maintained active source bindings pin that workflow. Their workflow hash
+is rebound with a per-file closing-margin audit after full diff/semantic review.
+Every other preexisting JSON value, historical audit, source/corpus/runtime/
+deadline/money identity and old qualification tuple is preserved. This is not
+a relabelled financial or production certificate; current required CI remains
+the qualification route.

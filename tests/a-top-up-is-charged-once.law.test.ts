@@ -70,7 +70,8 @@ describe('LAW 1 - every caller passes a key', () => {
     // The key is the second argument; a third (`{ source: 'auto' }`, so the
     // engine's "already at the maximum" refusal is a silent no-op for the
     // automatic path, 2026-09-08) may follow it.
-    expect(block).toMatch(/handleAddChips\(topUpAmount,\s*autoTopUpKeyRef\.current\.key[,)]/);
+    expect(block).toMatch(/handleAddChips\(request\.amount,\s*request\.key[,)]/);
+    expect(block).toContain('autoTopUpRequest(autoTopUpKeyRef.current, topUpHand, topUpAmount)');
   });
 
   it('the manual cashier mints and sends one', () => {
@@ -98,7 +99,7 @@ describe('LAW 2/3 - held across retries, keyed by amount, released when spent', 
     expect(block).toMatch(
       /if \(!autoTopUpKeyRef\.current \|\| autoTopUpKeyRef\.current\.hand !== topUpHand\)/
     );
-    expect(block).toContain('crypto.randomUUID()');
+    expect(read('src', 'utils', 'autoTopUpRequest.ts')).toContain('crypto.randomUUID()');
     /* And the amount itself is sized to the table's own unit before it is
        ever sent. A chip amount must be a cent amount: an unrounded float
        reaches `atomic_table_addon`, which stores it verbatim, and a non-cent

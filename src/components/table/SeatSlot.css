@@ -4690,8 +4690,11 @@
    shorter felt draws proportionally smaller players instead of stacking them.
    The plate keeps the readable name and stack at a slightly smaller size.
    tableGeometry.ts `seatPodPx(..., { seats, canvasHeightPx })` mirrors these
-   numbers for chip and button clearance; change both together. */
-@media (max-width: 480px) and (orientation: portrait) {
+   numbers for chip and button clearance; change both together.
+   Production phones use a desktop-reference viewport near 600px. This same
+   portrait card-lane boundary must include them: the old 480px cutoff left
+   full-size normalized bust art over the community cards. */
+@media (max-width: 768px) and (orientation: portrait) {
   .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
     .seat-wrapper:not(.seat-wrapper--hero)
     .seat {

@@ -296,6 +296,8 @@ describe.each([
 describe('the engine derives the money door from the table it loaded', () => {
   function engineFor(table: TableRow, seated: Array<Record<string, unknown>>) {
     const engine = new ServerTableEngine(table.id) as any;
+    engine.readCashAddonReceipt = vi.fn(async () => null);
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = table;
     engine.seatedPlayers = seated;
     engine.lifecycleCanMutate = () => true;

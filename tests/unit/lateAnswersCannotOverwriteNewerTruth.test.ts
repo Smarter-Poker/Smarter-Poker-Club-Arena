@@ -56,7 +56,10 @@ describe('the balance write fence', () => {
     expect(src).not.toMatch(/setAccountBalance\(\(prev\)/);
     // Cash confirmation now re-reads the authoritative balance because a lost
     // response may already have delivered its debit through Realtime.
-    expect((src.match(/applyBalanceDelta\(\(prev\)/g) ?? []).length).toBeGreaterThanOrEqual(1);
+    // Top-up/refund arithmetic was removed: invalidate through the same fence,
+    // then accept only a recorded absolute balance at the issued revision.
+    expect(src).toContain('applyBalanceDelta(() => null);');
+    expect(src).toContain('setBalanceIfCurrent(revision, funding.balance);');
     const cash = src.slice(
       src.indexOf('onConfirmBuyIn={'),
       src.indexOf('onConfirmBuyIn={') +

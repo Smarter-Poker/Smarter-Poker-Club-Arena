@@ -151,6 +151,7 @@ import {
 } from './HorseOpponentExploit.js';
 // V7 (2026-07-24): position-pair preflop mastery — 3-bet/4-bet bluffs, blind
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
+import { gtoOpenBar, gtoOpenStrength, gtoSbLimpFloor } from './HorseGtoOpeningRanges.js';
 import {
   decidePreflopV7,
   ploRaiseTo,
@@ -716,13 +717,15 @@ export function resolveHorseStyle(
 
 type PositionClass = 'early' | 'middle' | 'late' | 'sb' | 'bb';
 
-function classifyPosition(
+/** Dealt-in seats clockwise from the seat after the dealer (SB, BB, UTG, ...,
+ *  BTN). Null when there is no dealer or fewer than two dealt in. */
+function dealtSeatOrder(
   heroSeat: number,
   dealerSeat: number | undefined,
   players: SeatPlayer[],
   v13: boolean = true,
   allPlayersDealt: boolean = false
-): PositionClass {
+): number[] | null {
   // ── V13 (2026-08-23): position comes from who was DEALT IN ───────────────
   // Filtering on `!is_folded` derived position from who is still LIVE, so
   // every fold between the button and the actor compressed the ring and
@@ -744,7 +747,7 @@ function classifyPosition(
     .filter((p) => (v13 ? dealtIn(p) : !p.is_folded || p.seat === heroSeat))
     .map((p) => p.seat)
     .sort((a, b) => a - b);
-  if (dealerSeat === undefined || inHand.length < 2) return 'middle';
+  if (dealerSeat === undefined || inHand.length < 2) return null;
 
   // Order seats clockwise starting after the dealer: SB, BB, UTG, ..., BTN
   const after = (seat: number) => {
@@ -759,6 +762,18 @@ function classifyPosition(
     cur = nxt;
     if (order.length > 1 && nxt === order[0]) break;
   }
+  return order;
+}
+
+function classifyPosition(
+  heroSeat: number,
+  dealerSeat: number | undefined,
+  players: SeatPlayer[],
+  v13: boolean = true,
+  allPlayersDealt: boolean = false
+): PositionClass {
+  const order = dealtSeatOrder(heroSeat, dealerSeat, players, v13, allPlayersDealt);
+  if (!order) return 'middle';
   const idx = order.indexOf(heroSeat);
   const n = order.length;
   if (idx === -1) return 'middle';
@@ -813,6 +828,33 @@ function classifyGamePosition(heroSeat: number, gs: HorseGameStateV2, v13 = true
     v13,
     hasCensus || gs.tournament?.schemaVersion === 1
   );
+}
+
+/**
+ * V70: dealt-in players still to act behind hero preflop, blinds included
+ * (SB 1, BTN 2, CO 3, ... 9-handed UTG 8; the big blind 0). Null when the
+ * seat order is unknown. Read from the same dealt census as the position.
+ */
+function preflopPlayersBehind(heroSeat: number, gs: HorseGameStateV2, v13 = true): number | null {
+  const hasCensus = gs.dealtSeatIds !== undefined;
+  const players = hasCensus
+    ? horsePolicyDealtPlayers(gs.players, heroSeat, gs.dealtSeatIds)
+    : gs.players;
+  const order = dealtSeatOrder(
+    heroSeat,
+    gs.dealerSeat,
+    players,
+    v13,
+    hasCensus || gs.tournament?.schemaVersion === 1
+  );
+  if (!order) return null;
+  const n = order.length;
+  const idx = order.indexOf(heroSeat);
+  if (idx === -1) return null;
+  if (n === 2) return heroSeat === gs.dealerSeat ? 1 : 0;
+  if (idx === 0) return 1;
+  if (idx === 1) return 0;
+  return n - 1 - idx + 2;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2127,6 +2169,11 @@ export interface HorseDecideOpts {
   v57TournamentAggression?: boolean;
   /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
   v60CashPressure?: boolean;
+  /** V70 (2026-10-31): Hold'em raise-first-in reads the hand on the seat's
+   *  own GTO reference order (by dealt-in players behind) with per-seat
+   *  target widths; the jam-or-fold zones are untouched. Default on;
+   *  explicit false keeps today's open. */
+  v70GtoOpeningRanges?: boolean;
   /** V65 (2026-10-31): Hold'em one-pair TURN calls of a wager hero did not
    *  initiate are shaded by the price, zero at a quarter-pot wager and
    *  12 points from a pot-sized one, before the call test. Draws, the
@@ -5359,7 +5406,10 @@ export class HorseLogic {
         ? shortDeckPreflopStrength(player.cards[0], player.cards[1])
         : holdemPreflopScore(player.cards[0], player.cards[1], false);
     else strength = 0.3;
-    strength = clamp01(strength + (fastRandom() * 0.06 - 0.03));
+    // V70 reuses the same draw for the open strength, so the RNG stream is
+    // identical with the flag on and off.
+    const strengthJitter = fastRandom() * 0.06 - 0.03;
+    strength = clamp01(strength + strengthJitter);
 
     const history = (gs.actionHistory || []).filter((a) => a.stage === 'preflop');
     let raises = 0;
@@ -6251,7 +6301,32 @@ export class HorseLogic {
       }
     })();
     if (ploIcm53 && telemetryOn(opts)) noteFire('v53_plo_icm');
+    // ═══ V70 GTO OPENING RANGES (2026-10-31) ═══ folded to a no-limit
+    // hold'em seat (two or more dealt in), the open reads the hand on the
+    // seat's own reference order (HorseGtoOpeningRanges). Players behind come
+    // from the dealt census, never from who they are.
+    const gtoOpen70 = (() => {
+      if (opts.v70GtoOpeningRanges === false) return undefined;
+      if (raises !== 0 || limpers !== 0 || player.cards.length !== 2) return undefined;
+      if (vi.isOmaha || vi.isShortDeck || vi.isFixedLimit || vi.isPotLimit) return undefined;
+      if (gs.allInOrFold === true || gs.straddleActive === true) return undefined;
+      const dealt70 = dealtHorseTableSize(gs, player.seat);
+      if (dealt70 < 2) return undefined;
+      const behind = preflopPlayersBehind(player.seat, gs, opts.v13 !== false);
+      if (behind === null || behind < 1) return undefined;
+      const mapped = gtoOpenStrength(player.cards[0], player.cards[1], behind);
+      if (mapped === null) return undefined;
+      const ante70 = (gs.ante ?? 0) > 0;
+      if (telemetryOn(opts)) noteFire('v70_gto_open');
+      return {
+        strength: clamp01(mapped + strengthJitter),
+        bar: gtoOpenBar(behind, ante70, dealt70),
+        sbLimpFloor: gtoSbLimpFloor(ante70, dealt70),
+        behind,
+      };
+    })();
     const intent = decidePreflopV7({
+      ...(gtoOpen70 ? { gtoOpen: gtoOpen70 } : {}),
       ...(ploIcm53 ? { ploIcm: ploIcm53.shifts } : {}),
       strength,
       position,

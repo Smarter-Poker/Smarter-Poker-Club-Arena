@@ -1,0 +1,70 @@
+name: Explicit Original89 Operator Control
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [prepare, read, abort_read, abort_ack, abort_settle]
+        required: true
+      tournament_id:
+        description: Exact original20 for recovery, exact other69 for original abort
+        type: string
+        required: true
+      nonce:
+        description: Same recovery UUID for prepare, read and canonical DB request
+        type: string
+        required: true
+      expected_engine_sha:
+        description: Actually sealed containing full engine SHA, independently verified by operator
+        type: string
+        required: true
+      expected_instance:
+        description: Actual current process instance
+        type: string
+        required: true
+      expected_generation:
+        description: Current canonical tournament lease generation
+        type: string
+        required: true
+      expected_money_hash:
+        description: Required only for abort_settle, exact independently reviewed current money hash
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: original20-control-${{ inputs.tournament_id }}
+  cancel-in-progress: false
+jobs:
+  explicit-control:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: One exact operator action and durable readback, never a release
+        env:
+          RECOVERY_ACTION: ${{ inputs.action }}
+          RECOVERY_EVENT: ${{ inputs.tournament_id }}
+          RECOVERY_NONCE: ${{ inputs.nonce }}
+          EXPECTED_ENGINE_SHA: ${{ inputs.expected_engine_sha }}
+          EXPECTED_INSTANCE: ${{ inputs.expected_instance }}
+          EXPECTED_GENERATION: ${{ inputs.expected_generation }}
+          EXPECTED_MONEY_HASH: ${{ inputs.expected_money_hash }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RECOVERY_RECEIPT_PATH: ${{ runner.temp }}/original20-control/receipt.json
+        run: node .github/scripts/tournament-original-recovery-control.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original20-control-${{ github.run_id }}
+          path: ${{ runner.temp }}/original20-control/receipt.json
+          if-no-files-found: error
+          retention-days: 7

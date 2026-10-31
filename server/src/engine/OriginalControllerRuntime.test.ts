@@ -2003,3 +2003,34 @@ it.each([
     }
   }
 );
+
+it('prepares recovery from the claimed original before any new-hand admission is needed', async () => {
+  const { e, claimed, writer } = await delayedFundedChairFixture();
+  const controller = e.handController;
+  const bank = structuredClone(e.timeBankEngine.getPlayerBank(e.tableId, 'u1'));
+  // The native DB contract independently proves reserved originals bypass the
+  // abort floor read. This executes the real read, crash adoption and manager.
+  timeBankRpc.mockResolvedValue({ data: { hold: null, close: null }, error: null });
+  await e.refreshOperatorFloor();
+  expect(await e.checkCrashRecovery()).toBe(true);
+  const manager = new OriginalBarrierHarness(false) as any;
+  manager.tournamentLeaseGeneration = writer;
+  vi.spyOn(manager, 'hasCurrentTournamentLeaseAuthority').mockReturnValue(true);
+  manager.add(e.tableId, e);
+  const prepared = manager.prepareTournamentOriginalRecovery(
+    'd44c4440-2911-430c-8ee7-376611ef3f38',
+    'nonce'
+  );
+  expect(prepared).toMatchObject({
+    state: 'prepared',
+    current_generation: writer,
+    custody_certified: false,
+  });
+  expect(e.pendingOriginalContinuation).toBe(claimed);
+  expect(e.handController).toBe(controller);
+  expect(e.timeBankEngine.getPlayerBank(e.tableId, 'u1')).toEqual(bank);
+  expect(e.operatorFloorPaused).toBe(false);
+  expect(manager.tournamentAbortActuationAllowed()).toBe(false);
+  manager.tableEngines.clear();
+  await manager.stop();
+});

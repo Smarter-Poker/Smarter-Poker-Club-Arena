@@ -9489,6 +9489,75 @@ export abstract class TournamentManagerBase {
 
   private tournamentAbortBoundary: TournamentAbortBoundary | null = null;
   private tournamentAbortRetirementReleased = false;
+  private tournamentOriginalRecoveryPreparation: {
+    operationId: string;
+    nonce: string;
+    generation: string;
+  } | null = null;
+
+  /** Explicit operator preflight only: fence abort actuation, never hand play.
+   * A prepared receipt is NOT a custody, release or financial certificate.
+   * No shutdown fence is lifted and no cached abort coordinator is resurrected.
+   */
+  prepareTournamentOriginalRecovery(operationId: string, nonce: string) {
+    const generation = this.getTournamentLeaseGeneration();
+    if (
+      !generation ||
+      !this.hasCurrentTournamentLeaseAuthority() ||
+      this.tournamentAbortBoundary !== null ||
+      this.tournamentAbortRetirementReleased ||
+      this.stopFenceApplied ||
+      this.shutdownDrainFenceApplied ||
+      this.teardownPromise ||
+      this.tableEngines.size === 0
+    )
+      throw new Error('original_recovery_current_unfenced_owner_required');
+    const prior = this.tournamentOriginalRecoveryPreparation;
+    if (
+      prior &&
+      (prior.operationId !== operationId ||
+        prior.nonce !== nonce ||
+        prior.generation !== generation)
+    )
+      throw new Error('original_recovery_preparation_identity_reused');
+    this.tournamentOriginalRecoveryPreparation = prior ?? { operationId, nonce, generation };
+    return {
+      state: 'prepared',
+      operation_id: operationId,
+      tournament_id: this.tournamentId,
+      nonce,
+      current_generation: generation,
+      abort_fenced: true,
+      custody_certified: false,
+      disposition_committed: false,
+    };
+  }
+
+  readTournamentOriginalRecoveryPreparation(operationId: string, nonce: string) {
+    const prior = this.tournamentOriginalRecoveryPreparation;
+    if (
+      !prior ||
+      prior.operationId !== operationId ||
+      prior.nonce !== nonce ||
+      prior.generation !== this.getTournamentLeaseGeneration() ||
+      !this.hasCurrentTournamentLeaseAuthority()
+    )
+      throw new Error('original_recovery_preparation_not_current');
+    return {
+      state: 'prepared',
+      operation_id: operationId,
+      tournament_id: this.tournamentId,
+      nonce,
+      current_generation: prior.generation,
+      abort_fenced: true,
+      custody_certified: false,
+      disposition_committed: false,
+    };
+  }
+
+  tournamentAbortActuationAllowed(): boolean {
+    return this.tournamentOriginalRecoveryPreparation === null;
+  }
 
   retainsTournamentAbortBoundary(): boolean {
     return (
@@ -9573,14 +9642,11 @@ export abstract class TournamentManagerBase {
       request.current_generation !== this.tournamentLeaseGeneration
     )
       throw new Error('tournament_abort_owner_mismatch');
-    if (this.tournamentAbortBoundary) {
-      if (this.tournamentAbortBoundary.request.operation_id !== request.operation_id)
-        throw new Error('tournament_abort_operation_already_owned');
-      // GameServer already read an ineffective current DB certificate. Keep
-      // the same originals but re-prove rather than replaying a stale ACK.
-      return this.tournamentAbortBoundary.run(true);
-    }
+    if (!this.tournamentAbortActuationAllowed())
+      throw new Error('operator_abort_withdrawn_for_original_recovery');
     await this.joinTournamentAbortOwnedTails();
+    if (!this.tournamentAbortActuationAllowed())
+      throw new Error('operator_abort_withdrawn_for_original_recovery');
     const tailIdentity = this.tournamentAbortOwnedTailIdentity();
     const { data: fresh, error: readError } = await supabase.rpc(
       'fn_ca_tournament_abort_stop_state',
@@ -9597,6 +9663,9 @@ export abstract class TournamentManagerBase {
       !Array.isArray(fresh.tables)
     )
       throw new Error('tournament_abort_request_read_unknown');
+    // Read canonical disposition before even an old cached coordinator runs.
+    if (fresh.state === 'recovery' || !this.tournamentAbortActuationAllowed())
+      throw new Error('operator_abort_withdrawn_for_original_recovery');
     if (
       fresh.current_generation !== request.current_generation ||
       !isDeepStrictEqual(fresh.tables, request.tables) ||
@@ -9635,6 +9704,7 @@ export abstract class TournamentManagerBase {
       });
     const current = () =>
       this.hasCurrentTournamentLeaseAuthority() &&
+      this.tournamentAbortActuationAllowed() &&
       !this.stopFenceApplied &&
       this.tournamentAbortSourcesMatch(originals) &&
       this.tableEngines.size === originals.length &&

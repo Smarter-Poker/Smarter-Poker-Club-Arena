@@ -2042,9 +2042,10 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           E2E_REQUIRE_AUTH: '1'
-          # Observe the assigned live Diamond club; setup joins this same target
-          # through the public player door before the spectator cases run.
-          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          # Observe chip cash games through the prepared Midway member club.
+          # Diamond Arena disables play and cannot supply the cash witness
+          # (run 41168425572). Setup joins this same public player door.
+          E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
           # The SPIN and SNG subjects are hosted only by the fixture union, and
           # public.tables carries a RESTRICTIVE policy (poker_arena_table_access)
           # that hides a union table from an account with no membership inside

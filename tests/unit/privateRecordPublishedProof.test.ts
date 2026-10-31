@@ -75,7 +75,7 @@ const browserEvidence = () => ({
   readerReadback: true,
   visibleAvatarReadback: true,
   engineReadyAfterRestore: true,
-  engineRecordChangedAfterRestore: true,
+  gatewayRecordChangedAfterRestore: true,
   secondVisibleAvatarReadback: true,
   faultRestored: true,
   cosmeticWrites: 2,
@@ -87,10 +87,10 @@ const browserEvidence = () => ({
     matchingChangedFrames: 0,
     observedFrames: 0,
   },
-  gatewayRetirement: {
-    openSocketsBeforeSecondWrite: 0,
-    openSocketsAfterSecondWrite: 0,
-    matchingSignalsAfterRetirement: 0,
+  gatewayRetention: {
+    openSocketsBeforeSecondWrite: 1,
+    openSocketsAfterSecondWrite: 1,
+    matchingChangesAfterRecovery: 1,
   },
   observationsOverflow: false,
   paidRetirementQualified: false,
@@ -219,6 +219,7 @@ describe('finite published record client proof admission and verdict', () => {
     });
     for (const patch of [
       { gatewayReadyAfterFault: false },
+      { gatewayRecordChangedAfterRestore: false },
       { genuineSession: false },
       { readerReadback: false },
       { faultRestored: false },
@@ -233,12 +234,19 @@ describe('finite published record client proof admission and verdict', () => {
           observedFrames: 0,
         },
       },
-      { gatewayRetirement: undefined },
+      { gatewayRetention: undefined },
       {
-        gatewayRetirement: {
+        gatewayRetention: {
+          openSocketsBeforeSecondWrite: 1,
+          openSocketsAfterSecondWrite: 1,
+          matchingChangesAfterRecovery: 0,
+        },
+      },
+      {
+        gatewayRetention: {
           openSocketsBeforeSecondWrite: 0,
           openSocketsAfterSecondWrite: 0,
-          matchingSignalsAfterRetirement: 1,
+          matchingChangesAfterRecovery: 1,
         },
       },
       { observationsOverflow: true },

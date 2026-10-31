@@ -40,6 +40,7 @@ import { useTournamentRegistration } from '../../src/hooks/useTournamentRegistra
 const tournament = { id: 'event', name: 'Event', buy_in_amount: 10, status: 'RUNNING' };
 beforeEach(() => {
   vi.resetAllMocks();
+  sessionStorage.clear();
   vi.useFakeTimers();
   m.register.mockResolvedValue({ id: 'entry', table_id: 'own-table' });
 });
@@ -57,6 +58,7 @@ describe('a committed registration keeps its result through presentation failure
       });
     });
     expect(m.register).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem('ca_tourney_entered:player:event')).toBe('1');
     expect(m.navigate).toHaveBeenCalledWith('/table/own-table');
     expect(m.error).not.toHaveBeenCalled();
     expect(m.report).toHaveBeenCalledWith(error, 'useTournamentRegistration.onSuccess', {

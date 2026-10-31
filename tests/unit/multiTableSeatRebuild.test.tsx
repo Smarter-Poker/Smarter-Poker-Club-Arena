@@ -1,7 +1,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { clearSessionSummary, peekSessionSummary } from '../../src/services/pendingSessionSummary';
 
 type QueryResult = { data: unknown; error: unknown };
@@ -233,7 +233,13 @@ import {
 import { masterBus } from '../../src/core/MasterBus';
 
 function Location() {
-  return <output data-testid="location">{useLocation().pathname}</output>;
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location">{useLocation().pathname}</output>
+      <button onClick={() => navigate('/table/A')}>Enter Assigned Tournament</button>
+    </>
+  );
 }
 function page() {
   return (
@@ -287,6 +293,15 @@ afterEach(() => {
 });
 
 describe('Rendered MultiTable authoritative seat rebuild', () => {
+  it('enters the assigned game when its URL is already borrowed by the lobby', async () => {
+    await seatA();
+    await act(async () => masterBus.emit('OPEN_LOBBY_TAB', {}));
+    expect(screen.getByTestId('tabs').getAttribute('data-active')).not.toBe('A');
+    expect(screen.getByTestId('location').textContent).toBe('/table/A');
+    fireEvent.click(screen.getByText('Enter Assigned Tournament'));
+    await waitFor(() => expect(screen.getByTestId('tabs').getAttribute('data-active')).toBe('A'));
+    expect(screen.getByTestId('felt-A')).toBeTruthy();
+  });
   it('hands the game session over before a verified tournament seat insertion replaces the felt', async () => {
     await seatA();
     state.metadataResults.push({

@@ -653,13 +653,22 @@ describe('the member record survives a failed background refresh', () => {
   });
 
   it('refreshes downline fee rows on the committed record event without a range change', async () => {
-    render(<MemberManagementPage />);
+    // The row may paint before the resolved-club passive effect installs its
+    // authority refresh owner. Deliver the one-shot event after that owner is ready.
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
     expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    await act(async () => {});
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(1);
+    expect(state.getDownline).toHaveBeenCalledTimes(1);
     state.getDownline.mockResolvedValueOnce([
       { user_id: 'child', alias: 'Updated Downline', role: 'player', total_fees: 7.22 },
     ]);
     await authorityEvent();
     expect(await screen.findByText('Updated Downline')).toBeVisible();
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(2);
+    expect(state.getDownline).toHaveBeenCalledTimes(2);
     expect(state.getDownline.mock.calls.at(-1)![3]).toEqual({ from: null, to: null });
   });
 

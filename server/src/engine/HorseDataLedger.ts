@@ -733,7 +733,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'v62RiverBettorPolarity',
-    '2026-10-30 Hold\'em river bettor polarity: a river wager\'s sampled hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum by bet size; OPT-IN since 18:50 UTC after the mirror league resolved it negative against horses (-3.67 +/- 1.02 bb/100 at 200bb) while V61 alone resolved +1.30 +/- 0.41; re-enable only after a recalibrated stratum resolves positive',
+    "2026-10-30 Hold'em river bettor polarity: a river wager's sampled hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum by bet size; OPT-IN since 18:50 UTC after the mirror league resolved it negative against horses (-3.67 +/- 1.02 bb/100 at 200bb) while V61 alone resolved +1.30 +/- 0.41; re-enable only after a recalibrated stratum resolves positive",
     'V62'
   ),
   flag(
@@ -745,6 +745,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'v60CashPressure',
     'Dan 2026-10-24 NLH cash pressure: blinds and late position value 3-bet a single open from their measured hand shares, re-steal volume matches the tournament layer, and the opener defends a 3-bet from the top 10% in position and top 8% out of it up to 100bb; explicit off arm retained for the neutrality corpus',
     'V60'
+  ),
+  flag(
+    'v65TurnOnePairShade',
+    '2026-10-31 Hold em one-pair (or board-paired two pair) TURN calls of a wager hero did not initiate are shaded by the price, zero at a quarter-pot wager and 12 points from a pot-sized one, off the equity handed to the call test; draws, the raised-after-own-bet branch and a measured over-bluffer read are untouched; measured 7-day review hands: cash n=1,727 won 33% (about -308,000bb/week), tournament n=1,542 won 37% (about -185,000bb/week); explicit off arm retained',
+    'V65'
+  ),
+  flag(
+    'v65TurnShadeCapOverride',
+    'League-only cap override for the V65 turn shade (0.12 shipped; 0.08 fallback cut); production never sets it',
+    'V65-league'
   ),
   flag(
     'v52RangeAdvantage',
@@ -2148,6 +2158,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.002
   ),
   receipt(
+    'v65_turn_one_pair_shade',
+    'HorseLogic (V65)',
+    'Hold em one-pair turn call of a wager hero did not initiate, shaded against the price',
+    'V65',
+    'decide',
+    0.001
+  ),
+  receipt(
     'v38_preflop_allin_price',
     'HorseLogic.decidePreflop',
     'preflop all-in priced against the complete committed population with actor-aligned range bands',
@@ -3351,8 +3369,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   receipt(
     'v62_river_bettor_polarity',
-    'HorseLogic to HorseEval river-polar Hold\'em sampler',
-    'a river bettor\'s sampled hand was kept by the V62 size-class likelihood that a human bets it',
+    "HorseLogic to HorseEval river-polar Hold'em sampler",
+    "a river bettor's sampled hand was kept by the V62 size-class likelihood that a human bets it",
     'V62',
     'decide',
     0.001

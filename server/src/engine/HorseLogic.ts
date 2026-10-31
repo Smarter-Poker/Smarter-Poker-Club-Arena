@@ -2070,6 +2070,15 @@ export interface HorseDecideOpts {
   v57TournamentAggression?: boolean;
   /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
   v60CashPressure?: boolean;
+  /** V65 (2026-10-31): Hold'em one-pair TURN calls of a wager hero did not
+   *  initiate are shaded by the price, zero at a quarter-pot wager and
+   *  12 points from a pot-sized one, before the call test. Draws, the
+   *  committed / raised-after-own-bet branch and a measured over-bluffer
+   *  read are untouched. Default on; explicit false keeps today's call bar. */
+  v65TurnOnePairShade?: boolean;
+  /** V65 league-only cap override (0.12 shipped; 0.08 is the fallback cut).
+   *  Production never sets it. */
+  v65TurnShadeCapOverride?: number;
   /** V62 (2026-10-30) Hold'em river bettor polarity: a river wager's sampled
    *  hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum
    *  by bet size (HorseEval V62_BLUFF_SHARE / V62_VALUE_MIX), placed exactly
@@ -3740,6 +3749,51 @@ export function hasStrongPressureDraw(
       if (top > 0 && top > boardTop) straightOuts++;
     }
   return (nutFlush && (straightOuts >= 4 || made >= 2)) || (straightOuts >= 8 && made >= 2);
+}
+
+/**
+ * The hold'em draw read the V38 barrel continuation has always used: four
+ * cards to a suit, or four distinct ranks inside one five-rank window (an
+ * open-ender or a gutshot), across hole and board together. Shared with V65
+ * so a one-pair hand that also draws is priced as a draw, not a bluff-catch.
+ */
+export function holdemDrawPresent(hole: Card[], board: Card[]): boolean {
+  const suits = new Map<string, number>();
+  for (const c of [...hole, ...board]) suits.set(c.suit, (suits.get(c.suit) ?? 0) + 1);
+  const ranks = [...new Set([...hole, ...board].map((c) => RANK_VALUES[c.rank] ?? 0))];
+  if (ranks.includes(14)) ranks.push(1);
+  return (
+    [...suits.values()].some((n) => n >= 4) ||
+    Array.from({ length: 10 }, (_, i) => i + 1).some(
+      (lo) => ranks.filter((r) => r >= lo && r <= lo + 4).length >= 4
+    )
+  );
+}
+
+/**
+ * ═══ V65 ONE-PAIR TURN CALL SHADE (2026-10-31) ═══
+ * How far a hold'em one-pair turn call of a wager hero did not initiate is
+ * priced below its raw read, by the price faced: r = toCall over the pot it
+ * is called into (`pot` inside decide already holds the wager, so a
+ * quarter-pot wager is r = 0.2, a 0.4-pot wager 0.29, a 0.7-pot wager 0.41,
+ * a pot-sized wager 0.5). Measured over 7 days of NLH review hands (12%
+ * sample, |net| >= 20bb): cash top-pair turn calls won 50% under 0.4 pot
+ * (break-even), 44% at 0.4-0.7, 29% at 0.7-1.05 and 23% from 1.05 up,
+ * against the ~29/41/50% the price demands; under pair 36/31/21/19%; the
+ * tournament table has the same shape. The horse folded the turn to a second
+ * barrel 3% (top pair) / 9% (under pair) of the time. Zero at a quarter-pot
+ * wager, 12 points from a pot-sized wager, which leaves the break-even small
+ * class nearly untouched (3.6 points at 0.4 pot) and takes 8.4 at 0.7 pot.
+ */
+export const V65_TURN_SHADE_CAP = 0.12;
+export const V65_TURN_SHADE_SLOPE = 0.4;
+export function v65TurnOnePairShade(
+  toCall: number,
+  pot: number,
+  cap: number = V65_TURN_SHADE_CAP
+): number {
+  if (!(toCall > 0) || !(pot > 0) || !(cap > 0)) return 0;
+  return Math.min(cap, Math.max(0, (toCall / pot - 0.2) * V65_TURN_SHADE_SLOPE));
 }
 
 /**
@@ -10248,31 +10302,7 @@ export class HorseLogic {
     ) {
       const opp = opponents[0];
       const read = HorseMind.opponentRead(opp.user_id)?.stats.betCheckedTo;
-      const suits = new Map<string, number>();
-      for (const c of [...player.cards, ...board]) suits.set(c.suit, (suits.get(c.suit) ?? 0) + 1);
-      const ranks = [
-        ...new Set(
-          [...player.cards, ...board].map((c) =>
-            c.rank === 'A'
-              ? 14
-              : c.rank === 'K'
-                ? 13
-                : c.rank === 'Q'
-                  ? 12
-                  : c.rank === 'J'
-                    ? 11
-                    : c.rank === 'T'
-                      ? 10
-                      : Number(c.rank)
-          )
-        ),
-      ];
-      if (ranks.includes(14)) ranks.push(1);
-      const nlhDraw =
-        [...suits.values()].some((n) => n >= 4) ||
-        Array.from({ length: 10 }, (_, i) => i + 1).some(
-          (lo) => ranks.filter((r) => r >= lo && r <= lo + 4).length >= 4
-        );
+      const nlhDraw = holdemDrawPresent(player.cards, board);
       const omahaDraw = vi.isOmaha ? drawInfo40() : null;
       const drawing = vi.isOmaha
         ? !!omahaDraw &&
@@ -10330,6 +10360,49 @@ export class HorseLogic {
       gs.maxRaiseTo >= gs.minRaiseTo &&
       gs.minRaiseTo > currentBet &&
       hasStrongPressureDraw(player.cards, board, gs.gameVariant, vi.isOmaha ? drawInfo40() : null);
+    // ═══ V65 ONE-PAIR TURN CALL SHADE (2026-10-31) ═══ Hold'em, one board:
+    // a one-pair hand (or two pair sharing the board's pair) with no draw,
+    // calling a turn wager it did not initiate, is a bluff-catcher priced
+    // against the same bluff-heavy range read V61 corrected on the river.
+    // The heuristic line below charged a pot-sized barrel six points above
+    // pot odds (sizingPenalty caps at 0.06) and an overbet no more. Measured
+    // over 7 days of NLH review hands (12% sample, |net| >= 20bb): turn
+    // one-pair calls of a bet hero did not make were cash n=1,727, 33% won,
+    // about -308,000bb a week, tournament n=1,542, 37% won, about -185,000bb;
+    // by size (cash, top pair) 50% won under 0.4 pot, 44% at 0.4-0.7, 29% at
+    // 0.7-1.05, 23% from 1.05 up; the >= 0.7-pot cells alone were -302,000bb.
+    // The shade scales with the price from zero at a quarter-pot wager to its
+    // cap at a pot-sized one and is subtracted from the equity handed to the
+    // call test, so the call bar, not a hard fold, decides. Withheld when the
+    // bettor reads as a measured over-bluffer (callDownMod above 1), for a
+    // hand with a flush or straight draw (that is a draw, priced as one), and
+    // after hero's own wager was raised (the committed branch above owns
+    // that line). Omaha, short deck, multiple boards and bomb pots keep
+    // their own pricing; the river keeps V61.
+    let shade65 = 0;
+    if (
+      (opts.v65TurnOnePairShade ?? true) !== false &&
+      street === 'turn' &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !multiBoard36 &&
+      !gs.bombPot &&
+      !raisedAfterAggr &&
+      exploit.callDownMod <= 1 &&
+      cat > 0 &&
+      (cat <= 2 || (cat === 3 && pairedBoard)) &&
+      toCall > 0 &&
+      pot > 0 &&
+      !holdemDrawPresent(player.cards, board)
+    ) {
+      shade65 = v65TurnOnePairShade(
+        toCall,
+        pot,
+        opts.v65TurnShadeCapOverride ?? V65_TURN_SHADE_CAP
+      );
+      if (shade65 > 0 && tele15) noteFire('v65_turn_one_pair_shade');
+    }
     const solverless38 = vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit;
     if (useEv38 && (isRiver || solverless38 || continuation38 || comboRaise38) && !solverCall32) {
       // the exploit reads, as an equity shift instead of a margin
@@ -10415,7 +10488,10 @@ export class HorseLogic {
         if (tele15) noteFire('combo_draw_pressure_evaluated');
       }
       const verdict38 = evaluateSpot({
-        equity: eqRead38,
+        // V65: the turn one-pair shade, when the barrel continuation priced
+        // this call (a draw never carries the shade, so comboRaise38 is not
+        // affected).
+        equity: clamp01(eqRead38 - shade65),
         pot,
         toCall,
         stack,
@@ -10483,7 +10559,9 @@ export class HorseLogic {
       };
     }
     if (
-      eq15 + impliedBonus >=
+      // V65: the turn one-pair shade comes off the equity, not onto the bar,
+      // so the same line that always decided this call still decides it.
+      eq15 + impliedBonus - shade65 >=
       potOdds + 0.03 * respect + sizingPenalty + posEdge + dominationPenalty
     ) {
       return { action: 'call', amount: toCall, thinkTime: 0 };

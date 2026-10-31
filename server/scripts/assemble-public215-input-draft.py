@@ -18,10 +18,10 @@ import sys
 import uuid
 
 PROTOCOLS = {'training_recipe','source_partition','runtime_parity_protocol','dependency_lock','physics_protocol','feature_schema'}
-PARTITION_SHA = '6d83f6ff85b82df4fb0b698c229ae06e23f4292328df6ece85e1dc45594f79ec'
-SELECTION_SHA = 'b4b725f276faa971f681277caaa1291104446d328183c523dd0ebca183cc8735'
+PARTITION_SHA = '8440d9613fe3013b82f8a1d76150499fbbcb4bf87ee9af0bf4bc8a63430d5427'
+SELECTION_SHA = '973a54525509685a3533e984f9a147087fd16e9620e6a4c2ba77d315728f3797'
 R6_SHA = '3ce35b5cfa4297575ff37c9583091056cd52bfde832afc861741829f291f1269'
-PRODUCER = 'c6341c31eb9ba3530aabe3f923079a53fe4c5aa7'
+PRODUCER = '291a8e5658b6a706066b39fba6c75a714f578695'
 RANKS = '23456789TJQKA'
 DECK = {r+s for r in RANKS for s in 'cdhs'}
 sha = lambda b: hashlib.sha256(b).hexdigest()

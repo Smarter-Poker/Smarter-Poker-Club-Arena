@@ -1718,6 +1718,15 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           MANAGED_GAME_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-managed-game-one-door-postgres.sh
+      # The Hold'em live measure's river one-pair cells are computed in the
+      # database (fn_horse_river_one_pair_calls) and by the TypeScript module;
+      # both read the same fixture hands and must agree cell for cell.
+      - name: River one-pair calls agree between SQL and TypeScript
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: bash scripts/dev/test-horse-river-one-pair-calls.sh
       - name: A chip request approval key belongs to its approver (20261010003544)
         if: matrix.shard == 2
         env:
@@ -3547,6 +3556,13 @@ jobs:
       # job never compiles it, so a type error here used to ship to production.
       - name: TypeScript Check (server)
         run: npx tsc --noEmit
+
+      # server/scripts/*.ts are operator CLIs outside tsconfig.json's rootDir,
+      # so until 2026-10-31 nothing compiled them (the Hold'em live measure CLI
+      # was checked by hand). tsconfig.scripts.json covers them all except the
+      # qualification vitest files, which carried a pre-existing baseline.
+      - name: TypeScript Check (server scripts)
+        run: npx tsc -p tsconfig.scripts.json --noEmit
 
       # BLOCKING. Named explicitly so it is obvious in the job log which
       # regressions are being defended, and so deleting them is a visible diff.

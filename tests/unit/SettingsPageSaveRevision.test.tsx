@@ -15,6 +15,17 @@ const mocks = vi.hoisted(() => ({
   persistAccountSettings: vi.fn(),
   writeSettingsPageCache: vi.fn(() => true),
   updateTableSettings: vi.fn(),
+  profileSettings: null as Record<string, unknown> | null,
+  tableSettings: {
+    isSoundEnabled: true,
+    soundVolume: 70,
+    animationSpeed: 1,
+    cardBack: 'classic_blue',
+    fourColorDeck: false,
+    showPotOdds: false,
+    showTicker: true,
+    confirmAllIn: true,
+  },
   emit: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   settingsStoreState: {
@@ -36,16 +47,7 @@ vi.mock('../../src/lib/authUtils', () => ({
 
 vi.mock('../../src/hooks/useTableSettings', () => ({
   useTableSettings: () => ({
-    settings: {
-      isSoundEnabled: true,
-      soundVolume: 70,
-      animationSpeed: 1,
-      cardBack: 'classic_blue',
-      fourColorDeck: false,
-      showPotOdds: false,
-      showTicker: true,
-      confirmAllIn: true,
-    },
+    settings: mocks.tableSettings,
     updateSettings: mocks.updateTableSettings,
   }),
 }));
@@ -81,7 +83,13 @@ vi.mock('../../src/lib/supabase', () => {
       if (table === 'profiles' && selected.includes('is_vip')) {
         return Promise.resolve({ data: { is_vip: false, tier: null }, error: null });
       }
-      return Promise.resolve({ data: null, error: null });
+      return Promise.resolve({
+        data:
+          table === 'profiles' && selected === 'settings' && mocks.profileSettings
+            ? { settings: mocks.profileSettings }
+            : null,
+        error: null,
+      });
     };
     builder.upsert = () => Promise.resolve({ data: null, error: null });
     return builder;
@@ -144,6 +152,17 @@ import SettingsPage from '../../src/pages/SettingsPage';
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  mocks.profileSettings = null;
+  mocks.tableSettings = {
+    isSoundEnabled: true,
+    soundVolume: 70,
+    animationSpeed: 1,
+    cardBack: 'classic_blue',
+    fourColorDeck: false,
+    showPotOdds: false,
+    showTicker: true,
+    confirmAllIn: true,
+  };
   mocks.settingsStoreState.interfaceThemeScopeReady = true;
   mocks.settingsStoreState.interfaceThemeUserId = 'account-a';
   mocks.settingsStoreState.themePreference = 'dark';
@@ -153,6 +172,51 @@ beforeEach(() => {
 });
 
 describe('Settings Page Save Revision', () => {
+  it('adopts delayed authoritative table settings after the profile read without changing account-only settings', async () => {
+    mocks.profileSettings = { soundEnabled: false, friendAlerts: false };
+    const view = render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <SettingsPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(mocks.writeSettingsPageCache).toHaveBeenCalled());
+    expect(screen.getByRole('checkbox', { name: 'Sound Effects' })).toBeChecked();
+    mocks.tableSettings = { ...mocks.tableSettings, isSoundEnabled: false };
+    view.rerender(
+      <MemoryRouter initialEntries={['/settings']}>
+        <SettingsPage />
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: 'Sound Effects' })).not.toBeChecked()
+    );
+    expect(screen.getByRole('checkbox', { name: 'Friend Alerts' })).not.toBeChecked();
+    expect(mocks.persistAccountSettings).not.toHaveBeenCalled();
+  });
+
+  it('does not replace a manual form edit with a delayed table snapshot', async () => {
+    const save = deferred<{ ok: true }>();
+    mocks.persistAccountSettings.mockReturnValue(save.promise);
+    const view = render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <SettingsPage />
+      </MemoryRouter>
+    );
+    fireEvent.change(await screen.findByRole('slider', { name: 'Sound Volume' }), {
+      target: { value: '25' },
+    });
+    await waitFor(() => expect(mocks.persistAccountSettings).toHaveBeenCalledTimes(1));
+    mocks.tableSettings = { ...mocks.tableSettings, soundVolume: 90, isSoundEnabled: false };
+    view.rerender(
+      <MemoryRouter initialEntries={['/settings']}>
+        <SettingsPage />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole('slider', { name: 'Sound Volume' })).toHaveValue('25');
+    expect(screen.getByRole('checkbox', { name: 'Sound Effects' })).toBeChecked();
+    await act(async () => save.resolve({ ok: true }));
+  });
+
   it('keeps a newer form edit dirty when an older save resolves', async () => {
     const save = deferred<{ ok: true }>();
     const newerSave = deferred<{ ok: true }>();

@@ -297,6 +297,7 @@ def main():
     parser.add_argument('--run-id')
     parser.add_argument('--state-root', default='/var/lib/club-arena')
     args = parser.parse_args()
+    prior = None
     if args.mode in ('entry', 'entry-check', 'disposition', 'announcement-entry'):
         prior = existing_entry(args.request_root, args.run_id, args.target, args.control)
         if prior and not (args.mode == 'entry' and prior.get('phase') == 'announcement'):
@@ -305,9 +306,11 @@ def main():
             print('announced' if prior.get('phase') == 'announcement' else 'entered')
             return
     record = policy(args.repo, args.target, args.control)
-    if args.mode not in ('checkpoint-no-action', 'reservation'):
-        # In-flight owner reads keep the exact record; every fresh admission,
-        # entry and publication read reads an expired floor as no floor.
+    if args.mode not in ('checkpoint-no-action', 'reservation') and prior is None:
+        # In-flight owner reads (a reservation, a checkpoint no-action, or an
+        # announced entry being promoted) keep the exact record; every fresh
+        # admission, entry and publication read reads an expired floor as no
+        # floor.
         record = effective(record, int(time.time()))
     if args.mode == 'checkpoint-no-action':
         print(checkpoint_no_action(record, args.request_root, args.state_root, args.run_id))

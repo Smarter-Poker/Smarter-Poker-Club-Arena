@@ -139,6 +139,13 @@ jobs:
                               import hashlib
                               raw = open(path, "rb").read()
                               floor = json.loads(raw)
+                              # Historical floor witnesses cannot grant or refuse
+                              # the currently selected immutable floor.
+                              if (isinstance(floor, dict) and floor.get("schema") == "engine-release-activation-floor/v2-owner-window"
+                                      and isinstance(floor.get("ownerWindowId"), str)
+                                      and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", floor["ownerWindowId"])
+                                      and floor["ownerWindowId"] != w.get("id")):
+                                  continue
                               floor_witness = (floor.get("schema") == "engine-release-activation-floor/v2-owner-window" and floor.get("ownerWindowId") == w.get("id") and hashlib.sha256(raw).hexdigest() == digest)
                           except (OSError, ValueError):
                               pass

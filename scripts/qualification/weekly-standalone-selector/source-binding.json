@@ -155,8 +155,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 259123,
-      "sha256": "ae720f0fd8d3910258105a64a646ea09bf9dfba883281793a9fd10ecc1b1ac91"
+      "bytes": 260024,
+      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -614,7 +614,7 @@
       "bytes": 239646,
       "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
     },
-    "review": "Only accounting job40→50minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
+    "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
     "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
   },
   "riverPersistenceBudgetIntegration20261027": {
@@ -1581,6 +1581,32 @@
     "execution_performed": false,
     "qualification": "Source identity only, not historical or production recertification. Required final-head checks remain enforced."
   },
+  "serverScriptsTypecheckSourceAudit20261031": {
+    "scope": "Source identity only: the Server Engine job gains one step, `npx tsc -p tsconfig.scripts.json --noEmit`, type-checking the operator CLIs under server/scripts that no job compiled before. No financial/native profile, assertion, deadline, dependency, runner route, worker count, production artifact or publish transaction changes.",
+    "execution_performed": false,
+    "qualification": "Current source binding only; no historical financial/native/live receipt is restamped. Required final-head checks remain necessary.",
+    "previousCiPin": {
+      "bytes": 259122,
+      "sha256": "37001f2b3cb5709174cb66bb876b055de4f76550b61e777b7ff8ce7ca59a9fae"
+    },
+    "currentCiPin": {
+      "bytes": 259539,
+      "sha256": "44fda252fa7886c40d2fae757946cb998b8c1760dcbd688b933abfa4ea794a75"
+    }
+  },
+  "riverOnePairParitySourceAudit20261031": {
+    "scope": "Source identity only: accounting shard 2 gains one step, `bash scripts/dev/test-horse-river-one-pair-calls.sh`, proving fn_horse_river_one_pair_calls agrees with the TypeScript live-measure reader on shared fixture hands in a throwaway PostgreSQL. No financial assertion, deadline, dependency, runner route, worker count, production artifact or publish transaction changes.",
+    "execution_performed": false,
+    "qualification": "Current source binding only; no historical financial/native/live receipt is restamped. Required final-head checks remain necessary.",
+    "previousCiPin": {
+      "bytes": 259539,
+      "sha256": "44fda252fa7886c40d2fae757946cb998b8c1760dcbd688b933abfa4ea794a75"
+    },
+    "currentCiPin": {
+      "bytes": 260023,
+      "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
+    }
+  },
   "heavyClientRunnerCapacitySourceAudit20261030": {
     "scope": "Current CI source identity only: move the existing compiler, client unit shards and production build from the guarded four-core pool to the existing guarded eight-core pool; request eight client workers bounded by actual CPU capacity. Preserve fallback runners, financial/native commands and profiles, assertions, matrices, deadlines, permissions, dependencies and historical evidence.",
     "previousCiPin": {
@@ -1593,5 +1619,26 @@
     },
     "execution_performed": false,
     "qualification": "Source binding only. No historical financial/native/live receipt is restamped. Required exact-head protected checks and hosted execution remain necessary."
+  },
+  "heavyClientRunnerMainIntegrationSourceAudit20261031": {
+    "scope": "Current workflow source identity after ordinary protected-main integration. Preserve the eight-core client/compiler/build routing and CPU-bounded worker request, alongside protected-main river one-pair SQL/TypeScript parity qualification and server-script compilation. Preserve both parent audits, historical evidence, all financial assertions and qualification states.",
+    "capacityParent": "ec22c15403129514162cd6cc4751d832d40730dc",
+    "protectedMain": "22445691a46f5c273a16e00c34871b51ae12f7fb",
+    "capacityCiPin": {
+      "bytes": 259123,
+      "sha256": "ae720f0fd8d3910258105a64a646ea09bf9dfba883281793a9fd10ecc1b1ac91"
+    },
+    "protectedMainCiPin": {
+      "bytes": 260023,
+      "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
+    },
+    "integratedCiPin": {
+      "bytes": 260024,
+      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false,
+    "qualification": "Source identity only; exact integrated-head required checks and hosted execution remain necessary. No native, financial or production recertification."
   }
 }

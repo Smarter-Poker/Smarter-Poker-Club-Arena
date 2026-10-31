@@ -386,12 +386,20 @@ interface ChipAnimationManagerProps {
 
 const NO_POT_FLOATS: NonNullable<ChipAnimationManagerProps['floats']> = [];
 
-export function ChipAnimationManager({
+export function ChipAnimationManager(props: ChipAnimationManagerProps) {
+  // Mount measurement and its resize observer only while there is work. The
+  // active child stays mounted across overlapping flights, preserving clocks.
+  if (props.animations.length === 0 && !props.floats?.length) return null;
+  return <ActiveChipAnimationManager {...props} />;
+}
+
+function ActiveChipAnimationManager({
   animations,
   floats = NO_POT_FLOATS,
   onAnimationComplete,
 }: ChipAnimationManagerProps) {
   const frameRef = useRef<HTMLDivElement>(null);
+  const [measured, setMeasured] = useState(false);
   const [frame, setFrame] = useState({
     left: 0,
     top: 0,
@@ -416,6 +424,7 @@ export function ChipAnimationManager({
         });
     };
     measure();
+    setMeasured(true);
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     window.addEventListener('resize', measure);
@@ -426,6 +435,9 @@ export function ChipAnimationManager({
   }, []);
   const local = (point: Position) =>
     viewportPointInFrame(point, frame, frame.localWidth, frame.localHeight);
+  // Children capture their initial coordinates on mount; measure the scaled
+  // frame first so the opening paint is correct even before the first rAF.
+  if (!measured) return <div ref={frameRef} className={styles.manager} />;
   return (
     <div ref={frameRef} className={styles.manager}>
       {animations.map((anim) => (

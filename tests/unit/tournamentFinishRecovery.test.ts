@@ -81,3 +81,24 @@ describe('initial load restores a finished participant without ending a rebuy de
       ).toBe(false);
   });
 });
+
+it('explicit player following keeps an old bust report from closing the observer', () => {
+  const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
+  const multi = readFileSync('src/pages/MultiTablePage.tsx', 'utf8');
+  const condition = page.match(
+    /if \(\s*(loadedTournamentStatus === 'COMPLETED' \|\|\s*\(loadedFinishedReportReady && !followingPlayerRef.current\))\s*\) \{\s*void exitFromDurableCompletion\(\);/
+  );
+  expect(condition).not.toBeNull();
+  const restore = new Function(
+    'loadedTournamentStatus',
+    'loadedFinishedReportReady',
+    'followingPlayerRef',
+    `return ${condition![1]};`
+  );
+  expect(restore('RUNNING', true, { current: true })).toBe(false);
+  expect(restore('RUNNING', true, { current: false })).toBe(true);
+  expect(restore('RUNNING', false, { current: true })).toBe(false);
+  expect(restore('COMPLETED', true, { current: true })).toBe(true);
+  expect(multi.match(/followingPlayer=\{!!table.followPlayer\}/g)).toHaveLength(2);
+  expect(page).toContain('followingPlayerRef.current = followingPlayer;');
+});

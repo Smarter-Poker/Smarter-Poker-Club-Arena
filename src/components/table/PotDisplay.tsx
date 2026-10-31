@@ -64,6 +64,8 @@ export interface PotDisplayProps {
   currency?: string;
   bigBlind?: number;
   displayMode?: PotDisplayMode;
+  /** BB preference is retained, but this hand has no verified denomination yet. */
+  showChipsFallbackLabel?: boolean;
   onToggleDisplayMode?: () => void;
   /**
    * Dan 2026-08-20: total of the CURRENT street's live bets (still sitting in
@@ -322,6 +324,7 @@ function PotDisplayComponent({
      penny rule above is keyed on the big blind, so nothing reads it here. */
   bigBlind = 0,
   displayMode = 'chips',
+  showChipsFallbackLabel = false,
   onToggleDisplayMode,
   streetBets = 0,
   collectTo = null,
@@ -431,9 +434,15 @@ function PotDisplayComponent({
       <div
         className={`pot-display__main ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''}`}
         onClick={onToggleDisplayMode}
-        title={onToggleDisplayMode ? 'Click To Toggle Chips/BB Display' : undefined}
+        title={
+          showChipsFallbackLabel
+            ? 'Showing Chips Until This Hand’s Blinds Are Available'
+            : onToggleDisplayMode
+              ? 'Click To Toggle Chips/BB Display'
+              : undefined
+        }
       >
-        <span className="pot-display__label">POT</span>
+        <span className="pot-display__label">{showChipsFallbackLabel ? 'CHIPS' : 'POT'}</span>
         <span className="pot-display__amount">
           <AnimatedNumber value={displayPot} duration={350} format={fmt} />
         </span>
@@ -477,6 +486,7 @@ export const PotDisplay = memo(PotDisplayComponent, (prev, next) => {
   if (prev.currency !== next.currency) return false;
   if (prev.bigBlind !== next.bigBlind) return false;
   if (prev.displayMode !== next.displayMode) return false;
+  if (prev.showChipsFallbackLabel !== next.showChipsFallbackLabel) return false;
   if (JSON.stringify(prev.sidePots) !== JSON.stringify(next.sidePots)) return false;
   if (prev.onToggleDisplayMode !== next.onToggleDisplayMode) return false;
   // ANIMATION AUDIT 2026-08-19: collectTo was MISSING here — a collectTo

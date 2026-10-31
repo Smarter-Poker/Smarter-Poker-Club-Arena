@@ -850,6 +850,19 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
     const attributionSignup = await assertCanonicalSignup(db, [attributionId]);
     await assertAttributionChipSeed(db, attributionId);
     const spectator = users[2];
+    let playerUICohorts, playerUIUsers;
+    if (inputs.tournamentPlayerUI) {
+      assert.equal(template.source_contract.current_database_contract_ready, true);
+      assert.deepEqual(template.source_contract.exclusions, []);
+      playerUIUsers = await api.createUsers('tournament');
+      const { seedPlayerUITournaments } = await import('./seed-fixture.mjs');
+      playerUICohorts = await seedPlayerUITournaments({
+        db,
+        clubId: fixture.club_id,
+        owner: spectator,
+        users: playerUIUsers,
+      });
+    }
     stage = 'private-observation-bridge';
     const { startObservationBridge } = await import('./observation-bridge.mjs');
     const observerDb = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
@@ -864,6 +877,7 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
     bridge = await startObservationBridge({
       db: observerDb,
       financialActors: users.slice(0, 2).map((user) => user.id),
+      ...(playerUICohorts ? { tournamentCohorts: playerUICohorts } : {}),
       binding: {
         version: 1,
         instance_id: randomUUID(),
@@ -945,6 +959,32 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
         table_id: fixture.table_id,
         spectator_user_id: spectator.id,
         storage_state: browserStorage(spectator.session, template.supabase_host),
+        ...(playerUICohorts
+          ? {
+              tournament_player_ui: {
+                version: 1,
+                scope: 'isolated-tournament-player-ui',
+                supabase_host: template.supabase_host,
+                cohorts: playerUICohorts.map((c) => ({
+                  ...c,
+                  anon_key: secrets.anonKey,
+                  users: playerUIUsers.map((user) => ({
+                    id: user.id,
+                    session: {
+                      access_token: user.session.access_token,
+                      user: { id: user.id },
+                      token_type: 'bearer',
+                      expires_in: 3600,
+                      expires_at: JSON.parse(
+                        Buffer.from(user.session.access_token.split('.')[1], 'base64url').toString()
+                      ).exp,
+                      refresh_token: '',
+                    },
+                  })),
+                })),
+              },
+            }
+          : {}),
         ...(inputs.financialScenario
           ? {
               financial_scenario: financialActorDescriptor(fixture, users.slice(0, 2)),

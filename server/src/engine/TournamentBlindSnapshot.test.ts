@@ -203,6 +203,41 @@ function cachedTournamentContext(
 }
 
 describe('tournament levels belong to the hand that was created with them', () => {
+  it('publishes dealt blind amounts on resync and observer snapshots, not next-level metadata', async () => {
+    const { engine, deal } = fixture();
+    await deal();
+    // The fixture stops before transport and rolls back the published counter.
+    // Restore its allocated identity to exercise the real publication methods.
+    engine.handCount = 100;
+    const handNumber = engine.handCount;
+    Object.assign(engine.tableInfo, levelTwo);
+    const expected = {
+      table_id: engine.tableId,
+      hand_number: handNumber,
+      small_blind: 10,
+      big_blind: 20,
+    };
+    expect(engine.getTableState('u1')?.hand_blinds).toEqual(expected);
+    expect(engine.getObserverState()?.hand_blinds).toEqual(expected);
+    engine.hub.publish = vi.fn();
+    await engine.broadcastCurrentState();
+    const publicPayload = engine.hub.publish.mock.calls
+      .find((args: any[]) => args.some((arg: any) => arg?.hand_blinds))
+      ?.find((arg: any) => arg?.hand_blinds);
+    expect(publicPayload?.hand_blinds).toEqual(expected);
+    engine.handCount = 101;
+    expect(engine.getTableState('u1')?.hand_blinds).toBeUndefined();
+    loadTournamentBlinds.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+    await deal();
+    engine.handCount = engine.handController.getHandNumber();
+    expect(engine.getTableState('u1')?.hand_blinds).toEqual({
+      table_id: engine.tableId,
+      hand_number: engine.handCount,
+      small_blind: 20,
+      big_blind: 40,
+    });
+  });
+
   it.each([false, true])(
     'keeps the Horse request on the dealt level until the next hand (big-blind ante: %s)',
     async (bigBlindAnte) => {

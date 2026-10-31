@@ -30,7 +30,7 @@ for label in control-revision source-revision; do
   [[ "$observed" == "$revision" ]] || { echo 'Smoke image and reviewed controls differ' >&2; exit 2; }
 done
 smoke_step=helpers
-helpers=(operations/release/native/component-observation-protocol.mjs operations/release/native/component-observation-client.mjs operations/release/native/component-semantic-observations.mjs)
+helpers=(operations/release/native/component-observation-protocol.mjs operations/release/native/component-observation-client.mjs operations/release/native/component-semantic-observations.mjs operations/release/native/tournament-player-observations.mjs)
 git -C "$repo_dir" diff --quiet HEAD -- "${helpers[@]}" || { echo 'Commit reviewed observation helpers before smoke' >&2; exit 2; }
 smoke_step=owned-names
 name=${FIXTURE_SMOKE_CONTAINER:-"ca-fixture-smoke-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"}
@@ -77,7 +77,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-# Only these three exact committed, credential-free helpers enter the container.
+# Only these exact committed, credential-free helpers enter the container.
 # The full checkout, .git, runner environment and Docker socket are not mounted.
 smoke_step=helper-staging
 smoke_controls=$(mktemp -d /tmp/ca-fixture-smoke-controls.XXXXXXXX)

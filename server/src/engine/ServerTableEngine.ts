@@ -60,6 +60,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     return {
       table_id: this.tableId,
       hand_number: this.handCount,
+      ...this.handBlindSnapshotFields(),
       pot: state.pot ?? 0,
       community_cards: state.communityCards ?? [],
       community_cards2: state.communityCards2 ?? [],
@@ -166,6 +167,27 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       avatar_url: '',
       equipped_frame: '',
       equipped_aura: '',
+    };
+  }
+
+  /** Frozen dealt stakes, never the tournament's asynchronously updated next level. */
+  private handBlindSnapshotFields(): Record<string, unknown> {
+    const blinds = this.handController?.getBlindSnapshot?.();
+    const handNumber = this.handController?.getHandNumber?.();
+    if (
+      !blinds ||
+      !Number.isSafeInteger(handNumber) ||
+      !(handNumber && handNumber > 0) ||
+      handNumber !== this.handCount
+    )
+      return {};
+    return {
+      hand_blinds: {
+        table_id: this.tableId,
+        hand_number: handNumber,
+        small_blind: blinds.smallBlind,
+        big_blind: blinds.bigBlind,
+      },
     };
   }
 
@@ -308,6 +330,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           ...this.bombPotSnapshotFields(),
           ...this.killPotSnapshotFields(),
           ...this.anteSnapshotFields(),
+          ...this.handBlindSnapshotFields(),
         },
         bettingStructure: this.bettingStructureFields(state),
         action_context: this.publishedActionContext(),
@@ -411,6 +434,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         ...this.bombPotSnapshotFields(),
         ...this.killPotSnapshotFields(),
         ...this.anteSnapshotFields(),
+        ...this.handBlindSnapshotFields(),
       },
       winnerIds: this.currentHandWinnerIds,
       winners: this.currentHandWinners,
@@ -487,6 +511,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
       ...this.killPotSnapshotFields(),
       ...this.anteSnapshotFields(),
+      ...this.handBlindSnapshotFields(),
       current_bet: 0,
       current_player: null,
       dealer_seat: this.currentHandDealerSeat,

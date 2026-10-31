@@ -1,4 +1,12 @@
 import assert from 'node:assert/strict';
+import {
+  validateTournamentRead,
+  validateTournamentPlayerData,
+} from './tournament-player-observations.mjs';
+export {
+  tournamentObservationBinding,
+  observeTournamentPlayerFacts,
+} from './tournament-player-observations.mjs';
 export const OBSERVATION_SOCKET = '/run/fixture-observer/observation.sock';
 export const REQUEST_BYTES = 4096;
 export const REPLY_BYTES = 65536;
@@ -31,7 +39,15 @@ export function validateHand(hand) {
   return Object.freeze({ ...hand });
 }
 export function validateRequest(value, binding) {
-  assert.ok(['catalogue', 'hand_presence', 'hand_facts', 'financial_facts'].includes(value?.read));
+  assert.ok(
+    [
+      'catalogue',
+      'hand_presence',
+      'hand_facts',
+      'financial_facts',
+      'tournament_player_facts',
+    ].includes(value?.read)
+  );
   keys(value, [
     'version',
     'request_id',
@@ -39,14 +55,17 @@ export function validateRequest(value, binding) {
     'read',
     ...(value.read === 'catalogue'
       ? []
-      : value.read === 'financial_facts'
-        ? ['financial']
-        : ['hand']),
+      : value.read === 'tournament_player_facts'
+        ? ['tournament']
+        : value.read === 'financial_facts'
+          ? ['financial']
+          : ['hand']),
   ]);
   assert.equal(value.version, 1);
   assert.match(value.request_id, uuid);
   sameBinding(value.binding, binding);
-  if (value.read === 'financial_facts') validateFinancial(value.financial);
+  if (value.read === 'tournament_player_facts') validateTournamentRead(value.tournament);
+  else if (value.read === 'financial_facts') validateFinancial(value.financial);
   else if (value.read !== 'catalogue') validateHand(value.hand);
   return value;
 }
@@ -96,6 +115,7 @@ export function validateFinancialData(data) {
   return data;
 }
 export function validateData(read, data) {
+  if (read === 'tournament_player_facts') return validateTournamentPlayerData(data);
   if (read === 'financial_facts') return validateFinancialData(data);
   if (read === 'catalogue') {
     keys(data, ['catalogue_digest']);
@@ -132,15 +152,19 @@ export function validateResponse(value, request) {
     'data',
     ...(request.read === 'catalogue'
       ? []
-      : request.read === 'financial_facts'
-        ? ['financial']
-        : ['hand']),
+      : request.read === 'tournament_player_facts'
+        ? ['tournament']
+        : request.read === 'financial_facts'
+          ? ['financial']
+          : ['hand']),
   ]);
   assert.equal(value.version, 1);
   assert.equal(value.request_id, request.request_id);
   sameBinding(value.binding, request.binding);
   assert.equal(value.read, request.read);
-  if (request.read === 'financial_facts')
+  if (request.read === 'tournament_player_facts')
+    assert.deepEqual(validateTournamentRead(value.tournament), request.tournament);
+  else if (request.read === 'financial_facts')
     assert.deepEqual(validateFinancial(value.financial), request.financial);
   else if (request.read !== 'catalogue') assert.deepEqual(validateHand(value.hand), request.hand);
   return validateData(value.read, value.data);

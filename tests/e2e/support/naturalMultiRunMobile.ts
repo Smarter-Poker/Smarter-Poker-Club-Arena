@@ -82,6 +82,7 @@ export async function initializeNaturalMultiRunObserver<T>(
 export interface NaturalMultiRunHistoryRow {
   table_id: string;
   rit_boards: unknown[];
+  created_at?: string | null;
 }
 
 /** Raw dispatch JSON preserves numeric-vs-string authority before opening fixtures. */
@@ -121,11 +122,15 @@ export function selectNaturalMultiRunSubject(
   const targetThree = requiredRuns.length === 1 && requiredRuns[0] === 3;
   const targetOnce = requiredRuns.length === 1 && requiredRuns[0] === 1;
   const counts = new Map<string, [number, number]>();
+  const latestThree = new Map<string, number>();
   for (const row of recent) {
     if (!Array.isArray(row.rit_boards) || ![1, 2].includes(row.rit_boards.length)) continue;
     const count = counts.get(row.table_id) ?? [0, 0];
     count[row.rit_boards.length - 1]++;
     counts.set(row.table_id, count);
+    const at = Date.parse(row.created_at ?? '');
+    if (row.rit_boards.length === 2 && Number.isFinite(at))
+      latestThree.set(row.table_id, Math.max(latestThree.get(row.table_id) ?? 0, at));
   }
   const ranked = tables
     .filter((table) => {
@@ -146,6 +151,8 @@ export function selectNaturalMultiRunSubject(
     });
   ranked.sort(
     (a, b) =>
+      // A recent natural three-run hand predicts opportunity better than an older larger count.
+      (targetThree ? (latestThree.get(b.table.id) ?? 0) - (latestThree.get(a.table.id) ?? 0) : 0) ||
       (targetThree ? (counts.get(b.table.id)?.[1] ?? 0) - (counts.get(a.table.id)?.[1] ?? 0) : 0) ||
       (targetOnce ? b.total - a.total : 0) ||
       b.balanced - a.balanced ||
@@ -184,7 +191,7 @@ export async function readNaturalMultiRunHistory(
       tableIds.slice(offset, offset + 4).map((id) =>
         readRows(
           new URLSearchParams({
-            select: 'table_id,rit_boards',
+            select: 'table_id,rit_boards,created_at',
             table_id: `eq.${id}`,
             created_at: `gte.${new Date(now - 2 * 60 * 60_000).toISOString()}`,
             rit_boards: 'not.is.null',

@@ -397,10 +397,15 @@ describe('the shared projection is the engine projection it replaced', () => {
         }
         if (rnd() < 0.15) (h as any).state.stage = 'showdown';
         const live = await livePayload(e);
-        expect(JSON.stringify(live)).toBe(JSON.stringify(legacyLive(e)));
+        // Hand-bound display stakes were added after the frozen legacy projection.
+        // Their values and hand-boundary behavior have a real-engine contract
+        // in TournamentBlindSnapshot.test.ts; every legacy field remains exact.
+        const { hand_blinds: _displayStakes, ...legacyLiveShape } = live;
+        expect(JSON.stringify(legacyLiveShape)).toBe(JSON.stringify(legacyLive(e)));
         for (let viewer = 1; viewer <= n + 1; viewer++) {
           const uid = `u${viewer}`;
-          expect(JSON.stringify(e.getTableState(uid))).toBe(JSON.stringify(legacyResync(e, uid)));
+          const { hand_blinds: _resyncStakes, ...legacyResyncShape } = e.getTableState(uid);
+          expect(JSON.stringify(legacyResyncShape)).toBe(JSON.stringify(legacyResync(e, uid)));
         }
         compared++;
       }

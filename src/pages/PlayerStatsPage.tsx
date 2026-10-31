@@ -60,6 +60,7 @@ const PositionsTab = lazy(() => import('./stats/PositionsTab'));
 const HandsTab = lazy(() => import('./stats/HandsTab'));
 const TrophiesTab = lazy(() => import('./stats/TrophiesTab'));
 const TournamentsTab = lazy(() => import('./stats/TournamentsTab'));
+const TournamentPlayingStats = lazy(() => import('./stats/TournamentPlayingStats'));
 const AnalysisTab = lazy(() => import('./stats/AnalysisTab'));
 const FinancialReportingPanel = lazy(() => import('../components/stats/FinancialReportingPanel'));
 const ExactCashSessionsPanel = lazy(() => import('../components/stats/ExactCashSessionsPanel'));
@@ -387,6 +388,7 @@ function SeparatedPlayerStatsPage({ gameMode }: { gameMode: StatsGameMode }) {
       import('./stats/HandsTab'),
       import('./stats/TrophiesTab'),
       import('./stats/TournamentsTab'),
+      import('./stats/TournamentPlayingStats'),
       import('./stats/AnalysisTab'),
       import('../components/stats/StatsCharts'),
       import('../components/stats/StatsPositionPiePlot'),
@@ -1910,13 +1912,19 @@ function SeparatedPlayerStatsPage({ gameMode }: { gameMode: StatsGameMode }) {
                   />
                 )}
                 {showTab('tournaments') && hasData && (
-                  <TournamentsTab
-                    onOpenHands={() => openHandEvidence()}
-                    tourn={tourn}
-                    overall={overall}
-                    full={full}
-                    financialPanel={financialPanel}
-                  />
+                  <>
+                    <TournamentPlayingStats
+                      overall={overall}
+                      full={full}
+                      onOpenHands={() => openHandEvidence()}
+                    />
+                    <TournamentsTab
+                      tourn={tourn}
+                      overall={overall}
+                      full={full}
+                      financialPanel={financialPanel}
+                    />
+                  </>
                 )}
                 {showTab('analysis') && hasData && (
                   <AnalysisTab

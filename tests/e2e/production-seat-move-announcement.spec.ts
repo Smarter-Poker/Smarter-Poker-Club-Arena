@@ -453,14 +453,26 @@ test('the published table explains controlled seat moves without moving a player
     expect(heroDiagnostics).toEqual([]);
     // Verify equal sizing in the published client using its real mapped
     // player rows. Synthetic input remains confined to this guarded browser.
+    await page.getByRole('button', { name: 'Close Chat', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Table Chat', exact: true })).toBeHidden();
     await page.evaluate(() => document.fonts.ready);
     const equalSeatSizing = await page
       .locator('.table-page .seat:not(.seat--empty)')
       .evaluateAll((seats) =>
         seats.map((seat) => {
           const size = (selector: string) => {
-            const box = seat.querySelector(selector)?.getBoundingClientRect();
-            return box ? { width: box.width, height: box.height } : null;
+            const element = seat.querySelector<HTMLElement>(selector);
+            if (!element) return null;
+            const visual = element.getBoundingClientRect();
+            // Compare the shared layout slots. Fold posture intentionally
+            // scales an avatar to 97%; gestures must keep playing in full.
+            // Retain visual bounds as evidence, without mistaking posture
+            // for a different hero/opponent size rule.
+            return {
+              width: element.offsetWidth,
+              height: element.offsetHeight,
+              visual: { width: visual.width, height: visual.height },
+            };
           };
           return {
             hero: seat.classList.contains('seat--hero'),

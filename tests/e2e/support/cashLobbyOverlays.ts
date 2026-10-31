@@ -160,8 +160,12 @@ async function declineDiamondInvitation(page: Page): Promise<void> {
       );
     }
   }
+  // The exit also needs animation frames. The failed WebKit trace spent
+  // 4.8s reaching one stable frame pair, so the old 8s exit budget could
+  // expire before the real Modal exit completed. Reuse the measured frame-
+  // stall allowance; this still requires the actual dialog to disappear.
   await expect(prompt, 'the Diamond Spins invitation stayed open after Not Now').toBeHidden({
-    timeout: 8_000,
+    timeout: DIAMOND_DECLINE_STALL_EXTENSION_MS,
   });
 }
 

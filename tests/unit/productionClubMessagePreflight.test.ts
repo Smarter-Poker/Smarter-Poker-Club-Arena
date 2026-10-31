@@ -12,6 +12,7 @@ function fixture(response: Promise<unknown>, click = vi.fn().mockResolvedValue(u
   // The invitation's Not Now; its evaluate is the handler's stack read.
   const notNow = { evaluate: vi.fn().mockResolvedValue(null), click: vi.fn() };
   const dismiss = {
+    evaluate: vi.fn().mockResolvedValue(null),
     isVisible: vi.fn().mockResolvedValue(true),
     waitFor: vi.fn().mockResolvedValue(undefined),
     click,

@@ -411,6 +411,17 @@ export default function ClubMembersPage() {
     !acknowledgedOwnUrl &&
     (pendingOwnUrl?.scope === exportScopeKey ||
       lastWrittenUrlRef.current.query !== searchParams.toString());
+  const canonicalWorkspaceQuery = useMemo(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('q');
+    if (filter === 'all') next.delete('view');
+    else next.set('view', filter);
+    if (sortKey === 'newest') next.delete('sort');
+    else next.set('sort', sortKey);
+    return next.toString();
+  }, [filter, searchParams, sortKey]);
+  const workspaceUrlReady =
+    workspaceReady && !awaitingOwnUrl && canonicalWorkspaceQuery === searchParams.toString();
   useEffect(() => {
     if (acknowledgedOwnUrl) pendingOwnUrlRef.current = null;
     if (!externalWorkspaceUrl) return;
@@ -423,14 +434,8 @@ export default function ClubMembersPage() {
   }, [acknowledgedOwnUrl, exportScopeKey, externalWorkspaceUrl, searchParams]);
   useEffect(() => {
     if (workspaceScope !== exportScopeKey || externalWorkspaceUrl || awaitingOwnUrl) return;
-    const next = new URLSearchParams(searchParams);
-    next.delete('q');
-    if (filter === 'all') next.delete('view');
-    else next.set('view', filter);
-    if (sortKey === 'newest') next.delete('sort');
-    else next.set('sort', sortKey);
-    lastWrittenUrlRef.current = { scope: exportScopeKey, query: next.toString() };
-    if (next.toString() !== searchParams.toString()) {
+    lastWrittenUrlRef.current = { scope: exportScopeKey, query: canonicalWorkspaceQuery };
+    if (canonicalWorkspaceQuery !== searchParams.toString()) {
       // Only one replacement is outstanding. An urgent page-load render may
       // still see its source URL; wait for the router's acknowledgment before
       // writing any newer control choice.
@@ -438,12 +443,13 @@ export default function ClubMembersPage() {
         scope: exportScopeKey,
         sourceEntryKey: location.key,
         sourceQuery: searchParams.toString(),
-        targetQuery: next.toString(),
+        targetQuery: canonicalWorkspaceQuery,
       };
-      setSearchParams(next, { replace: true });
+      setSearchParams(canonicalWorkspaceQuery, { replace: true });
     }
   }, [
     awaitingOwnUrl,
+    canonicalWorkspaceQuery,
     exportScopeKey,
     externalWorkspaceUrl,
     filter,
@@ -1600,6 +1606,7 @@ export default function ClubMembersPage() {
 
       <section
         className="members-console"
+        aria-busy={!workspaceUrlReady}
         aria-label={simpleMode ? 'Player Directory' : undefined}
         aria-labelledby={simpleMode ? undefined : 'members-directory-title'}
       >

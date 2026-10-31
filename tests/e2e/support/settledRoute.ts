@@ -23,10 +23,14 @@ export const ACCESS_CHECK_STATUS_TEXT = 'Checking Your Access';
 
 /** The slice of a Playwright Page this needs, so it can be unit tested. */
 export interface AccessCheckPage {
+  url(): string;
   getByRole(
     role: 'status',
     options: { name?: string | RegExp }
   ): { filter(options: { hasText: string }): { count(): Promise<number> } };
+  locator(selector: string): {
+    getAttribute(name: string, options?: { timeout: number }): Promise<string | null>;
+  };
   waitForTimeout(ms: number): Promise<void>;
 }
 
@@ -46,10 +50,45 @@ export async function awaitAccessDecision(
       .getByRole('status', {})
       .filter({ hasText: ACCESS_CHECK_STATUS_TEXT })
       .count();
-    if (pending === 0) return;
+    if (pending === 0) {
+      await captureResponsiveDestination(page, { timeoutMs, pollMs, deadline });
+      return;
+    }
     if (Date.now() >= deadline) {
       throw new Error(`${route || 'home'} access guard did not decide within ${timeoutMs} ms`);
     }
-    await page.waitForTimeout(pollMs);
+    await page.waitForTimeout(Math.min(pollMs, Math.max(0, deadline - Date.now())));
+  }
+}
+
+/** The workspace owns its hydration and complete canonical URL acknowledgement.
+ * Its semantic busy state does not depend on directory reads or live sync. */
+export async function captureResponsiveDestination(
+  page: AccessCheckPage,
+  {
+    timeoutMs = 10_000,
+    pollMs = 100,
+    deadline = Date.now() + timeoutMs,
+  }: { timeoutMs?: number; pollMs?: number; deadline?: number } = {}
+): Promise<string> {
+  const began = new URL(page.url());
+  if (!/\/clubs\/[^/]+\/members\/?$/.test(began.pathname)) return page.url();
+  const remaining = () => {
+    const timeout = deadline - Date.now();
+    if (timeout <= 0)
+      throw new Error(`Roster preference workspace did not settle within ${timeoutMs} ms`);
+    return { timeout };
+  };
+  for (;;) {
+    const busy = await page.locator('.members-console').getAttribute('aria-busy', remaining());
+    remaining();
+    const current = new URL(page.url());
+    if (current.origin !== began.origin || current.pathname !== began.pathname) {
+      throw new Error('Roster preference workspace navigated while settling');
+    }
+    if (busy === 'false') return page.url();
+    if (Date.now() >= deadline)
+      throw new Error(`Roster preference workspace did not settle within ${timeoutMs} ms`);
+    await page.waitForTimeout(Math.min(pollMs, remaining().timeout));
   }
 }

@@ -10,6 +10,8 @@ import {
   CASH_SPECTATOR_ACTION,
   CASH_TABLE_CARD_SELECTOR,
   collectVisibleCashCandidates,
+  selectClassicCashCandidate,
+  type CashCatalogueMode,
 } from './support/cashTableCandidates';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 
@@ -221,7 +223,8 @@ test('the published table explains controlled seat moves without moving a player
         if (!Array.isArray(rows)) throw new Error('The cash catalogue was not an array.');
         return {
           rows: rows.filter(
-            (row): row is CashTable => UUID.test(row?.id) && typeof row?.name === 'string'
+            (row): row is CashTable & CashCatalogueMode =>
+              UUID.test(row?.id) && typeof row?.name === 'string'
           ),
           error: null as string | null,
         };
@@ -251,12 +254,14 @@ test('the published table explains controlled seat moves without moving a player
       candidates.length,
       'the reserved club needs an occupied cash spectator subject'
     ).toBeGreaterThan(0);
-    const source = candidates[0];
-    subjectTableId = source.id;
     const catalogueRead = await cashRead;
     if (catalogueRead.error || !catalogueRead.rows)
       throw new Error(`The cash catalogue was unreadable: ${catalogueRead.error}`);
     const catalogue = catalogueRead.rows;
+    const source = selectClassicCashCandidate(candidates, catalogue);
+    if (!source)
+      throw new Error('The readable cash catalogue needs an occupied classic spectator subject.');
+    subjectTableId = source.id;
     expect(observedViewerId, 'the page must use its reserved fixture identity').toBe(fixtureUserId);
     const main = catalogue.find((table) => table.id !== source.id && MAIN_NAME.test(table.name));
     const other = catalogue.find(

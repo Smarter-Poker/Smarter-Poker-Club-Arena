@@ -3,6 +3,7 @@ import {
   CASH_SPECTATOR_ACTION,
   CASH_TABLE_CARD_SELECTOR,
   collectVisibleCashCandidates,
+  selectClassicCashCandidate,
 } from '../e2e/support/cashTableCandidates';
 
 const TABLE = '11111111-1111-4111-8111-111111111111';
@@ -83,5 +84,35 @@ describe('production cash spectator candidate selection', () => {
     { target: 'tournament' },
   ])('rejects an ineligible card or inaccessible action: %j', (options) => {
     expect(card(options)).toEqual([]);
+  });
+});
+
+describe('classic hero proof subject selection', () => {
+  const candidates = [
+    { id: 'busy-lightning', players: 9 },
+    { id: 'classic', players: 3 },
+  ];
+  it.each(['lightning', 'pending_off', 'draining', 'pending_on', null, 'unknown'])(
+    'ignores a busier incompatible or unqualified mode %s',
+    (cluster_mode) => {
+      expect(
+        selectClassicCashCandidate(candidates, [
+          { id: 'busy-lightning', cluster_id: 'a', cluster: { cluster_mode } },
+          { id: 'classic', cluster_id: 'b', cluster: { cluster_mode: 'must_move' } },
+        ])
+      ).toBe(candidates[1]);
+    }
+  );
+  it('accepts a positively identified standalone classic table', () => {
+    expect(selectClassicCashCandidate(candidates, [{ id: 'classic', cluster_id: null }])).toBe(
+      candidates[1]
+    );
+  });
+  it('refuses missing catalogue rows and withheld mode metadata', () => {
+    expect(
+      selectClassicCashCandidate(candidates, [{ id: 'classic', cluster_id: 'b', cluster: null }])
+    ).toBeUndefined();
+    expect(selectClassicCashCandidate(candidates, [{ id: 'classic' }])).toBeUndefined();
+    expect(selectClassicCashCandidate(candidates, [])).toBeUndefined();
   });
 });

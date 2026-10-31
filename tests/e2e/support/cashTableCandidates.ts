@@ -41,3 +41,22 @@ export function collectVisibleCashCandidates(cards: Element[], actionPattern: st
     .sort((a, b) => b.players - a.players)
     .map(({ id, name, players }) => ({ id, name, players }));
 }
+
+export type CashCatalogueMode = {
+  id: string;
+  cluster_id?: string | null;
+  cluster?: { cluster_mode?: string | null } | null;
+};
+
+/** The classic hero mapper cannot be qualified by a public Lightning observer. */
+export function selectClassicCashCandidate<T extends { id: string }>(
+  candidates: readonly T[],
+  catalogue: readonly CashCatalogueMode[]
+): T | undefined {
+  return candidates.find((candidate) => {
+    const row = catalogue.find((entry) => entry.id === candidate.id);
+    if (!row) return false;
+    if (row.cluster_id === null) return true;
+    return typeof row.cluster_id === 'string' && row.cluster?.cluster_mode === 'must_move';
+  });
+}

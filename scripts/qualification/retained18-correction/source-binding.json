@@ -6,8 +6,8 @@
       "sha256": "89b593fd5afe44d6568e2751bcd209b7b5cc10ad1c48e98c13efe8ea15d26e87"
     },
     "scripts/ci/test-mtt-unlimited.py": {
-      "bytes": 44548,
-      "sha256": "008f685692694f7bec680bee4d317629fc23210badcce8156f6f04ef06180f98"
+      "bytes": 44960,
+      "sha256": "09a224758539d72c8348d09682ac72a4dce4108800d59a506270fb64fe76e82e"
     },
     "scripts/dev/probe-retained-source-correction-pg17.sh": {
       "bytes": 1314,
@@ -237,5 +237,9 @@
       "bytes": 142081,
       "sha256": "2d96ace37e810bd058943b01b4b57d1376d5335c8382181d75506c786b878e33"
     }
+  },
+  "mttFifteenPercentQualification20261029": {
+    "reason": "Owner changed all new and unfinalized MTTs to 15%, preserving finalized ladders. Existing required MTT preparation invokes one bounded private PG17 migration/ladder proof before unchanged preparation checks. Only this reviewed test harness pin changes; CI workflow bytes and financial qualification assertions stay unchanged.",
+    "validation": "Actual isolated PostgreSQL 17 source-bound native proof passed; exact-head hosted accounting remains mandatory."
   }
 }

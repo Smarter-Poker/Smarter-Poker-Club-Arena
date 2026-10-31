@@ -117,8 +117,13 @@ def main():
     native_sql=actual_sql
     e.report['sql_file_input']={'exact_utf8_bytes':True,'no_text_pipe':True,'existing_execution_owner':True}
     inputs=[Path('supabase/migrations/20261029170914_original_claim_attests_exact_authorized_chairs.sql'),Path('supabase/migrations/20261029093051_attest_frozen_original_hand_continuation_custody.sql'),Path('supabase/migrations/20261029092119_original_continuations_accept_proven_chip_funded_addons.sql'),Path('supabase/migrations/20260904104847_felt_erasure_delta_settlement.sql'),Path('supabase/migrations/20261029081924_original_continuation_preserves_funded_addons.sql'),Path('supabase/migrations/20260917233447_tournament_original_funding_and_obligation_receipts.sql'),Path('supabase/migrations/20261029064404_continuation_waits_for_a_bounded_maintenance_lane.sql'),MIGRATION,PROBE,Path(__file__).relative_to(ROOT),Path('scripts/ci/played_clock_floor_cases.py'),Path('scripts/ci/build-played-level-recovery-migration.py'),Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql'),Path('supabase/migrations/20260918232558_mixed_f06_custody_transfer_retains_original_operations.sql')]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
+    inputs += [Path('supabase/migrations/20261029231647_retained_original_hands_share_their_tournament_table_lane.sql'),Path('supabase/migrations/20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl.sql'),Path('supabase/migrations/20261019151125_tournament_table_writers_wait_for_their_shared_lane.sql')]
     inputs += [Path('scripts/ci/test-accepted-hand-roster.py'),chain.LIGHTNING,chain.RETIRED_CASH,chain.RAKED_DIAMOND,chain.CAPTURE,chain.MIGRATION]
     inputs += sorted(p.relative_to(ROOT) for p in (ROOT/'scripts/ci/fixtures/played-clock-floor').rglob('*') if p.is_file())
+    inputs += [Path('supabase/migrations/20261031031334_retained_hand_permit_readers_allow_settlement_foreign_keys.sql')]
+    inputs += [Path('supabase/migrations/20261031034048_diamond_closure_parks_retained_originals_without_disposing_t.sql'),Path('scripts/ci/build-diamond-complete-park.py')]
+    inputs += [Path('supabase/migrations/20261031032915_diamond_arena_owner_boundary_closure_without_refunds.sql'),Path('scripts/ci/build-diamond-owner-closure.py'),Path('scripts/ci/test-diamond-owner-closure.py'),Path('scripts/ci/fixtures/diamond-owner-closure.json')]
+    inputs += [Path('scripts/ci/test-diamond-history-removal.py'),Path('scripts/operations/remove-diamond-settled-history.sql')]
     source=dict(manifest['source_sha256']);source.update({str(p):sha(ROOT/p) for p in inputs})
     e.report.update(source_sha256=source,installation_refusals=[],races=[],scope='private original continuation on exact production-captured atomic/stack/retention functions and maintained real financial/F06 closure; not live activation')
     for sig in native.CANCELLATION_SIGNALS:signal.signal(sig,native.interrupted)
@@ -154,6 +159,7 @@ def main():
         after=(e.snapshot(db,'after-data'),e.catalog_snapshot(db,'after-catalog'),hand.private_snapshot(e,db,'after-private'))
         if before!=after:raise RuntimeError('complete public/private data/catalog rollback differs')
         e.report.update(data_rollback=True,catalog_rollback=True,private_catalog_and_data_rollback=True)
+        module(ROOT/DATA/'retain_shared_lane_qualification.py','retain_shared_lane').qualify(e,ROOT,hand,db)
         module(ROOT/DATA/'maintenance_lane_qualification.py','maintenance_lane_wait').qualify(e,ROOT,hand,db)
         module(ROOT/DATA/'funded_addon_claim_qualification.py','funded_addon_claim').qualify(e,ROOT,hand,db)
         module(ROOT/DATA/'chip_funded_addon_qualification.py','chip_funded_addon').qualify(e,ROOT,hand,db)
@@ -161,6 +167,21 @@ def main():
         module(ROOT/DATA/'existing_park_attestation_qualification.py','existing_park_attestation_composition').qualify(e,ROOT,hand,db)
         qualify_fences(e,db,native)
         module(ROOT/'scripts/ci/played_clock_floor_cases.py','played_clock_floor').qualify(e,ROOT,hand)
+        # Closure uses this same original-hand protocol. Run its private routing
+        # fixture in the existing required continuation check and retain its proof
+        # under this check's existing uploaded evidence directory.
+        e.run('diamond-owner-closure',[sys.executable,ROOT/'scripts/ci/test-diamond-owner-closure.py',
+            '--pg-bin',args.pg_bin.resolve(),'--evidence',out/'diamond-owner-closure',
+            '--work-root',work,'--socket-root',args.socket_root],seconds=45)
+        closure=json.loads((out/'diamond-owner-closure/result.json').read_text())
+        if closure['status']!='passed':raise RuntimeError('Diamond owner closure qualification failed')
+        e.report['diamond_owner_closure']={'status':'passed','evidence':'diamond-owner-closure/result.json'}
+        e.run('diamond-history-removal',[sys.executable,ROOT/'scripts/ci/test-diamond-history-removal.py',
+            '--pg-bin',args.pg_bin.resolve(),'--evidence',out/'diamond-history-removal',
+            '--work-root',work,'--socket-root',args.socket_root],seconds=45)
+        removal=json.loads((out/'diamond-history-removal/result.json').read_text())
+        if removal['status']!='passed':raise RuntimeError('Diamond history removal qualification failed')
+        e.report['diamond_history_removal']={'status':'passed','evidence':'diamond-history-removal/result.json'}
         if any(sha(ROOT/p)!=digest for p,digest in source.items()):raise RuntimeError('qualification source changed')
         e.report['status']='passed';e.discard(db)
     except BaseException as error:e.report['failure']=repr(error)

@@ -1,0 +1,5 @@
+# MTT recovery composes qualified admission and checkpoint controls
+
+The MTT bundle incorporates protected main `1dff4957f5`, qualified cancellation candidate `f6402c1350`, and reviewed checkpoint-child/required-runner candidate `cacd092d72`. Ordinary integration preserves both named owner windows, the target-bound MTT activation floor, its single legacy-entry clock, announcement-only recovery, and all three neutral checkpoint child paths. Standard hosted qualification remains the default; the existing explicit large profile remains available.
+
+Conflicting qualification manifests retain both historical audit objects and bind the actual composed source. All 41 inputs in the passed cancellation native report remain byte-identical; no financial recertification is inferred from source integration. Both installed migration recordings remain intact and must not be replayed. Applicable connected contracts, both compilers, normal hooks and exact-head hosted qualification remain required. Source preparation is not engine adoption, financial settlement or live tournament recovery proof.

@@ -77,6 +77,8 @@ function fixture({
         emitter.on('request', handle);
       }),
     getByRole: () => ({
+      waitFor: async () => {},
+      getAttribute: async () => 'true',
       getByRole: (_role: string, options: { selected?: boolean; name?: string }) => ({
         textContent: async () => (options.selected ? selected : options.name),
         getAttribute: async () => (selected === options.name ? 'true' : 'false'),
@@ -90,7 +92,7 @@ function fixture({
           selected = options.name!;
           const value = exchange({
             ownerId: postOwner,
-            tab: selected === 'MTT' ? 'MTT' : 'OMAHA',
+            tab: selected === "MTT'S" ? 'MTT' : 'OMAHA',
             status,
           });
           if (responseMode !== 'normal') {
@@ -260,7 +262,7 @@ describe('cold-return preference proof', () => {
         returningPage: f.page,
         returningReady: true,
         clubId: club,
-        original: 'MTT',
+        original: "MTT'S",
         ownerId: owner,
         proofFor: () => f.proof,
         verify: vi.fn(),
@@ -368,7 +370,7 @@ describe('cold-return preference proof', () => {
         returningPage: returned.page,
         returningReady: ready,
         clubId: club,
-        original: 'MTT',
+        original: "MTT'S",
         ownerId: owner,
         proofFor: (page) => (page === old.page ? old.proof : returned.proof),
         verify,
@@ -389,7 +391,7 @@ describe('cold-return preference proof', () => {
       returningPage: f.page,
       returningReady: true,
       clubId: club,
-      original: 'MTT',
+      original: "MTT'S",
       ownerId: owner,
       proofFor: () => f.proof,
       verify,

@@ -16,13 +16,13 @@ import { pathToFileURL } from 'node:url';
 //
 // So the job is read instead of restated: every tests/e2e spec named in the
 // css-beats-e2e block of ci.yml, plus the spec each `npm run test:e2e:*` there
-// selects through its Playwright config (testDir + testMatch), plus the
+// selects through every statically chained npm script and Playwright config, plus the
 // directories those specs read at run time. Adding a spec to the job admits it
 // here with no second list to forget.
 //
 // FAILS OPEN (CLAUDE.md 10.86 rule 1). If the workflow, package.json or a
 // config cannot be read, or the block yields no spec at all, every tests/e2e/
-// change admits the job. `src` only ADMITS jobs, so a wider answer can cost a
+// and tests/browser/ change admits the job. `src` only ADMITS jobs, so a wider answer can cost a
 // run but never withhold a check.
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CSS_BEAT_SHARED_INPUTS =
@@ -36,20 +36,70 @@ export function cssBeatJobInputs(root = REPO_ROOT) {
     const rest = workflow.slice(start + 1);
     const next = rest.search(/^  [A-Za-z0-9_-]+:\s*$/m);
     const block = next < 0 ? rest : rest.slice(0, next);
-    const specs = new Set(block.match(/tests\/e2e\/[A-Za-z0-9_./-]+\.spec\.ts/g) || []);
+    const specs = new Set(block.match(/tests\/[A-Za-z0-9_./-]+\.spec\.ts/g) || []);
     const matchers = [];
     const scripts = JSON.parse(read('package.json')).scripts || {};
-    for (const [, name] of block.matchAll(/npm run (test:e2e:[a-z0-9-]+)/g)) {
-      const config = /--config=([^\s]+)/.exec(scripts[name] || '')?.[1];
-      if (!config) return null;
+    const visited = new Set();
+    const visiting = new Set();
+    const addConfig = (config) => {
+      // Read only maintained root Playwright configurations, never a shell value
+      // or an arbitrary relative file. Unsupported syntax takes the broad path.
+      if (!/^playwright(?:\.[a-z0-9-]+)?\.config\.ts$/.test(config)) throw Error('Unknown config');
       const text = read(config);
       const dir = /testDir:\s*['"]\.\/([^'"]+)['"]/.exec(text)?.[1];
-      const match = /testMatch:\s*\/(.+)\/[a-z]*,/.exec(text)?.[1];
-      if (!dir || !match) return null;
-      const pattern = new RegExp(match);
-      const prefix = dir.replace(/\/+$/, '') + '/';
-      matchers.push((p) => p.startsWith(prefix) && pattern.test(p.slice(prefix.length)));
+      if (
+        !dir ||
+        !/^tests(?:\/[A-Za-z0-9_.-]+)+$/.test(dir) ||
+        dir.split('/').some((part) => part === '.' || part === '..')
+      )
+        throw Error('Unknown testDir');
+      const literal = /testMatch:\s*(['"])([^'"\r\n]+)\1\s*,/.exec(text)?.[2];
+      const regex = /testMatch:\s*\/((?:\\.|[^/\\\r\n])+)\/([a-z]*)\s*,/.exec(text);
+      let matches;
+      if (
+        literal &&
+        /^[A-Za-z0-9_./-]+$/.test(literal) &&
+        !literal.split('/').some((part) => !part || part === '.' || part === '..')
+      ) {
+        matches = (name) => name === literal || name.endsWith('/' + literal);
+      } else if (regex && !/[gy]/.test(regex[2])) {
+        const pattern = new RegExp(regex[1], regex[2]);
+        matches = (name, path) => pattern.test(resolve(root, path)) || pattern.test(name);
+      } else throw Error('Unknown testMatch');
+      const prefix = dir + '/';
+      matchers.push(
+        (p) =>
+          p.startsWith(prefix) &&
+          (p.startsWith(prefix + 'fixtures/') || matches(p.slice(prefix.length), p))
+      );
       specs.add(config);
+    };
+    const visit = (name) => {
+      if (visiting.has(name)) throw Error('Cyclic browser script');
+      if (visited.has(name)) return;
+      const command = scripts[name];
+      if (typeof command !== 'string') throw Error('Missing browser script');
+      visiting.add(name);
+      const configs = [
+        ...command.matchAll(/--config(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/g),
+      ];
+      if (configs.length !== [...command.matchAll(/--config\b/g)].length)
+        throw Error('Unknown config argument');
+      for (const config of configs) addConfig(config[1] ?? config[2] ?? config[3]);
+      const children = [...command.matchAll(/\bnpm\s+run\s+([^\s;&|]+)/g)];
+      if (children.length !== [...command.matchAll(/\bnpm\s+run\b/g)].length)
+        throw Error('Unknown script argument');
+      for (const [, child] of children) {
+        if (!/^[A-Za-z0-9:_-]+$/.test(child)) throw Error('Unknown browser script');
+        visit(child);
+      }
+      if (!configs.length && !children.length) throw Error('Unknown browser entry point');
+      visiting.delete(name);
+      visited.add(name);
+    };
+    for (const [, name] of block.matchAll(/\bnpm\s+run\s+(test:e2e(?::[^\s;&|]+)?)/g)) {
+      if (!/^[A-Za-z0-9:_-]+$/.test(name)) throw Error('Unknown browser entry point');
+      visit(name);
     }
     if (specs.size === 0) return null;
     // A `.md` companion is documentation and admits nothing (see below).
@@ -60,7 +110,10 @@ export function cssBeatJobInputs(root = REPO_ROOT) {
     return null;
   }
 }
-const cssBeatInput = cssBeatJobInputs() || ((p) => /^tests\/e2e\//.test(p) && !p.endsWith('.md'));
+const cssBeatInput =
+  cssBeatJobInputs() ||
+  ((p) =>
+    !p.endsWith('.md') && (/^tests\/(?:e2e|browser)\//.test(p) || CSS_BEAT_SHARED_INPUTS.test(p)));
 
 const all = () => ({ src: true, server: true, tests: true, phase4: true, fixture: true });
 const wide =
@@ -69,6 +122,9 @@ const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/(?:classify-ci-changes\.mjs|test-v4-policy-metadata\.mjs$)|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/(?:20260909(165541|170039|170749|171644|172537|175000|180000)_|20261007043848_v4_policy_schema_is_immutable_input_metadata\.sql$|20261007043945_solver_v4_nodes_prove_complete_public_state\.sql$|20261007051641_v4_consumers_bind_the_immutable_policy_schema\.sql$)|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31|GtoV31EvaluationConfig\.(?:test\.)?ts$)|scripts\/gtoV31Evaluate\.ts$|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
 const breakfastWitness =
   /^scripts\/ci\/(?:test-breakfast-original-witness\.py$|breakfast_(?:fixture|original_witness|qualification|concurrency)\.py$|fixtures\/breakfast-original-witness\/|probes\/breakfast-original-witness\/)/;
+
+const cancellationAdmission =
+  /^(scripts\/ci\/(?:test-tournament-cancellation-lane\.py$|fixtures\/tournament-cancellation-lane\/)|tests\/unit\/tournamentCancellationLane\.test\.ts$)/;
 
 const satelliteQualifiers =
   /^(scripts\/ci\/(?:test-satellite-qualifiers\.py$|(?:satellite_qualifier_(?:fixture|concurrency)|satellite_entry_club_native)\.py$|fixtures\/satellite-qualifiers\/|probes\/(?:satellite-entry-club-native\.sql|satellite-qualifier(?:s-native\.sql|-(?:finish|reader)\.spec))$)|tests\/operations\/satellite-qualifier-results\.test\.py$)/;
@@ -107,7 +163,7 @@ const nativeRecovery =
 // wrapper, its wiring test, and every fixture are executable inputs; a change
 // to any one of them must select that job even without a migration beside it.
 const dataConsolePostgres =
-  /^(scripts\/ci\/(?:test-data-console-postgres-contracts\.sh|test-club-data-(?:union-mtt|fact-db|report-db)-postgres\.py)$|tests\/(?:data-console-postgres-contracts-wired|rake-agent-report-native-contract)\.test\.ts$|tests\/fixtures\/(?:club-data-(?:fact-db|report-db)|rake-agent-report|financial-admin-revenue|union-ops-financial-admin|union-statement-availability|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
+  /^(scripts\/ci\/(?:test-data-console-postgres-contracts\.sh|test-member-jackpot-win-loss\.sh|test-club-data-(?:union-mtt|fact-db|report-db)-postgres\.py)$|tests\/(?:data-console-postgres-contracts-wired|rake-agent-report-native-contract)\.test\.ts$|tests\/fixtures\/(?:member-jackpot-win-loss|club-data-(?:fact-db|report-db)|rake-agent-report|financial-admin-revenue|union-ops-financial-admin|union-statement-availability|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
 // Every input to the managed-game one-door fixture must select the hosted
 // PostgreSQL job, including a fixture-only correction.
 const managedGameOneDoor =
@@ -399,6 +455,7 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
+      matches(cancellationAdmission) ||
       matches(/^scripts\/ci\/fixtures\/hand-prune-one-page\.sql$/) ||
       matches(
         /^scripts\/ci\/(?:test-club-promo-journal-source\.py|fixtures\/club-promo-journal-[^/]+\.(?:json|sql))$/
@@ -466,6 +523,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      matches(cancellationAdmission) ||
       matches(/^scripts\/ci\/fixtures\/hand-prune-one-page\.sql$/) ||
       privateRecordHosting ||
       matches(nativeAlerts) ||

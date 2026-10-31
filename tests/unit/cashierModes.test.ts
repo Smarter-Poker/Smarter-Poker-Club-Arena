@@ -60,7 +60,7 @@ describe('the default wallet', () => {
   it('no page hardcodes club_bank as the cashier fallback any more', () => {
     const root = join(__dirname, '../../src/pages');
     for (const page of [
-      'ClubHomePage.tsx',
+      '../components/wallet/CashierMyWallets.tsx',
       'CashierPage.tsx',
       'ClubFinancialsPage.tsx',
       'CashierTradePage.tsx',

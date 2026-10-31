@@ -1,0 +1,1 @@
+CHECK ((kind = ANY (ARRAY['earned_plan_window'::text, 'round2_union_window'::text, 'round2_club_window'::text, 'round3_union_window'::text, 'round3_club_window'::text, 'round3_union_plan'::text, 'round3_club_plan'::text, 'pnl_flows_window'::text, 'pnl_hands_window'::text, 'pnl_linked_window'::text])))

@@ -202,11 +202,17 @@
 .club-lobby-command-top .lobby-controls__heading {
   min-height: 0;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: 0 0.45cqw;
   border: 0;
+  text-align: center;
+}
+
+/* The heading belongs to this composition, not its child family buttons. */
+.club-home .club-lobby-command-top .lobby-controls__heading {
+  padding: 12px 8px 8px;
 }
 
 .club-lobby-command-top .lobby-controls__heading > div {
@@ -2474,5 +2480,220 @@
     top: auto;
     z-index: auto;
     box-shadow: none;
+  }
+}
+
+/* The secondary directory keys use the approved blank metal face. The native
+   307:174 plate is clipped only outside its metal silhouette, never stretched. */
+@media (max-width: 900px) {
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    #lobby-game-section-controls {
+    width: 100%;
+    min-width: 0;
+  }
+  .club-home.club-home--unified-mobile .club-lobby-command-top .lobby-controls .game-bar {
+    display: block;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .club-home.club-home--unified-mobile .club-lobby-command-top .lobby-controls .game-bar__types {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 8px;
+    width: 100%;
+    padding: 0;
+    overflow: visible;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status
+    .quickprefs__chip,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn {
+    position: relative;
+    container-type: inline-size;
+    isolation: isolate;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    height: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: #e4e7ec;
+    text-decoration: none;
+    text-shadow:
+      0 -1px 0 #f4f7fb99,
+      0 1px 0 #9aa5b3,
+      0 2px 1px #000;
+    filter: none;
+    transform: none;
+    overflow: visible;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type {
+    aspect-ratio: 307 / 174;
+    --lobby-key-font: 11cqw;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type::before {
+    content: '';
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 1;
+    border: 0;
+    box-shadow: none;
+    background: url('/assets/club-buttons/game-cards/nlh/spade-nlh-premium-v1/buttons/view-plate-10e21c24e5d6.png')
+      center / 100% 100% no-repeat;
+    clip-path: polygon(12% 10%, 88% 10%, 96% 24%, 96% 77%, 88% 90%, 12% 90%, 4% 77%, 4% 24%);
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type::after,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__chip::before,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn::before {
+    display: none;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__types
+    .game-bar__type.is-active,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status
+    .quickprefs__chip.is-on,
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn.is-set {
+    color: #45adff;
+    text-shadow:
+      0 0 5px #1877f299,
+      0 1px 1px #000;
+    filter: brightness(1.2);
+  }
+  .club-home.club-home--unified-mobile .club-lobby-command-top .lobby-controls .lobby-refinements {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 2px 0 0;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    border-top: 1px solid #25313a;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs {
+    display: contents;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status {
+    display: contents;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status
+    .quickprefs__chip {
+    grid-column: auto;
+    height: 44px;
+    --lobby-key-font: 8cqw;
+    background: url('/assets/club-buttons/club-nav-shell-d45f56465bad.png') center / contain
+      no-repeat;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn {
+    justify-self: stretch;
+    width: 100%;
+    height: 44px;
+    --lobby-key-font: 8cqw;
+    background: url('/assets/club-buttons/club-nav-shell-d45f56465bad.png') center / contain
+      no-repeat;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .game-bar__filter-btn:last-child:nth-child(2) {
+    grid-column: 2;
+  }
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements:has(.quickprefs__row--status > :nth-child(2):last-child)
+    .game-bar__filter-btn {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: calc((100% - 4px) / 2);
+  }
+
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .game-bar__filter-btn
+    svg {
+    display: none;
+  }
+}
+@media (min-width: 901px) {
+  .club-home .club-lobby-command-top .lobby-controls .game-bar__types .game-bar__type {
+    flex-basis: 88px;
+    width: 88px;
+    min-width: 88px;
+  }
+  .lobby-filter-label {
+    position: static;
+    display: contents;
+  }
+  .lobby-filter-label__text {
+    font-size: inherit;
+    font-weight: inherit;
   }
 }

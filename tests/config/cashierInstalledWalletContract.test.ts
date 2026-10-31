@@ -48,8 +48,8 @@ it.each([
       .find((line) => line.startsWith('-- @live-proof:') && line.includes(`public.${name}(`));
     expect(proof).toContain(`= '${definitionHash}'`);
     if (name === 'fn_club_promo_send_core_20261004') {
-      // 20261020210238 later restricted agent banks inside this core; the
-      // contract pins that committed successor body, never this one.
+      // Follow both installed successors: restricted agent banks, then the
+      // journal-source label. Never certify a retired or observed-only body.
       const successor = readFileSync(
         'supabase/migrations/20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
         'utf8'
@@ -59,12 +59,49 @@ it.each([
       const next = successor.slice(at);
       const tag = next.match(/\bAS (\$[A-Za-z0-9_]*\$)/i)!;
       const from = tag.index! + tag[0].length;
-      const successorHash = createHash('md5')
-        .update(next.slice(from, next.indexOf(tag[1], from)))
-        .digest('hex');
+      const successorBody = next.slice(from, next.indexOf(tag[1], from));
+      const successorHash = createHash('md5').update(successorBody).digest('hex');
       expect(successorHash).not.toBe(bodyHash);
-      expect(contract).toContain(`'hash', '${successorHash}'`);
+      const captured = JSON.parse(
+        readFileSync('scripts/ci/fixtures/club-promo-journal-source.json', 'utf8')
+      ).find((item: { signature: string }) => item.signature.startsWith(`${name}(`));
+      expect(captured).toBeTruthy();
+      const capturedTag = captured.definition.match(/\bAS (\$[A-Za-z0-9_]*\$)/i)!;
+      const capturedFrom = capturedTag.index! + capturedTag[0].length;
+      expect(
+        captured.definition.slice(
+          capturedFrom,
+          captured.definition.indexOf(capturedTag[1], capturedFrom)
+        )
+      ).toBe(successorBody);
+      const journalMigration = readFileSync(
+        'supabase/migrations/20261029065153_club_promo_send_names_its_journal_source_column.sql',
+        'utf8'
+      );
+      const coreStart = journalMigration.indexOf(`d := pg_get_functiondef('public.${name}(`);
+      expect(coreStart).toBeGreaterThanOrEqual(0);
+      const corePatch = journalMigration.slice(
+        coreStart,
+        journalMigration.indexOf('  EXECUTE d;', coreStart)
+      );
+      const preimageHash = createHash('md5').update(captured.definition).digest('hex');
+      expect(corePatch).toContain(`IF md5(d) <> '${preimageHash}'`);
+      const replacement = corePatch.match(
+        /d := replace\(d, '((?:''|[^'])*)', '((?:''|[^'])*)'\);/
+      )!;
+      expect(replacement).toBeTruthy();
+      const needle = replacement[1].replaceAll("''", "'");
+      const inserted = replacement[2].replaceAll("''", "'");
+      expect(successorBody.split(needle)).toHaveLength(2);
+      const installedHash = createHash('md5')
+        .update(successorBody.replace(needle, inserted))
+        .digest('hex');
+      expect(installedHash).toBe('aa695a9cec9ffb9516cf329fcd04fcf9');
+      expect(contract).toContain(`'hash', '${installedHash}'`);
+      expect(contract).not.toContain(`'hash', '${successorHash}'`);
       expect(contract).not.toContain(`'hash', '${bodyHash}'`);
+      expect(contract).toContain("version = '20261029065153'");
+      expect(contract).toContain("name = 'club_promo_send_names_its_journal_source_column'");
       return;
     }
     const expected = name === 'fn_cashier_batch_transfer' ? definitionHash : bodyHash;

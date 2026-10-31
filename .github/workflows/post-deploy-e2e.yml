@@ -47,9 +47,40 @@ on:
     types: [run-post-deploy-e2e, run-stats-pagination-proof, run-private-record-client-proof]
 
 jobs:
+  # No production fixture job may enter even its always-cleanup steps until
+  # the root cleanup repair is installed. This job only reads catalog/history.
+  certification-cleanup-safety:
+    name: Installed certification cleanup protects live tables
+    needs: publication-gate
+    if: >-
+      always() && !cancelled() &&
+      (needs.publication-gate.outputs.should_run == 'true' ||
+       (github.event_name == 'repository_dispatch' &&
+        (github.event.action == 'run-stats-pagination-proof' ||
+         github.event.action == 'run-private-record-client-proof')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked read-only verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Require installed scoped cleanup before production fixtures
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/await-certification-cleanup-safety.mjs
+
   # Explicit one-client transport proof. This never publishes or changes source flags.
   private-record-client-proof:
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
+    needs: certification-cleanup-safety
+    # The focused event skips publication-gate; require successful cleanup
+    # explicitly so that skipped ancestor cannot suppress the actual proof.
+    if: always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
     name: Exact published private record client failover proof
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -159,7 +190,10 @@ jobs:
 
   # Explicit, closed recovery of the one release-bound Stats case. It never publishes.
   stats-pagination-proof:
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'
+    needs: certification-cleanup-safety
+    # The focused event deliberately skips publication-gate. Evaluate this
+    # lane despite that ancestor, but never bypass cleanup qualification.
+    if: always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'
     name: Exact published Stats pagination proof
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -362,9 +396,10 @@ jobs:
             "${{ github.repository }}" "$SOURCE_RUN_ID" > "$JOBS_JSON"
           node - "$JOBS_JSON" "$GITHUB_OUTPUT" <<'NODE'
           const fs = require('node:fs');
+          const { publisherJobKey } = require('./scripts/ci/publisher-job-identity.mjs');
           const [file, output] = process.argv.slice(2);
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
-          const publisherJob = (entry, key) => entry?.name === key || entry?.name === `production / ${key}`;
+          const publisherJob = (entry, key) => publisherJobKey(entry?.name) === key || entry?.name === key || entry?.name === `production / ${key}`;
           if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
           const jobs = payload.jobs.filter((entry) => publisherJob(entry, 'publish-to-origin'));
           // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
@@ -460,13 +495,20 @@ jobs:
           // caller can be superseded after all read-only preparation succeeded,
           // before GitHub creates any nested writer job. This is not a publish
           // verdict: unknown/renamed jobs, failures or any child execution refuse.
-          const preparationNames = new Set(['publish-needed', 'build-and-store', 'build-record-gateway', ...[1,2,3,4].map(n => `client-tests (${n})`)]);
+          const preparationNames = new Set([
+            'publish-needed', 'build-and-store', 'build-record-gateway',
+            ...[1,2,3,4].map(n => `client-tests (${n})`),
+            'client-publication / admit',
+            'client-publication / Admit The Selected Client Publication Window',
+            'client-publication / build-and-store',
+            ...Array.from({length:16}, (_, i) => `client-publication / client-tests (${i + 1})`),
+          ]);
           const cancelledBeforeTransaction = process.env.SOURCE_CONCLUSION === 'cancelled' &&
             jobs.length === 0 && retained.length === 0 && payload.jobs.length > 0 &&
             new Set(payload.jobs.map(entry => entry.name)).size === payload.jobs.length &&
             payload.jobs.every(entry => entry.status === 'completed' &&
               ((preparationNames.has(entry.name) && (entry.conclusion === 'success' || inconclusive(entry))) ||
-               (entry.name === 'production' && entry.conclusion === 'cancelled' && (entry.steps ?? []).length === 0)));
+               (['production', 'client-publication / production'].includes(entry.name) && ['cancelled', 'skipped'].includes(entry.conclusion) && (entry.steps ?? []).length === 0)));
           const superseded =
             (jobs.length === 0 && payload.jobs.every(inconclusive)) || cancelledBeforeOrigin || cancelledBeforeTransaction;
           if (superseded) {
@@ -590,7 +632,7 @@ jobs:
         run: node scripts/ci/check-live-seo-contract.mjs --sha "${{ needs.publication-gate.outputs.client_target_sha }}"
 
   production-e2e:
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     # A verified publish and a safe forward stand-down both certify the live
     # player route. A failed/skipped origin job makes the gate red, never green
     # without executing the browser suite. Optional downstream failures cannot
@@ -1660,7 +1702,7 @@ jobs:
   # This independent verdict retains real-hand/reconnect coverage after every
   # publication, and exact immutable engine certification after engine cutover.
   live-table-e2e:
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     if: needs.publication-gate.outputs.should_run == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
@@ -2002,9 +2044,10 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           E2E_REQUIRE_AUTH: '1'
-          # Observe the assigned live Diamond club; setup joins this same target
-          # through the public player door before the spectator cases run.
-          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          # Observe chip cash games through the prepared Midway member club.
+          # Diamond Arena disables play and cannot supply the cash witness
+          # (run 41168425572). Setup joins this same public player door.
+          E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
           # The SPIN and SNG subjects are hosted only by the fixture union, and
           # public.tables carries a RESTRICTIVE policy (poker_arena_table_access)
           # that hides a union table from an account with no membership inside
@@ -2292,7 +2335,7 @@ jobs:
   # an engine dependency to the independent client publication certificate.
   club-channel-lifecycle-e2e:
     name: Exact engine club channel lifecycle
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     if: "needs.publication-gate.outputs.should_run == 'true' && needs.publication-gate.outputs.client_navigation != 'true' && github.event_name == 'repository_dispatch' && github.event.client_payload.engine_sha != ''"
     runs-on: ubuntu-latest
     # Up to 15m schedule lead + 12m thaw prerequisite + 15m case/fixture
@@ -2498,6 +2541,7 @@ jobs:
   # record-post-deploy-verdict.mjs and records nothing.
   post-deploy-verdict:
     needs:
+      - certification-cleanup-safety
       - publication-gate
       - seo-contract
       - production-e2e
@@ -2542,6 +2586,7 @@ jobs:
           GATE_RESULT: ${{ needs.publication-gate.result }}
           GATE_SHOULD_RUN: ${{ needs.publication-gate.outputs.should_run }}
           LANES: |
+            ${{ needs.certification-cleanup-safety.result }}|Installed certification cleanup protects live tables
             ${{ needs.seo-contract.result }}|The Live SEO Contract Holds
             ${{ needs.production-e2e.result }}|Client browser verification
             ${{ needs.live-table-e2e.result }}|Live-table and engine verification

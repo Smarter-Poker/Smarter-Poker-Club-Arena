@@ -75,10 +75,21 @@ const browserEvidence = () => ({
   readerReadback: true,
   visibleAvatarReadback: true,
   engineReadyAfterRestore: true,
-  engineRecordChangedAfterRestore: true,
+  gatewayRecordChangedAfterRestore: true,
   secondVisibleAvatarReadback: true,
   faultRestored: true,
-  cosmeticWrites: 2,
+  cosmeticWrites: 5,
+  rosterGatewayVerified: true,
+  rosterPaidVerified: true,
+  memberPaidVerified: true,
+  bothPreferredPathsInterrupted: true,
+  allFaultsRestored: true,
+  preferredReadyAfterPaid: true,
+  cosmeticRestoreVerified: true,
+  paidFallback: {
+    member: { confirmedJoins: 1, receivedChanges: 1 },
+    roster: { confirmedJoins: 1, receivedChanges: 1 },
+  },
   syntheticFrames: 0,
   paidIsolation: {
     activeAtStart: 0,
@@ -87,10 +98,10 @@ const browserEvidence = () => ({
     matchingChangedFrames: 0,
     observedFrames: 0,
   },
-  gatewayRetirement: {
-    openSocketsBeforeSecondWrite: 0,
-    openSocketsAfterSecondWrite: 0,
-    matchingSignalsAfterRetirement: 0,
+  gatewayRetention: {
+    openSocketsBeforeSecondWrite: 1,
+    openSocketsAfterSecondWrite: 1,
+    matchingChangesAfterRecovery: 1,
   },
   observationsOverflow: false,
   paidRetirementQualified: false,
@@ -219,6 +230,7 @@ describe('finite published record client proof admission and verdict', () => {
     });
     for (const patch of [
       { gatewayReadyAfterFault: false },
+      { gatewayRecordChangedAfterRestore: false },
       { genuineSession: false },
       { readerReadback: false },
       { faultRestored: false },
@@ -233,16 +245,43 @@ describe('finite published record client proof admission and verdict', () => {
           observedFrames: 0,
         },
       },
-      { gatewayRetirement: undefined },
+      { gatewayRetention: undefined },
       {
-        gatewayRetirement: {
+        gatewayRetention: {
+          openSocketsBeforeSecondWrite: 1,
+          openSocketsAfterSecondWrite: 1,
+          matchingChangesAfterRecovery: 0,
+        },
+      },
+      {
+        gatewayRetention: {
           openSocketsBeforeSecondWrite: 0,
           openSocketsAfterSecondWrite: 0,
-          matchingSignalsAfterRetirement: 1,
+          matchingChangesAfterRecovery: 1,
         },
       },
       { observationsOverflow: true },
       { cosmeticWrites: 1 },
+      { rosterGatewayVerified: false },
+      { rosterPaidVerified: false },
+      { memberPaidVerified: false },
+      { bothPreferredPathsInterrupted: false },
+      { allFaultsRestored: false },
+      { preferredReadyAfterPaid: false },
+      { cosmeticRestoreVerified: false },
+      { paidFallback: undefined },
+      {
+        paidFallback: {
+          member: { confirmedJoins: 1, receivedChanges: 0 },
+          roster: { confirmedJoins: 1, receivedChanges: 1 },
+        },
+      },
+      {
+        paidFallback: {
+          member: { confirmedJoins: 1, receivedChanges: 1 },
+          roster: { confirmedJoins: 0, receivedChanges: 1 },
+        },
+      },
     ])
       expect(() =>
         assertPrivateRecordClientProof(
@@ -274,42 +313,59 @@ describe('finite published record client proof admission and verdict', () => {
       assertPrivateRecordClientProof(retried, input(), pin(), pin(), { verified: true })
     ).toThrow();
   });
-  it('faults only this context private engine channel and restores normal connection creation', async () => {
-    let match!: (url: URL) => boolean, route!: (socket: any) => void;
-    const context = {
-      routeWebSocket: async (m: typeof match, r: typeof route) => {
-        match = m;
-        route = r;
-      },
-    };
-    const control = await installPrivateRecordEngineInterruption(context as any);
-    expect(match(new URL('wss://engine.smarter.poker/ws/channel'))).toBe(true);
-    for (const url of [
-      'wss://engine.smarter.poker/ws/multi',
-      'wss://engine.smarter.poker/ws/table/fixture',
-      'wss://ca-static.smarter.poker/private-record/ws/channel',
-      'https://engine.smarter.poker/ws/channel',
-    ])
-      expect(match(new URL(url))).toBe(false);
-    await expect(control.block()).rejects.toThrow(/No live/);
-    const server = { close: vi.fn(async () => {}) };
-    const socket = { connectToServer: vi.fn(() => server), close: vi.fn(async () => {}) };
-    route(socket);
-    expect(socket.connectToServer).toHaveBeenCalledTimes(1);
-    await control.block();
-    expect(server.close).toHaveBeenCalledWith({
-      code: 4000,
-      reason: 'Reserved Client Record Channel Qualification',
-    });
-    route(socket);
-    expect(socket.connectToServer).toHaveBeenCalledTimes(1);
-    expect(socket.close).toHaveBeenCalledTimes(1);
-    control.restore();
-    route(socket);
-    expect(socket.connectToServer).toHaveBeenCalledTimes(2);
-  });
-  it('the existing provider owns one explicit browser proof without enabling exposure', () => {
+  it.each(['engine', 'gateway'] as const)(
+    'faults only this context exact %s endpoint and restores normal connection creation',
+    async (endpoint) => {
+      let match!: (url: URL) => boolean, route!: (socket: any) => void;
+      const context = {
+        routeWebSocket: async (m: typeof match, r: typeof route) => {
+          match = m;
+          route = r;
+        },
+      };
+      const control = await installPrivateRecordEngineInterruption(context as any, endpoint);
+      const exact =
+        endpoint === 'engine'
+          ? 'wss://engine.smarter.poker/ws/channel'
+          : 'wss://ca-static.smarter.poker/private-record/ws/channel';
+      expect(match(new URL(exact))).toBe(true);
+      for (const url of [
+        'wss://engine.smarter.poker/ws/multi',
+        'wss://engine.smarter.poker/ws/table/fixture',
+        endpoint === 'engine'
+          ? 'wss://ca-static.smarter.poker/private-record/ws/channel'
+          : 'wss://engine.smarter.poker/ws/channel',
+        'wss://untrusted.invalid/ws/channel',
+        'wss://engine.smarter.poker:9443/ws/channel',
+        'https://engine.smarter.poker/ws/channel',
+      ])
+        expect(match(new URL(url))).toBe(false);
+      await expect(control.block()).rejects.toThrow(/No live/);
+      const server = { close: vi.fn(async () => {}) };
+      const socket = { connectToServer: vi.fn(() => server), close: vi.fn(async () => {}) };
+      route(socket);
+      expect(socket.connectToServer).toHaveBeenCalledTimes(1);
+      await control.block();
+      expect(server.close).toHaveBeenCalledWith({
+        code: 4000,
+        reason: 'Reserved Client Record Channel Qualification',
+      });
+      route(socket);
+      expect(socket.connectToServer).toHaveBeenCalledTimes(1);
+      expect(socket.close).toHaveBeenCalledTimes(1);
+      control.restore();
+      route(socket);
+      expect(socket.connectToServer).toHaveBeenCalledTimes(2);
+    }
+  );
+  it('the existing provider owns one explicit browser proof without enabling exposure', async () => {
     const workflow = readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8');
+    const { parse } = await import('yaml');
+    const job = parse(workflow).jobs['private-record-client-proof'];
+    expect(job.needs).toBe('certification-cleanup-safety');
+    expect(job.if).toBe(
+      "always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'"
+    );
     expect(workflow).toContain('private-record-client-proof:');
     expect(workflow).toContain(
       'npx playwright test tests/e2e/production-private-record-failover.spec.ts'
@@ -321,4 +377,23 @@ describe('finite published record client proof admission and verdict', () => {
     expect(source).toContain('arena_avatar_url');
     expect(source).toContain('finally');
   });
+});
+
+it('selects the verified independent fallback in both actual client build inputs', async () => {
+  const { parse } = await import('yaml');
+  for (const file of [
+    '.github/workflows/publish-club-arena-client.yml',
+    '.github/workflows/publish-club-arena-transaction.yml',
+  ]) {
+    const workflow = parse(readFileSync(file, 'utf8'));
+    const builds = Object.values(workflow.jobs).flatMap((job: any) =>
+      (job.steps ?? []).filter((step: any) =>
+        Object.hasOwn(step.env ?? {}, 'VITE_PRIVATE_RECORD_FALLBACK_URL')
+      )
+    );
+    expect(builds, file).toHaveLength(1);
+    expect(builds[0].env.VITE_PRIVATE_RECORD_FALLBACK_URL, file).toBe(
+      'https://ca-static.smarter.poker/private-record'
+    );
+  }
 });

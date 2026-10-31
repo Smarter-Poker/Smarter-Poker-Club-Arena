@@ -1,0 +1,3 @@
+{
+  "migration": "supabase/migrations/20261030150328_roster_tournament_fees_read_only_their_charged_window.sql"
+}

@@ -67,18 +67,18 @@ export function mttSpeedColumns(structure: readonly unknown[]): {
   return { blind_speed: speed, is_turbo: speed === 'turbo' || speed === 'hyper_turbo' };
 }
 
-/** The legacy payout_percent column value (CHECK 10/15/20). Any other depth,
- * 12.5 included, is stored as 10 there; the depth an MTT actually pays lives in
- * payout_depth_percent (see mttPayoutDepthPercent and mttPayoutDepth.ts). */
-export function mttPayoutPercent(value: unknown): 10 | 15 | 20 {
+/** Preserve the existing non-MTT field writer's validated legacy percentage. */
+export function nonMttPayoutPercent(value: unknown): 10 | 15 | 20 {
   if (typeof value === 'string' && !/^[+-]?\d+$/.test(value.trim())) return 10;
   if (typeof value !== 'string' && typeof value !== 'number') return 10;
   return legacyPayoutPercentColumn(Number(value));
 }
 
-/** The payout_depth_percent column value for a new MTT: the requested depth,
- * or 12.5 when none was requested (Dan 2026-10-21). The database forces 12.5
- * for every union and Diamond Arena event regardless. */
+/** New MTTs store the same 15% in both current and legacy depth columns. */
+export function mttPayoutPercent(_value: unknown): 15 {
+  return 15;
+}
+
 export function mttPayoutDepthPercent(value: unknown): number {
   return mttPayoutDepthColumn(value);
 }

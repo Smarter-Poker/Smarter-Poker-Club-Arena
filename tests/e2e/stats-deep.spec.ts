@@ -57,8 +57,8 @@ test.describe('Player Stats production experience', () => {
   test('published downline pagination survives the initial debounce and resets only for changed search', async ({
     page,
   }, testInfo) => {
-    // Use the lane's existing isolated session. Only these three read responses
-    // are synthetic; authentication and every published JS/CSS asset stay real.
+    // Use the lane's existing isolated session. Ledger reads and their change
+    // detector are synthetic; authentication and published JS/CSS assets stay real.
     const expected = process.env.DOWNLINE_JOURNEY_SHA;
     if (!expected || expected === 'UNKNOWN') {
       const description = await recordNonVerdict(testInfo, {
@@ -149,6 +149,12 @@ test.describe('Player Stats production experience', () => {
             },
           ],
         });
+      } else if (rpc === 'ca_player_stats_pulse' || rpc === 'ca_player_stats_pulse_by_club') {
+        // The synthetic ledger cannot follow this account's live tournament
+        // fingerprint. A real pulse change correctly refreshes the expanded
+        // ledger, independently of the search debounce under test. Keep this
+        // fixture's change input stable; retain the exact request sequence below.
+        await route.fulfill({ json: { pulse: 'isolated-pagination-unchanged' } });
       } else if (rpc === 'fn_agent_downline_rake') {
         const body = request.postDataJSON();
         expect(body.p_club_id).toBe(syntheticClub);
@@ -235,8 +241,12 @@ test.describe('Player Stats production experience', () => {
           })
           .toBe(count);
       };
-      // pauseAt advances time before stopping; drain reads it may have started
-      // while the ledger is still unmounted and no debounce budget exists.
+      // Private record READY schedules the parent's 2s coalesced refresh.
+      // A completed warmup REST request does not mean that timer has fired.
+      // Drain that startup deadline while the ledger is unmounted, before its
+      // initial search debounce exists. This advances virtual time, not a sleep.
+      await page.clock.runFor(2_000);
+      // Settle the reads started by the startup timer before the fresh mount.
       await expect
         .poll(async () => {
           await page.clock.runFor(0);

@@ -301,4 +301,8 @@ export const CORPUS_BASE_OPTS: HorseDecideOpts = {
   mind: false,
   telemetry: false,
   decisionTimeMs: 0,
+  // V61 (2026-10-29) shades hold'em one-pair river calls by default; the
+  // pre-candidate digests were captured before it, so the corpus keeps the
+  // explicit off arm (HorseRiverOnePairShade.test.ts pins the real policy).
+  v61RiverOnePairShade: false,
 };

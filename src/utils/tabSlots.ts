@@ -77,15 +77,14 @@ export const isHubLike = (t: SlotTab): boolean =>
 export const isPageTab = (t: SlotTab): boolean => isLobbyLike(t) || isHubLike(t);
 
 /**
- * A tab that can be replaced without costing the player anything: a lobby tab,
- * or a table they are only watching. A SEATED tab is never free.
+ * Only an unseated table observer can be reused. Lobby and Hub pages stay
+ * reserved until the player manually closes them (owner October 30).
  *
  * `seated !== true` rather than `!seated` so an explicit `false` and an
  * as-yet-unknown `undefined` read the same, which is what the observer tab
  * (deliberately undefined) relies on.
  */
-export const isFreeSlot = (t: SlotTab): boolean =>
-  isLobbyLike(t) || (!isHubLike(t) && t.seated !== true);
+export const isFreeSlot = (t: SlotTab): boolean => !isPageTab(t) && t.seated !== true;
 
 /**
  * WHICH SLOT A NEWLY OPENED TABLE TAKES.
@@ -129,9 +128,6 @@ export function pickObserveSlot(
 
   const active = tabs[activeIndex];
   if (active && isFreeSlot(active)) return { action: 'active', index: activeIndex };
-
-  const lobbyIdx = tabs.findIndex(isLobbyLike);
-  if (lobbyIdx !== -1) return { action: 'lobby', index: lobbyIdx };
 
   if (tabs.length < maxTables) return { action: 'append', index: tabs.length };
   return { action: 'full', index: -1 };

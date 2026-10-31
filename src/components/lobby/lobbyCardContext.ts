@@ -10,7 +10,7 @@ export interface LobbyRowContext {
   onSpinJoin?: (entry: LobbyEntry, variant: 'spin' | 'sng') => void;
   onJoinTable?: (entry: LobbyEntry) => void;
   onViewTable?: (entry: LobbyEntry) => void;
-  onToggleFavorite?: (tableId: string, next: boolean) => void;
+  onToggleFavorite?: (tableId: string, next: boolean, kind?: LobbyEntry['kind']) => void;
   onWaitlistToggle?: (tableId: string, joining: boolean) => void;
   spinTopTierLive?: boolean;
   actionBusy?: boolean;

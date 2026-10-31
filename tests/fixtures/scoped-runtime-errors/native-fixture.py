@@ -22,6 +22,25 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_rebuy_diagnostic_keeps_selected_generation_and_outcome_only(self):
+        value = {'schema': 'horse-rebuy-decision/v1', 'tournamentId': EVENT, 'userId': TABLE,
+                 'handNumber': 777, 'choice': True, 'phase': 'purchase_unproven',
+                 'bustAtMs': 1000, 'promptUntilMs': 31000, 'observedAtMs': 31001,
+                 'remainingMs': -1, 'elapsedMs': 500, 'sqlstate': '55000', 'failureClass': 'cutoff',
+                 'secret': 'PRIVATE', 'message': 'PRIVATE arbitrary error'}
+        raw = (STAMP+'[Tournament.horse_rebuy_decision] '+json.dumps(value)+'\n').encode()
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 1)
+        decision = result['records'][0]['rebuyDecision']
+        self.assertEqual(decision['handNumber'], 777)
+        self.assertEqual(decision['remainingMs'], -1)
+        self.assertEqual(decision['failureClass'], 'cutoff')
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        for key, invalid in [('phase', 'PRIVATE'), ('phase', []), ('tournamentId', []), ('handNumber', True), ('choice', 1),
+                             ('elapsedMs', 'PRIVATE'), ('tournamentId', TABLE)]:
+            changed = {**value, key: invalid}
+            self.assertIsNone(reader.rebuy_decision(['[Tournament.horse_rebuy_decision] '+json.dumps(changed)], {EVENT}))
+
     def test_continuation_failure_retains_only_fixed_category_and_phase(self):
         cases = [
             ('Error: Hand Continuation Write Is Unproven',
@@ -108,6 +127,28 @@ class NativeLogReader(unittest.TestCase):
         with patch.object(reader, 'capture', side_effect=OSError('SECRET')):
             failed = reader.read_restart_incident(window, b'')
         self.assertTrue(all(s == {'status': 'unavailable'} for s in failed['sources'].values()))
+
+    def test_kernel_native_fault_is_classified_without_exporting_addresses_or_payload(self):
+        events = [
+            {'MESSAGE': 'node[123]: segfault at deadbeef ip 0000 sp 0000 error 4 in node[abcd+1234] PRIVATE', '__REALTIME_TIMESTAMP': '1793427054862585'},
+            {'MESSAGE': 'traps: node[123] general protection fault ip:abcd sp:1234 error:0 in libc.so.6[abc+def] PRIVATE'},
+            {'MESSAGE': 'PRIVATE[123]: segfault at 0 ip 0 sp 0 error 4 in PRIVATE[abc+123]'},
+            {'MESSAGE': 'Out of memory: Killed process PRIVATE'},
+            {'MESSAGE': 'unrelated PRIVATE text'},
+            {'MESSAGE': ['segfault']},
+        ]
+        rows = reader.kernel_restart_signs(('\n'.join(json.dumps(e) for e in events)).encode())
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0], {'timestampUs': '1793427054862585', 'kind': 'host_native_fault_observed',
+                                  'fault': 'segmentation_fault', 'processClass': 'node',
+                                  'moduleClass': 'node', 'engineAttribution': 'unproven'})
+        self.assertEqual(rows[1]['fault'], 'general_protection_fault')
+        self.assertEqual(rows[1]['moduleClass'], 'libc')
+        self.assertEqual(rows[2]['processClass'], 'other')
+        self.assertEqual(rows[2]['moduleClass'], 'unknown')
+        self.assertEqual(rows[3]['kind'], 'host_oom_observed')
+        for secret in ['PRIVATE', 'deadbeef', 'abcd', '1234']:
+            self.assertNotIn(secret, json.dumps(rows))
 
     def test_failure_diagnostics_never_export_exception_or_transport_text(self):
         cases = [(RuntimeError('PRIVATE host token query'), 'refused'),

@@ -1524,7 +1524,7 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     expect(accounting.if).toContain("needs.changes.outputs.server == 'true'");
     expect(accounting.if).toContain("needs.changes.result != 'success'");
     expect(accounting['runs-on']).toBe(
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
     );
     expect(accounting['continue-on-error']).toBeUndefined();
     const calls = accounting.steps.filter(
@@ -1547,7 +1547,7 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
-          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
       )
     ).toBe(true);
   });
@@ -1583,7 +1583,7 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
   it('runs all three real drivers with the installed PG17 tools and no failure bypass', () => {
     const accounting = ci.jobs.accounting_postgres;
     expect(accounting['runs-on']).toBe(
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
     );
     expect(accounting['continue-on-error']).toBeUndefined();
     const expected = [
@@ -1616,7 +1616,7 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
-          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
       )
     ).toBe(true);
   });
@@ -1845,7 +1845,7 @@ describe('cash failure intake is exercised by the actual hosted scheduler fixtur
     const build = job.steps.filter((s: { id?: string }) => s.id === 'cash_pgcron_build');
     const execution = job.steps.filter((s: { id?: string }) => s.id === 'cash_native_failure');
     expect(job['runs-on']).toBe(
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
     );
     expect(job['continue-on-error']).toBeUndefined();
     expect(build).toHaveLength(1);
@@ -2005,7 +2005,7 @@ describe('restored provider accounting qualification', () => {
       'continue-on-error'?: boolean;
     }>;
     expect(job['runs-on']).toBe(
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
     );
     expect(job.if).toBe(ci.jobs.server_shards.if);
     expect(ci.jobs.server.needs).toContain('accounting_postgres');
@@ -2224,7 +2224,7 @@ describe('instruction-only verification preserves source contracts without repla
     expect(ci).toContain("if: steps.compile_scope.outputs.instructions_only != 'true'");
     expect(ci).toContain('npx tsc --noEmit');
     expect(ci).toContain(
-      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
     );
   });
 });

@@ -286,7 +286,7 @@ describe('closed exact published Stats pagination proof', () => {
     const job = workflow.jobs['stats-pagination-proof'];
     expect(workflow.on.repository_dispatch.types).toContain('run-stats-pagination-proof');
     expect(job.if).toBe(
-      "github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'"
+      "always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'"
     );
     expect(workflow.jobs['publication-gate'].if).toBe(
       "github.event_name != 'repository_dispatch' || (github.event.action != 'run-stats-pagination-proof' && github.event.action != 'run-private-record-client-proof')"
@@ -326,6 +326,41 @@ describe('closed exact published Stats pagination proof', () => {
       "process.env.E2E_STATS_PAGINATION_PROOF === '1'"
     );
   });
+  it('admits the focused case after a skipped publication ancestor only when cleanup succeeded', () => {
+    const workflow = parse(
+      readFileSync(resolve(__dirname, '../../.github/workflows/post-deploy-e2e.yml'), 'utf8')
+    );
+    const job = workflow.jobs['stats-pagination-proof'];
+    expect(job.needs).toBe('certification-cleanup-safety');
+    expect(workflow.jobs['certification-cleanup-safety'].needs).toBe('publication-gate');
+    // Actions adds success() unless an explicit status function exists. The
+    // focused dispatch intentionally skips publication-gate, so that implicit
+    // ancestor status must not suppress a successfully qualified cleanup gate.
+    const admits = (cleanup: string, cancelled: boolean, event: string, action: string) => {
+      if (!/\b(?:always|cancelled|failure|success)\s*\(/.test(job.if)) return false;
+      const expression = job.if
+        .replaceAll('always()', 'true')
+        .replaceAll('cancelled()', JSON.stringify(cancelled))
+        .replaceAll('needs.certification-cleanup-safety.result', JSON.stringify(cleanup))
+        .replaceAll('github.event_name', JSON.stringify(event))
+        .replaceAll('github.event.action', JSON.stringify(action));
+      return Function(`"use strict"; return (${expression});`)();
+    };
+    expect(admits('success', false, 'repository_dispatch', 'run-stats-pagination-proof')).toBe(
+      true
+    );
+    for (const cleanup of ['failure', 'cancelled', 'skipped', 'unknown'])
+      expect(admits(cleanup, false, 'repository_dispatch', 'run-stats-pagination-proof')).toBe(
+        false
+      );
+    expect(admits('success', true, 'repository_dispatch', 'run-stats-pagination-proof')).toBe(
+      false
+    );
+    expect(admits('success', false, 'workflow_run', 'run-stats-pagination-proof')).toBe(false);
+    expect(admits('success', false, 'repository_dispatch', 'run-private-record-client-proof')).toBe(
+      false
+    );
+  });
 });
 
 describe('published Stats pagination clock boundary', () => {
@@ -363,7 +398,7 @@ describe('published Stats pagination clock boundary', () => {
   it('flushes due asynchronous work without spending the initial or changed-search debounce budget', () => {
     const predicate = proof.slice(
       proof.indexOf('const pausedRows'),
-      proof.indexOf('// pauseAt advances time')
+      proof.indexOf('// Private record READY')
     );
     expect(predicate).toContain('await page.clock.runFor(0);');
     expect(predicate).not.toMatch(/runFor\([1-9]|resume\(|waitForTimeout/);
@@ -376,6 +411,12 @@ describe('published Stats pagination clock boundary', () => {
     expect(clock).toContain('if (await pane.count()) return true;');
     expect(clock).toContain('advanced += frame');
     expect(clock).toContain('await page.clock.runFor(0);');
+    const startupDrain = proof.indexOf('await page.clock.runFor(2_000);');
+    expect(startupDrain).toBeGreaterThan(proof.indexOf('await expect(panel).toHaveCount(0);'));
+    expect(startupDrain).toBeLessThan(proof.indexOf('armed = true;'));
+    expect(proof.indexOf('armed = true;')).toBeLessThan(
+      proof.indexOf('await mountStatsPaneBeforeDebounce(page,')
+    );
     expect(proof).toContain('await page.clock.runFor(300);');
     expect(proof).toContain('await page.clock.runFor(1);');
     expect(proof).toContain("await route.abort('blockedbyclient');");

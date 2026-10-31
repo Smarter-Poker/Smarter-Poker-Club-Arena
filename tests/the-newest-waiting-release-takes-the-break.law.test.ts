@@ -29,6 +29,10 @@ const transaction = readFileSync(
   join(process.cwd(), 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 
 const slice = (from: string, to: string) => {
   const start = transaction.indexOf(from);
@@ -248,6 +252,10 @@ release_engine_lock() { [ "$LOCK_HELD" = 1 ]; LOCK_HELD=0; event UNLOCK; }
 exact_runtime_instance() { return 1; }
 note_missed_admission() { :; }
 request_recovery_window() { :; }
+# The Lightning hold (2026-10-30) runs on every pass before the certificate;
+# it is not this law's subject and is stubbed the way the queue harness stubs it.
+release_lightning_hold_if_break_over() { :; }
+hold_lightning_when_counting_down() { :; }
 maintenance_certificate() { event "CERTIFICATE:$LOCK_HELD:$1"; printf '297000\\n'; return 0; }
 ${stubs()}
 ${helpers()}
@@ -384,6 +392,7 @@ const certificate = (maintenance: Record<string, unknown>, hands = 0) => {
 MIN_BREAK_REMAINING_MS=285000
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
+${entryRead}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper()}
 maintenance_certificate 260000`,

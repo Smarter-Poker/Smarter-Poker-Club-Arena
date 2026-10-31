@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   } as Record<string, string>,
   viewerId: 'viewer-1',
   viewerRole: 'owner',
+  viewerRoleError: null as Error | null,
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   getMemberDetail: vi.fn(),
@@ -79,14 +80,20 @@ vi.mock('../../src/lib/supabase', () => ({
         select: self,
         eq: self,
         abortSignal: self,
-        maybeSingle: async () =>
-          table === 'club_diamond_wallets'
-            ? state.wallet()
-            : { data: { role: state.viewerRole }, error: null },
+        maybeSingle: async () => {
+          if (table === 'club_diamond_wallets') return state.wallet();
+          if (state.viewerRoleError) throw state.viewerRoleError;
+          return { data: { role: state.viewerRole }, error: null };
+        },
       });
       return chain;
     },
-    rpc: (...args: unknown[]) => ({ abortSignal: () => state.rpc(...args) }),
+    rpc: (...args: unknown[]) => ({
+      setHeader() {
+        return this;
+      },
+      abortSignal: () => state.rpc(...args),
+    }),
   },
 }));
 
@@ -123,7 +130,7 @@ const memberDetail = {
     alias: 'River Shark',
     username: 'rivershark',
     display_name: 'River Shark',
-    avatar_url: null,
+    avatar_url: null as string | null,
     role: 'player',
     role_rank: 70,
     nickname: 'The Closer',
@@ -206,6 +213,7 @@ function deferred<T>() {
 }
 beforeEach(() => {
   state.viewerRole = 'owner';
+  state.viewerRoleError = null;
   state.memberChannel = null;
   state.walletChannel = null;
   state.wallet.mockResolvedValue({ data: { balance: 100 }, error: null });
@@ -527,27 +535,131 @@ it('complete access loss removes the old record and cannot be restored by a dela
   expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
 });
 
-it('limits source events to authority without replacing record sections or an unsaved note', async () => {
+it('updates live stats and downline fees without replacing identity or an unsaved note', async () => {
   render(<MemberManagementPage />);
   await screen.findByText('River Shark');
+  fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
+  const selectedRange = state.getMemberDetail.mock.calls.at(-1)?.[2];
+  const cardReads = state.rpc.mock.calls.filter(
+    ([name]) => name === 'ca_club_member_win_loss'
+  ).length;
   const nickname = screen.getByDisplayValue('The Closer');
   fireEvent.change(nickname, { target: { value: 'Unsaved Local Name' } });
-  state.getMemberDetail.mockResolvedValue({
+  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
     ...memberDetail,
     identity: { ...memberDetail.identity, alias: 'Updated Shark', nickname: 'Remote Name' },
     presence: { is_online: false, is_seated: false },
     stats: { ...memberDetail.stats, hands: 321, total_winnings: -44 },
     downline: { downline_direct: 3, downline_total: 8 },
-  });
+    range: { ...activeRange, is_overall: activeRange?.from === null },
+  }));
   await act(async () =>
     state.recordChannel?.onPayload({ payload: { user_id: state.params.userId } })
   );
   expect(screen.getByText('River Shark')).toBeInTheDocument();
   expect(screen.queryByText('Updated Shark')).not.toBeInTheDocument();
-  expect(screen.queryByText('321')).not.toBeInTheDocument();
-  expect(screen.queryByText('-44.00')).not.toBeInTheDocument();
-  expect(state.getDownline).toHaveBeenCalledTimes(1);
+  expect(state.getMemberDetail.mock.calls.at(-1)?.[2]).toEqual(selectedRange);
+  expect(screen.getByText('321')).toBeInTheDocument();
+  expect(state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_win_loss')).toHaveLength(
+    cardReads + 1
+  );
+  expect(screen.getByText('-44.00')).toBeInTheDocument();
+  expect(state.getDownline).toHaveBeenCalledTimes(3);
+  expect(state.getDownline.mock.calls.at(-1)?.[3]).toEqual(selectedRange);
   expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
+});
+
+it.each(['record_changed', 'SUBSCRIBED'])(
+  'applies the verified avatar on %s without replacing identity or note drafts',
+  async (event) => {
+    const view = render(<MemberManagementPage />);
+    await screen.findByText('River Shark');
+    fireEvent.change(screen.getByDisplayValue('The Closer'), {
+      target: { value: 'Unsaved Local Name' },
+    });
+    fireEvent.change(screen.getByDisplayValue('Strong Late Position Pressure'), {
+      target: { value: 'Unsaved Local Remark' },
+    });
+    state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+      ...memberDetail,
+      identity: {
+        ...memberDetail.identity,
+        alias: 'Remote Alias',
+        nickname: 'Remote Nickname',
+        remark: 'Remote Remark',
+        avatar_url: '/avatars/table/free_shark@2x.webp',
+      },
+      range: { ...activeRange, is_overall: activeRange?.from === null },
+    }));
+    await act(async () => {
+      if (event === 'record_changed') state.recordChannel?.onPayload({});
+      else state.recordChannel?.onSubscriptionStatus?.('SUBSCRIBED');
+    });
+    expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('/avatars/table/free_shark@2x.webp')
+    );
+    expect(screen.getByText('River Shark')).toBeInTheDocument();
+    expect(screen.queryByText('Remote Alias')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Unsaved Local Remark')).toBeInTheDocument();
+  }
+);
+
+it('applies an authoritative avatar removal without retaining the old image', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
+  const view = render(<MemberManagementPage />);
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+  // Settle bootstrap and its effect-owned refresh handler before delivering
+  // the record event exposed during render by the subscription mock.
+  await act(async () =>
+    initial.resolve({
+      ...memberDetail,
+      identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
+    })
+  );
+  await screen.findByText('River Shark');
+  expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
+  const authoritativeRemoval = deferred<typeof memberDetail>();
+  const initialReadCount = state.getMemberDetail.mock.calls.length;
+  state.getMemberDetail.mockImplementation(() => authoritativeRemoval.promise);
+  await act(async () => state.recordChannel?.onPayload({}));
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(initialReadCount + 1));
+  expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
+  const activeRange = state.getMemberDetail.mock.calls.at(-1)?.[2];
+  await act(async () => {
+    authoritativeRemoval.resolve({
+      ...memberDetail,
+      range: { ...activeRange, is_overall: activeRange?.from === null },
+    });
+  });
+  await waitFor(() => expect(view.container.querySelector('.mm-avatar img')).toBeNull());
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+});
+
+it('does not apply another member avatar from an unmatched record response', async () => {
+  const view = render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+    ...memberDetail,
+    identity: {
+      ...memberDetail.identity,
+      user_id: '33333333-3333-4333-8333-333333333333',
+      avatar_url: '/avatars/table/free_shark@2x.webp',
+    },
+    range: { ...activeRange, is_overall: activeRange?.from === null },
+  }));
+  await act(async () => state.recordChannel?.onPayload({}));
+  expect(view.container.querySelector('.mm-avatar img')).toBeNull();
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
 });
 
 it('ignores focus and checks only authority on a recovered record subscription', async () => {
@@ -667,6 +779,8 @@ it('keeps the chosen ledger dates fixed across a day boundary until an explicit 
 });
 
 it('keeps the real boundary and record mounted on recipient access invalidation while clearing caches', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   const priorUser = useUserStore.getState().user;
   useUserStore.setState({ user: { id: state.viewerId } as never });
   const view = render(
@@ -675,6 +789,18 @@ it('keeps the real boundary and record mounted on recipient access invalidation 
     </ClubPrivateDataBoundary>
   );
   try {
+    // Visible notes can precede the cards' deferred initial reads. Finish the
+    // bootstrap and observe each initial RPC before measuring ambient rereads.
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => initial.resolve(memberDetail));
+    await waitFor(() => {
+      expect(
+        state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_win_loss')
+      ).toHaveLength(1);
+      expect(
+        state.rpc.mock.calls.filter(([name]) => name === 'ca_club_member_upline_chain')
+      ).toHaveLength(1);
+    });
     const nickname = await screen.findByRole('textbox', { name: 'Nickname' });
     fireEvent.change(nickname, { target: { value: 'Mounted Boundary Draft' } });
     const downlineReads = state.getDownline.mock.calls.length;
@@ -915,4 +1041,71 @@ it('an old initial answer arriving before the authority denial remains unverifie
     view.unmount();
     useUserStore.setState({ user: priorUser });
   }
+});
+
+it('renders the member before an independent downline request settles', async () => {
+  const downline = deferred<never[]>();
+  state.getDownline.mockReturnValueOnce(downline.promise);
+  render(<MemberManagementPage />);
+  expect(await screen.findByText('River Shark')).toBeInTheDocument();
+  await act(async () => downline.resolve([]));
+});
+
+it('does not apply a delayed live stats response after a newer explicit range read', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const pending = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(pending.promise);
+  await act(async () => state.recordChannel?.onPayload({}));
+  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
+    ...memberDetail,
+    identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
+    stats: { ...memberDetail.stats, hands: 777 },
+    range: { ...activeRange, is_overall: false },
+  }));
+  fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+  expect(await screen.findByText('777')).toBeInTheDocument();
+  await act(async () =>
+    pending.resolve({
+      ...memberDetail,
+      identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_shark@2x.webp' },
+      stats: { ...memberDetail.stats, hands: 999 },
+    })
+  );
+  expect(screen.getByText('777')).toBeInTheDocument();
+  expect(screen.queryByText('999')).not.toBeInTheDocument();
+  expect(document.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
+});
+
+it('keeps a verified member visible when its separate viewer-role read fails closed', async () => {
+  state.viewerRoleError = new Error('role transport unavailable');
+  render(<MemberManagementPage />);
+  expect(await screen.findByText('River Shark')).toBeInTheDocument();
+  await act(async () => {});
+  expect(screen.queryByText('The Member Ledger Did Not Respond')).not.toBeInTheDocument();
+  expect(state.toast.error).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
+});
+
+it('cannot restore a downline that settles after financial access is withdrawn', async () => {
+  const downline = deferred<Array<{ user_id: string; alias: string }>>();
+  state.getDownline.mockReturnValueOnce(downline.promise);
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    stats: null,
+    wallets: null,
+    downline: null,
+    capabilities: { ...memberDetail.capabilities, can_view_financials: false },
+  });
+  await act(async () => state.recordChannel?.onPayload({}));
+  await act(async () =>
+    downline.resolve([{ user_id: '33333333-3333-4333-8333-333333333333', alias: 'Cyan Rail' }])
+  );
+  expect(screen.queryByText('Cash Hands')).not.toBeInTheDocument();
+  expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
 });

@@ -13,6 +13,7 @@ import {
 import { qualifiesRuntimeInputs } from './client-runtime-inputs.mjs';
 import { mergePublisherReceipt, receiptName, PROOFS } from './publisher-verdict-receipt.mjs';
 import { publisherJobKey } from './publisher-job-identity.mjs';
+import { readImmutablePublisherClientShards } from './publisher-client-shards.mjs';
 
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[1-9][0-9]*$/;
@@ -31,6 +32,7 @@ export async function publishedSelectionBase({
   receipt,
   manifests,
   cwd = process.cwd(),
+  producerShards = (sha) => readImmutablePublisherClientShards(cwd, sha),
 }) {
   if (!SHA.test(target) || !ID.test(String(repositoryId))) throw Error('Invalid target identity');
   const bodies = await origins();
@@ -154,18 +156,25 @@ export async function publishedSelectionBase({
         String(job.run_id) === String(retainedRun.id) &&
         job.head_sha === retainedRun.head_sha &&
         String(job.run_attempt) === String(retainedRun.run_attempt);
-      // Reuse only explicit execution of ALL four shards, never tree-reuse skips.
-      const shards = qualified.jobs.filter((job) => /^client-tests \([1-4]\)$/.test(job.name));
+      // Exact producer source owns the complete matrix. A historical four-shard
+      // producer stays valid, but four successful jobs cannot prove a sixteen-
+      // shard producer. Missing source is uncertainty, never permission to reuse.
+      const plan = await producerShards(retainedRun.head_sha);
+      const prefix = plan.jobPrefix || '';
+      const shards = qualified.jobs.filter((job) => /(?:^| \/ )client-tests(?: |$)/.test(job.name));
       if (
-        shards.length !== 4 ||
-        new Set(shards.map((job) => job.name)).size !== 4 ||
-        !shards.every((job) => {
-          const shard = /^client-tests \(([1-4])\)$/.exec(job.name)[1];
+        shards.length !== plan.total ||
+        new Set(shards.map((job) => job.name)).size !== plan.total ||
+        !plan.indices.every((index) => {
+          const matches = shards.filter((job) => job.name === `${prefix}client-tests (${index})`);
+          if (matches.length !== 1) return false;
+          const job = matches[0];
           return (
             ownsJob(job) &&
             job.steps?.filter(
               (step) =>
-                step.name === `Client tests must pass before the bundle ships (shard ${shard}/4)` &&
+                step.name ===
+                  `Client tests must pass before the bundle ships (shard ${index}/${plan.total})` &&
                 step.status === 'completed' &&
                 step.conclusion === 'success'
             ).length === 1
@@ -324,6 +333,7 @@ async function main() {
           }
         );
       },
+      producerShards: (sha) => readImmutablePublisherClientShards(process.cwd(), sha, budget()),
       ancestor: (from, to) => git('merge-base', '--is-ancestor', from, to),
     });
     console.log(`UI selection covers the complete unqualified backlog ${base}..${target}`);

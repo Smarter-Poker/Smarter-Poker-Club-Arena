@@ -41,6 +41,10 @@ const TRANSACTION = readFileSync(
   join(ROOT, 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
+const entryRead = TRANSACTION.slice(
+  TRANSACTION.indexOf('legacy_entry_read() {'),
+  TRANSACTION.indexOf('legacy_entry_trace() {')
+);
 const WORKFLOW = readFileSync(join(ROOT, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8');
 
 const fn = (name: string) => {
@@ -118,6 +122,7 @@ RELEASE_SEAL="$BIN/seal"
 SHA="$TARGET"
 SUPERSEDED_BY=''
 sleep() { :; }
+${entryRead}
 ${SOURCE}
 source_target_is_current ${mode}
 echo "SUPERSEDED_BY=$SUPERSEDED_BY"

@@ -48,7 +48,7 @@ on:
 
 jobs:
   publish-needed:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -246,325 +246,23 @@ jobs:
             echo "::notice::no green Client Unit Tests on PR #$PR head - running the shards."
           fi
 
-  client-tests:
+  client-publication:
     needs: publish-needed
-    # Runs unless this exact TREE already passed the same suite on the pull
-    # request head. See "Has this exact tree already passed" above - it compares
-    # tree hashes, not merge lineage, and fails closed.
-    if: needs.publish-needed.outputs.component == 'client' && needs.publish-needed.outputs.tests_proven != 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: needs.publish-needed.outputs.component == 'client'
+    concurrency:
+      group: publish-club-arena-client-${{ github.repository_id }}-${{ needs.publish-needed.outputs.target_sha }}
+      cancel-in-progress: false
     permissions:
       contents: read
-    strategy:
-      fail-fast: true
-      matrix:
-        shard: [1, 2, 3, 4]
-    env:
-      HUSKY: '0'
-      VITEST_MAX_THREADS: 2
-    steps:
-      - name: Checkout Club Arena at the publish target
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.publish-needed.outputs.target_sha }}
-          # Compare every unpublished commit, including financial predecessors.
-          fetch-depth: 0
-          filter: blob:none
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      # Cache the installed tree so npm ci is skipped on a hit - ~2 min off
-      # each shard. Keyed on the lockfile, so any dependency change installs
-      # fresh; identical behaviour, minus the wait.
-      - name: Restore node_modules
-        id: nm-cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-bfwh-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.nm-cache.outputs.cache-hit != 'true'
-        run: npm ci
-
-      - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
-        env:
-          CI_BASE_SHA: ${{ needs.publish-needed.outputs.selection_base }}
-          CI_HEAD_SHA: ${{ needs.publish-needed.outputs.target_sha }}
-        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4
-
-  build-and-store:
-    needs: publish-needed
-    if: needs.publish-needed.outputs.publish != 'false'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      # read is enough now: this job uploads an artifact instead of pushing a
-      # branch, so it no longer writes to the repository at all.
-      contents: read
-    env:
-      HUSKY: '0'
-
-    steps:
-      # The publish target, not the trigger sha — see "NO COMMIT LEFT BEHIND"
-      # in publish-needed. The bundle this job builds IS what production gets,
-      # so this checkout is the one that decides whether a queued commit ships.
-      - name: Checkout Club Arena at the publish target
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.publish-needed.outputs.target_sha }}
-          # Strict provenance requires complete ancestry for this exact target.
-          fetch-depth: 0
-          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
-          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
-          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
-          # reads a historical file version - they ask merge-base, rev-list, log and
-          # cat-file -e, which are all commit-graph work - so those blobs were paid
-          # for on every run and never read.
-          filter: blob:none
-
-      # STAGE MARKERS REMOVED (2026-08-21).
-      #
-      # Three steps here used to `git push HEAD:refs/heads/ci-marker/<sha>-*`
-      # after checkout, deps and build, so that "which markers exist" told you
-      # which stage died. They were added 2026-08-06 with the explicit
-      # justification "without needing the Actions API" — at the time that API
-      # was not readable from here.
-      #
-      # It is readable now. `gh run view <id> --json` and
-      # `gh api repos/.../actions/runs/<id>/jobs` return every step with its
-      # own conclusion, which is strictly more information than the markers
-      # ever carried: today that is how the failing step was identified as
-      # "Client tests must pass before the bundle ships", something the
-      # markers could only have narrowed to "somewhere after deps".
-      #
-      # The cost was not free. Three refs per push, never cleaned up, had
-      # accumulated 716 ci-marker branches out of 1025 total on this repo —
-      # every one of them a permanent ref that `actions/checkout` and every
-      # `git ls-remote` pays for. Deleted here so it stops growing.
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      # ── THE PUBLISHER WAS BUILDING COLD, EVERY TIME ──────────────────────
-      #
-      # CI's `Production Build` job caches both `node_modules` and
-      # `node_modules/.vite`. This job cached neither, so every publish paid a
-      # full `npm ci` and a full cold Vite build - measured at 3.4 minutes of
-      # run time on top of its queue wait, on the critical path between a merge
-      # and a player seeing the change.
-      #
-      # Same keys as CI on purpose: both are keyed on the lockfile, so a
-      # dependency change invalidates both together and neither can serve a
-      # stale tree. A cache MISS simply builds exactly as before - there is no
-      # new failure mode here, only a faster hit.
-      # NOTE THE NODE VERSION IN THE KEY. This job runs Node 22; CI's
-      # `Production Build` runs Node 20 and keys its cache `node20`. Sharing one
-      # key across two major versions would restore a `node_modules` whose
-      # native modules were compiled for the other runtime - a real breakage,
-      # and a silent one. Separate keys; each warms after its first run.
-      - name: Restore node_modules
-        id: nm-cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
-
-      - name: Cache Vite Build
-        uses: actions/cache@v4
-        with:
-          path: node_modules/.vite
-          key: vite-publish-${{ runner.os }}-node22-${{ hashFiles('**/package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.nm-cache.outputs.cache-hit != 'true'
-        run: npm ci
-
-      # 2026-09-04: content-addressed cache for scripts/optimize-dist-media.mjs,
-      # which was 85.7s of this job's 120s build. Same key shape as ci.yml, but
-      # a different cache namespace: this job runs Node 22 and CI runs Node 20,
-      # and sharp's version is part of every entry key anyway, so nothing is
-      # shared across the two by accident.
-      - name: Cache optimized dist media
-        uses: actions/cache@v4
-        with:
-          path: node_modules/.cache/dist-media
-          key: >-
-            dist-media-publish-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
-            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
-            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
-          restore-keys: dist-media-publish-v1-${{ runner.os }}-
-
-      # This job runs the FULL `npm run build`, `tsc -b` included, while
-      # ci.yml's two build jobs run `build:ci` without it. That asymmetry is
-      # deliberate: the tree that actually reaches players is typechecked
-      # before it ships, and the throwaway PR-head builds are not, because the
-      # required `TypeScript Check` job has already checked that same tree.
-      #
-      - name: Build Club Arena
-        env:
-          CA_BUILD_PURPOSE: production-publish
-          CA_PUBLISH_TARGET_SHA: ${{ needs.publish-needed.outputs.target_sha }}
-          NODE_ENV: production
-          VITE_ANTIGRAVITY_ENABLED: 'true'
-          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
-          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
-          VITE_ENGINE_URL: 'https://engine.smarter.poker'
-          # Remains off until a protected source change follows hosted qualification.
-          VITE_PRIVATE_RECORD_FALLBACK_URL: ''
-          VITE_APP_ENV: production
-          VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
-          VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
-        run: npm run build
-
-      - name: Record the actual client module and build input closure
-        run: node scripts/ci/client-runtime-inputs.mjs
-
-      # Keep source private even if an older tool emits a map.
-      - name: Source maps never ship to players
-        run: |
-          BEFORE=$(find dist -name '*.map' | wc -l | tr -d ' ')
-          find dist -name '*.map' -delete
-          AFTER=$(find dist -name '*.map' | wc -l | tr -d ' ')
-          echo "source maps stripped from dist: $BEFORE removed, $AFTER remaining"
-          if [ "$AFTER" != "0" ]; then
-            echo "::error::source maps survived the strip - refusing to publish them"
-            exit 1
-          fi
-
-      # Build provenance: record the commit this dist was actually built from,
-      # inside the bundle. Three syncs on 2026-08-19 published a bundle built
-      # from a stale tree while naming the current sha in the commit message;
-      # nothing in the artefact contradicted them. With this file,
-      #   curl -s https://smarter.poker/hub/club-arena/build-info.json
-      # answers "what is actually live" without grepping minified chunks.
-      - name: Stamp build provenance
-        run: |
-          cat > dist/build-info.json <<JSON
-          {
-            "ca_sha": "${{ needs.publish-needed.outputs.target_sha }}",
-            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "built_by": "publish-club-arena.yml",
-            "run_id": "${{ github.run_id }}"
-          }
-          JSON
-          cat dist/build-info.json
-
-      # The artifact courier authenticates the upload/download envelope, while
-      # this manifest authenticates every byte after rsync and makes an existing
-      # releases/<sha> directory immutable: a retry may reuse it only when the
-      # complete manifest and every recorded file still agree.
-      - name: Seal the immutable release bytes
-        run: |
-          set -euo pipefail
-          if find dist -type l -print -quit | grep -q .; then
-            echo '::error::dist contains a symlink; refusing a release that can escape its root.'
-            exit 1
-          fi
-          (
-            cd dist
-            find . -type f ! -path './.release-manifest.sha256' -print0 \
-              | LC_ALL=C sort -z \
-              | xargs -0 sha256sum > .release-manifest.sha256
-            test -s .release-manifest.sha256 \
-              || { echo '::error::dist/.release-manifest.sha256 is empty; the seal recorded no files.'; exit 1; }
-            sha256sum --strict -c .release-manifest.sha256
-          )
-
-      # THE COURIER IS AN ARTIFACT, NOT A BRANCH (2026-08-23).
-      #
-      # This step used to force-push dist/ to an orphan branch
-      # `build/world-hub-sync-<sha>` so the sync job could check it out. From
-      # 05:17 UTC every publish failed there, four runs in a row and then the
-      # manual dispatch too, always the same way:
-      #
-      #   remote: fatal error in commit_refs
-      #   ! [remote rejected] build/world-hub-sync-<sha> (failure)
-      #
-      # Isolated by experiment rather than guessed at: a small push to this
-      # repo succeeds, and pushing the SAME 84MB dist as an orphan branch from
-      # a workstation over SSH also succeeds - so it is neither the ref
-      # backend, nor the size, nor the content. Only the runner's HTTPS push
-      # of an 84MB pack fails, and it fails every time. Production sat 40
-      # minutes behind main with a dozen merged pull requests stuck behind it.
-      #
-      # Passing build output between jobs is what upload-artifact is FOR. It
-      # removes the failing push entirely, and with it three long-standing
-      # costs of the branch approach: an 84MB pack pushed to the repository on
-      # every single commit to main, a ref per publish that only gets cleaned
-      # up when the run succeeds (nine were still lying around), and the
-      # GITHUB_TOKEN write permission this job needed purely to create them.
-      - name: Upload dist for the sync job
-        uses: actions/upload-artifact@v4
-        with:
-          name: club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}
-          path: dist
-          # upload-artifact excludes dotfiles unless this is explicit. The
-          # release seal is intentionally named .release-manifest.sha256, so
-          # omitting hidden files would make every origin publish fail before
-          # transfer and would separate the bytes from their integrity proof.
-          include-hidden-files: true
-          # A courier, not a record: the immutable Hetzner release directory
-          # and its build stamp are the permanent copy. One day is enough for
-          # a retry.
-          retention-days: 1
-          if-no-files-found: error
-          compression-level: 6
-
-      # Prove the thing the next job depends on actually exists, rather than
-      # discovering it is missing halfway through publication. Kept from the
-      # branch version, which checked the same file for the same reason.
-      # WHAT THE ORIGIN REQUIRES IS CHECKED HERE, NOT ONLY index.html
-      # (2026-09-22). This step only ever looked at dist/index.html, so a
-      # bundle that the host transaction can never accept still went green
-      # here, uploaded, and was refused 4 minutes later on the origin. On
-      # 2026-09-22 `self-host-fonts` could not reach Google Fonts, exited 0,
-      # and produced a dist with no fonts/ at all; runs 35763554815 and
-      # 35764705782 then failed inside the host transaction on
-      # `test -d "$FINAL/fonts"` with an empty log. The origin serves
-      # /fonts/* out of the append-only pool, whose fonts.css is a symlink
-      # into current/fonts/fonts.css, so a release without fonts/ would
-      # dangle that pointer for every already-cached shell. The origin is
-      # right to refuse it; this job is where that refusal is cheap and
-      # legible.
-      - name: Verify dist is complete
-        run: |
-          set -uo pipefail
-          MISSING=0
-          require_directory() {
-            [ -d "$1" ] && [ ! -L "$1" ] && return 0
-            echo "::error::$1 is not a directory in the built bundle; found: $(ls -ld -- "$1" 2>&1 || true)"
-            MISSING=1
-          }
-          require_file() {
-            [ -f "$1" ] && [ ! -L "$1" ] && return 0
-            echo "::error::$1 is not a regular file in the built bundle; found: $(ls -ld -- "$1" 2>&1 || true)"
-            MISSING=1
-          }
-          require_file dist/index.html
-          require_file dist/build-info.json
-          require_file dist/ca-provenance.json
-          require_directory dist/assets
-          require_directory dist/fonts
-          require_file dist/fonts/fonts.css
-          if [ "$MISSING" != "0" ]; then
-            echo "::error::The built bundle is missing what the origin transaction requires, so publication would be refused on the host. dist contains: $(ls -A1 dist 2>&1 | tr '\n' ' ')"
-            exit 1
-          fi
-          echo "dist carries index.html, assets/, fonts/fonts.css and its provenance ($(du -sh dist | cut -f1) total)"
-
-      - name: Build summary
-        run: |
-          echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "dist uploaded as artifact \`club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "Proceeding to publish to the origin..." >> $GITHUB_STEP_SUMMARY
+      actions: read
+    uses: ./.github/workflows/publish-club-arena-client.yml
+    with:
+      target_sha: ${{ needs.publish-needed.outputs.target_sha }}
+      component: client
+      publish: ${{ needs.publish-needed.outputs.publish }}
+      tests_proven: ${{ needs.publish-needed.outputs.tests_proven }}
+      selection_base: ${{ needs.publish-needed.outputs.selection_base }}
+    secrets: inherit
 
   build-record-gateway:
     needs: publish-needed
@@ -615,16 +313,11 @@ jobs:
           retention-days: 7
 
   production:
-    name: production
-    needs: [publish-needed, client-tests, build-and-store, build-record-gateway]
+    needs: [publish-needed, build-record-gateway]
     if: >-
       always() &&
       needs.publish-needed.result == 'success' &&
-      ((needs.publish-needed.outputs.component == 'client' &&
-        (needs.client-tests.result == 'success' ||
-         (needs.client-tests.result == 'skipped' && needs.publish-needed.outputs.tests_proven == 'true')) &&
-        (needs.publish-needed.outputs.publish == 'false' || needs.build-and-store.result == 'success')) ||
-       (needs.publish-needed.outputs.component == 'private-record-gateway' && needs.build-record-gateway.result == 'success') ||
+      ((needs.publish-needed.outputs.component == 'private-record-gateway' && needs.build-record-gateway.result == 'success') ||
        needs.publish-needed.outputs.component == 'private-record-bootstrap' ||
        needs.publish-needed.outputs.component == 'private-record-credentials' ||
        needs.publish-needed.outputs.component == 'private-record-inspect')
@@ -640,7 +333,7 @@ jobs:
       component: ${{ needs.publish-needed.outputs.component }}
       publish: ${{ needs.publish-needed.outputs.publish }}
       tests_proven: ${{ needs.publish-needed.outputs.tests_proven }}
-      client_result: ${{ needs.client-tests.result }}
-      build_result: ${{ needs.build-and-store.result }}
+      client_result: skipped
+      build_result: skipped
       gateway_build_result: ${{ needs.build-record-gateway.result }}
     secrets: inherit

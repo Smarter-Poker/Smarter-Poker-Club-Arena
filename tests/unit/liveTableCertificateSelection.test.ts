@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { transpileModule } from 'typescript';
+import { openLobbyGameSection } from '../e2e/support/lobbyGameSections';
 import {
   scopedStalledTables,
   classifyMissingTournamentSubject,
@@ -48,6 +49,62 @@ const running = {
   addon_period_ends_at: null,
   blind_structure: [level(10), level(10), level(10), level(10), level(10), level(10), level(10)],
 };
+
+it('opens Cash Games before the Lightning lobby readiness assertion', async () => {
+  const source = readFileSync(
+    join(__dirname, '../e2e/production-lightning-lobby-join.spec.ts'),
+    'utf8'
+  );
+  const start = source.indexOf('    const offer = diamondEntryRead(page);');
+  const end = source.indexOf('    await settleDiamondSpinsOffer(page, offer);', start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  const readiness: string[] = [];
+  let cashSectionOpen = false;
+  const page = {
+    goto: async () => {},
+    locator: () => ({ first: () => ({ cashCards: true }) }),
+    getByRole: (role: string, { name }: { name: string }) => ({
+      waitFor: async () => {
+        if (role !== 'button' || name !== 'Cash Games')
+          throw new Error(`Unexpected section control: ${role} ${name}`);
+      },
+      getAttribute: async () => (cashSectionOpen ? 'true' : 'false'),
+      click: async () => {
+        if (role !== 'button' || name !== 'Cash Games')
+          throw new Error(`Unexpected browse action: ${role} ${name}`);
+        cashSectionOpen = true;
+        readiness.push('cash-section-open');
+      },
+    }),
+  };
+  const runReadiness = new Function(
+    'page',
+    'club',
+    'expect',
+    'prepareCashLobbyActions',
+    'diamondEntryRead',
+    'openLobbyGameSection',
+    transpileModule(`async function run() {${source.slice(start, end)}}`, {}).outputText +
+      '\nreturn run();'
+  );
+  await runReadiness(
+    page,
+    'fixture',
+    (target: unknown) => ({
+      not: { toHaveURL: async () => {} },
+      toBeVisible: async () => {
+        if (!(target as { cashCards?: boolean }).cashCards || !cashSectionOpen)
+          throw new Error('Cash Games must open before Lightning cash rows are ready');
+        readiness.push('cash-rows-ready');
+      },
+    }),
+    async () => {},
+    () => ({}),
+    openLobbyGameSection
+  );
+  expect(readiness).toEqual(['cash-section-open', 'cash-rows-ready']);
+});
 
 describe('an MTT table is selected only if its tournament can yield an eligible HUD clock', () => {
   it('excludes a currently eligible synchronized clock whose recovery look-ahead reaches the break', () => {
@@ -297,6 +354,8 @@ describe('the actual cash selector scans across lobby tabs', () => {
   );
   async function select(rows: Record<string, string[]>, removed: string[] = []) {
     let active = 'default';
+    let cashSectionOpen = false;
+    const readiness: string[] = [];
     const navigation = source.slice(
       source.indexOf('    // The engine-progress wait above can outlast'),
       source.indexOf('    const navigationStartedAt = Date.now();')
@@ -307,15 +366,34 @@ describe('the actual cash selector scans across lobby tabs', () => {
       goto: async () => {},
       url: () => 'https://example.invalid/clubs/fixture',
       locator: (selector: string) => ({
-        first: () => ({ waitFor: async () => {} }),
+        first: () => ({
+          waitFor: async () => {
+            if (!cashSectionOpen)
+              throw new Error('Cash Games must open before cash cards are ready');
+            readiness.push('cards-ready');
+          },
+        }),
         // Exercise the real card branch; a hidden off-tab row is not visible.
         isVisible: async () => false,
         getByRole: () => ({
           viewId: /data-id="([^"]+)"/.exec(selector)?.[1],
         }),
       }),
-      getByRole: (_: string, { name }: { name: string }) => ({
+      getByRole: (role: string, { name }: { name: string }) => ({
+        requiresCashSection: role === 'tab',
+        waitFor: async () => {
+          if (role !== 'button' || name !== 'Cash Games')
+            throw new Error(`Unexpected section control: ${role} ${name}`);
+        },
+        getAttribute: async () => (cashSectionOpen ? 'true' : 'false'),
         click: async () => {
+          if (role === 'button') {
+            if (name !== 'Cash Games') throw new Error(`Unexpected browse action: ${name}`);
+            cashSectionOpen = true;
+            readiness.push('cash-section-open');
+            return;
+          }
+          if (!cashSectionOpen) throw new Error('Cash Games must open before selecting a cash tab');
           active = name;
         },
       }),
@@ -326,6 +404,7 @@ describe('the actual cash selector scans across lobby tabs', () => {
       'CASH_PROGRESS_CANDIDATES',
       'expect',
       'prepareCashLobbyActions',
+      'openLobbyGameSection',
       'visibleRunningCashCandidates',
       'readEngineHealth',
       'healthyRunningTable',
@@ -344,14 +423,17 @@ describe('the actual cash selector scans across lobby tabs', () => {
     )(
       'https://example.invalid/clubs/fixture',
       8,
-      (locator: { viewId?: string }) => ({
+      (locator: { viewId?: string; requiresCashSection?: boolean }) => ({
         toBeVisible: async () => {
+          if (locator.requiresCashSection && !cashSectionOpen)
+            throw new Error('Cash Games must open before cash tabs are visible');
           if (locator.viewId && !(rows[active] ?? []).includes(locator.viewId))
             throw new Error(`View ${locator.viewId} is hidden on ${active}`);
         },
         toHaveAttribute: async () => {},
       }),
       async () => {},
+      openLobbyGameSection,
       async () => {
         visited.push(active);
         return (rows[active] ?? []).map((id) => ({ id, gameFormat: 'cash' }));
@@ -371,10 +453,17 @@ describe('the actual cash selector scans across lobby tabs', () => {
       result: await selector.select(page, {}),
       visited,
       reads,
+      readiness,
       open: (selected: unknown) => selector.open(page, selected),
       active: () => active,
     };
   }
+
+  it('opens the Cash Games section before waiting for cash cards and scanning variants', async () => {
+    const { readiness, visited } = await select({ NLH: ['live'] });
+    expect(readiness).toEqual(['cash-section-open', 'cards-ready']);
+    expect(visited).toEqual(['NLH', 'PLO', 'LIMIT']);
+  });
 
   it('keeps the first NLH table and discovers PLO and LIMIT witnesses without duplicates', async () => {
     const { result, visited, reads } = await select({

@@ -21,6 +21,8 @@ else
   echo 'PostgreSQL 17 or Docker is required (or set PG17_BIN to its bin directory).' >&2
   exit 1
 fi
+# New admission wrapper only: controlled existing-helper fixtures, real SECDEF/ACLs.
+PG17_BIN="$PG_BIN" python3 -B "$HERE/test-heldout-physics-wrapper.py"
 # The hosted parity reader admits only this runner's own private fixture socket.
 # Local runs retain their explicit external-SSD TMPDIR.
 WORK_ROOT="${TMPDIR:-/tmp}"
@@ -47,6 +49,9 @@ PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$DB")
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908181657_the_horse_reads_only_a_certified_solver_dataset.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908181714_the_solver_score_keeps_every_decision_receipt.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908181724_both_solver_hosts_and_the_compactor_leave_receipts.sql"
+"${PSQL[@]}" -f "$HERE/model-ingress-before.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261030023627_v31_model_operations_enter_the_scoped_replay_gate.sql"
+"${PSQL[@]}" -f "$HERE/model-ingress-after.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908182030_the_certified_solver_foreign_keys_have_indexes.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908185700_certified_solver_receipts_match_pio_and_require_sizing_evidence.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908190825_gto_v31_holdout_boards_are_disjoint.sql"

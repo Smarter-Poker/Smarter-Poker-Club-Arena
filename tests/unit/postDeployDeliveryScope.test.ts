@@ -146,7 +146,7 @@ describe('post-publication verification belongs to its delivered component', () 
 
   it('isolates the finite club-channel lifecycle proof from client and spectator authority', () => {
     const lifecycle = workflow.jobs['club-channel-lifecycle-e2e'];
-    expect(lifecycle.needs).toBe('publication-gate');
+    expect(lifecycle.needs).toEqual(['publication-gate', 'certification-cleanup-safety']);
     expect(lifecycle.if).toContain("github.event_name == 'repository_dispatch'");
     expect(lifecycle.if).toContain("github.event.client_payload.engine_sha != ''");
     expect(lifecycle.concurrency['cancel-in-progress']).toBe(false);
@@ -170,6 +170,29 @@ describe('post-publication verification belongs to its delivered component', () 
     expect(retained.with['if-no-files-found']).toBe('error');
   });
 
+  it('executes bounded ten-socket admission proof before the existing ACL cases and cleanup', () => {
+    const source = readFileSync(
+      join(root, 'tests/e2e/production-club-channel-lifecycle.spec.ts'),
+      'utf8'
+    );
+    expect(source).toContain('async function admissionCohort()');
+    expect(source.indexOf('await admissionCohort();')).toBeLessThan(
+      source.indexOf("await negative('absent')")
+    );
+    expect(source).toContain('index < 10');
+    expect(source).toContain('open(staffLogin.data.session!.access_token, false)');
+    expect(source).toContain('expect((await state(refused)).closeCode).toBe(4429)');
+    expect(source).toContain('await probeCohort(cohort)');
+    expect(source).toMatch(/await expect\s*\.poll\(async \(\) => \(await state\(index\)\)\.closed/);
+    expect(source).toContain("label: 'connection-admission'");
+    expect(source).toContain('retired: true');
+    expect(source).toContain('if (join)');
+    expect(source).toContain('finally {\n    await cleanup();');
+    expect(source).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
+    expect(source).toContain("trace: 'off', video: 'off', screenshot: 'off'");
+    expect(source).toContain("await negative('departed')");
+  });
+
   it('waits for exact-engine thaw before provisioning a channel lifecycle account', () => {
     const lifecycle = workflow.jobs['club-channel-lifecycle-e2e'];
     // 15m next-announcement lead, 12m wait, 15m case/fixture allowance,
@@ -190,12 +213,12 @@ describe('post-publication verification belongs to its delivered component', () 
   });
 
   it('gives the client its own result without an engine or live-table prerequisite', () => {
-    expect(client.needs).toBe('publication-gate');
+    expect(client.needs).toEqual(['publication-gate', 'certification-cleanup-safety']);
     expect(client.if).toBe("needs.publication-gate.outputs.should_run == 'true'");
     expect(JSON.stringify(client)).not.toMatch(
       /EXPECTED_ENGINE_SHA|engine-ready|ENGINE_TRIGGER_SHA|live-table-realtime/
     );
-    expect(engine.needs).toBe('publication-gate');
+    expect(engine.needs).toEqual(['publication-gate', 'certification-cleanup-safety']);
     expect(engine.concurrency.group).not.toBe(client.concurrency.group);
     expect(engine.concurrency['cancel-in-progress']).toBe(false);
     expect(JSON.stringify(engine)).toContain('production-live-table-realtime.spec.ts');

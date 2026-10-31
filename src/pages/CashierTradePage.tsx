@@ -108,6 +108,7 @@ import {
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import CashierMyWallets from '../components/wallet/CashierMyWallets';
 import { CashierFrameBalance } from '../components/wallet/CashierFrameBalance';
 import DiamondWalletTransfer from '../components/wallet/DiamondWalletTransfer';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
@@ -155,7 +156,7 @@ import {
 } from '../utils/cashierAmount';
 import { titleCase } from '../utils/titleCase';
 import { generateAvatarSvg } from '../utils/avatarGenerator';
-import { creditHeadroomOf, readCashierBalances } from '../services/cashierBalanceRead';
+import { readCashierBalances } from '../services/cashierBalanceRead';
 import {
   buildTournamentTicketItem,
   tournamentTicketIdempotencyKey,
@@ -563,7 +564,6 @@ function CashierTradeWorkspace() {
    */
   const [agentWallet, setAgentWallet] = useState<number | null>(null);
   /** What a credit agent may send beyond the float; 0 for everyone else. */
-  const [agentCredit, setAgentCredit] = useState(0);
   const [downline, setDownline] = useState<DownlineRow[]>([]);
   const [mineOnly, setMineOnly] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1184,9 +1184,6 @@ function CashierTradeWorkspace() {
           : floatRes.data
             ? Number(floatRes.data.agent_wallet_balance) || 0
             : 0;
-        // A credit agent may send past the float, drawn against the line the
-        // server allows (credit_limit - credit_used). Prepaid agents have none.
-        const credit = floatRes.error ? 0 : creditHeadroomOf(floatRes.data);
 
         /**
          * WHO THIS PAGE MAY TRANSACT WITH — asked in the database.
@@ -1271,7 +1268,6 @@ function CashierTradeWorkspace() {
               setRoleResolved(true);
               setMyBalance(bal);
               setAgentWallet(float);
-              setAgentCredit(credit);
               setDownline(mapCashierRoster(dl, user.id));
               setLoading(false);
               setRosterLoadingMore(page.length === rosterPageSize);
@@ -1293,7 +1289,6 @@ function CashierTradeWorkspace() {
         setRoleResolved(true);
         setMyBalance(bal);
         setAgentWallet(float);
-        setAgentCredit(credit);
         setDownline(mapCashierRoster(dl, user.id));
         setRosterLoadingMore(false);
         if (complete) setLastVerifiedAt(Date.now());
@@ -2803,15 +2798,9 @@ function CashierTradeWorkspace() {
       return;
     }
     const total = parsedAmount.total;
-    if (
-      kind === 'send' &&
-      selectedSourceBalance !== null &&
-      total > selectedSourceBalance + (sendSource === 'agent_wallet' ? agentCredit : 0)
-    ) {
+    if (kind === 'send' && selectedSourceBalance !== null && total > selectedSourceBalance) {
       toast?.error?.(
-        sendSource === 'agent_wallet' && agentCredit > 0
-          ? `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet And Credit Line Allow, ${exactChipFigure((agentWallet ?? 0) + agentCredit)}`
-          : `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than ${SEND_SOURCE_LABELS[sendSource]} Holds, ${exactChipFigure(selectedSourceBalance)}`
+        `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than ${SEND_SOURCE_LABELS[sendSource]} Holds, ${exactChipFigure(selectedSourceBalance)}`
       );
       return;
     }
@@ -3514,7 +3503,6 @@ function CashierTradeWorkspace() {
       );
       if (!isMounted.current || transferView.current !== owningView) return;
       setAgentWallet(snapshot.bank);
-      setAgentCredit(snapshot.credit);
       setPromoBalances({ own: snapshot.promoFloat, club: snapshot.promoPot });
       // The agent snapshot also carries the authorized club panel's treasury.
       setBankBalance(snapshot.clubBank);
@@ -4066,6 +4054,15 @@ function CashierTradeWorkspace() {
         className={styles.console}
       >
         <div className={styles.glass}>
+          {user?.id && clubUuid && roleResolved && currentClub && (
+            <CashierMyWallets
+              key={`${user.id}:${clubUuid}:${myRole}`}
+              userId={user.id}
+              clubId={clubUuid}
+              role={myRole}
+              variant={currentClub.entityType}
+            />
+          )}
           {/* Dan 2026-10-16: the Simple view carries no "Simple Cashier" caption
           and no toolbar row; its Advanced switch sits beside the club so the
           club leads the glass. Advanced keeps its labelled toolbar. */}
@@ -6194,8 +6191,7 @@ function CashierTradeWorkspace() {
                               ? 'Selected Wallet Could Not Be Verified'
                               : batchPlan.total >
                                   (amountModal === 'send'
-                                    ? (selectedSourceBalance ?? Number.POSITIVE_INFINITY) +
-                                      (sendSource === 'agent_wallet' ? agentCredit : 0)
+                                    ? (selectedSourceBalance ?? Number.POSITIVE_INFINITY)
                                     : myBalance)
                                 ? 'Insufficient Chips In The Funding Wallet'
                                 : ''}

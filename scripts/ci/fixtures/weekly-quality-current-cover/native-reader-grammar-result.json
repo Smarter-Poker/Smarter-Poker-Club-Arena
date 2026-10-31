@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "native_blocks": 19,
+  "complete_readers_outer_grammar": ["pre", "post"],
+  "both_pre_and_post_inner_guards_compiled": true,
+  "actual_business_or_production_functions_not_executed": true
+}

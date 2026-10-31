@@ -1098,7 +1098,10 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
       ? { key: 'running', label: status === 'COMPLETING' ? 'Finishing' : 'Running' }
       : { key: 'closed', label: 'Entry Unavailable' };
   }
-  if (status === 'RUNNING') {
+  if (
+    status === 'RUNNING' ||
+    (t.started_at && ['REGISTERING', 'ANNOUNCED', 'STARTING_SOON'].includes(status))
+  ) {
     if (
       isInLateRegistration(
         {
@@ -1176,8 +1179,8 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
       return { key: 'registering', label: 'Open Seats' };
     }
 
-    // House rule (tournamentFilters): overdue-but-still-registering is the
-    // most "starting soon" thing in the lobby, so no lower bound here.
+    // A passed schedule is not evidence of a start. Only started_at or the
+    // running lifecycle above can declare an event running.
     const startMs = t.start_time ? new Date(t.start_time).getTime() : NaN;
     if (Number.isFinite(startMs) && startMs - Date.now() <= STARTING_SOON_MS)
       return { key: 'starting_soon', label: 'Starting Soon' };

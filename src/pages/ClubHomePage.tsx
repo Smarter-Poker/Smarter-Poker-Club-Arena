@@ -1,3 +1,5 @@
+import LobbyFilterLabel from '../components/lobby/LobbyFilterLabel';
+import LobbyGameSections from '../components/lobby/LobbyGameSections';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 import { DiamondJackpotReadout } from '../components/bbj/DiamondJackpotReadout';
@@ -115,6 +117,10 @@ import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels'
 import { useToast } from '../components/common/Toast';
 import { joinCashGame, joinGameRefusalText, waitlistedText } from '../services/cashGameLobby';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
+import {
+  reconcileTournamentLobbyRead,
+  type TournamentLobbyChange,
+} from '../utils/tournamentLobbyRead';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
@@ -127,23 +133,15 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID, resolveClubUUIDSync } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
-import DynamicWallet from '../components/wallet/DynamicWallet';
-import WalletCashierModal from '../components/wallet/WalletCashierModal';
-import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
-import UnionTreasuryDetailModal, {
-  type TreasuryDetailMode,
-} from '../components/union/UnionTreasuryDetailModal';
-import Modal from '../components/common/Modal';
-import { RakeReports } from '../components/admin/RakeReports';
-import SpinActivationPanel from '../components/club/SpinActivationPanel';
-import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
-import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
-import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
 import { DIAMOND_ARENA_CLUB_ID, SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
-import { matchesAllTabTournamentStatus, matchesVariant } from '../utils/tournamentFilters';
+import {
+  isRecordedSatelliteTournament,
+  matchesAllTabTournamentStatus,
+  matchesVariant,
+} from '../utils/tournamentFilters';
 import { isWithinLobbyWindow, lobbyQueryHorizonIso } from '../utils/tournamentScheduleWindow';
 import {
   loadViewPrefs,
@@ -405,7 +403,16 @@ interface TournamentData {
  * and ordering moved to an explicit sort control instead of being implied by
  * whichever tab happened to be selected.
  */
-type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+type GameType =
+  | 'ALL'
+  | 'HOLDEM'
+  | 'OMAHA'
+  | 'LIMIT'
+  | 'MIXED'
+  | 'MTT'
+  | 'SNG'
+  | 'SPIN'
+  | 'SATELLITE';
 type SortKey = 'recommended' | 'stakes_high' | 'stakes_low' | 'players' | 'starting_soon';
 type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
 type AllStatusFilter = 'ALL' | 'RUNNING' | 'OPEN_REGISTRATION' | 'LATE_REG' | 'STARTING_SOON';
@@ -413,9 +420,6 @@ type AllStatusFilter = 'ALL' | 'RUNNING' | 'OPEN_REGISTRATION' | 'LATE_REG' | 'S
 const ALL_STATUS_FILTERS: ReadonlyArray<{ key: AllStatusFilter; label: string }> = [
   { key: 'ALL', label: 'All' },
   { key: 'RUNNING', label: 'Running' },
-  { key: 'OPEN_REGISTRATION', label: 'Open Registration' },
-  { key: 'LATE_REG', label: 'Late Reg' },
-  { key: 'STARTING_SOON', label: 'Starting Soon' },
 ];
 /* The CashSubFilter / TournamentSubFilter types went with the state they
    described (see the note further down). Status is one mechanism now:
@@ -443,7 +447,7 @@ const ALL_TAB_MTT_CAP = 10;
 const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON', 'BAGGED'];
 
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
-const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
+const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN', 'SATELLITE'];
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -577,12 +581,13 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   /* LOBBY V2: All Games is a real tab now — the line-based table renders a
      combined column set for it, so it no longer needs to be hidden. */
   { key: 'ALL', label: 'ALL' },
-  { key: 'MTT', label: 'MTT' },
+  { key: 'MTT', label: "MTT'S" },
   { key: 'HOLDEM', label: 'NLH' },
   { key: 'OMAHA', label: 'PLO' },
   { key: 'LIMIT', label: 'LIMIT' },
   { key: 'SPIN', label: 'SPINS' },
-  { key: 'SNG', label: 'HEADS UP' },
+  { key: 'SNG', label: "SIT N GO'S" },
+  { key: 'SATELLITE', label: 'SATELLITES' },
 ];
 
 /**
@@ -605,6 +610,7 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
 const CREATE_TARGET_FOR_TAB: Record<GameType, GameCreationTarget | null> = {
   ALL: null,
   MTT: 'event',
+  SATELLITE: null,
   HOLDEM: 'table',
   OMAHA: 'table',
   LIMIT: 'table',
@@ -948,34 +954,22 @@ function ClubHomePageContent({
     return lo === hi ? `Mini ${lo}` : `Mini ${lo} - ${hi}`;
   }, [lobbyMini, diamondJackpot, isAutomaticArena]);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
-  // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
-  // to agent wallets, the full chip ledger, and (standalone clubs only) the
-  // Chip Mint, which used to be a "+" on the wallet panel itself.
-  const [activeCashier, setActiveCashier] = useState<
-    'club_bank' | 'promo_wallet' | 'agent_wallet' | null
-  >(null);
-  const [unionWalletModal, setUnionWalletModal] = useState<{
-    key: UnionWalletKey;
-    label: string;
-    balance: number;
-  } | null>(null);
-  const [unionTreasuryModal, setUnionTreasuryModal] = useState<TreasuryDetailMode | null>(null);
-  const [standaloneRakeModal, setStandaloneRakeModal] = useState(false);
-  const [standaloneSpinsModal, setStandaloneSpinsModal] = useState(false);
-  // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
-  // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
-  // member's own statement - a read-only view, so it is not an activeCashier.
-  const [showPlayerWallet, setShowPlayerWallet] = useState(false);
-  const [showDiamondWallet, setShowDiamondWallet] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
      single visit. All Games is the landing view of a dense lobby. */
   const [gameType, setGameType] = useState<GameType>(initialGameType ?? 'ALL');
+  // Browsing starts with an explicit choice. A requested landing remains a
+  // deliberate navigation and opens its own section without another click.
+  const [gameSection, setGameSection] = useState<'cash' | 'tournaments' | null>(
+    initialGameType ? (TOURNAMENT_TYPES.includes(initialGameType) ? 'tournaments' : 'cash') : null
+  );
   /* The landing this MOUNT was opened on. Held here, not re-read from the
      prop: the strip clears the prop as soon as the landing is reported
      applied, and the database's later correction of the saved view must still
      land on the requested list for this visit. A club switch drops it. */
+  const gameSectionRef = useRef(gameSection);
+  gameSectionRef.current = gameSection;
   const landingGameTypeRef = useRef<EmbeddedLobbyList | undefined>(initialGameType);
   const landingReportedRef = useRef(false);
   /* ── A SHARED ?game=<id> LINK (2026-10-25) ─────────────────────────────
@@ -1060,8 +1054,6 @@ function ClubHomePageContent({
   // LOBBY V2: show only starred cash tables. Declared here (not with the rest
   // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [walletsExpanded, setWalletsExpanded] = useState(false);
-  const [visibleWalletCount, setVisibleWalletCount] = useState(0);
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
   // 'running', which was invisible: picking a game type silently hid every
   // empty table and every tournament still taking registrations, so a club
@@ -1346,8 +1338,9 @@ function ClubHomePageContent({
    * reset effect below.
    */
   const listsPaintedRef = useRef(false);
-  // A newer joinable row contradicts an in-flight query's empty snapshot.
+  // Keep newer row updates and removals while either lobby read is in flight.
   const tournamentRevisionRef = useRef(0);
+  const tournamentReadChangesRef = useRef(new Map<string, TournamentLobbyChange<TournamentData>>());
   const loadingRef = useRef(false);
   const reloadPendingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(false);
@@ -1405,6 +1398,7 @@ function ClubHomePageContent({
     setLoading(true);
     loadingRef.current = false;
     reloadPendingRef.current = false;
+    tournamentReadChangesRef.current.clear();
     hasDataRef.current = false;
     listsPaintedRef.current = false;
     setGameListsLoaded(false);
@@ -1697,26 +1691,46 @@ function ClubHomePageContent({
         if (!isCurrent()) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
           const updated = payload.new as any;
+          const listed = belongsInTournamentList(updated);
+          const revision = ++tournamentRevisionRef.current;
+          // A late duplicate UPDATE cannot undo removal within this read.
+          if (!listed || tournamentReadChangesRef.current.get(updated.id)?.row !== null) {
+            tournamentReadChangesRef.current.set(updated.id, {
+              revision,
+              row: listed ? updated : null,
+            });
+          }
           // A tournament leaving a joinable state (CANCELLED/COMPLETED) used to
           // be merged and left on screen as a clickable card — re-opening the
           // silent-join bug live, without a refresh. Drop it instead, mirroring
           // the table handler.
-          if (!belongsInTournamentList(updated)) {
+          if (!listed) {
             setTournaments((prev) => prev.filter((t) => t.id !== updated.id));
           } else {
-            tournamentRevisionRef.current += 1;
             setTournaments((prev) =>
               prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
             );
           }
         } else if (payload.eventType === 'INSERT' && payload.new) {
           if (!belongsInTournamentList(payload.new)) return;
+          if (tournamentReadChangesRef.current.get(payload.new.id)?.row === null) return;
           tournamentRevisionRef.current += 1;
+          if (!tournamentReadChangesRef.current.has(payload.new.id)) {
+            tournamentReadChangesRef.current.set(payload.new.id, {
+              revision: tournamentRevisionRef.current,
+              row: payload.new,
+              insertOnly: true,
+            });
+          }
           setTournaments((prev) => {
             if (prev.some((t) => t.id === payload.new.id)) return prev;
             return [payload.new as any, ...prev];
           });
         } else if (payload.eventType === 'DELETE' && payload.old) {
+          tournamentReadChangesRef.current.set((payload.old as any).id, {
+            revision: ++tournamentRevisionRef.current,
+            row: null,
+          });
           setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
         }
       };
@@ -1956,22 +1970,6 @@ function ClubHomePageContent({
     clubId ? resolveClubUUIDSync(clubId) : null
   );
 
-  /* Collapse the wallet list when the club changes. The count under MY WALLETS
-     is NOT reset here, and must not be: DynamicWallet publishes it from a
-     layout effect in the same commit this effect belongs to, and a child's
-     effects run before its parent's, so a reset here landed AFTER the publish
-     and wiped it. Measured 2026-09-10 against production, signed in, on an
-     iPhone profile: the bay printed nothing at 15 seconds on a cold load, a
-     warm reload and a client-side re-entry alike, and before that it printed
-     the placeholder Dan photographed on 2026-09-09 - for the same reason, from
-     the day the count shipped (#2050). The wallet re-publishes whenever its
-     row set changes, which is the only time this number can change, so there
-     is nothing for a reset to do except blank the plate until the next club
-     switch. Pinned by tests/the-mobile-lobby-chrome-stays-fixed.law.test.ts and
-     tests/unit/theWalletsCountSurvivesTheClubReset.test.tsx. */
-  useEffect(() => {
-    setWalletsExpanded(false);
-  }, [resolvedClubId]);
   useEffect(() => {
     resolvedClubIdRef.current = resolvedClubId;
   }, [resolvedClubId]);
@@ -2232,6 +2230,7 @@ function ClubHomePageContent({
     // The landing was a request about the club it was made in.
     if (switchingClubs) landingGameTypeRef.current = undefined;
     if (switchingClubs) linkedGameTypeRef.current = undefined;
+    if (switchingClubs || switchingAccounts) setGameSection(null);
 
     const saved = loadViewPrefs(resolvedClubId, currentUser?.id);
     setViewPrefs(saved);
@@ -2243,6 +2242,23 @@ function ClubHomePageContent({
       /* A shared link's own tab outranks both the same way, for this mount
          only (see `linkedGameTypeRef`). Undefined on every other visit. */
       const shown = linkedGameTypeRef.current ?? tab;
+      // A late saved view can refine this family, but cannot move a player
+      // into the other family after they explicitly opened this one.
+      if (
+        viewPrefsTouched.current &&
+        gameSectionRef.current === 'cash' &&
+        TOURNAMENT_TYPES.includes(shown)
+      )
+        return;
+      if (
+        viewPrefsTouched.current &&
+        gameSectionRef.current === 'tournaments' &&
+        !TOURNAMENT_TYPES.includes(shown)
+      )
+        return;
+      if (landingGameTypeRef.current || linkedGameTypeRef.current || p.tab) {
+        setGameSection(TOURNAMENT_TYPES.includes(shown) ? 'tournaments' : 'cash');
+      }
       setGameType(shown);
       setSortKey(sortForTab(p, shown));
       setFavoritesOnly(p.favoritesOnly);
@@ -2663,6 +2679,7 @@ function ClubHomePageContent({
          A's role and A's jackpot over B. The token is bumped by every new
          load and by unmount, so a late answer knows it is stale. */
       const stale = () => loadToken !== loadTokenRef.current;
+      const fastTournamentRevisionAtRead = tournamentRevisionRef.current;
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
         .then(async ({ data: home, error: homeErr }) => {
           if (homeErr || !home || home.found !== true) return;
@@ -2715,8 +2732,14 @@ function ClubHomePageContent({
               }));
             }
             if (Array.isArray(home.tables)) setTables((prev) => mergeFastRows(prev, home.tables));
-            if (Array.isArray(home.tournaments))
-              setTournaments((prev) => mergeFastRows(prev, home.tournaments));
+            if (Array.isArray(home.tournaments)) {
+              const fastTournaments = reconcileTournamentLobbyRead(
+                home.tournaments,
+                tournamentReadChangesRef.current,
+                fastTournamentRevisionAtRead
+              );
+              setTournaments((prev) => mergeFastRows(prev, fastTournaments));
+            }
             if (home.union_id) {
               setIsInUnion(true);
               setUnionIdForCreate(home.union_id);
@@ -3475,12 +3498,16 @@ function ClubHomePageContent({
       if (!clubTournamentResult.error && Array.isArray(clubTournamentResult.data)) {
         /* A Diamond Spin advertises the top of the table its creation pinned;
            a board with no Diamond Spin on it asks nothing (diamondSpinCeilings). */
-        const allTournaments: TournamentData[] = await withDiamondSpinCeilings([
-          /* The cast is the arena embed's: the generated types carry no
+        const allTournaments: TournamentData[] = reconcileTournamentLobbyRead(
+          await withDiamondSpinCeilings([
+            /* The cast is the arena embed's: the generated types carry no
              relationship names, so the typed client cannot resolve the join
              (TournamentService.getTournaments makes the same one). */
-          ...(clubTournamentResult.data as unknown as TournamentData[]),
-        ]);
+            ...(clubTournamentResult.data as unknown as TournamentData[]),
+          ]),
+          tournamentReadChangesRef.current,
+          tournamentRevisionAtRead
+        );
         if (getIsMounted && !getIsMounted()) return;
 
         // The warm fast path cannot remove old rows. A confirmed empty read
@@ -3496,14 +3523,12 @@ function ClubHomePageContent({
             ),
             'ClubHomePage.emptyTournamentOverwrite'
           );
-        } else if (tournamentRevisionAtRead !== tournamentRevisionRef.current) {
-          // A realtime change can be newer than this query's empty snapshot.
-          // Keep it and let the existing coalesced owner read again.
-          reloadPendingRef.current = true;
         } else {
           setTournaments(allTournaments);
           tournamentsRead = true;
         }
+        // Keep the latest change per row until scope reset: the independent
+        // first-paint RPC may still finish after this complete read.
       }
       // A failed or unconfirmed half is not a loaded list; the next load retries.
       if (tablesRead && tournamentsRead) setGameListsLoaded(true);
@@ -3592,8 +3617,9 @@ function ClubHomePageContent({
 
   // Which halves of the lobby the chosen type can produce. Derived once so the
   // filters, the status row and the empty state cannot disagree about it.
-  const showsCash = gameType === 'ALL' || CASH_TYPES.includes(gameType);
-  const showsTournaments = gameType === 'ALL' || TOURNAMENT_TYPES.includes(gameType);
+  const showsCash = gameSection === 'cash' && (gameType === 'ALL' || CASH_TYPES.includes(gameType));
+  const showsTournaments =
+    gameSection === 'tournaments' && (gameType === 'ALL' || TOURNAMENT_TYPES.includes(gameType));
   const showTournaments = TOURNAMENT_TYPES.includes(gameType);
 
   /* THE STAKES MENU COUNTS STYLES (Dan 2026-09-05): games per style on THIS
@@ -3743,7 +3769,7 @@ function ClubHomePageContent({
        ALL and then restored the old tab and Favorites state on the next
        visit, which reads as the button not having worked. */
     selectFavoritesOnly(false);
-    selectGameType('ALL');
+    selectGameType(gameSection === 'tournaments' ? 'MTT' : 'ALL');
     setAllStatusFilter('ALL');
     if (narrowing.fSpec) {
       const next: FilterStore = {
@@ -3753,7 +3779,15 @@ function ClubHomePageContent({
       setAdvFilters(next);
       if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
     }
-  }, [narrowing.fSpec, advFilters, gameType, resolvedClubId, selectFavoritesOnly, selectGameType]);
+  }, [
+    narrowing.fSpec,
+    advFilters,
+    gameType,
+    resolvedClubId,
+    selectFavoritesOnly,
+    selectGameType,
+    gameSection,
+  ]);
 
   // Zero matches is a valid saved preference. Only the player's explicit
   // Show All Games action above may clear it.
@@ -3812,6 +3846,7 @@ function ClubHomePageContent({
          -- its start time is in the past. */
       if (!isWithinLobbyWindow(t, windowNow)) return false;
       if (!matchesVariant(t, variant)) return false;
+      if (gameType === 'SATELLITE' && !isRecordedSatelliteTournament({ ...t })) return false;
 
       /* Late Reg and Starting Soon used to compare the status to 'LATE_REG'
          and 'STARTING_SOON', which nothing writes, so both chips listed no
@@ -4002,6 +4037,15 @@ function ClubHomePageContent({
   const [seatedTableIds, setSeatedTableIds] = useState<Set<string>>(new Set());
   const [registeredTournamentIds, setRegisteredTournamentIds] = useState<Set<string>>(new Set());
   const [favoriteTableIds, setFavoriteTableIds] = useState<Set<string>>(new Set());
+  const [favoriteTournamentIds, setFavoriteTournamentIds] = usePlayerPreference<string[]>(
+    'lobby-tournament-favorites',
+    [],
+    'global'
+  );
+  const favoriteGameIds = useMemo(
+    () => new Set([...favoriteTableIds, ...favoriteTournamentIds]),
+    [favoriteTableIds, favoriteTournamentIds]
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   /* The card closed: apply what was held for it, unless the player has since
@@ -4169,12 +4213,18 @@ function ClubHomePageContent({
 
   /** Star / unstar a cash table. Reuses the favorite_tables infrastructure. */
   const handleToggleFavorite = useCallback(
-    async (tableId: string, next: boolean) => {
+    async (tableId: string, next: boolean, kind?: LobbyEntry['kind']) => {
       if (!currentUserId) {
         toast.error('Sign In To Save Favorites');
         return;
       }
       haptic.selection();
+      if (kind && kind !== 'cash') {
+        setFavoriteTournamentIds((previous) =>
+          next ? [...new Set([...previous, tableId])] : previous.filter((id) => id !== tableId)
+        );
+        return;
+      }
       setFavoriteTableIds((prev) => {
         const s = new Set(prev);
         if (next) s.add(tableId);
@@ -4207,7 +4257,7 @@ function ClubHomePageContent({
         toast.error(next ? 'Could Not Save Favorite' : 'Could Not Remove Favorite');
       }
     },
-    [currentUserId, toast]
+    [currentUserId, toast, setFavoriteTournamentIds]
   );
 
   /** Row selection — opens the game lobby panel. NEVER joins or spends. */
@@ -4578,7 +4628,7 @@ function ClubHomePageContent({
       return entry;
     };
 
-    const tourns = filteredTournaments.map((t) =>
+    let tourns = filteredTournaments.map((t) =>
       stable(t as unknown as LobbyTournamentRow, (r) => tournamentEntry(r, classifyTournament(r)))
     );
     /* R10 (Dan 2026-09-04): a must-move game is ONE row on the board - its
@@ -4594,8 +4644,10 @@ function ClubHomePageContent({
        render - so leaving the filter applied there stripped the board to two
        tables with no control anywhere on screen to undo it, and only a reload
        cleared it. A filter with no switch is not a filter, it is a fault. */
-    if (favoritesOnly && gameType !== 'ALL')
-      cash = cash.filter((e) => favoriteTableIds.has(e.id) || e.id === linkedGameId);
+    if (favoritesOnly && gameType !== 'ALL') {
+      cash = cash.filter((e) => favoriteGameIds.has(e.id) || e.id === linkedGameId);
+      tourns = tourns.filter((e) => favoriteGameIds.has(e.id) || e.id === linkedGameId);
+    }
 
     /* ── WHAT "ALL" MEANS (Dan, 2026-08-25) ────────────────────────────────
        "WE DON'T HAVE MIXED CASH GAMES, AND THE CAP IS 10 FOR MTT ONLY.
@@ -4644,7 +4696,7 @@ function ClubHomePageContent({
     filteredTournaments,
     filteredTables,
     favoritesOnly,
-    favoriteTableIds,
+    favoriteGameIds,
     gameType,
     waitlistCounts,
     club?.id,
@@ -4719,16 +4771,30 @@ function ClubHomePageContent({
         return variant !== undefined && matchesVariant(tournament, variant);
       });
     }
-    if (home !== undefined && home !== gameType && !viewPrefsTouched.current) {
+    if (
+      home !== undefined &&
+      (home !== gameType || gameSection === null) &&
+      !viewPrefsTouched.current
+    ) {
       linkedGameTypeRef.current = home;
       setGameType(home);
+      setGameSection(TOURNAMENT_TYPES.includes(home) ? 'tournaments' : 'cash');
       setSortKey(sortForTab(viewPrefs, home));
       return;
     }
     if (!gameListsLoaded) return;
     pendingGameRef.current = null;
     setLinkedGameId(null);
-  }, [urlSyncEnabled, lobbyEntries, tables, tournaments, gameType, gameListsLoaded, viewPrefs]);
+  }, [
+    urlSyncEnabled,
+    lobbyEntries,
+    tables,
+    tournaments,
+    gameType,
+    gameSection,
+    gameListsLoaded,
+    viewPrefs,
+  ]);
 
   /* The link's filter exemption lasts while it is pending and while its own
      card is open. Once that card closes (here), or the player opens another
@@ -4763,7 +4829,7 @@ function ClubHomePageContent({
       waitlistedIds: waitlistedTableIds,
       seatedIds: seatedTableIds,
       registeredIds: registeredTournamentIds,
-      favoriteIds: favoriteTableIds,
+      favoriteIds: favoriteGameIds,
       onToggleFavorite: currentUserId ? handleToggleFavorite : undefined,
       /* The card's buttons run the SAME flows the game-lobby panel
                runs — registerMtt for a tournament, the table navigation for
@@ -4853,7 +4919,7 @@ function ClubHomePageContent({
       waitlistedTableIds,
       seatedTableIds,
       registeredTournamentIds,
-      favoriteTableIds,
+      favoriteGameIds,
       currentUserId,
       handleToggleFavorite,
       handleRegister,
@@ -5302,32 +5368,33 @@ function ClubHomePageContent({
           on every device and broke the house no-emoji-in-source rule. All of
           them are inline SVG on currentColor now — see LobbyIcons.tsx.
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="club-mobile-welcome" aria-labelledby="club-mobile-welcome-title">
-        <span>Welcome To The</span>
-        <h1 id="club-mobile-welcome-title" title={club.name}>
-          {club.name}
-        </h1>
-      </section>
+      <div className="club-lobby-frame">
+        <section className="club-mobile-welcome" aria-labelledby="club-mobile-welcome-title">
+          <span>Welcome To The</span>
+          <h1 id="club-mobile-welcome-title" title={club.name}>
+            {club.name}
+          </h1>
+        </section>
 
-      {/* The club message used to live here as a phone strip with its own
+        {/* The club message used to live here as a phone strip with its own
           inline editor. It is a full-screen greeting at the door now
           (<ClubEntryMessage>, mounted once below), so there is nothing to bake
           into the lobby. Dan 2026-09-03. */}
-      <header className="lobby-top">
-        {/* ── Club identity + wallet ── */}
-        <div className="lobby-top__main">
-          <ClubIdentityCard
-            className="lobby-top__identity"
-            clubName={club.name}
-            logoUrl={
-              club.logo_url || club.avatar_url
-                ? sizedStorageUrl(club.logo_url || club.avatar_url, 256)
-                : Number(club.club_id) === SHARK_CLUB_ID
-                  ? SHARK_CLUB_FALLBACK_LOGO
-                  : null
-            }
-            logoFallback={<span>&#9824;</span>}
-            /* THE CARD SHOWS THE POKER ALIAS, NEVER THE REAL NAME (Dan
+        <header className="lobby-top">
+          {/* ── Club identity + wallet ── */}
+          <div className="lobby-top__main">
+            <ClubIdentityCard
+              className="lobby-top__identity"
+              clubName={club.name}
+              logoUrl={
+                club.logo_url || club.avatar_url
+                  ? sizedStorageUrl(club.logo_url || club.avatar_url, 256)
+                  : Number(club.club_id) === SHARK_CLUB_ID
+                    ? SHARK_CLUB_FALLBACK_LOGO
+                    : null
+              }
+              logoFallback={<span>&#9824;</span>}
+              /* THE CARD SHOWS THE POKER ALIAS, NEVER THE REAL NAME (Dan
                2026-09-02): "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD
                ALWAYS BE USING THE POKER ALIAS - KingFish instead of the real
                name here."
@@ -5341,214 +5408,101 @@ function ClubHomePageContent({
                already encodes this same instruction from 2026-08-23: "IM DAN
                BEKAVAC ON SOCIAL AND KINGFISH IN THE CLUB ARENA." The prop is
                called pokerAlias; it now actually carries one. */
-            pokerAlias={playerDisplayName(currentUser, 'arena')}
-            clubId={club.club_id}
-            playerId={referralIdFor(currentUser?.player_number)}
-            level={clubLevel?.level}
-            playersPlaying={playersPlaying}
-            arenaStats={
-              isAutomaticArena
-                ? {
-                    activeCount: playersPlaying,
-                    freerollText: arenaFreeroll.text,
-                    freerollTitle: arenaFreeroll.title,
-                    freerollImminent: arenaFreeroll.imminent,
-                    /* "None Scheduled" and "Unavailable" are words, not clocks
+              pokerAlias={playerDisplayName(currentUser, 'arena')}
+              clubId={club.club_id}
+              playerId={referralIdFor(currentUser?.player_number)}
+              level={clubLevel?.level}
+              playersPlaying={playersPlaying}
+              arenaStats={
+                isAutomaticArena
+                  ? {
+                      activeCount: playersPlaying,
+                      freerollText: arenaFreeroll.text,
+                      freerollTitle: arenaFreeroll.title,
+                      freerollImminent: arenaFreeroll.imminent,
+                      /* "None Scheduled" and "Unavailable" are words, not clocks
                        (2026-09-19); the rail sizes them to fit. Loading prints
                        zeros like every other figure on the card. */
-                    freerollIsWord:
-                      arenaFreeroll.state === 'none' || arenaFreeroll.state === 'error',
-                  }
-                : null
-            }
-            onCopyClubId={() => {
-              navigator.clipboard.writeText(club.club_id.toString());
-              toast.success('Club ID Copied');
-            }}
-            onCopyPlayerId={
-              currentUser?.player_number
-                ? () => {
-                    const referralId = referralIdFor(currentUser.player_number) ?? '';
-                    navigator.clipboard.writeText(referralId);
-                    if (isNamedReferralId(referralId)) toast.success('Referral ID Copied');
-                    else toast.success('Player Number Copied');
-                  }
-                : undefined
-            }
-            shareIcon={<IconShareLink />}
-            onShare={
-              /* The automatic Diamond Arena has no club_members row, so
+                      freerollIsWord:
+                        arenaFreeroll.state === 'none' || arenaFreeroll.state === 'error',
+                    }
+                  : null
+              }
+              onCopyClubId={() => {
+                navigator.clipboard.writeText(club.club_id.toString());
+                toast.success('Club ID Copied');
+              }}
+              onCopyPlayerId={
+                currentUser?.player_number
+                  ? () => {
+                      const referralId = referralIdFor(currentUser.player_number) ?? '';
+                      navigator.clipboard.writeText(referralId);
+                      if (isNamedReferralId(referralId)) toast.success('Referral ID Copied');
+                      else toast.success('Player Number Copied');
+                    }
+                  : undefined
+              }
+              shareIcon={<IconShareLink />}
+              onShare={
+                /* The automatic Diamond Arena has no club_members row, so
                  fn_club_invite_link cannot create a link there: no handler,
                  and the card draws no Share & Invite button. */
-              isAutomaticArena
-                ? undefined
-                : () => {
-                    /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
+                isAutomaticArena
+                  ? undefined
+                  : () => {
+                      /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
                      short code (smarter.poker/i/<CODE>), so whoever shares it is
                      credited and the new player lands in their downline. It used
                      to be /invite/<club>?ref=<player number>, which sent a
                      signed-out friend to LOGIN and lost the club on the way
                      through signup. The sheet holds the link, Copy, Share, a QR
                      code and the sender's results. */
-                    haptic.medium();
-                    setShowShareSheet(true);
-                  }
-            }
-          />
-          {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
+                      haptic.medium();
+                      setShowShareSheet(true);
+                    }
+              }
+            />
+            {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
               appears only when its dedicated Diamond switch is explicitly on. */}
-          {(!isAutomaticArena || diamondJackpot?.enabled) && (
-            <button
-              type="button"
-              className="lobby-bbj"
-              onClick={() => {
-                haptic.medium();
-                setShowBBJInfo(true);
-              }}
-              aria-label={`Bad Beat Jackpot: ${
-                isAutomaticArena && diamondJackpot
-                  ? diamondJackpot.main_balance.toLocaleString('en-US') + ' Diamonds'
-                  : jackpotAmount > 0
-                    ? jackpotAmount.toLocaleString('en-US', {
-                        minimumFractionDigits: isAutomaticArena ? 0 : 2,
-                        maximumFractionDigits: isAutomaticArena ? 0 : 2,
-                      })
-                    : 'No Pool'
-              }`}
-            >
-              <ClubBBJShell className="lobby-bbj__shell" />
-              <span className="lobby-bbj__label">Bad Beat Jackpot</span>
-              {isAutomaticArena && diamondJackpot ? (
-                <DiamondJackpotReadout amount={diamondJackpot.main_balance} />
-              ) : (
-                <strong className="lobby-bbj__amount">
-                  {jackpotAmount > 0
-                    ? jackpotAmount.toLocaleString('en-US', {
-                        minimumFractionDigits: isAutomaticArena ? 0 : 2,
-                        maximumFractionDigits: isAutomaticArena ? 0 : 2,
-                      })
-                    : '-'}
-                </strong>
-              )}
-              {lobbyMiniLine && <span className="lobby-bbj__mini">{lobbyMiniLine}</span>}
-            </button>
-          )}
-          {/* ── Wallet ──
-              WALLET SEPARATION LAW (Dan 2026-08-20): this is a CLUB screen, so
-              it renders CLUB money. The variant used to become 'union' whenever
-              a union owner opened one of his own clubs, which replaced Club
-              Bank with Union Bank / Rake Treasury / Clubs Wallet / Backup BBJ —
-              the union's books, on the club's lobby. Owning both does not merge
-              them; one wallet never gets access to the other. Union figures are
-              managed on the union's own surfaces and appear nowhere here.
-
-              The lobby exposes every balance authorized for the viewer's role;
-              each actionable row opens its matching ledger or cashier without
-              leaving the club lobby. */}
-          {currentUserId && resolvedClubId && (
-            <div className="lobby-top__wallet">
+            {(!isAutomaticArena || diamondJackpot?.enabled) && (
               <button
                 type="button"
-                className="lobby-wallets-trigger"
-                aria-expanded={walletsExpanded}
-                aria-controls="club-wallet-list"
+                className="lobby-bbj"
                 onClick={() => {
-                  haptic.selection();
-                  setWalletsExpanded((expanded) => !expanded);
+                  haptic.medium();
+                  setShowBBJInfo(true);
                 }}
+                aria-label={`Bad Beat Jackpot: ${
+                  isAutomaticArena && diamondJackpot
+                    ? diamondJackpot.main_balance.toLocaleString('en-US') + ' Diamonds'
+                    : jackpotAmount > 0
+                      ? jackpotAmount.toLocaleString('en-US', {
+                          minimumFractionDigits: isAutomaticArena ? 0 : 2,
+                          maximumFractionDigits: isAutomaticArena ? 0 : 2,
+                        })
+                      : 'No Pool'
+                }`}
               >
-                <span className="lobby-wallets-trigger__icon" aria-hidden="true" />
-                <span className="lobby-wallets-trigger__copy">
-                  <strong>My Wallets</strong>
-                  {/* THE COUNT, OR NOTHING AT ALL (Dan 2026-09-09): it
-                      "shouldn't say LOADING BALANC. It should just have 5
-                      BALANCES or how ever many wallets that user has only."
-
-                      DynamicWallet knows how many rows this viewer gets before
-                      a single balance has loaded - the row set comes from the
-                      role, not from the money - and it now publishes that count
-                      in a layout effect, so the real number is here for the
-                      first painted frame. The empty string is only the frame
-                      before that: an empty bay, never a word that has to be
-                      taken back a moment later. */}
-                  <small>
-                    {visibleWalletCount > 0
-                      ? `${visibleWalletCount} ${visibleWalletCount === 1 ? 'Balance' : 'Balances'}`
-                      : ''}
-                  </small>
-                </span>
-                <span
-                  className={`lobby-wallets-trigger__chevron ${walletsExpanded ? 'is-expanded' : ''}`}
-                  aria-hidden="true"
-                />
+                <ClubBBJShell className="lobby-bbj__shell" />
+                <span className="lobby-bbj__label">Bad Beat Jackpot</span>
+                {isAutomaticArena && diamondJackpot ? (
+                  <DiamondJackpotReadout amount={diamondJackpot.main_balance} />
+                ) : (
+                  <strong className="lobby-bbj__amount">
+                    {jackpotAmount > 0
+                      ? jackpotAmount.toLocaleString('en-US', {
+                          minimumFractionDigits: isAutomaticArena ? 0 : 2,
+                          maximumFractionDigits: isAutomaticArena ? 0 : 2,
+                        })
+                      : '-'}
+                  </strong>
+                )}
+                {lobbyMiniLine && <span className="lobby-bbj__mini">{lobbyMiniLine}</span>}
               </button>
-              <div
-                id="club-wallet-list"
-                className="lobby-wallets-content"
-                data-expanded={walletsExpanded}
-              >
-                <div className="lobby-wallets-content__inner">
-                  {/* The lobby renders its own compact Bad Beat Jackpot tile next
-                  to the club identity. DynamicWallet therefore suppresses its
-                  duplicate jackpot banner and supplies only the role-safe
-                  balance tiles below it. */}
-                  <DynamicWallet
-                    userId={currentUserId}
-                    clubId={clubId || ''}
-                    // WHOSE books. A union's own lobby shows union books; every
-                    // club lobby shows club books, whoever is standing in it.
-                    variant={club?.is_union ? 'union' : 'club'}
-                    // WHO is looking. Decides which rows exist - see walletRows.ts.
-                    // The club's owner_id outranks a stale club_members row, which
-                    // is how a brand new owner sees their own Club Bank.
-                    role={isOwner ? 'owner' : userRole}
-                    compactLobby
-                    showAllLobbyWallets
-                    showBBJ={false}
-                    onVisibleWalletCountChange={setVisibleWalletCount}
-                    onBuyDiamonds={() => {
-                      haptic.medium();
-                      setShowDiamondWallet(true);
-                    }}
-                    // Dan 2026-08-23: "if they click on Club Bank, that should
-                    // open the Club Bank Cashier." The row only renders for owner,
-                    // co-owner, admin and super agent, and fn_can_use_club_bank
-                    // refuses everyone else server-side. The Chip Mint moved
-                    // INSIDE that cashier - there is no mint button out here any
-                    // more, and no mint at all once the club is in a union.
-                    onOpenPlayerWallet={() => setShowPlayerWallet(true)}
-                    onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
-                    onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
-                    onOpenClubBank={() => setActiveCashier('club_bank')}
-                    onOpenBBJ={() => {
-                      haptic.medium();
-                      setShowBBJInfo(true);
-                    }}
-                    onOpenUnionBank={(balance) => {
-                      setUnionWalletModal({ key: 'chips', label: 'Union Bank', balance });
-                    }}
-                    onOpenUnionRake={() => setUnionTreasuryModal('rake')}
-                    onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
-                    onOpenUnionPromo={(balance) => {
-                      setUnionWalletModal({ key: 'promo', label: 'Promo Wallet', balance });
-                    }}
-                    onOpenUnionSpins={(balance) => {
-                      setUnionWalletModal({
-                        key: 'spin_reserve',
-                        label: 'Spins Treasury',
-                        balance,
-                      });
-                    }}
-                    onOpenClubRake={() => setStandaloneRakeModal(true)}
-                    onOpenClubSpins={() => setStandaloneSpinsModal(true)}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* ── NO SEARCH BOX ────────────────────────────────────────────────
+          {/* ── NO SEARCH BOX ────────────────────────────────────────────────
             Dan 2026-08-25 asked for the search-by-name field to be removed
             completely: nobody is ever typing the name of a game.
 
@@ -5563,126 +5517,49 @@ function ClubHomePageContent({
             tests/unit/lobbyCardsDoNotFlicker.test.ts asserts the literal UI
             strings are absent from this file, so quoting them here - even in a
             comment - would defeat the check. */}
-      </header>
+        </header>
 
-      <WalletCashierModal
-        isOpen={!!activeCashier}
-        onClose={() => setActiveCashier(null)}
-        clubId={resolvedClubId || clubId || ''}
-        role={isOwner ? 'owner' : userRole}
-        walletType={activeCashier || DEFAULT_CASHIER_WALLET}
-      />
-      {unionWalletModal && (
-        <UnionWalletModal
-          isOpen={true}
-          onClose={() => setUnionWalletModal(null)}
-          unionId={unionIdForCreate || resolvedClubId || clubId || ''}
-          walletKey={unionWalletModal.key}
-          walletLabel={unionWalletModal.label}
-          balance={unionWalletModal.balance}
+        <BBJInfoModal
+          isOpen={showBBJInfo}
+          onClose={() => setShowBBJInfo(false)}
+          poolId={bbjPoolId}
+          asset={isAutomaticArena ? 'diamonds' : 'chips'}
+          diamond={diamondJackpot}
+          diamondUnavailable={diamondJackpotUnavailable}
+          mini={lobbyMini}
+          poolAmount={jackpotAmount}
+          currentUserId={currentUserId}
         />
-      )}
-      {unionTreasuryModal && (
-        <UnionTreasuryDetailModal
-          isOpen={true}
-          onClose={() => setUnionTreasuryModal(null)}
-          unionId={unionIdForCreate || resolvedClubId || clubId || ''}
-          mode={unionTreasuryModal}
-          onSendFrom={
-            unionTreasuryModal === 'backup'
-              ? undefined
-              : () => {
-                  const isRake = unionTreasuryModal === 'rake';
-                  setUnionTreasuryModal(null);
-                  setUnionWalletModal({
-                    key: isRake ? 'rake' : 'bbj',
-                    label: isRake ? 'Rake Treasury' : 'BBJ Pool',
-                    // The wallet modal fetches the true balance anyway, so 0 is fine
-                    balance: 0,
-                  });
-                }
-          }
-        />
-      )}
-      {standaloneRakeModal && (
-        <Modal
-          isOpen={true}
-          onClose={() => setStandaloneRakeModal(false)}
-          title="Rake Treasury"
-          size="large"
-          showCloseButton
-          className="club-home-treasury-modal"
-        >
-          <div style={{ height: '70vh', overflowY: 'auto', padding: '0 12px 24px' }}>
-            <RakeReports clubId={resolvedClubId || clubId || ''} />
-          </div>
-        </Modal>
-      )}
-      {standaloneSpinsModal && (
-        <Modal
-          isOpen={true}
-          onClose={() => setStandaloneSpinsModal(false)}
-          title="Spins Wallet"
-          size="medium"
-          showCloseButton
-          className="club-home-treasury-modal"
-        >
-          <div style={{ padding: '0 12px 24px' }}>
-            <SpinActivationPanel clubId={resolvedClubId || clubId || ''} />
-          </div>
-        </Modal>
-      )}
-      <PlayerWalletModal
-        isOpen={showPlayerWallet}
-        onClose={() => setShowPlayerWallet(false)}
-        clubId={resolvedClubId || clubId || ''}
-      />
-      <DiamondWalletModal
-        isOpen={showDiamondWallet}
-        onClose={() => setShowDiamondWallet(false)}
-        onBuyClick={() => navigate(withClubContext('/vip', clubId))}
-      />
-      <BBJInfoModal
-        isOpen={showBBJInfo}
-        onClose={() => setShowBBJInfo(false)}
-        poolId={bbjPoolId}
-        asset={isAutomaticArena ? 'diamonds' : 'chips'}
-        diamond={diamondJackpot}
-        diamondUnavailable={diamondJackpotUnavailable}
-        mini={lobbyMini}
-        poolAmount={jackpotAmount}
-        currentUserId={currentUserId}
-      />
 
-      {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
-      <section
-        className="club-lobby-machine"
-        data-opening-checklist={showLaunchChecklist || undefined}
-        aria-label={`${club.name} Game Lobby`}
-      >
-        {/* The lobby must tell the same truth as the felt during the :55
+        <section
+          className="club-lobby-machine"
+          data-opening-checklist={showLaunchChecklist || undefined}
+          aria-label={`${club.name} Game Lobby`}
+        >
+          {/* The lobby must tell the same truth as the felt during the :55
             maintenance break (Dan 2026-09-01): without this it shows live
             counts and working Join buttons for a platform that is
             deliberately standing still. Renders nothing outside a break. */}
-        <MaintenanceBreakBanner />
-        <ClubLobbyCommandTop
-          /* Controls stay in document flow and return only at their original
+          <MaintenanceBreakBanner />
+          <ClubLobbyCommandTop
+            /* Controls stay in document flow and return only at their original
              position. Opening the sheet never changes that scroll contract. */
-          holdFilters={filtersOpen}
-          resetKey={clubId ?? ''}
-          welcome={
-            /* The welcome block keeps the club name and loses the message.
+            holdFilters={filtersOpen}
+            resetKey={clubId ?? ''}
+            welcome={
+              /* The welcome block keeps the club name and loses the message.
                The lobby message is a full-screen greeting at the door now
                (ClubEntryMessage), and this element was the third place it was
                baked into the page, each with its own editor and its own length
                cap. Dan 2026-09-03. */
-            <div className="lobby-top__notice">
-              <div className="club-lobby-command-top__welcome-copy">
-                <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
-                <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
-                {/* The TAGLINE, not the day's message. It used to reach the
+              <div className="lobby-top__notice">
+                <div className="club-lobby-command-top__welcome-copy">
+                  <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
+                  <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
+                  {/* The TAGLINE, not the day's message. It used to reach the
                     lobby only as the second link of the removed strip's
                     fallback chain, so taking that strip out would have left a
                     club that wrote a tag line with nowhere to show it. It
@@ -5692,61 +5569,81 @@ function ClubHomePageContent({
                     next. The owner types it, so it is data: Title Cased where
                     it is printed (skill v1.5.0), like every other string a
                     player reads. */}
-                {club.tagline?.trim() && (
-                  <p className="club-lobby-command-top__tagline">
-                    {titleCase(club.tagline.trim())}
-                  </p>
-                )}
-              </div>
-            </div>
-          }
-          controls={
-            <section className="lobby-controls" aria-label="Browse Games">
-              <div className="lobby-controls__heading">
-                <div>
-                  <span className="lobby-controls__eyebrow">Live Club Schedule</span>
-                  <strong className="lobby-controls__title">Find Your Game</strong>
-                </div>
-                <div className="lobby-controls__operator-actions">
-                  <span className="lobby-controls__total">
-                    <strong>
-                      {totalGameCount.toLocaleString()}
-                      {countsCapped ? '+' : ''}
-                    </strong>{' '}
-                    Games
-                  </span>
-                  {canCreateClubGames && (
-                    <GameCreationActions
-                      managementPath={`/clubs/${clubId}/table-management`}
-                      compact
-                      only={CREATE_TARGET_FOR_TAB[gameType]}
-                      tableGame={CREATE_TABLE_GAME_FOR_TAB[gameType]}
-                      desktopOnly
-                      onNavigate={(path) => navigate(path)}
-                    />
+                  {club.tagline?.trim() && (
+                    <p className="club-lobby-command-top__tagline">
+                      {titleCase(club.tagline.trim())}
+                    </p>
                   )}
                 </div>
               </div>
-              <div className="game-bar">
-                <div className="game-bar__types" role="tablist" aria-label="Game Type">
-                  {GAME_TYPE_TABS.map((tab) => (
-                    <button
-                      key={tab.key}
-                      role="tab"
-                      aria-selected={gameType === tab.key}
-                      className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
-                      onClick={() => {
-                        haptic.selection();
-                        selectGameType(tab.key);
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
+            }
+            controls={
+              <section className="lobby-controls" aria-label="Browse Games">
+                <div className="lobby-controls__heading">
+                  <strong className="lobby-controls__title">Find Your Game</strong>
                 </div>
-              </div>
+                <LobbyGameSections
+                  selected={gameSection}
+                  onToggle={(section) => {
+                    haptic.selection();
+                    setFiltersOpen(false);
+                    const opening = gameSection !== section;
+                    setGameSection(opening ? section : null);
+                    if (opening) {
+                      if (
+                        section === 'cash' &&
+                        allStatusFilter !== 'ALL' &&
+                        allStatusFilter !== 'RUNNING'
+                      ) {
+                        setAllStatusFilter('ALL');
+                      }
+                      const matching =
+                        section === 'cash'
+                          ? gameType === 'ALL' || CASH_TYPES.includes(gameType)
+                          : TOURNAMENT_TYPES.includes(gameType);
+                      // Opening a family is itself a preference, including ALL cash.
+                      selectGameType(matching ? gameType : section === 'cash' ? 'ALL' : 'MTT');
+                    }
+                  }}
+                />
+                {gameSection && (
+                  <div id="lobby-game-section-controls">
+                    {canCreateClubGames && (
+                      <div className="lobby-controls__operator-actions">
+                        <GameCreationActions
+                          managementPath={`/clubs/${clubId}/table-management`}
+                          compact
+                          only={CREATE_TARGET_FOR_TAB[gameType]}
+                          tableGame={CREATE_TABLE_GAME_FOR_TAB[gameType]}
+                          desktopOnly
+                          onNavigate={(path) => navigate(path)}
+                        />
+                      </div>
+                    )}
+                    <div className="game-bar">
+                      <div className="game-bar__types" role="tablist" aria-label="Game Type">
+                        {GAME_TYPE_TABS.filter((tab) =>
+                          gameSection === 'cash'
+                            ? tab.key === 'ALL' || CASH_TYPES.includes(tab.key)
+                            : TOURNAMENT_TYPES.includes(tab.key)
+                        ).map((tab) => (
+                          <button
+                            key={tab.key}
+                            role="tab"
+                            aria-selected={gameType === tab.key}
+                            className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
+                            onClick={() => {
+                              haptic.selection();
+                              selectGameType(tab.key);
+                            }}
+                          >
+                            <LobbyFilterLabel>{tab.label}</LobbyFilterLabel>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-              {/* ═══════════════════════════════════════════════════════════════════
+                    {/* ═══════════════════════════════════════════════════════════════════
           QUICK PREFERENCES — the one-tap shortcuts under the action bar
           ───────────────────────────────────────────────────────────────────
           Dan 2026-08-21: "you never added the quick preference link under the
@@ -5758,58 +5655,59 @@ function ClubHomePageContent({
           two can never disagree, and the icon on the right opens that sheet
           for everything the row has no space for.
       ═══════════════════════════════════════════════════════════════════ */}
-              <div className="lobby-refinements">
-                {gameType === 'ALL' ? (
-                  <div className="quickprefs">
-                    <div
-                      className="quickprefs__row quickprefs__row--status"
-                      aria-label="Game Status"
-                    >
-                      {ALL_STATUS_FILTERS.map((status) => (
-                        <button
-                          key={status.key}
-                          type="button"
-                          className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
-                          aria-pressed={allStatusFilter === status.key}
-                          onClick={() => {
-                            haptic.selection();
-                            setAllStatusFilter(status.key);
-                          }}
-                        >
-                          {status.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  (() => {
-                    const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-                    if (!qSpec) return null;
-                    const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
-
-                    return (
-                      <div className="quickprefs">
-                        <div
-                          className="quickprefs__row quickprefs__row--status"
-                          aria-label="Game Status"
-                        >
-                          <button
-                            type="button"
-                            className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
-                            aria-pressed={qVal.statuses.length === 0}
-                            onClick={() => {
-                              haptic.selection();
-                              const next: FilterStore = {
-                                ...advFilters,
-                                [gameType]: { ...qVal, statuses: [] },
-                              };
-                              setAdvFilters(next);
-                              if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                            }}
+                    <div className="lobby-refinements">
+                      {gameType === 'ALL' ? (
+                        <div className="quickprefs">
+                          <div
+                            className="quickprefs__row quickprefs__row--status"
+                            aria-label="Game Status"
                           >
-                            All
-                          </button>
-                          {/* AUDIT 2026-08-21: these chips used to be a hand-written list
+                            {ALL_STATUS_FILTERS.map((status) => (
+                              <button
+                                key={status.key}
+                                type="button"
+                                className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
+                                aria-pressed={allStatusFilter === status.key}
+                                onClick={() => {
+                                  haptic.selection();
+                                  setAllStatusFilter(status.key);
+                                }}
+                              >
+                                <LobbyFilterLabel>{status.label}</LobbyFilterLabel>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        (() => {
+                          const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                          if (!qSpec) return null;
+                          const qVal =
+                            advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
+
+                          return (
+                            <div className="quickprefs">
+                              <div
+                                className="quickprefs__row quickprefs__row--status"
+                                aria-label="Game Status"
+                              >
+                                <button
+                                  type="button"
+                                  className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
+                                  aria-pressed={qVal.statuses.length === 0}
+                                  onClick={() => {
+                                    haptic.selection();
+                                    const next: FilterStore = {
+                                      ...advFilters,
+                                      [gameType]: { ...qVal, statuses: [] },
+                                    };
+                                    setAdvFilters(next);
+                                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                                  }}
+                                >
+                                  <LobbyFilterLabel>All</LobbyFilterLabel>
+                                </button>
+                                {/* AUDIT 2026-08-21: these chips used to be a hand-written list
                     chosen by showsCash, which disagreed with the sheet on the
                     same screen - Spin-It offered Full/Empty/Open Seats inside
                     Advanced Filters and Running/Registering out here. Both now
@@ -5819,51 +5717,51 @@ function ClubHomePageContent({
                     They also write the SAVED filter now rather than the local
                     sub-filter state, which is what makes them agree with the
                     sheet after a reload instead of resetting. */}
-                          {qSpec.statuses.map((sf) => {
-                            const on = qVal.statuses.includes(sf.key);
-                            return (
-                              <button
-                                key={sf.key}
-                                className={`quickprefs__chip ${on ? 'is-on' : ''}`}
-                                aria-pressed={on}
-                                onClick={() => {
-                                  haptic.selection();
-                                  const next: FilterStore = {
-                                    ...advFilters,
-                                    [gameType]: {
-                                      ...qVal,
-                                      statuses: on
-                                        ? qVal.statuses.filter((k) => k !== sf.key)
-                                        : [...qVal.statuses, sf.key],
-                                    },
-                                  };
-                                  setAdvFilters(next);
-                                  if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                                }}
-                              >
-                                {sf.label}
-                              </button>
-                            );
-                          })}
-                          {currentUserId && showsCash && (
-                            <button
-                              type="button"
-                              className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
-                              aria-pressed={favoritesOnly}
-                              onClick={() => {
-                                haptic.selection();
-                                selectFavoritesOnly(!favoritesOnly);
-                              }}
-                            >
-                              Favorites
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()
-                )}
-                {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
+                                {qSpec.statuses.map((sf) => {
+                                  const on = qVal.statuses.includes(sf.key);
+                                  return (
+                                    <button
+                                      key={sf.key}
+                                      className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                                      aria-pressed={on}
+                                      onClick={() => {
+                                        haptic.selection();
+                                        const next: FilterStore = {
+                                          ...advFilters,
+                                          [gameType]: {
+                                            ...qVal,
+                                            statuses: on
+                                              ? qVal.statuses.filter((k) => k !== sf.key)
+                                              : [...qVal.statuses, sf.key],
+                                          },
+                                        };
+                                        setAdvFilters(next);
+                                        if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                                      }}
+                                    >
+                                      <LobbyFilterLabel>{sf.label}</LobbyFilterLabel>
+                                    </button>
+                                  );
+                                })}
+                                {currentUserId && showsCash && (
+                                  <button
+                                    type="button"
+                                    className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                                    aria-pressed={favoritesOnly}
+                                    onClick={() => {
+                                      haptic.selection();
+                                      selectFavoritesOnly(!favoritesOnly);
+                                    }}
+                                  >
+                                    <LobbyFilterLabel>Favorites</LobbyFilterLabel>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()
+                      )}
+                      {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
             The comment that used to sit here claimed the button was "Hidden
             on ALL". It was not, and what it opened there was worse than
             hidden: AdvancedFilters retargets initialType 'ALL' to 'HOLDEM',
@@ -5878,94 +5776,98 @@ function ClubHomePageContent({
             to order. So the sheet opens in sortOnly mode instead: the game
             type row and every filter section are gone, Sort By is all that is
             left, and the button reads Sort. Every other tab is unchanged. */}
-                <button
-                  className={`game-bar__filter-btn ${(() => {
-                    if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
-                    const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-                    const fVal = advFilters[gameType as FilterGameType];
-                    const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
-                    return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
-                  })()}`}
-                  aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-                  title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-                  onClick={() => {
-                    haptic.light();
-                    setFiltersOpen(true);
-                  }}
-                >
-                  <IconSort />
-                  <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
-                </button>
-              </div>
-            </section>
-          }
-          /* The chip-club campaign opens announcements, an operator surface
+                      <button
+                        className={`game-bar__filter-btn ${(() => {
+                          if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
+                          const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                          const fVal = advFilters[gameType as FilterGameType];
+                          const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+                          return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
+                        })()}`}
+                        aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+                        title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+                        onClick={() => {
+                          haptic.light();
+                          setFiltersOpen(true);
+                        }}
+                      >
+                        <IconSort />
+                        <LobbyFilterLabel>
+                          {gameType === 'ALL' ? 'Sort' : 'Filters'}
+                        </LobbyFilterLabel>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            }
+            /* The chip-club campaign opens announcements, an operator surface
              the Diamond boundary deliberately does not admit. Do not advertise
              another club's event or send an Arena player to the safe shell. */
-          campaign={
-            !isAutomaticArena && club.banner_url && !isRetiredClubBanner(club.banner_url) ? (
-              <button
-                type="button"
-                className="club-lobby-command-top__campaign-button"
-                aria-label={`Open ${club.name} Promotions`}
-                onClick={() => {
-                  haptic.selection();
-                  navigate(`/clubs/${clubId}/announcements`);
-                }}
-              >
-                {/* The <picture> wrapper stays although both regimes now resolve
+            campaign={
+              !isAutomaticArena && club.banner_url && !isRetiredClubBanner(club.banner_url) ? (
+                <button
+                  type="button"
+                  className="club-lobby-command-top__campaign-button"
+                  aria-label={`Open ${club.name} Promotions`}
+                  onClick={() => {
+                    haptic.selection();
+                    navigate(`/clubs/${clubId}/announcements`);
+                  }}
+                >
+                  {/* The <picture> wrapper stays although both regimes now resolve
                   to the same file: it is the box the campaign bay's CSS sizes
                   (`.club-lobby-command-top__campaign-picture`), and it is where
                   a per-breakpoint <source> goes if a club ever ships two crops
                   of its own banner. */}
-                <picture className="club-lobby-command-top__campaign-picture">
-                  <img src={club.banner_url} alt={`${club.name} Promotion`} />
-                </picture>
-              </button>
-            ) : null
-          }
-        />
+                  <picture className="club-lobby-command-top__campaign-picture">
+                    <img src={club.banner_url} alt={`${club.name} Promotion`} />
+                  </picture>
+                </button>
+              ) : null
+            }
+          />
 
-        {/* The Welcome Package receipt outlives the opening checklist latch.
+          {/* The Welcome Package receipt outlives the opening checklist latch.
             Every owner club asks its authoritative RPC; old clubs answer
             ineligible and render nothing, while an entitled first club keeps
             its package and reset control after the checklist is complete. */}
-        {isOwner && (
-          <ClubWelcomePackage
-            clubId={club.id}
-            clubName={club.name}
-            onStateChange={setWelcomePackageState}
-          />
-        )}
-        {isOwner && openingBankError && (showLaunchChecklist || showOpeningWizard) && (
-          <p role="alert">
-            Could Not Read The Club Bank.{' '}
-            <button type="button" onClick={() => setOpeningBankRead((value) => value + 1)}>
-              Retry Bank Read
-            </button>
-          </p>
-        )}
-        {showLaunchChecklist && (
-          <details>
-            <summary className="sc-label sc-ink--blue">Customize Club (Optional)</summary>
-            <ClubLaunchProgress
-              key={`${club.id}:${currentUserId || 'unknown'}`}
+          {isOwner && (
+            <ClubWelcomePackage
               clubId={club.id}
-              viewerId={currentUserId || 'unknown'}
               clubName={club.name}
-              openingBank={club.chip_treasury == null ? null : Number(club.chip_treasury)}
-              tasks={launchTasks}
-              skips={launchSkips}
-              waitForCompletion
+              onStateChange={setWelcomePackageState}
             />
-          </details>
-        )}
-        <ClubLaunchCompletionLatch
-          resolved={launchChecklistFinished}
-          onResolved={latchOpeningChecklist}
-        />
+          )}
+          {isOwner && openingBankError && (showLaunchChecklist || showOpeningWizard) && (
+            <p role="alert">
+              Could Not Read The Club Bank.{' '}
+              <button type="button" onClick={() => setOpeningBankRead((value) => value + 1)}>
+                Retry Bank Read
+              </button>
+            </p>
+          )}
+          {showLaunchChecklist && (
+            <details>
+              <summary className="sc-label sc-ink--blue">Customize Club (Optional)</summary>
+              <ClubLaunchProgress
+                key={`${club.id}:${currentUserId || 'unknown'}`}
+                clubId={club.id}
+                viewerId={currentUserId || 'unknown'}
+                clubName={club.name}
+                openingBank={club.chip_treasury == null ? null : Number(club.chip_treasury)}
+                tasks={launchTasks}
+                skips={launchSkips}
+                waitForCompletion
+              />
+            </details>
+          )}
+          <ClubLaunchCompletionLatch
+            resolved={launchChecklistFinished}
+            onResolved={latchOpeningChecklist}
+          />
 
-        {/* The footer is the permanent Diamond Spins entry. Keep the
+          {/* The footer is the permanent Diamond Spins entry. Keep the
             eligible zero-chip invitation without a middle promotional strip.
 
             NOT IN THE DIAMOND ARENA (2026-09-19). "Out Of Chips? ... Chip
@@ -5974,45 +5876,50 @@ function ClubHomePageContent({
             never acquire one (programme rule). The arena has no chip wallet to
             run out of; the prompt is a chip club feature and stays on chip
             clubs, where nothing changes. */}
-        {!isAutomaticArena && <DiamondBustPrompt clubId={resolvedClubId || club.id} />}
+          {!isAutomaticArena && <DiamondBustPrompt clubId={resolvedClubId || club.id} />}
 
-        {/* `club.id` is the fallback, not a second source of truth: this markup
+          {/* `club.id` is the fallback, not a second source of truth: this markup
           only renders past the `if (!club) return` guard, so it is always
           present, while resolvedClubId stays null forever if the slug lookup
           missed. Without it, Filters and Create Game set state, played a
           haptic and opened nothing, with no error to explain why. */}
-        {filtersOpen && (resolvedClubId || club?.id) && (
-          <AdvancedFilters
-            key={`${currentUser?.id ?? 'guest'}:${resolvedClubId || club!.id}`}
-            clubId={resolvedClubId || club!.id}
-            initialType={gameType as FilterGameType}
-            onClose={() => {
-              /* Filters save on every click inside the sheet (Dan 2026-08-30),
+          {filtersOpen && (resolvedClubId || club?.id) && (
+            <AdvancedFilters
+              key={`${currentUser?.id ?? 'guest'}:${resolvedClubId || club!.id}`}
+              clubId={resolvedClubId || club!.id}
+              initialType={gameType as FilterGameType}
+              allowedTypes={
+                gameSection === 'cash'
+                  ? (CASH_TYPES as FilterGameType[])
+                  : (TOURNAMENT_TYPES as FilterGameType[])
+              }
+              onClose={() => {
+                /* Filters save on every click inside the sheet (Dan 2026-08-30),
                  so closing without Apply must still show what was saved -
                  re-read storage so the lobby matches the persisted store. */
-              setFiltersOpen(false);
-              /* The sheet has already saved (and synced) every change, so
+                setFiltersOpen(false);
+                /* The sheet has already saved (and synced) every change, so
                  the lobby takes its store and a late row reply must not. */
-              advFiltersTouched.current = true;
-              setAdvFilters(loadFilters(resolvedClubId || club!.id));
-            }}
-            onApply={(next: FilterStore) => {
-              advFiltersTouched.current = true;
-              setAdvFilters(next);
-            }}
-            sortKey={sortKey}
-            onSortChange={selectSortKey}
-            sortOptions={SORT_OPTIONS}
-            sortOnly={gameType === 'ALL'}
-          />
-        )}
+                advFiltersTouched.current = true;
+                setAdvFilters(loadFilters(resolvedClubId || club!.id));
+              }}
+              onApply={(next: FilterStore) => {
+                advFiltersTouched.current = true;
+                setAdvFilters(next);
+              }}
+              sortKey={sortKey}
+              onSortChange={selectSortKey}
+              sortOptions={SORT_OPTIONS}
+              sortOnly={gameType === 'ALL'}
+            />
+          )}
 
-        {/* The standalone STATUS REFINEMENT row was folded into the quick
+          {/* The standalone STATUS REFINEMENT row was folded into the quick
           preferences block above on 2026-08-21. Keeping both would have shown
           the same four chips twice, a few pixels apart, with the lower copy
           the only working one. */}
 
-        {/* ═══════════════════════════════════════════════════════════════════
+          {/* ═══════════════════════════════════════════════════════════════════
           RESULT COUNT
           ─────────────────────────────────────────────────────────────────
           The lobby runs 60 to 170 cards and three independent things narrow
@@ -6023,12 +5930,12 @@ function ClubHomePageContent({
           is actually narrowing, so it never implies a filter that is not set,
           and it carries the same one-tap clear the empty state uses.
       ═══════════════════════════════════════════════════════════════════ */}
-        {/* Dan 2026-08-24: "REMOVE THE 30 GAMES, WE DON'T NEED THAT." The bare
+          {/* Dan 2026-08-24: "REMOVE THE 30 GAMES, WE DON'T NEED THAT." The bare
           count is gone. What remains is the line that only renders when a
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-        {/* ═══════════════════════════════════════════════════════════════════
+          {/* ═══════════════════════════════════════════════════════════════════
           LOBBY V2 — dense line-based game table + game lobby panel
           ─────────────────────────────────────────────────────────────────
           One compact row per game, columns adapted to the selected category.
@@ -6036,29 +5943,29 @@ function ClubHomePageContent({
           it never joins, registers, or spends. All commit actions live in
           the panel and reuse the existing platform flows.
       ═══════════════════════════════════════════════════════════════════ */}
-        <div className="club-home__games club-home__games--v2">
-          {/* Render while loading too: LobbyTable owns the skeleton rows, and
+          <div className="club-home__games club-home__games--v2" hidden={!gameSection}>
+            {/* Render while loading too: LobbyTable owns the skeleton rows, and
             gating on entries>0 made them unreachable - first load flashed the
             empty state instead (review 2026-08-22). */}
-          {(lobbyEntries.length > 0 || loading) && (
-            <LobbyTable
-              entries={lobbyEntries}
-              clubId={club.id}
-              category={gameType as LobbyCategory}
-              selectedId={panelOpen ? selectedId : null}
-              onSelect={openEntry}
-              onActivate={openEntry}
-              loading={loading}
-              ctx={lobbyCtx}
-              /* A Sort By the player chose for this tab is obeyed over the
+            {gameSection && (lobbyEntries.length > 0 || loading) && (
+              <LobbyTable
+                entries={lobbyEntries}
+                clubId={club.id}
+                category={gameType as LobbyCategory}
+                selectedId={panelOpen ? selectedId : null}
+                onSelect={openEntry}
+                onActivate={openEntry}
+                loading={loading}
+                ctx={lobbyCtx}
+                /* A Sort By the player chose for this tab is obeyed over the
                  featured pin wherever it is the board's order (ALL). */
-              requestedOrder={requestedOrder}
-              orderLabel={SORT_OPTIONS.find((o) => o.key === sortKey)?.label}
-              onHeadingSort={followHeadingSort}
-              orderChosen={
-                viewPrefs.sortByTab[gameType as keyof typeof viewPrefs.sortByTab] != null
-              }
-              /* THE VARIANT SELECTOR (Dan 2026-09-03): the Variant heading
+                requestedOrder={requestedOrder}
+                orderLabel={SORT_OPTIONS.find((o) => o.key === sortKey)?.label}
+                onHeadingSort={followHeadingSort}
+                orderChosen={
+                  viewPrefs.sortByTab[gameType as keyof typeof viewPrefs.sortByTab] != null
+                }
+                /* THE VARIANT SELECTOR (Dan 2026-09-03): the Variant heading
                  opens the tab's games - No Limit / Pineapple / Short Deck,
                  PLO / PLO5 / PLO6 / PLO8o - with an All option. It reads and
                  writes the SAME saved `games` filter the Advanced Filters
@@ -6066,52 +5973,52 @@ function ClubHomePageContent({
                  same menu (2026-10-24): its spec has carried FLH / FLO8 chips
                  since the limit games shipped, so the heading on that tab was
                  the one cash Variant heading with no way to pick a game. */
-              {...(() => {
-                const vSpec =
-                  gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
-                    ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
-                    : null;
-                if (!vSpec) return {};
-                const vVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(vSpec);
-                return {
-                  variantChoices: vSpec.games,
-                  selectedVariants: vVal.games,
-                  onVariantsChange: (games: string[]) => {
-                    haptic.selection();
-                    const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
-                    setAdvFilters(next);
-                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                  },
-                };
-              })()}
-              /* THE STAKES MENU (Dan 2026-09-04): the Stakes heading opens the
+                {...(() => {
+                  const vSpec =
+                    gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
+                      ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
+                      : null;
+                  if (!vSpec) return {};
+                  const vVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(vSpec);
+                  return {
+                    variantChoices: vSpec.games,
+                    selectedVariants: vVal.games,
+                    onVariantsChange: (games: string[]) => {
+                      haptic.selection();
+                      const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
+                      setAdvFilters(next);
+                      if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                    },
+                  };
+                })()}
+                /* THE STAKES MENU (Dan 2026-09-04): the Stakes heading opens the
                  game styles - Classic / Action / Madness, with All - and the
                  two stakes sorts. Every cash tab that has a Stakes column has
                  it, and it reads and writes the SAME saved `styles` filter
                  the Advanced Filters sheet does. */
-              {...(() => {
-                const sSpec =
-                  gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
-                    ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
-                    : null;
-                if (!sSpec?.styles) return {};
-                const sVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(sSpec);
-                return {
-                  styleChoices: sSpec.styles,
-                  selectedStyles: sVal.styles ?? [],
-                  styleCounts,
-                  onStylesChange: (styles: string[]) => {
-                    haptic.selection();
-                    const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
-                    setAdvFilters(next);
-                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                  },
-                };
-              })()}
-            />
-          )}
+                {...(() => {
+                  const sSpec =
+                    gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
+                      ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
+                      : null;
+                  if (!sSpec?.styles) return {};
+                  const sVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(sSpec);
+                  return {
+                    styleChoices: sSpec.styles,
+                    selectedStyles: sVal.styles ?? [],
+                    styleCounts,
+                    onStylesChange: (styles: string[]) => {
+                      haptic.selection();
+                      const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
+                      setAdvFilters(next);
+                      if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                    },
+                  };
+                })()}
+              />
+            )}
 
-          {/* ═══════════════════════════════════════════════════════════════
+            {/* ═══════════════════════════════════════════════════════════════
             EMPTY STATE — say WHY, and offer the way out
             ───────────────────────────────────────────────────────────────
             AUDIT 2026-08-21. This said "No tables available / wait for the
@@ -6126,23 +6033,24 @@ function ClubHomePageContent({
             It now distinguishes the three real causes and, when the player
             caused it, clears the cause in one tap.
         ═══════════════════════════════════════════════════════════════ */}
-          {!loading &&
-            lobbyEntries.length === 0 &&
-            (() => {
-              // Same three causes the result count reads, from the same place.
-              const totalHere = totalGameCount;
-              const { filtered } = narrowing;
-              const narrowed = narrowing.any;
+            {gameSection &&
+              !loading &&
+              lobbyEntries.length === 0 &&
+              (() => {
+                // Same three causes the result count reads, from the same place.
+                const totalHere = totalGameCount;
+                const { filtered } = narrowing;
+                const narrowed = narrowing.any;
 
-              return (
-                <div className="empty-tables">
-                  {totalHere === 0 ? (
-                    <>
-                      <p>{showTournaments ? 'No Tournaments Yet' : 'No Tables Yet'}</p>
-                      <p className="empty-hint">
-                        Nothing Is Running Here Right Now. New Games Open All The Time.
-                      </p>
-                      {/* HOUSE ADS, `empty_state` (2026-08-28). Declared in Phase
+                return (
+                  <div className="empty-tables">
+                    {totalHere === 0 ? (
+                      <>
+                        <p>{showTournaments ? 'No Tournaments Yet' : 'No Tables Yet'}</p>
+                        <p className="empty-hint">
+                          Nothing Is Running Here Right Now. New Games Open All The Time.
+                        </p>
+                        {/* HOUSE ADS, `empty_state` (2026-08-28). Declared in Phase
                         1 and wired to nothing until now.
 
                         Deliberately ONLY this branch. The other three empty
@@ -6156,29 +6064,29 @@ function ClubHomePageContent({
                         A picture, since 2026-09-13 - the 3:4 poster, fluid and
                         contained, the same standard as every other surface.
                         The text card that stood here is gone from the codebase. */}
-                      <HouseAdRotator
-                        slot="empty_state"
-                        clubId={resolvedClubId}
-                        className="ad-rotator--poster"
-                        onNavigate={(path) => {
-                          haptic.selection();
-                          if (
-                            isDiamondJackpotAdvertTarget(path, isAutomaticArena, [
-                              clubId,
-                              resolvedClubId,
-                              club.id,
-                            ])
-                          ) {
-                            setShowBBJInfo(true);
-                            return;
-                          }
-                          navigate(path);
-                        }}
-                      />
-                    </>
-                  ) : !narrowed ? (
-                    <>
-                      {/* ALL IS A SCOPE, NOT EVERYTHING (2026-08-26). The ALL tab
+                        <HouseAdRotator
+                          slot="empty_state"
+                          clubId={resolvedClubId}
+                          className="ad-rotator--poster"
+                          onNavigate={(path) => {
+                            haptic.selection();
+                            if (
+                              isDiamondJackpotAdvertTarget(path, isAutomaticArena, [
+                                clubId,
+                                resolvedClubId,
+                                club.id,
+                              ])
+                            ) {
+                              setShowBBJInfo(true);
+                              return;
+                            }
+                            navigate(path);
+                          }}
+                        />
+                      </>
+                    ) : !narrowed ? (
+                      <>
+                        {/* ALL IS A SCOPE, NOT EVERYTHING (2026-08-26). The ALL tab
                         deliberately carries cash and joinable MTTs only - never
                         a Spin, never a Heads Up, never a tournament that has
                         stopped registering. With no search and no filter set,
@@ -6187,86 +6095,87 @@ function ClubHomePageContent({
                         Right Now" with eight live games one tab away. The count
                         is the proof it was wrong, so the count is what it
                         says. */}
-                      <p>Nothing On This Tab Right Now</p>
-                      <p className="empty-hint">
-                        {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
-                        This Club. Spins And Heads Up Have Their Own Tabs, And So Do Tournaments
-                        Already Under Way.
-                      </p>
-                    </>
-                  ) : !filtered ? (
-                    favoritesOnly ? (
-                      <>
-                        {/* Dan 2026-09-01: the Favorites toggle persisted from
+                        <p>Nothing On This Tab Right Now</p>
+                        <p className="empty-hint">
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                          This Club. Spins And Heads Up Have Their Own Tabs, And So Do Tournaments
+                          Already Under Way.
+                        </p>
+                      </>
+                    ) : !filtered ? (
+                      favoritesOnly ? (
+                        <>
+                          {/* Dan 2026-09-01: the Favorites toggle persisted from
                           an earlier visit and this branch blamed the TAB
                           ("None Of This Type Right Now") while 980 cash games
                           sat one toggle away. When Favorites is the narrowing,
                           say Favorites. Same rule as the comment below: name
                           the real cause. */}
-                        <p>No Favorites On This Tab</p>
-                        <p className="empty-hint">
-                          The Favorites Filter Is On And Nothing Here Is Marked As A Favorite Yet.{' '}
-                          {totalHere.toLocaleString()}
-                          {countsCapped ? '+' : ''} Game
-                          {totalHere === 1 ? ' Is' : 's Are'} Open In This Club.
-                        </p>
-                        <div className="empty-actions">
-                          <button className="empty-action" onClick={clearAllNarrowing}>
-                            Show All Games
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {/* Tab is the ONLY narrowing: blaming "filters" here
+                          <p>No Favorites On This Tab</p>
+                          <p className="empty-hint">
+                            The Favorites Filter Is On And Nothing Here Is Marked As A Favorite Yet.{' '}
+                            {totalHere.toLocaleString()}
+                            {countsCapped ? '+' : ''} Game
+                            {totalHere === 1 ? ' Is' : 's Are'} Open In This Club.
+                          </p>
+                          <div className="empty-actions">
+                            <button className="empty-action" onClick={clearAllNarrowing}>
+                              Show All Games
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Tab is the ONLY narrowing: blaming "filters" here
                           sent players hunting for filters they never set
                           (QA 2026-08-22). Name the real cause. */}
-                        <p>Nothing Here On This Tab</p>
+                          <p>Nothing Here On This Tab</p>
+                          <p className="empty-hint">
+                            {totalHere.toLocaleString()}
+                            {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open
+                            In This Club, Just None Of This Type Right Now.
+                          </p>
+                          <div className="empty-actions">
+                            <button className="empty-action" onClick={clearAllNarrowing}>
+                              Show All Games
+                            </button>
+                          </div>
+                        </>
+                      )
+                    ) : (
+                      <>
+                        <p>Nothing Matches Your Filters</p>
                         <p className="empty-hint">
                           {totalHere.toLocaleString()}
                           {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
-                          This Club, Just None Of This Type Right Now.
+                          This Club, But The Filters On This Tab Hide{' '}
+                          {totalHere === 1 ? 'It' : 'Them All'}.
                         </p>
                         <div className="empty-actions">
                           <button className="empty-action" onClick={clearAllNarrowing}>
                             Show All Games
                           </button>
+                          {filtered && (
+                            <button
+                              className="empty-action empty-action--ghost"
+                              onClick={() => {
+                                haptic.light();
+                                setFiltersOpen(true);
+                              }}
+                            >
+                              Edit Filters
+                            </button>
+                          )}
                         </div>
                       </>
-                    )
-                  ) : (
-                    <>
-                      <p>Nothing Matches Your Filters</p>
-                      <p className="empty-hint">
-                        {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
-                        This Club, But The Filters On This Tab Hide{' '}
-                        {totalHere === 1 ? 'It' : 'Them All'}.
-                      </p>
-                      <div className="empty-actions">
-                        <button className="empty-action" onClick={clearAllNarrowing}>
-                          Show All Games
-                        </button>
-                        {filtered && (
-                          <button
-                            className="empty-action empty-action--ghost"
-                            onClick={() => {
-                              haptic.light();
-                              setFiltersOpen(true);
-                            }}
-                          >
-                            Edit Filters
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-        </div>
-      </section>
+                    )}
+                  </div>
+                );
+              })()}
+          </div>
+        </section>
+      </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
           SELECTED GAME LOBBY — CasinoPlaque panel (renders ONLY for the

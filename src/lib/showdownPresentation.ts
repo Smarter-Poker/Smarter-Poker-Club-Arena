@@ -44,6 +44,47 @@ export interface FlatWinnerWire {
   pot_index?: number;
 }
 
+/** Legacy Lightning frames carried the controller's flat per-pot awards. */
+export interface FlatPotAwardWire {
+  userId: string;
+  amount: number;
+  potIndex: number;
+  board?: number;
+  low?: boolean;
+  hand?: { name?: string };
+  handDescription?: string;
+}
+
+/** Read old Lightning frames at the same boundary as grouped physical frames. */
+export function normalizePotAwardWire(
+  awards: PotAwardGroupWire[] | FlatPotAwardWire[] | undefined
+): PotAwardGroupWire[] | undefined {
+  if (!Array.isArray(awards) || !awards.length || !awards.every((a) => a && 'userId' in a))
+    return awards as PotAwardGroupWire[] | undefined;
+  const groups = new Map<string, PotAwardGroupWire>();
+  for (const award of awards as FlatPotAwardWire[]) {
+    const board = typeof award.board === 'number' && award.board >= 1 ? award.board : 1;
+    const potIndex = award.potIndex ?? 0;
+    const low = award.low === true;
+    const key = `${board}:${potIndex}:${low}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { board, pot_index: potIndex, low, winners: [] };
+      groups.set(key, group);
+    }
+    group.winners.push({
+      user_id: award.userId,
+      amount: award.amount,
+      hand_name: award.hand?.name,
+      hand_description: low ? award.hand?.name : award.handDescription,
+    });
+  }
+  return [...groups.values()].sort(
+    (a, b) =>
+      (a.board ?? 1) - (b.board ?? 1) || a.pot_index - b.pot_index || Number(a.low) - Number(b.low)
+  );
+}
+
 /** One sequenced award beat: every winner in it animates together. */
 export interface AwardGroup {
   potIndex: number;
@@ -75,13 +116,17 @@ export interface AwardGroup {
  *  3. A single group of all winners (pre-2026-08-25 payloads).
  */
 export function buildAwardGroups(
-  potAwards: PotAwardGroupWire[] | undefined,
+  potAwards: PotAwardGroupWire[] | FlatPotAwardWire[] | undefined,
   flatWinners: FlatWinnerWire[],
   winnerIds: string[],
   fallbackAmounts: Record<string, number>
 ): AwardGroup[] {
+  potAwards = normalizePotAwardWire(potAwards);
   if (Array.isArray(potAwards) && potAwards.length > 0) {
-    return potAwards
+    // The serving Lightning engine used the flat controller shape here.
+    // Preserve its exact per-pot shares instead of falling through to an
+    // equal split of the gross pot when every missing winners[] reads empty.
+    return (potAwards as PotAwardGroupWire[])
       .map((g) => ({
         potIndex: g.pot_index ?? 0,
         board: typeof g.board === 'number' && g.board >= 1 ? g.board : 1,

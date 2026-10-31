@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 import { createClient } from '@supabase/supabase-js';
 import {
   acknowledgePreferenceWelcome,
@@ -5,12 +6,14 @@ import {
   openFreshPreferenceDevice,
 } from './support/accountPreferenceSession';
 import {
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
   cleanupTemporaryCustomizationAccount,
   requireCustomizationCertificationEnvironment,
   type TemporaryCustomizationAccount,
 } from './support/temporaryCustomizationAccount';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
+import { observeSetupFailure } from './support/setupFailureObservation';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { ensureClubMembership } from './support/ensureClubMembership';
 import { test, expect, devices, type Page, type Frame } from '@playwright/test';
@@ -82,7 +85,7 @@ test.afterEach(async ({ page }, testInfo) => {
 // than relying on on-first-retry, which never records these failures.
 test.use({ ...devices['iPhone 13'], trace: 'retain-on-failure' });
 
-async function openLobby(page: Page) {
+async function openLobby(page: Page, openSection = true) {
   // The Diamond Spins offer opens on the answer to this read. Listen before
   // navigating: it leaves as soon as the club resolves.
   const offer = diamondEntryRead(page);
@@ -96,13 +99,14 @@ async function openLobby(page: Page) {
   // Either optional welcome can cover a later tab action. Use the original
   // public dismissals, including the shared handler for a delayed Diamond offer.
   await prepareCashLobbyActions(page);
-  await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Cash Games', exact: true })).toBeVisible({
     timeout: 45_000,
   });
   // Then settle that offer here, through its real Not Now and with its whole
   // budget, before a 5-second assertion or a scroll measurement can meet it
   // (support/diamondInvitationOffer.ts has the four runs it failed).
   await settleDiamondSpinsOffer(page, offer);
+  if (openSection) await openLobbyGameSection(page, 'ALL');
 }
 
 test.describe('the mobile lobby chrome on production', () => {
@@ -129,11 +133,22 @@ test.describe('the mobile lobby chrome on production', () => {
       const proof = observeLobbyPreferenceProof(document, CLUB_ID);
       proofs.set(document, proof);
       proof.phase(phase);
-      await openLobby(document);
+      await openLobby(document, false);
       const documentOwner = await readLobbyPreferenceOwner(document);
       if (ownerId && documentOwner !== ownerId) throw new Error('Lobby preference account changed');
       ownerId = documentOwner;
       const saved = await proof.ready(ownerId);
+      if (saved) {
+        const section = ['MTT', 'SNG', 'SPIN', 'SATELLITE'].includes(saved)
+          ? 'Tournaments'
+          : 'Cash Games';
+        await expect(document.getByRole('button', { name: section, exact: true })).toHaveAttribute(
+          'aria-expanded',
+          'true'
+        );
+      } else {
+        await openLobbyGameSection(document, 'ALL');
+      }
       if (saved) {
         await expect(
           document
@@ -146,7 +161,7 @@ test.describe('the mobile lobby chrome on production', () => {
     const certificateOwner = await openPreferenceLobby(page, 'original-open');
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
-    const target = original === 'PLO' ? 'NLH' : 'PLO';
+    const target = ["MTT'S", 'SPINS', 'HEADS UP'].includes(original) ? 'PLO' : "MTT'S";
     let returningPage: Page | undefined;
     let returningReady = false;
     const failures: unknown[] = [];
@@ -217,9 +232,14 @@ test.describe('the mobile lobby chrome on production', () => {
     if (failures.length === 1) throw failures[0];
   });
 
-  test('MY WALLETS prints the count, keeps it, centred and unclipped', async ({ page }) => {
+  test('MY WALLETS lives in Cashier and keeps its count centred and unclipped', async ({
+    page,
+  }) => {
     await openLobby(page);
-    const small = page.locator('.lobby-wallets-trigger__copy small');
+    await expect(page.locator('.lobby-wallets-trigger')).toHaveCount(0);
+    await page.getByRole('link', { name: 'Cashier', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Cashier', exact: true })).toBeVisible();
+    const small = page.locator('.cashier-my-wallets .lobby-wallets-trigger__copy small');
 
     /* The number the viewer's role decides, in the wallet's own words. Not a
        placeholder, and not the empty bay that a wiped count leaves behind. */
@@ -253,6 +273,19 @@ test.describe('the mobile lobby chrome on production', () => {
     }, TITLE_CENTRE_PCT);
     expect(m.clipped, `${printed} is clipped at the plate's edge`).toBe(false);
     expect(m.offCentreByPct, `${printed} is off the painted title's centre`).toBeLessThan(1);
+    const wallets = page.getByRole('region', { name: 'My Wallets', exact: true });
+    const trigger = wallets.getByRole('button', { name: /^My Wallets/i });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(
+      wallets.getByRole('region', { name: 'Wallet Balances', exact: true })
+    ).toBeVisible();
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(
+      wallets.getByRole('region', { name: 'Wallet Balances', exact: true })
+    ).toBeHidden();
   });
 
   test('Create, Find and Join lead the arena with no Play Poker plate', async ({ page }) => {
@@ -266,8 +299,9 @@ test.describe('the mobile lobby chrome on production', () => {
 
   test('compact rows open details and filters stay at their original position', async ({
     page,
-  }) => {
+  }, testInfo) => {
     await openLobby(page);
+    await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     await allGames.click();
     await expect(allGames).toHaveAttribute('aria-selected', 'true');
@@ -317,6 +351,59 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toBeVisible();
     await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toHaveCount(0);
+
+    const cashDoor = page.getByRole('button', { name: 'Cash Games', exact: true });
+    const tournamentDoor = page.getByRole('button', { name: 'Tournaments', exact: true });
+    await tournamentDoor.click();
+    await expect(tournamentDoor).toHaveAttribute('aria-expanded', 'true');
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'false');
+    const gameTypes = page.getByRole('tablist', { name: 'Game Type', exact: true });
+    await expect(gameTypes.getByRole('tab')).toHaveText([
+      "MTT'S",
+      'SPINS',
+      "SIT N GO'S",
+      'SATELLITES',
+    ]);
+    await gameTypes.getByRole('tab', { name: "MTT'S", exact: true }).click();
+    await expect(gameTypes.getByRole('tab', { name: "MTT'S", exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await page.evaluate(() => document.fonts.ready);
+    const labels = page.locator('#lobby-game-section-controls .lobby-filter-label__text');
+    expect(await labels.count()).toBeGreaterThanOrEqual(4);
+    for (const label of await labels.all()) {
+      const fits = await label.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const ink = range.getBoundingClientRect();
+        const face = el.parentElement!.getBoundingClientRect();
+        return (
+          ink.left >= face.left - 1 &&
+          ink.right <= face.right + 1 &&
+          ink.top >= face.top - 1 &&
+          ink.bottom <= face.bottom + 1
+        );
+      });
+      expect(fits, `${await label.textContent()} must fit its painted face`).toBe(true);
+    }
+    await testInfo.attach('live-tournament-filters.png', {
+      body: await page.locator('.lobby-controls').screenshot(),
+      contentType: 'image/png',
+    });
+    await tournamentDoor.click();
+    await expect(gameTypes).toHaveCount(0);
+    await cashDoor.click();
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'true');
+    await expect(gameTypes.getByRole('tab')).toHaveText(['ALL', 'NLH', 'PLO', 'LIMIT']);
+    await testInfo.attach('live-cash-filters.png', {
+      body: await page.locator('.lobby-controls').screenshot(),
+      contentType: 'image/png',
+    });
+    await cashDoor.click();
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'false');
+    await expect(tournamentDoor).toHaveAttribute('aria-expanded', 'false');
+    await expect(gameTypes).toHaveCount(0);
   });
 
   test('tournament Details stays inside the spectator table lobby tab', async ({
@@ -351,6 +438,7 @@ test.describe('the mobile lobby chrome on production', () => {
     };
     try {
       await openLobby(page);
+      await openLobbyGameSection(page, 'ALL');
       await page.getByRole('tab', { name: 'ALL', exact: true }).click();
       const cash = page.locator(`${CASH_TABLE_CARD_SELECTOR}:visible`).first();
       await expect(cash, 'the certificate club has a live cash game to view').toBeVisible({
@@ -372,7 +460,8 @@ test.describe('the mobile lobby chrome on production', () => {
         .click();
       const lobby = page.locator('.multi-table-page__lobby-tab .club-home:visible');
       await expect(lobby).toBeVisible({ timeout: 30_000 });
-      await lobby.getByRole('tab', { name: 'MTT', exact: true }).click();
+      await openLobbyGameSection(lobby, 'MTT');
+      await lobby.getByRole('tab', { name: "MTT'S", exact: true }).click();
       const tournament = lobby
         .locator('[data-testid="lobby-game-row"][data-kind="mtt"]:visible')
         .first();
@@ -395,11 +484,64 @@ test.describe('the mobile lobby chrome on production', () => {
         timeout: 20_000,
       });
       await expect(actionBar).toBeVisible();
+      const lobbyTab = actionBar.locator('[data-tabid^="lobby:"]');
+      await expect(lobbyTab).toHaveCount(1);
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      // The former restore only stole focus when the remembered table index
+      // was greater than zero. Put that observer behind the active lobby
+      // through the real tab menu so this case exercises that exact branch.
+      const lobbyId = await lobbyTab.getAttribute('data-tabid');
+      const observerId = new URL(tableUrl).pathname.split('/').pop()!;
+      await lobbyTab.click({ button: 'right' });
+      await page.getByRole('button', { name: 'Move Left', exact: true }).click();
+      await expect(actionBar.locator('[data-tabid]').nth(0)).toHaveAttribute(
+        'data-tabid',
+        lobbyId!
+      );
+      await expect(actionBar.locator('[data-tabid]').nth(1)).toHaveAttribute(
+        'data-tabid',
+        observerId
+      );
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      const ownerId = await readLobbyPreferenceOwner(page);
+      const seatRefresh = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname.endsWith('/table_seats') &&
+          url.searchParams.get('select') === 'table_id' &&
+          url.searchParams.get('user_id') === `eq.${ownerId}`
+        );
+      });
+      // Exercise the real visibility recovery read, without a seat or purchase.
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      const refreshed = await seatRefresh;
+      expect(refreshed.ok(), 'the owned seat refresh failed').toBe(true);
+      expect(await refreshed.json(), 'the certificate identity must stay an observer').toEqual([]);
+      // The former focus theft ran 250ms after this authoritative response.
+      // Observe past that known deadline, then require the same details page.
+      await page.waitForTimeout(500);
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      await expect(
+        page.locator('.tournament-details[data-lobby-tab="true"]:visible')
+      ).toBeVisible();
+      await testInfo.attach('plus-page-after-seat-refresh', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
       expect(page.url()).toBe(tableUrl);
       expect(
         routeTrace.every((url) => url === tableUrl),
         'Details left the running table route'
       ).toBe(true);
+      // Only the player's explicit Close Lobby gesture removes this page.
+      await lobbyTab.click({ button: 'right' });
+      await page.getByRole('button', { name: 'Close Lobby', exact: true }).click();
+      await expect(actionBar.locator('[data-tabid^="lobby:"]')).toHaveCount(0);
+      await expect(actionBar.locator(`[data-tabid="${observerId}"]`)).toHaveAttribute(
+        'aria-current',
+        'true'
+      );
       expect(participation, 'spectator navigation attempted participation').toEqual([]);
     } finally {
       page.off('framenavigated', observeRoute);
@@ -507,11 +649,15 @@ test.describe('the mobile lobby chrome on production', () => {
       .getByRole('group', { name: 'Filter Notifications' })
       .getByRole('button', { name: /^Unread/ });
     await expect(unread).toBeVisible({ timeout: 30_000 });
+    const preferenceOwner = await readLobbyPreferenceOwner(page);
+    const preferenceKey = 'NotificationsPage:filter:global';
     const filterSaved = page.waitForResponse(
       (response) =>
         response.url().includes('/rest/v1/user_page_preferences') &&
         response.request().method() === 'POST' &&
         response.ok() &&
+        response.request().postDataJSON()?.user_id === preferenceOwner &&
+        response.request().postDataJSON()?.preference_key === preferenceKey &&
         response.request().postDataJSON()?.value === 'unread'
     );
     await unread.click();
@@ -520,6 +666,8 @@ test.describe('the mobile lobby chrome on production', () => {
       (response) =>
         response.url().includes('/rest/v1/user_page_preferences') &&
         response.request().method() === 'GET' &&
+        new URL(response.url()).searchParams.get('user_id') === `eq.${preferenceOwner}` &&
+        new URL(response.url()).searchParams.get('preference_key') === `eq.${preferenceKey}` &&
         response.ok()
     );
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -532,7 +680,11 @@ test.describe('the mobile lobby chrome on production', () => {
       .getByRole('button', { name: /^All/ });
     const interrupted = page.waitForEvent('requestfailed', {
       predicate: (request) =>
-        request.url().includes('/rest/v1/user_page_preferences') && request.method() === 'POST',
+        request.url().includes('/rest/v1/user_page_preferences') &&
+        request.method() === 'POST' &&
+        request.postDataJSON()?.user_id === preferenceOwner &&
+        request.postDataJSON()?.preference_key === preferenceKey &&
+        request.postDataJSON()?.value === 'all',
     });
     try {
       await page.context().setOffline(true);
@@ -548,6 +700,8 @@ test.describe('the mobile lobby chrome on production', () => {
         response.url().includes('/rest/v1/user_page_preferences') &&
         response.request().method() === 'POST' &&
         response.ok() &&
+        response.request().postDataJSON()?.user_id === preferenceOwner &&
+        response.request().postDataJSON()?.preference_key === preferenceKey &&
         response.request().postDataJSON()?.value === 'all'
     );
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -556,6 +710,8 @@ test.describe('the mobile lobby chrome on production', () => {
       (response) =>
         response.url().includes('/rest/v1/user_page_preferences') &&
         response.request().method() === 'GET' &&
+        new URL(response.url()).searchParams.get('user_id') === `eq.${preferenceOwner}` &&
+        new URL(response.url()).searchParams.get('preference_key') === `eq.${preferenceKey}` &&
         response.ok()
     );
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -602,19 +758,46 @@ const preferenceLifecycleTest = test.extend<{ preferenceAccount: TemporaryCustom
         });
       }
     },
-    { timeout: 120_000 },
+    // The guarded cleanup can wait on a real freeze; preserve its existing allowance.
+    { timeout: 120_000 + CLEANUP_FREEZE_ALLOWANCE_MS },
   ],
   page: [
-    async ({ browser, baseURL, preferenceAccount }, provide) => {
+    async ({ browser, baseURL, preferenceAccount }, provide, testInfo) => {
       if (!baseURL) throw new Error('Configured BASE_URL required');
       const owned = await openFreshPreferenceDevice(browser, baseURL, preferenceAccount);
+      // Own contexts do not inherit global setup's passive navigation observer.
+      // Retain evidence for this original attempt without another navigation.
+      const observation = observeSetupFailure(
+        owned.page,
+        baseURL,
+        process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+      );
       try {
-        await owned.page.goto('settings', { waitUntil: 'domcontentloaded' });
-        await ensureAcceptedTerms(owned.page);
-        await ensurePlayableProfile(owned.page);
-        await acknowledgePreferenceWelcome(owned.page);
+        try {
+          await owned.page.goto('settings', { waitUntil: 'domcontentloaded' });
+          observation.stage('terms');
+          await ensureAcceptedTerms(owned.page);
+          observation.stage('profile');
+          await ensurePlayableProfile(owned.page);
+          await acknowledgePreferenceWelcome(owned.page);
+        } catch (error) {
+          try {
+            await testInfo.attach('owned-preference-setup-failure.json', {
+              contentType: 'application/json',
+              body: Buffer.from(JSON.stringify(observation.snapshot())),
+            });
+          } catch (attachmentError) {
+            throw new AggregateError(
+              [error, attachmentError],
+              'Preference setup and evidence attachment failed.'
+            );
+          }
+          throw error;
+        }
+        observation.dispose();
         await provide(owned.page);
       } finally {
+        observation.dispose();
         await owned.context.close();
       }
     },
@@ -779,6 +962,7 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
       await ensureClubMembership(page, testInfo.project.use.baseURL!, CLUB_ID);
       await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded' });
       await prepareCashLobbyActions(page);
+      await openLobbyGameSection(page, 'NLH');
       const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
       await tabs.getByRole('tab', { name: 'NLH', exact: true }).click();
       await expect(tabs.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
@@ -855,6 +1039,7 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
         await acknowledgePreferenceWelcome(fresh.page);
         await prepareCashLobbyActions(fresh.page);
         await expect(fresh.page).toHaveURL(exactUrl);
+        await openLobbyGameSection(fresh.page, 'NLH');
         await expect(fresh.page.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
           'aria-selected',
           'true',

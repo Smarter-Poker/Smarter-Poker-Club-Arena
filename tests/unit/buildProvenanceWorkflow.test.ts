@@ -62,7 +62,7 @@ describe('GitHub build provenance callers', () => {
         }
       }
     }
-    expect(builds).toContain('publish-club-arena.yml:build-and-store');
+    expect(builds).toContain('publish-club-arena-client.yml:build-and-store');
     expect(builds.length).toBeGreaterThanOrEqual(4);
     expect(
       incomplete,

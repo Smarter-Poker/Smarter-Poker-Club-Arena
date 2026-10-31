@@ -1,0 +1,6 @@
+ALTER TABLE public.poker_diamond_movements DROP CONSTRAINT poker_diamond_movements_action_check;
+ALTER TABLE public.poker_diamond_movements ADD CONSTRAINT poker_diamond_movements_action_check CHECK ((action = ANY (ARRAY['reserve'::text, 'release'::text])));
+ALTER TABLE public.poker_diamond_movements DROP CONSTRAINT poker_diamond_movements_amount_check;
+ALTER TABLE public.poker_diamond_movements ADD CONSTRAINT poker_diamond_movements_amount_check CHECK ((((amount >= 1) AND (amount <= 2147483647) AND (wallet_journal_id IS NOT NULL)) OR ((action = 'release'::text) AND (amount = 0) AND (wallet_journal_id IS NULL)) OR ((amount >= 1) AND (amount <= 2147483647) AND (wallet_journal_id IS NULL) AND (((action = 'release'::text) AND (source_account ~~ 'arena_custody:%'::text) AND (destination_account = 'house'::text) AND ((request ->> 'action'::text) = 'tournament_drain'::text)) OR ((action = 'reserve'::text) AND (source_account ~~ 'house:%'::text) AND (destination_account ~~ 'arena_custody:%'::text) AND ((request ->> 'action'::text) = ANY (ARRAY['spin_underwrite'::text, 'guarantee_overlay'::text])))))));
+ALTER TABLE public.poker_diamond_movements DROP CONSTRAINT poker_diamond_movements_check;
+ALTER TABLE public.poker_diamond_movements ADD CONSTRAINT poker_diamond_movements_check CHECK ((source_account <> destination_account));

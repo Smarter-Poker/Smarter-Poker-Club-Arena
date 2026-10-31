@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { publishedSelectionBase } from '../../scripts/ci/publisher-ui-selection-base.mjs';
+import {
+  publisherClientShardPlan,
+  readImmutablePublisherClientShards,
+} from '../../scripts/ci/publisher-client-shards.mjs';
 import { selectionInputs } from '../../scripts/ci/ui-test-selection.mjs';
 import {
   classifyChangedPaths,
@@ -64,9 +68,24 @@ function inputs(baseline = base, selected = target) {
   };
 }
 
+const producerWorkflow = (count = 4) => `name: Publish Club Arena
+jobs:
+  client-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [${Array.from({ length: count }, (_, i) => i + 1).join(', ')}]
+    steps:
+      - name: Client tests must pass before the bundle ships (shard \${{ matrix.shard }}/${count})
+        run: node scripts/ci/ui-test-selection.mjs unit --shard=\${{ matrix.shard }}/${count}
+  build-and-store:
+    runs-on: ubuntu-latest
+`;
+
 // A real retained source qualifies financial/server changes without rebuilding
 // client bytes. Every authority and executed shard remains independently bound.
-function retainedInputs(published, verified, selected, root, git) {
+function retainedInputs(published, verified, selected, root, git, shardCount = 4) {
   const i = inputs(published, selected);
   const repositoryId = '1132369872';
   const repository = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
@@ -97,11 +116,11 @@ function retainedInputs(published, verified, selected, root, git) {
       'Upload immutable original retained verdict',
     ].map(step),
   };
-  const shards = [1, 2, 3, 4].map((n) => ({
+  const shards = Array.from({ length: shardCount }, (_, n) => n + 1).map((n) => ({
     ...ownership,
     id: 20 + n,
     name: `client-tests (${n})`,
-    steps: [step(`Client tests must pass before the bundle ships (shard ${n}/4)`)],
+    steps: [step(`Client tests must pass before the bundle ships (shard ${n}/${shardCount})`)],
   }));
   const artifact = (id, name) => ({
     id,
@@ -148,7 +167,11 @@ function retainedInputs(published, verified, selected, root, git) {
       schema: 1,
       sourceSha: published,
       complete: true,
-      files: [{ path: css, mode: '100644', oid: git('rev-parse', `${published}:${css}`) }],
+      files: [css, '.github/workflows/publish-club-arena.yml'].map((path) => ({
+        path,
+        mode: '100644',
+        oid: git('rev-parse', `${published}:${path}`),
+      })),
       directories: [],
       unknown: [],
     },
@@ -175,7 +198,7 @@ function retainedInputs(published, verified, selected, root, git) {
   i.jobs = async (id) =>
     String(id) === '7'
       ? { total_count: 1, jobs: [i.job] }
-      : { total_count: 5, jobs: [...shards, retention] };
+      : { total_count: shards.length + 1, jobs: [...shards, retention] };
   i.origins = async () => [body, body];
   i.manifests = async () => [manifest, manifest];
   i.successfulRuns = async () => [{ id: 10 }];
@@ -266,7 +289,7 @@ test('a missing, failed or unverified origin job and unknown ancestry refuse', a
   );
 });
 
-test('an unpublished financial predecessor keeps the full suite even when the last commit is safe UI', async () => {
+async function retainedProducerBacklog(shardCount) {
   const root = mkdtempSync(join(tmpdir(), 'published-ui-backlog-'));
   const git = (...a) =>
     execFileSync('git', a, { cwd: root, env: gitEnvironmentForCwd(), encoding: 'utf8' }).trim();
@@ -286,6 +309,7 @@ test('an unpublished financial predecessor keeps the full suite even when the la
     const css = 'src/components/example/Control.module.css';
     write(css, '.button { color: red }');
     write('server/payment.ts', 'export const amount=1;');
+    write('.github/workflows/publish-club-arena.yml', producerWorkflow(shardCount));
     const published = commit('published baseline');
     write('server/payment.ts', 'export const amount=2;');
     const financial = commit('unpublished financial change');
@@ -307,11 +331,12 @@ test('an unpublished financial predecessor keeps the full suite even when the la
       false,
       'financial backlog must run the full suite'
     );
-    const qualified = retainedInputs(published, financial, current, root, git);
+    const qualified = retainedInputs(published, financial, current, root, git, shardCount);
     const inheritedGitDir = process.env.GIT_DIR;
     // A push hook exports its outer repository; explicit fixture cwd must win.
     process.env.GIT_DIR = execFileSync('git', ['rev-parse', '--absolute-git-dir'], {
-      env: gitEnvironmentForCwd(), encoding: 'utf8',
+      env: gitEnvironmentForCwd(),
+      encoding: 'utf8',
     }).trim();
     try {
       assert.equal(await publishedSelectionBase(qualified), financial);
@@ -325,7 +350,7 @@ test('an unpublished financial predecessor keeps the full suite even when the la
       'already executed financial-source qualification permits only the remaining UI diff'
     );
     const reject = async (mutate) => {
-      const candidate = retainedInputs(published, financial, current, root, git);
+      const candidate = retainedInputs(published, financial, current, root, git, shardCount);
       mutate(candidate);
       assert.equal(
         await publishedSelectionBase(candidate),
@@ -334,6 +359,31 @@ test('an unpublished financial predecessor keeps the full suite even when the la
       );
     };
     for (const mutate of [
+      (i) => {
+        i.shards.push({ ...i.shards[0], id: 999, name: 'client-tests (99)' });
+      },
+      (i) => {
+        i.shards.pop();
+      },
+      (i) => {
+        i.shards.splice(0, i.shards.length, ...i.shards.slice(0, 4));
+        // A four-job subset must refuse only for the new sixteen-job producer.
+        if (shardCount === 4) i.shards.pop();
+      },
+      (i) => {
+        i.shards[0].head_sha = published;
+      },
+      (i) => {
+        i.shards[0].status = 'in_progress';
+      },
+      (i) => {
+        i.shards[0].steps[0].name = 'Client tests must pass before the bundle ships (shard 1/99)';
+      },
+      (i) => {
+        i.producerShards = () => {
+          throw Error('immutable source unreadable');
+        };
+      },
       (i) => {
         i.shards[0].conclusion = 'skipped';
       },
@@ -434,7 +484,7 @@ test('an unpublished financial predecessor keeps the full suite even when the la
     write('server/payment.ts', 'export const amount=3;');
     const laterFinancial = commit('another unqualified financial change');
     const stillQualified = await publishedSelectionBase(
-      retainedInputs(published, financial, laterFinancial, root, git)
+      retainedInputs(published, financial, laterFinancial, root, git, shardCount)
     );
     assert.equal(stillQualified, financial);
     assert.equal(
@@ -449,6 +499,140 @@ test('an unpublished financial predecessor keeps the full suite even when the la
       selectionInputs(root, await publishedSelectionBase(inputs(published, ui)), ui).focused,
       true
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+for (const count of [4, 16])
+  test(`a ${count}-shard immutable producer proves the financial backlog before scoped UI`, () =>
+    retainedProducerBacklog(count));
+
+test('immutable producer layout refuses unsupported, ambiguous or dynamic shapes', () => {
+  assert.throws(() => publisherClientShardPlan(producerWorkflow(8)));
+  for (const count of [4, 16]) {
+    const source = producerWorkflow(count);
+    assert.deepEqual(publisherClientShardPlan(source), {
+      indices: Array.from({ length: count }, (_, i) => i + 1),
+      total: count,
+    });
+    if (count === 4)
+      assert.equal(
+        publisherClientShardPlan(
+          source.replace('node scripts/ci/ui-test-selection.mjs unit', 'npx vitest run tests/')
+        ).total,
+        4
+      );
+    for (const bad of [
+      source.replace('shard: [1, 2', 'shard: [2, 2'),
+      source.replace(
+        '      matrix:',
+        '      matrix: ${{ fromJSON(inputs.matrix) }}\n      unsupported:'
+      ),
+      source.replace('    strategy:', '    name: renamed\n    strategy:'),
+      source.replace('        run:', '        continue-on-error: true\n        run:'),
+      source.replace('        run:', '        if: false\n        run:'),
+      source.replace('        run:', '        shell: bash\n        run:'),
+      source.replace('      matrix:', '      max-parallel: 1\n      matrix:'),
+      source.replace('    steps:', '        extra: [1, 2]\n    steps:'),
+      source.replace('/' + count + '\n', '/99\n'),
+      source.replace('unit --shard=', 'unit --passWithNoTests --shard='),
+      source.replace('  client-tests:', '  client-tests: &hidden'),
+      source + '\n  client-tests:\n',
+      source.replace('jobs:', 'jobs: &hidden'),
+      '',
+    ])
+      assert.throws(() => publisherClientShardPlan(bad));
+  }
+});
+
+test('actual Git revision owns the producer layout, not dirty worktree content or inherited Git state', () => {
+  const root = mkdtempSync(join(tmpdir(), 'publisher-shard-source-'));
+  const git = (...args) =>
+    execFileSync('git', args, { cwd: root, env: gitEnvironmentForCwd(), encoding: 'utf8' }).trim();
+  const path = join(root, '.github/workflows/publish-club-arena.yml');
+  try {
+    git('init', '-q');
+    git('config', 'user.name', 'Shard fixture');
+    git('config', 'user.email', 'fixture@example.invalid');
+    mkdirSync(join(root, '.github/workflows'), { recursive: true });
+    writeFileSync(path, producerWorkflow(4));
+    git('add', '.');
+    git('commit', '-qm', 'four shard producer');
+    const four = git('rev-parse', 'HEAD');
+    writeFileSync(path, producerWorkflow(16));
+    git('add', '.');
+    git('commit', '-qm', 'sixteen shard producer');
+    const sixteen = git('rev-parse', 'HEAD');
+    writeFileSync(path, producerWorkflow(4));
+    assert.equal(readImmutablePublisherClientShards(root, four).total, 4);
+    const inherited = process.env.GIT_DIR;
+    process.env.GIT_DIR = execFileSync('git', ['rev-parse', '--absolute-git-dir'], {
+      env: gitEnvironmentForCwd(),
+      encoding: 'utf8',
+    }).trim();
+    try {
+      assert.equal(readImmutablePublisherClientShards(root, sixteen).total, 16);
+    } finally {
+      if (inherited === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = inherited;
+    }
+    assert.throws(() => readImmutablePublisherClientShards(root, '0'.repeat(40)));
+    assert.throws(() => readImmutablePublisherClientShards(root, 'main'));
+    writeFileSync(path, producerWorkflow(16).replace('shard: [1, 2', 'shard: [2, 2'));
+    git('add', '.');
+    git('commit', '-qm', 'unsupported producer');
+    assert.throws(() => readImmutablePublisherClientShards(root, git('rev-parse', 'HEAD')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('nested immutable producer retains exact matrix and only the maintained caller prefix', () => {
+  const root = mkdtempSync(join(tmpdir(), 'publisher-nested-source-'));
+  const git = (...args) =>
+    execFileSync('git', args, { cwd: root, env: gitEnvironmentForCwd(), encoding: 'utf8' }).trim();
+  const entry = join(root, '.github/workflows/publish-club-arena.yml');
+  const helper = join(root, '.github/workflows/publish-club-arena-client.yml');
+  const caller =
+    'jobs:\n  client-publication:\n    needs: publish-needed\n    uses: ./.github/workflows/publish-club-arena-client.yml\n';
+  try {
+    git('init', '-q');
+    git('config', 'user.name', 'Nested fixture');
+    git('config', 'user.email', 'fixture@example.invalid');
+    mkdirSync(join(root, '.github/workflows'), { recursive: true });
+    writeFileSync(entry, caller);
+    for (const count of [4, 16]) {
+      writeFileSync(
+        helper,
+        producerWorkflow(count).replace('jobs:', 'on:\n  workflow_call:\njobs:')
+      );
+      git('add', '.');
+      git('commit', '-qm', `nested ${count}`);
+      assert.deepEqual(readImmutablePublisherClientShards(root, git('rev-parse', 'HEAD')), {
+        total: count,
+        indices: Array.from({ length: count }, (_, i) => i + 1),
+        jobPrefix: 'client-publication / ',
+      });
+    }
+    for (const bad of [
+      caller.replace('publish-club-arena-client.yml', 'arbitrary.yml'),
+      caller.replace('needs: publish-needed', 'needs: other'),
+      caller + '  client-publication:\n',
+    ]) {
+      writeFileSync(entry, bad);
+      git('add', '.');
+      git('commit', '-qm', 'unsupported caller');
+      assert.throws(() => readImmutablePublisherClientShards(root, git('rev-parse', 'HEAD')));
+    }
+    writeFileSync(entry, caller);
+    writeFileSync(
+      helper,
+      producerWorkflow(16).replace('jobs:', 'on:\n  push:\n  workflow_call:\njobs:')
+    );
+    git('add', '.');
+    git('commit', '-qm', 'unapproved event entry');
+    assert.throws(() => readImmutablePublisherClientShards(root, git('rev-parse', 'HEAD')));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

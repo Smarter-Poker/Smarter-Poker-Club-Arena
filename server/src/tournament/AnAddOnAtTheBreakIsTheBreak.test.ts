@@ -55,7 +55,12 @@ class Harness extends TournamentManagerBase {
 }
 
 function persistedRow() {
-  let saved: any = {};
+  let saved: any = {
+    id: '00000000-0000-4000-8000-000000000155',
+    on_break: true,
+    break_started_at: new Date().toISOString(),
+    break_ends_at: null,
+  };
   const writes: any[] = [];
   const chain: any = {
     update: vi.fn((row: any) => {
@@ -71,6 +76,7 @@ function persistedRow() {
     }),
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
+    is: vi.fn(() => chain),
     select: vi.fn(() => chain),
     maybeSingle: vi.fn(async () => ({ data: saved, error: null })),
   };
@@ -127,6 +133,7 @@ describe('an add-on that comes due during the :55 break is that break', () => {
     expect(row.windowWrites()).toHaveLength(0);
     expect((m as any).pendingAddOnPeriod).toBe(true);
 
+    (m as any).breakCountdownAnchor = { generation: 0, startedAt: new Date(NOW).toISOString() };
     await m.beginBreakCountdown(TournamentManagerBase.BREAK_DURATION_MS);
     expect((m as any).pendingAddOnPeriod).toBe(false);
     expect(row.windowWrites()).toHaveLength(1);

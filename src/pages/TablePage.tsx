@@ -1,3 +1,4 @@
+import { tournamentTableLabel } from '../utils/tournamentTableLabel';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { useGameSessionLifecycle } from '../hooks/useGameSessionLifecycle';
 import {
@@ -474,7 +475,8 @@ import { scheduleLightningRenderAck } from '../lightning/lightningRenderAck';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
-import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
+import type { ShareableHand, ShareableAction } from '../components/table/ShareHand';
+import { shareBoardPrefix, shareExtraBoards, visibleShareCards } from '../lib/liveShareCards';
 import { toShareVariant } from '../lib/shareHandModel';
 import TableMenu from '../components/table/TableMenu';
 
@@ -572,6 +574,7 @@ import { useTableArt } from '../hooks/useTableArt';
 import { useProtectedCardLayout } from '../hooks/useProtectedCardLayout';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
+  ACTION_NOT_DELIVERED_MESSAGE,
   isTimeBankTurnGone,
   submitAction,
   respondToRIT,
@@ -666,6 +669,7 @@ import {
 // the beats are testable outside this 13k-line component.
 import {
   buildAwardGroups,
+  normalizePotAwardWire,
   boardLabelFromAwards,
   isAllInShowdown,
   pendingStackHold,
@@ -1113,6 +1117,8 @@ const NO_SEATED_IDS: readonly (string | undefined)[] = [];
 
 // Props for embedded multi-table mode
 interface TablePageProps {
+  /** Explicit player watching must not reopen an earlier personal bust report. */
+  followingPlayer?: boolean;
   /** When set, overrides the URL :tableId param (used by MultiTablePage) */
   embeddedTableId?: string;
   /** Explicit chair acceptance follows the tab to its buy-in sheet. */
@@ -1539,6 +1545,7 @@ export default function TablePage(props: TablePageProps = {}) {
 
 function LiveTablePage({
   embeddedTableId,
+  followingPlayer = false,
   openBuyInOnArrival = false,
   onTableInfoUpdate,
   isMultiTable = false,
@@ -1547,6 +1554,8 @@ function LiveTablePage({
   arrivedByMoveAtMs,
   muted = false,
 }: TablePageProps = {}) {
+  const followingPlayerRef = useRef(followingPlayer);
+  followingPlayerRef.current = followingPlayer;
   const addScreenIcon = useButtonImage('icon-addscreen');
   const timebankIconPage = useTimebankIcon();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
@@ -3778,24 +3787,6 @@ function LiveTablePage({
   // cancelled at HAND_STARTED and on unmount so a fast next hand can never
   // receive a late side-pot fan from the previous one.
   const potAwardStaggerTimersRef = useRef<number[]>([]);
-  /**
-   * WHEN A CHIP ANIMATION ACTUALLY STARTED (Dan 2026-08-27, ship-pot invariant).
-   *
-   * The safety sweep further down deletes chip animations "older than 5
-   * seconds", and it dated them by parsing the epoch-millis token out of their
-   * id. That id is stamped when the event is BUILT, and pot-win fans are built
-   * at pot_win but fired much later — a run-it-twice hold can defer the last
-   * run's fan by fifteen seconds or more. Those fans were therefore already
-   * "6 seconds old" the instant they were handed to React, and the very next
-   * sweep tick reaped them mid-flight: the chips vanished halfway to the seat.
-   * A backgrounded tab, where rAF is throttled and the completion callback
-   * never runs, hit the same wall.
-   *
-   * id -> the wall-clock instant the animation was pushed into state. The sweep
-   * measures from THIS, falling back to the id token for animations that never
-   * registered (every non-pot-win call site).
-   */
-  const chipAnimStartedAtRef = useRef<Map<string, number>>(new Map());
   // SHOWDOWN follow-up 2026-08-25 (spec 21): while false AND the snapshot
   // carries winners, each winner's SEAT displays stack minus their share —
   // the number only rises once the pot-push animation has landed on them.
@@ -15654,7 +15645,10 @@ function LiveTablePage({
             scheduleDurableCompletionRetry();
           }
 
-          if (loadedTournamentStatus === 'COMPLETED' || loadedFinishedReportReady) {
+          if (
+            loadedTournamentStatus === 'COMPLETED' ||
+            (loadedFinishedReportReady && !followingPlayerRef.current)
+          ) {
             void exitFromDurableCompletion();
           }
 
@@ -19155,11 +19149,7 @@ function LiveTablePage({
         // by the 3s reset timer further down this same case).
         try {
           const st = tableStateRef.current;
-          const board = st.communityCards || [];
-          const asShareCard = (c: Card): ShareableCard => ({
-            rank: c.rank,
-            suit: c.suit,
-          });
+          const board = shareBoardPrefix(st.communityCards);
           /**
            * EVERY VERB THAT IS NOT ONE OF FIVE USED TO BE SHARED AS ALL IN.
            *
@@ -19211,9 +19201,7 @@ function LiveTablePage({
                     // Only cards actually visible on screen travel in the link
                     // -- hero's own, plus anything shown down at showdown. A
                     // shared hand must never leak a mucked holding.
-                    cards: (p.holeCards || []).length
-                      ? (p.holeCards as Card[]).map(asShareCard)
-                      : undefined,
+                    cards: visibleShareCards(p.holeCards),
                     isHero: i + 1 === st.heroSeat,
                     isWinner: winnerSeats.has(i + 1),
                   }
@@ -19239,10 +19227,7 @@ function LiveTablePage({
                `ritResult` in this closure is whatever it was when the handler
                was created. */
             const runs = ritResultRef.current?.boards || [];
-            const extraBoards = runs
-              .slice(1)
-              .map((b) => (normalizeCards(b) as Card[]).map(asShareCard))
-              .filter((b) => b.length > 0);
+            const extraBoards = shareExtraBoards(runs);
             setSharedHandId(null);
             setSharedHandData({
               id: `${tableId || 'table'}-${st.handNumber ?? heroHandRef.current ?? 0}`,
@@ -19254,17 +19239,9 @@ function LiveTablePage({
               players: sharePlayers,
               preflop: byStreet('preflop'),
               flop:
-                board.length >= 3
-                  ? { cards: board.slice(0, 3).map(asShareCard), actions: flopActions }
-                  : undefined,
-              turn:
-                board.length >= 4
-                  ? { card: asShareCard(board[3]), actions: turnActions }
-                  : undefined,
-              river:
-                board.length >= 5
-                  ? { card: asShareCard(board[4]), actions: riverActions }
-                  : undefined,
+                board.length >= 3 ? { cards: board.slice(0, 3), actions: flopActions } : undefined,
+              turn: board.length >= 4 ? { card: board[3], actions: turnActions } : undefined,
+              river: board.length >= 5 ? { card: board[4], actions: riverActions } : undefined,
               potTotal: st.pot || 0,
               winners: winnerRows,
               /* v4 (2026-09-05). What the LIVE snapshot knows: the hand's own
@@ -19918,9 +19895,12 @@ function LiveTablePage({
         // UNMERGED per-pot(-half) award groups. Everything below that needs
         // "which pot, which half, whose share" reads these; the flat
         // winners[] stays the source of per-player totals.
-        const potAwardsWire = (evt.data as any).pot_awards as
-          | import('../lib/showdownPresentation').PotAwardGroupWire[]
-          | undefined;
+        const potAwardsWire = normalizePotAwardWire(
+          (evt.data as any).pot_awards as
+            | import('../lib/showdownPresentation').PotAwardGroupWire[]
+            | import('../lib/showdownPresentation').FlatPotAwardWire[]
+            | undefined
+        );
         const boardLabel = boardLabelFromAwards(
           potAwardsWire,
           ((evt.data as any).hand_name as string) ||
@@ -20804,11 +20784,6 @@ function LiveTablePage({
                 return;
               }
               for (const cue of payoutCelebrations.splice(0)) cue();
-              // Stamp the REAL start so the 5s safety sweep measures this fan
-              // from the moment it went on screen, not from when it was built
-              // (which on a run-it-twice hold is many seconds earlier).
-              const startedAt = Date.now();
-              for (const e of g.events) chipAnimStartedAtRef.current.set(e.id, startedAt);
               const root = tableScalerRef.current?.closest('.table-page') ?? null;
               const source = potViewportPoint(root, potPos);
               const flights = g.events.map((event) => ({
@@ -23723,7 +23698,7 @@ function LiveTablePage({
       action: string,
       amount?: number,
       callsite?: string
-    ): Promise<boolean> => {
+    ): Promise<boolean | null> => {
       try {
         if (isLightningObserverSnapshot(engineSnapshotRef.current)) return false;
         // Read at the tap: a retained callback must not send a token from an
@@ -23731,6 +23706,11 @@ function LiveTablePage({
         const res = await submitTableDecision({
           actionContext: tableStateRef.current.actionContext,
           allowContextless: Boolean(lightningRoomRef.current),
+          clientStateStale:
+            action !== 'fold' &&
+            (!tableStateRef.current.players[tableStateRef.current.heroSeat - 1] ||
+              tableStateRef.current.players[tableStateRef.current.heroSeat - 1]?.status ===
+                'folded'),
           send: async (context) => await submitAction(tid, uid, action, amount, context),
           refresh: () => awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot),
         });
@@ -23738,12 +23718,16 @@ function LiveTablePage({
         if (tableStateRef.current.tableId !== tid || actionUserRef.current !== uid) return false;
         if (!res.success) {
           showActionError({
-            error: safeErrorMessage(res.error, 'Action rejected'),
+            error: res.outcomeUnconfirmed
+              ? ACTION_NOT_DELIVERED_MESSAGE
+              : safeErrorMessage(res.error, 'Action rejected'),
             code: res.code,
-            hint: res.hint as ActionErrorData['hint'],
+            hint: res.outcomeUnconfirmed ? undefined : (res.hint as ActionErrorData['hint']),
           });
           if (callsite) console.warn(`[Table] Server ${action} rejected (${callsite}):`, res);
-          return false;
+          // null is an unknown outcome, not a refusal. Keep the optimistic
+          // display until an actual engine snapshot supplies the current turn.
+          return res.outcomeUnconfirmed ? null : false;
         }
         return true;
       } catch (err) {
@@ -24560,9 +24544,10 @@ function LiveTablePage({
         heroPlayer,
       });
       showActionError({
-        error: 'Your seat is out of sync with the table - resyncing',
+        error: 'Your Action Was Not Sent. Please Review The Table And Try Again.',
         code: 'CLIENT_STATE_STALE',
       });
+      requestEngineSnapshot();
       return false;
     }
     return true;
@@ -24665,7 +24650,10 @@ function LiveTablePage({
       // Input readiness is checked BEFORE optimistic paint. Otherwise the
       // missing-token fold arms a fence for no decision, and the refreshed
       // turn can remain hidden behind that fence even though nothing was sent.
-      if (!lightningRoomRef.current && !live.actionContext) {
+      const staleHero =
+        action !== 'fold' &&
+        (!live.players[live.heroSeat - 1] || live.players[live.heroSeat - 1]?.status === 'folded');
+      if ((!lightningRoomRef.current && !live.actionContext) || staleHero) {
         try {
           if (tableId) {
             await submitActionWithToast(tableId, userId, action, amount, 'panel-missing-decision');
@@ -24746,7 +24734,7 @@ function LiveTablePage({
                 undefined,
                 'panel-fold'
               );
-              if (!ok) revert();
+              if (ok === false) revert();
             }
           }
           break;
@@ -24763,7 +24751,7 @@ function LiveTablePage({
                 undefined,
                 'panel-check'
               );
-              if (!ok) revert();
+              if (ok === false) revert();
             }
           }
           break;
@@ -24781,7 +24769,7 @@ function LiveTablePage({
                 undefined,
                 'panel-call'
               );
-              if (!ok) revert();
+              if (ok === false) revert();
             }
           }
           break;
@@ -24804,7 +24792,7 @@ function LiveTablePage({
                   clamped,
                   'panel-raise'
                 );
-                if (!ok) revert();
+                if (ok === false) revert();
               }
             }
           }
@@ -24829,7 +24817,7 @@ function LiveTablePage({
                 heroStack,
                 'panel-allin'
               );
-              if (!ok) revert();
+              if (ok === false) revert();
             }
           }
           break;
@@ -25004,59 +24992,13 @@ function LiveTablePage({
   // window.innerWidth math and the wrong {50,45} pot target. Removed.
 
   const handleAnimationComplete = useCallback((id: string) => {
-    chipAnimStartedAtRef.current.delete(id);
     setChipAnimations((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
-  // Safety cleanup: remove chip animations older than 5 seconds (e.g. if CSS event missed)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setChipAnimations((prev) => {
-        if (prev.length === 0) return prev;
-        const cutoff = Date.now() - 5000;
-        const fresh = prev.filter((a) => {
-          /**
-           * MEASURE FROM THE SCHEDULED START, NOT FROM CREATION
-           * (Dan 2026-08-27, the ship-pot invariant).
-           *
-           * A pot-win fan is BUILT at pot_win and FIRED later — up to twenty
-           * seconds later behind a three-board run-it-twice reveal. Dating it
-           * by the epoch token baked into its id therefore declared it stale
-           * before it had drawn a single frame, and this sweep deleted it
-           * mid-flight. `chipAnimStartedAtRef` records the instant each fan
-           * was actually pushed into state; that is the only honest clock for
-           * "how long has this been on screen".
-           */
-          const startedAt = chipAnimStartedAtRef.current.get(a.id);
-          if (startedAt != null) return startedAt > cutoff;
-          // ANIMATION AUDIT 2026-08-19: ids come in TWO formats — underscore
-          // (pa_<ts>_..., blind_<ts>_...) and hyphen (pot-to-winner-<ts>-<i>,
-          // chip-to-pot-<ts>-<i>). The old `split('_')[1]` parsed the hyphen
-          // ids to 0, so every pot-ship fan alive at a 5s tick was deleted
-          // MID-FLIGHT. Extract the epoch-millis token regardless of format.
-          const m = a.id.match(/(\d{13,})/);
-          const ts = m ? parseInt(m[1], 10) : 0;
-          if (ts === 0) {
-            // Unparseable id → never destroy an animation we can't date, but
-            // 2026-08-27: START its clock now instead of keeping it forever.
-            // A future id format without an epoch token would otherwise be
-            // immortal and the array would grow for the session.
-            chipAnimStartedAtRef.current.set(a.id, Date.now());
-            return true;
-          }
-          return ts > cutoff;
-        });
-        if (fresh.length === prev.length) return prev;
-        // Stop the map growing for the life of the session.
-        const alive = new Set(fresh.map((a) => a.id));
-        for (const id of Array.from(chipAnimStartedAtRef.current.keys())) {
-          if (!alive.has(id)) chipAnimStartedAtRef.current.delete(id);
-        }
-        return fresh;
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Each flight retires through handleAnimationComplete after its component
+  // commits the endpoint and its landing hold. A busy or background browser
+  // can delay visual frames beyond five seconds; wall age cannot cancel an
+  // animation still owed to the player. Leaving this table unmounts its layer.
 
   // Load waitlist data.
   //
@@ -25336,6 +25278,12 @@ function LiveTablePage({
   useEffect(() => {
     if (!lightningMeta) return;
     const seed = lightningTableSeed(lightningMeta);
+    // Pool rooms have no tables row, so the physical-table bootstrap never
+    // fills this owner. Use the room's own cluster metadata for its counters.
+    if (lightningMeta.clubId) {
+      actualClubIdRef.current = lightningMeta.clubId;
+      setActualClubIdLoaded(true);
+    }
     setTableState((prev) => {
       const empty = prev.players.every((p) => !p);
       const resize = empty && prev.players.length !== seed.maxPlayers;
@@ -27142,6 +27090,14 @@ function LiveTablePage({
                                         </>
                                       )}
                                   </span>
+                                  {tournamentTableLabel(tableState.tableName) && (
+                                    <span
+                                      className="table-brand__line"
+                                      data-testid="tournament-table-number"
+                                    >
+                                      {tournamentTableLabel(tableState.tableName)}
+                                    </span>
+                                  )}
                                   {(tableState.handNumber ?? 0) > 0 && (
                                     <span className="table-brand__hand">
                                       Hand #{tableState.handNumber}

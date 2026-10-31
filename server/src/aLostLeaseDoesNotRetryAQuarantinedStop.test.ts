@@ -50,6 +50,7 @@ function corpse(stops: number[]) {
       throw new Error('Tournament t failed to stop 1 table engine(s)');
     }),
     getTournamentLeaseGeneration: () => null,
+    retainsTournamentAbortBoundary: () => false,
     hasCurrentTournamentLeaseAuthority: () => false,
     stoodDownWithItsLeaseIntact: () => false,
     fenceForTournamentLeaseLoss: vi.fn(),

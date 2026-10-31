@@ -112,7 +112,7 @@ export default function HelpPage() {
 
           {filteredFAQ.length === 0 && (
             <div className={styles.emptyState} role="status">
-              <strong>No Matching Guidance</strong>
+              <strong>No Matching Help Topics</strong>
               <span>Try A Broader Search Or Send A Support Request.</span>
             </div>
           )}

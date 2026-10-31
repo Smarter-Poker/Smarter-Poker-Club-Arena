@@ -39,7 +39,7 @@ jobs:
       (inputs.client_result == 'success' ||
        (inputs.client_result == 'skipped' &&
         inputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -135,7 +135,7 @@ jobs:
       (inputs.client_result == 'success' ||
        (inputs.client_result == 'skipped' &&
         inputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -188,8 +188,8 @@ jobs:
           VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
-          # Remains off until a protected source change follows hosted qualification.
-          VITE_PRIVATE_RECORD_FALLBACK_URL: ''
+          # Qualified by gateway publisher 40977779005; paid Realtime stays enabled.
+          VITE_PRIVATE_RECORD_FALLBACK_URL: 'https://ca-static.smarter.poker/private-record'
           VITE_APP_ENV: production
           VITE_APP_VERSION: ${{ inputs.target_sha }}
           VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
@@ -248,7 +248,7 @@ jobs:
       (inputs.client_result == 'success' ||
        (inputs.client_result == 'skipped' &&
         inputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -271,6 +271,19 @@ jobs:
           ref: ${{ inputs.target_sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Use the production Node major for payout admission
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install locked payout publication driver
+        run: npm ci --prefix server --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Verify installed MTT payout policy before origin publication
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: timeout 30s node scripts/ci/check-mtt-payout-publication.mjs
 
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4

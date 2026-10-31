@@ -1,8 +1,13 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import LobbyTable from '../../src/components/lobby/LobbyTable';
-import { cashEntry } from '../../src/components/lobby/lobbyEntries';
+import LobbyTable, { columnsFor } from '../../src/components/lobby/LobbyTable';
+import {
+  cashEntry,
+  tournamentEntry,
+  tournamentStatus,
+  type LobbyTournamentRow,
+} from '../../src/components/lobby/lobbyEntries';
 
 vi.mock('../../src/services/tableWarmup', () => ({
   warmTable: vi.fn(),
@@ -49,6 +54,24 @@ function mount() {
 }
 
 describe('compact lobby selection is a pre-commit detail step', () => {
+  it('labels satellite entry prices as buy-ins on both boards', () => {
+    render(
+      <MemoryRouter>
+        <LobbyTable
+          entries={[]}
+          category="SATELLITE"
+          selectedId={null}
+          onSelect={vi.fn()}
+          onActivate={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+    const board = screen.getByRole('table', { name: 'Games' });
+    expect(within(board).getByRole('columnheader', { name: 'Buy-In' })).toBeTruthy();
+    expect(within(board).queryByRole('columnheader', { name: 'Stakes' })).toBeNull();
+    expect(columnsFor('SATELLITE').map((column) => column.key)).toContain('buyin');
+    expect(columnsFor('SATELLITE').map((column) => column.key)).not.toContain('stakes');
+  });
   it('renders a compact row, opens details once, and never joins or spends', () => {
     const { list, onSelect, writers } = mount();
     expect(
@@ -66,5 +89,74 @@ describe('compact lobby selection is a pre-commit detail step', () => {
     fireEvent.click(within(list).getByText(game.stakesLabel!));
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(game);
     for (const writer of Object.values(writers)) expect(writer).not.toHaveBeenCalled();
+  });
+});
+
+const eventRow = {
+  id: 'favorite-event',
+  name: 'Evening Event',
+  game_type: 'NLH',
+  tournament_type: 'MTT',
+  format_contract: 'mtt-v1',
+  variant: 'mtt',
+  status: 'REGISTERING',
+  start_time: '2026-10-29T20:00:00Z',
+  started_at: null,
+  buy_in_amount: 10,
+  buy_in_fee: 1,
+  current_players: 2,
+  max_players: 9,
+  starting_chips: 10000,
+  late_reg_mins: 0,
+} as LobbyTournamentRow;
+
+describe('favorites are reachable in the mobile board', () => {
+  it.each(['cash', 'mtt', 'spin', 'sng'] as const)(
+    'toggles %s without opening or buying',
+    (kind) => {
+      const entry = kind === 'cash' ? game : tournamentEntry(eventRow, kind);
+      const onSelect = vi.fn();
+      const onToggleFavorite = vi.fn();
+      const draw = (favorite: boolean) => (
+        <MemoryRouter>
+          <LobbyTable
+            entries={[entry]}
+            category={kind === 'cash' ? 'HOLDEM' : (kind.toUpperCase() as 'MTT' | 'SPIN' | 'SNG')}
+            selectedId={null}
+            onSelect={onSelect}
+            onActivate={onSelect}
+            ctx={{
+              seatedIds: new Set(),
+              registeredIds: new Set(),
+              waitlistedIds: new Set(),
+              favoriteIds: new Set(favorite ? [entry.id] : []),
+              onToggleFavorite,
+            }}
+          />
+        </MemoryRouter>
+      );
+      const { rerender } = render(draw(false));
+      let board = screen.getByRole('table', { name: 'Games' });
+      fireEvent.click(within(board).getByRole('button', { name: 'Add To Favorites' }));
+      expect(onToggleFavorite).toHaveBeenLastCalledWith(entry.id, true, kind);
+      expect(onSelect).not.toHaveBeenCalled();
+      rerender(draw(true));
+      board = screen.getByRole('table', { name: 'Games' });
+      const remove = within(board).getByRole('button', { name: 'Remove From Favorites' });
+      expect(remove.getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(remove);
+      expect(onToggleFavorite).toHaveBeenLastCalledWith(entry.id, false, kind);
+      expect(onSelect).not.toHaveBeenCalled();
+    }
+  );
+  it('uses actual start evidence before an older registering status', () => {
+    expect(tournamentStatus({ ...eventRow, started_at: '2026-10-29T20:01:00Z' })).toEqual({
+      key: 'running',
+      label: 'Running',
+    });
+    expect(tournamentStatus(eventRow).key).toBe('starting_soon');
+    expect(
+      tournamentStatus({ ...eventRow, status: 'CANCELLED', started_at: '2026-10-29T20:01:00Z' }).key
+    ).toBe('closed');
   });
 });

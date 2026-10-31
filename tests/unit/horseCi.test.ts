@@ -305,7 +305,7 @@ describe('Horse commitment audit remains in the existing accounting PostgreSQL g
     expect(steps[0].run).toContain('--source-root "$GITHUB_WORKSPACE"');
     expect(steps[0].run).toContain('--allocation-parent /tmp');
     expect(job['runs-on']).toBe(
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
     );
     expect(ci.jobs.server.needs).toContain('accounting_postgres');
   });

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explicit read of one completed release's existing recovery reservation."""
 import base64
+import ast
 import datetime
 import hashlib
 import json
@@ -69,6 +70,7 @@ REFUSALS = {
     'Inspector absence identity export': ('inspector', 'export_absence_identity'),
 }
 REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused'), ('inspector', 'intent_unavailable'), ('inspector', 'identity_changed'), ('inspector', 'native_scalar_unavailable')}
+REFUSAL_CODES |= {('serving_role', 'binding_unproved'), ('serving_role', 'evidence_unavailable')}
 
 
 INSPECTOR_COMMAND_STAGES = {'container', 'health', 'image', 'probe', 'history',
@@ -111,11 +113,11 @@ def refusal(request, error):
 
 
 def validate_refusal(value, request):
-    fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'phase', 'code'} | ({'mode'} if 'mode' in request else set())
+    request = selection(request)
+    fields = {'schema', 'readOnly', 'phase', 'code'} | set(request)
     if (not isinstance(value, dict) or set(value) != fields
             or value['schema'] != FAILURE_SCHEMA or value['readOnly'] is not True
-            or value['runKey'] != request['runKey'] or value['releaseSha'] != request['releaseSha']
-            or value.get('mode') != request.get('mode')
+            or any(value[key] != expected for key, expected in request.items())
             or not isinstance(value['phase'], str) or not isinstance(value['code'], str)
             or (value['phase'], value['code']) not in REFUSAL_CODES):
         raise ValueError('Scoped evidence transport unavailable')
@@ -123,8 +125,15 @@ def validate_refusal(value, request):
 
 
 def selection(value):
+    if isinstance(value, dict) and value.get('mode') == 'current_serving_inspector_role':
+        if (set(value) != {'mode', 'releaseSha', 'instanceId'}
+                or value['releaseSha'] != EED
+                or not isinstance(value['instanceId'], str)
+                or not re.fullmatch(r'1-[0-9a-f]{8}', value['instanceId'])):
+            raise ValueError('Exact current serving identity required')
+        return dict(value)
     if (not isinstance(value, dict) or set(value) not in ({'runKey', 'releaseSha'}, {'runKey', 'releaseSha', 'mode'})
-            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector'})):
+            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector', 'main_inspector_retirement'})):
         raise ValueError('Exact existing release identity required')
     if not isinstance(value['runKey'], str) or not RUN.fullmatch(value['runKey']):
         raise ValueError('Invalid run key')
@@ -370,9 +379,149 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v2'
+PENDING_SCHEMA = 'existing-release-pending-observation/v6'
+PENDING_RECOVERY_STATUSES = ('accepted', 'active', 'pending', 'busy', 'expired',
+                             'use_hourly', 'unavailable', 'unknown')
+PENDING_RECOVERY_CATEGORIES = {
+    'recovery_newer_owner', 'recovery_inspector_unproved',
+    'recovery_reservation_unestablished', 'recovery_rate_limited',
+} | {'recovery_announcement_' + status for status in PENDING_RECOVERY_STATUSES}
 PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
-                      'locked_budget_missed', 'legacy_entry_deferred'}
+                      'locked_budget_missed', 'legacy_entry_deferred',
+                      'certificate_also_shut', 'rollback_readiness_completed',
+                      'rollback_certificate_lost', 'weekly_owner_active',
+                      'inflight_evidence_unavailable', 'mutation_lock_unavailable',
+                      'mutation_lock_deadline', 'hands_in_air'} | PENDING_RECOVERY_CATEGORIES
+# Compact, closed v3 certificate tuple: [remainingMs, unparkedTables,
+# handsInFlightTotal, reasonCounts]. reasonCounts follows this order, with
+# one final count of UNRECOGNIZED KEYS; private/future names never leave host.
+# None retains original None/absent fields. A None details tuple means the
+# literal's details could not be qualified, never an empty or quiet gate.
+PENDING_REASON_ORDER = (
+    'f06_preparation_unresolved', 'f06_preparation_stuck', 'cards_in_air',
+    'accounting_unconfirmed', 'accounting_pending', 'bank_park_write_incomplete',
+    'stopped_bank_custody_unreadable', 'stopped_bank_custody_unwritten',
+    'stopped_bank_custody_unconfirmed', 'stopped_bank_custody_stuck', 'unknown',
+    'time_bank_accounting_pending', 'time_bank_accounting_unconfirmed',
+    'live_time_banks_retained', 'hand_preparation_pending',
+)
+
+
+def pending_integer(value):
+    return type(value) is int and 0 <= value <= 9007199254740991
+
+
+def pending_reason_counts(text):
+    tree = ast.parse(text, mode='eval').body
+    if isinstance(tree, ast.Constant) and tree.value is None:
+        return None
+    if not isinstance(tree, ast.Dict) or len(tree.keys) > 32:
+        raise ValueError('Pending literal reasons refused')
+    keys = [ast.literal_eval(key) for key in tree.keys]
+    values = [ast.literal_eval(value) for value in tree.values]
+    if (any(type(key) is not str for key in keys) or len(set(keys)) != len(keys)
+            or any(not pending_integer(value) for value in values)):
+        raise ValueError('Pending literal reasons refused')
+    counts = dict(zip(keys, values))
+    return [counts.get(key, 0) for key in PENDING_REASON_ORDER] + [
+        sum(key not in PENDING_REASON_ORDER for key in keys)]
+
+
+def pending_certificate_details(message, also=False):
+    prefix = r'\[engine-release-transaction\] the restart certificate is '
+    pattern = (prefix + r'also shut: unparkedTables=(None|[0-9]+) unparkedReasons=(.+)'
+               if also else prefix + r'shut with ([0-9]+)ms of the break left: '
+               r'unparkedTables=(None|[0-9]+) unparkedReasons=(.+) handsInFlightTotal=(None|[0-9]+)')
+    match = re.fullmatch(pattern, message)
+    if not match:
+        return None
+    try:
+        remaining, unparked, reasons, hands = ((None, *match.groups(), None)
+                                              if also else match.groups())
+        scalar = lambda value: None if value in (None, 'None') else int(value)
+        result = [scalar(remaining), scalar(unparked), scalar(hands), pending_reason_counts(reasons)]
+        validate_pending_details('certificate_also_shut' if also else 'certificate_shut', result)
+        return result
+    except (SyntaxError, ValueError, TypeError, RecursionError):
+        return None
+
+
+def pending_recovery_category(message):
+    # Existing producer literals only. Validate, then discard every source,
+    # run, cause and announcement timestamp. These signs grant no authority.
+    prefix = r'\[engine-release-transaction\] '
+    if re.fullmatch(prefix + r'newer release [0-9a-f]{40} \(run [1-9][0-9]{0,19}(?:-[1-9][0-9]{0,3})?\) is in flight and owns any off-cycle window; this release waits for the scheduled break', message):
+        return 'recovery_newer_owner'
+    fixed = {
+        '[engine-release-transaction] legacy inspector absence is not proved; no recovery window requested and no inspector was touched': 'recovery_inspector_unproved',
+        '[engine-release-transaction] recovery announcement reservation could not be established; no window was announced, waiting for the scheduled break': 'recovery_reservation_unestablished',
+    }
+    if message in fixed:
+        return fixed[message]
+    cause = (r'(?:owner-ordered [a-z0-9][a-z0-9-]{0,63}|engine-degraded '
+             r'(?:liveness=dead(?:,wholeFleetStalled)?(?:,tournamentManagersQuarantined=[1-9][0-9]*)?'
+             r'|wholeFleetStalled(?:,tournamentManagersQuarantined=[1-9][0-9]*)?'
+             r'|tournamentManagersQuarantined=[1-9][0-9]*))')
+    if re.fullmatch(prefix + r'off-cycle window wanted \(' + cause + r'\) but one was already announced in the last hour; waiting for the scheduled break', message):
+        return 'recovery_rate_limited'
+    match = re.fullmatch(prefix + r'fixed recovery announcement ([1-9][0-9]{12}): ('
+                         + '|'.join(PENDING_RECOVERY_STATUSES)
+                         + r'); existing certificate and rollback budget remain required', message)
+    if match:
+        try:
+            timestamp(int(match.group(1)))
+        except ValueError:
+            return None
+        return 'recovery_announcement_' + match.group(2)
+    return None
+
+
+def validate_pending_details(category, details):
+    if details is None:
+        return
+    if not isinstance(details, list):
+        raise ValueError('Pending details refused')
+    if category in {'certificate_shut', 'certificate_also_shut'}:
+        if (len(details) != 4 or any(value is not None and not pending_integer(value) for value in details[:3])
+                or (category == 'certificate_shut' and details[0] is None)
+                or (category == 'certificate_also_shut' and (details[0] is not None or details[2] is not None))):
+            raise ValueError('Pending certificate details refused')
+        reasons = details[3]
+        if reasons is not None and (not isinstance(reasons, list)
+                or len(reasons) != len(PENDING_REASON_ORDER) + 1
+                or any(not pending_integer(value) for value in reasons)):
+            raise ValueError('Pending reason counts refused')
+        return
+    lengths = {'candidate_budget_missed': 2, 'locked_budget_missed': 2,
+               'rollback_readiness_completed': 3, 'rollback_certificate_lost': 3,
+               'hands_in_air': 2}
+    if category not in lengths or len(details) != lengths[category] or any(not pending_integer(value) for value in details):
+        raise ValueError('Pending numeric details refused')
+
+
+def pending_legacy_intent(request, directory, control):
+    # Only an exact-file ENOENT is absence AT THESE READS. Never permission to
+    # retry a one-shot or proof that it did not exist earlier. No native probe.
+    try:
+        value = inspector_intent(request, directory)
+    except FileNotFoundError:
+        return {'status': 'absent_at_read', 'code': None}, None
+    except (OSError, ValueError, UnicodeError):
+        return {'status': 'unknown', 'code': 'evidence_unavailable'}, None
+    if value['controlSha'] != control:
+        return {'status': 'unknown', 'code': 'binding_refused'}, None
+    return {'status': 'bound_at_read', 'code': None}, json.dumps(value, sort_keys=True)
+
+
+def validate_pending_intent(value):
+    if (not isinstance(value, dict) or set(value) != {'status', 'code'}
+            or not isinstance(value['status'], str)
+            or (value['code'] is not None and not isinstance(value['code'], str))
+            or (value['status'], value['code']) not in {
+                ('absent_at_read', None), ('bound_at_read', None),
+                ('unknown', 'not_read'), ('unknown', 'evidence_unavailable'),
+                ('unknown', 'binding_refused'), ('unknown', 'changed_during_read')}):
+        raise ValueError('Pending intent export refused')
 
 
 def read_lines(directory_fd, name, optional=False):
@@ -431,7 +580,9 @@ def pending_journal(request, unit):
     name = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
     reply = bounded_journal(['journalctl', '--no-pager', '--output=json', '--lines=12',
         '--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID,_SYSTEMD_UNIT,__REALTIME_TIMESTAMP',
-        '--grep=^\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit)',
+        # Below-budget "also shut" chatter must not evict the early causal
+        # refusal from the existing twelve-row selection. Absence stays unknown.
+        '--grep=^(\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|newer release [0-9a-f]{40} \\(run [1-9][0-9]*(-[1-9][0-9]*)?\\) is in flight and owns any off-cycle window; |legacy inspector absence is not proved; |recovery announcement reservation could not be established; |off-cycle window wanted \\(|fixed recovery announcement [1-9][0-9]{12}: |prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
         '_SYSTEMD_INVOCATION_ID=' + invocation, '_SYSTEMD_UNIT=' + name])
     if reply.returncode:
         raise ValueError('Pending journal unavailable')
@@ -446,11 +597,16 @@ def pending_journal(request, unit):
         if (not isinstance(stamp, str) or not re.fullmatch(r'[0-9]{16}', stamp)
                 or not isinstance(message, str) or len(message) > 2048):
             raise ValueError('Pending journal shape refused')
-        category = None
+        category = pending_recovery_category(message)
+        details = None
         # Literal producer prefixes in engine-release-transaction.sh. Unknown
         # messages remain unknown; their text never leaves the host.
         if message.startswith('[engine-release-transaction] the restart certificate is shut with '):
             category = 'certificate_shut'
+            details = pending_certificate_details(message)
+        elif message.startswith('[engine-release-transaction] the restart certificate is also shut: '):
+            category = 'certificate_also_shut'
+            details = pending_certificate_details(message, also=True)
         elif (message.startswith('[engine-release-transaction] the durable table break has ')
               and message.endswith('candidate-and-recovery budget; refusing before mutation and waiting for a later certificate')):
             category = 'candidate_budget_missed'
@@ -459,8 +615,33 @@ def pending_journal(request, unit):
             category = 'locked_budget_missed'
         elif message == '[engine-release-transaction] the legacy checkpoint entry did not fit inside this break and nothing was attempted; waiting for a later certificate':
             category = 'legacy_entry_deferred'
+        elif message == '[engine-release-inflight-hands] weekly payout owns the boundary; refusing cutover':
+            category = 'weekly_owner_active'
+        elif message.startswith('[engine-release-inflight-hands] UNKNOWN: '):
+            category = 'inflight_evidence_unavailable'
+        elif message == '[engine-release-transaction] FATAL: could not acquire the engine mutation lock for maintenance cutover':
+            category = 'mutation_lock_unavailable'
+        elif message == '[engine-release-transaction] FATAL: deadline expired before maintenance cutover':
+            category = 'mutation_lock_deadline'
+        numeric = [
+            ('candidate_budget_missed', r'\[engine-release-transaction\] the durable table break has ([0-9]+)ms remaining, below the ([0-9]+)ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate'),
+            ('locked_budget_missed', r'\[engine-release-transaction\] the locked table break has ([0-9]+)ms remaining, below the ([0-9]+)ms candidate-and-recovery budget; waiting for a later certificate'),
+            ('rollback_readiness_completed', r'\[engine-release-transaction\] prove_rollback_readiness took ([0-9]+)ms of the ([0-9]+)ms entry allowance inside the ([0-9]+)s legacy checkpoint budget'),
+            ('rollback_certificate_lost', r'\[engine-release-transaction\] FATAL: legacy checkpoint did not retain the full restart certificate and ([0-9]+)ms legacy reserve \(([0-9]+)ms remaining, certificate rc ([0-9]+)\)'),
+            ('hands_in_air', r'\[engine-release-inflight-hands\] ([0-9]+) hand\(s\) in the air within ([0-9]+)s - refusing the cutover:'),
+        ]
+        for candidate, pattern in numeric:
+            match = re.fullmatch(pattern, message)
+            if match:
+                category = candidate
+                details = [int(value) for value in match.groups()]
+                try:
+                    validate_pending_details(category, details)
+                except ValueError:
+                    details = None
+                break
         if category:
-            sign = {'category': category, 'observedAtMs': int(stamp) // 1000}
+            sign = {'category': category, 'observedAtMs': int(stamp) // 1000, 'details': details}
             timestamp(sign['observedAtMs'])
             signs.append(sign)
     return signs
@@ -490,14 +671,64 @@ def pending_metadata(request, rows, intent, marker, deadline):
     return rows[4], stamp, break_deadline
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None):
+def validate_pending_tcp(value):
+    unknown_codes = {'not_read', 'command_deadline', 'command_size', 'command_nonzero',
+                     'container_unproved', 'health_unproved', 'image_unproved',
+                     'identity_changed', 'probe_unproved', 'evidence_unavailable'}
+    if (not isinstance(value, dict) or set(value) != {'state', 'binding', 'code'}
+            or any(not isinstance(value[key], str) for key in value)):
+        raise ValueError('Pending TCP export refused')
+    if ((value['state'], value['binding'], value['code']) not in {
+            ('closed', 'matched', 'connection_refused'),
+            ('listening', 'matched', 'connection_established')}
+            and not (value['state'] == 'unknown' and value['binding'] == 'unproved'
+                     and value['code'] in unknown_codes)):
+        raise ValueError('Pending TCP export refused')
+
+
+def validate_pending_owner(value, tcp):
+    if (not isinstance(value, str) or value not in {'main', 'other_container_process', 'unknown'}
+            or (value != 'unknown' and tcp != {'state': 'listening', 'binding': 'matched', 'code': 'connection_established'})):
+        raise ValueError('Pending socket owner refused')
+
+
+def validate_kernel_owner_evidence(value, owner, *, allow_not_observed=False):
+    if (not isinstance(value, dict) or set(value) != {'stage', 'code'}
+            or not isinstance(value['stage'], str) or value['stage'] not in KERNEL_OWNER_STAGES
+            or not isinstance(value['code'], str) or value['code'] not in KERNEL_OWNER_CODES):
+        raise ValueError('Kernel owner evidence refused')
+    if ((value['stage'] == 'complete' or value['code'] == 'exclusive')
+            != (owner != 'unknown')
+            or (owner != 'unknown' and value != {'stage': 'complete', 'code': 'exclusive'})
+            or (value['stage'] == 'not_observed' and (not allow_not_observed
+                or value['code'] not in {'not_read', 'not_listening', 'tcp_unproved'}))
+            or (value['stage'] != 'not_observed'
+                and value['code'] in {'not_read', 'not_listening', 'tcp_unproved'})):
+        raise ValueError('Kernel owner evidence refused')
+    return value
+
+
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None, inspector_owner=None, inspector_owner_evidence=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
     validate_pending_journal(signs, journal_failure)
+    legacy_intent = legacy_intent if legacy_intent is not None else {'status': 'unknown', 'code': 'not_read'}
+    validate_pending_intent(legacy_intent)
+    inspector_tcp = inspector_tcp if inspector_tcp is not None else {'state': 'unknown', 'binding': 'unproved', 'code': 'not_read'}
+    validate_pending_tcp(inspector_tcp)
+    inspector_owner = inspector_owner if inspector_owner is not None else 'unknown'
+    validate_pending_owner(inspector_owner, inspector_tcp)
+    inspector_owner_evidence = (inspector_owner_evidence if inspector_owner_evidence is not None
+                               else {'stage': 'not_observed', 'code': 'not_read'})
+    validate_kernel_owner_evidence(inspector_owner_evidence, inspector_owner, allow_not_observed=True)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
         'unit': unit, 'journalSigns': signs,
+        'legacyIntent': legacy_intent,
+        'inspectorTcp': inspector_tcp,
+        'inspectorOwner': inspector_owner,
+        'inspectorOwnerEvidence': inspector_owner_evidence,
         'journalStatus': 'unavailable' if journal_failure else 'observed',
         'journalFailure': journal_failure,
         'absenceMeans': 'unknown; bounded latest journal rows do not prove absence'}
@@ -518,10 +749,12 @@ def validate_pending_signs(signs):
     if not isinstance(signs, list) or len(signs) > 12:
         raise ValueError('Pending signs refused')
     for sign in signs:
-        if (not isinstance(sign, dict) or set(sign) != {'category', 'observedAtMs'}
+        if (not isinstance(sign, dict) or set(sign) != {'category', 'observedAtMs', 'details'}
+                or not isinstance(sign['category'], str)
                 or sign['category'] not in PENDING_CATEGORIES):
             raise ValueError('Pending sign refused')
         timestamp(sign['observedAtMs'])
+        validate_pending_details(sign['category'], sign['details'])
 
 
 def pending_stage(stage, read):
@@ -554,6 +787,7 @@ def pending_remote(request, root_fd):
         before = pending_stage('request_read', read)
         pending_stage('request_binding', lambda: pending_metadata(request, *before))
         unit = pending_stage('unit', lambda: pending_unit(request))
+        legacy_intent, legacy_binding = pending_legacy_intent(request, directory, before[0][4])
         journal_failure = None
         try:
             signs = pending_stage('journal', lambda: pending_journal(request, unit))
@@ -562,13 +796,352 @@ def pending_remote(request, root_fd):
                 raise
             signs = None
             journal_failure = {'phase': error.phase, 'code': error.code}
+        # Supplemental current TCP presence needs no historical checkpoint
+        # intent. Its unknown outcome never bypasses the mandatory rechecks.
+        try:
+            inspector_tcp, inspector_owner, inspector_owner_evidence = pending_tcp_presence(include_owner_evidence=True)
+            validate_pending_tcp(inspector_tcp)
+            validate_pending_owner(inspector_owner, inspector_tcp)
+            validate_kernel_owner_evidence(inspector_owner_evidence, inspector_owner, allow_not_observed=True)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            inspector_tcp = {'state': 'unknown', 'binding': 'unproved', 'code': 'evidence_unavailable'}
+            inspector_owner = 'unknown'
+            inspector_owner_evidence = {'stage': 'not_observed', 'code': 'tcp_unproved'}
+        if (legacy_intent, legacy_binding) != pending_legacy_intent(request, directory, before[0][4]):
+            legacy_intent = {'status': 'unknown', 'code': 'changed_during_read'}
         if before != pending_stage('recheck_requests', read):
             raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
         if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
             raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
-        return pending_observation(request, *before, unit, signs, journal_failure)
+        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp, inspector_owner, inspector_owner_evidence)
     finally:
         os.close(directory)
+
+
+# Fixed TCP-only presence: one connection, no bytes sent, HTTP, WebSocket,
+# evaluation, process signals or inspector lifecycle calls. The child destroys
+# only its own socket. Python binds this scalar to the current stable runtime.
+TCP_PRESENCE_NODE = r"""
+import net from 'node:net';
+let socket, timer, finished=false;
+const done=(state,code)=>{
+ if(finished)return;finished=true;clearTimeout(timer);
+ if(socket)socket.destroy();
+ console.log(JSON.stringify({state,code}));
+};
+timer=setTimeout(()=>done('unknown','probe_unproved'),1500);
+try{
+ socket=net.createConnection({host:'127.0.0.1',port:9229});
+ socket.setTimeout(1000,()=>done('unknown','probe_unproved'));
+ socket.once('connect',()=>done('listening','connection_established'));
+ socket.once('error',error=>error.code==='ECONNREFUSED'
+  ?done('closed','connection_refused'):done('unknown','probe_unproved'));
+}catch{done('unknown','probe_unproved');}
+"""
+
+
+def pending_tcp_health(deadline):
+    raw = inspector_command(['curl', '--noproxy', '*', '--silent', '--show-error', '--fail',
+        '--max-time', '2', 'http://127.0.0.1:8080/health'], deadline, limit=262144)
+    value = json.loads(raw, object_pairs_hook=unique_object)
+    source = value.get('releaseSha') if isinstance(value, dict) else None
+    if (not isinstance(value, dict) or value.get('running') is not True
+            or value.get('status') != 'ok' or not isinstance(source, str)
+            or not SHA.fullmatch(source) or value.get('version') != source[:8]
+            or not isinstance(value.get('instanceId'), str)
+            or not re.fullmatch('1-[0-9a-f]{8}', value['instanceId'])):
+        raise ValueError('Pending TCP health unproved')
+    return {'source': source, 'instance': value['instanceId']}
+
+
+KERNEL_PROC_ROOT = Path('/proc')
+KERNEL_INSPECTOR_PORT = 9229
+KERNEL_OWNER_STAGES = {'not_observed', 'identity', 'members', 'process_stat', 'namespace',
+    'listeners', 'descriptors', 'recheck_process', 'recheck_members', 'recheck_listeners',
+    'snapshot', 'complete'}
+KERNEL_OWNER_CODES = {'not_read', 'not_listening', 'tcp_unproved', 'unsupported',
+    'unproved', 'unavailable', 'permission_denied', 'changed', 'ambiguous', 'bound',
+    'deadline', 'command_failed', 'invalid_encoding', 'exclusive'}
+
+
+class KernelOwnerFailure(ValueError):
+    def __init__(self, stage, code):
+        if stage not in KERNEL_OWNER_STAGES or code not in KERNEL_OWNER_CODES:
+            raise ValueError('Kernel owner evidence refused')
+        self.evidence = {'stage': stage, 'code': code}
+        super().__init__('Kernel owner observation unproved')
+
+
+def _kernel_error_code(error):
+    # Project a closed vocabulary only. Native messages, paths and process
+    # names never become exported diagnostic text.
+    if isinstance(error, subprocess.TimeoutExpired):
+        return 'deadline'
+    if isinstance(error, PermissionError):
+        return 'permission_denied'
+    if isinstance(error, FileNotFoundError):
+        return 'changed'
+    if isinstance(error, UnicodeError):
+        return 'invalid_encoding'
+    if isinstance(error, ScopedRefusal):
+        return {'command_deadline': 'deadline', 'command_size': 'bound',
+                'command_nonzero': 'command_failed'}.get(error.code, 'unavailable')
+    if isinstance(error, OSError):
+        return 'unavailable'
+    return {
+        'Inspector native unavailable': 'command_failed',
+        'Inspector read deadline': 'deadline',
+        'Inspector read size': 'bound',
+        'Kernel owner deadline': 'deadline',
+        'Kernel owner file bound': 'bound',
+        'Kernel owner socket bound': 'bound',
+        'Kernel owner descriptor bound': 'bound',
+        'Kernel owner listener ambiguous': 'ambiguous',
+        'Kernel owner descriptor ambiguous': 'ambiguous',
+        'Kernel owner namespace differs': 'changed',
+        'Kernel owner process changed': 'changed',
+        'Kernel owner snapshot changed': 'changed',
+    }.get(str(error), 'unproved')
+
+
+def _kernel_observe(stage, operation):
+    try:
+        return operation()
+    except KernelOwnerFailure:
+        raise
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise KernelOwnerFailure(stage, _kernel_error_code(error)) from None
+
+
+def _kernel_deadline(deadline):
+    if time.monotonic() >= deadline:
+        raise ValueError('Kernel owner deadline')
+
+
+def _kernel_read(path, limit, deadline):
+    _kernel_deadline(deadline)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        chunks = bytearray()
+        while True:
+            _kernel_deadline(deadline)
+            part = os.read(fd, min(4096, limit + 1 - len(chunks)))
+            if not part:
+                return bytes(chunks)
+            chunks.extend(part)
+            if len(chunks) > limit:
+                raise ValueError('Kernel owner file bound')
+    finally:
+        os.close(fd)
+
+
+def _kernel_members(identity, deadline):
+    _kernel_deadline(deadline)
+    raw = inspector_command(['docker', 'top', identity['container'], '-eo', 'pid'],
+                            deadline, limit=4096).decode('ascii').splitlines()
+    if (not raw or raw[0].strip() != 'PID' or not 1 <= len(raw) - 1 <= 256):
+        raise ValueError('Kernel owner members unproved')
+    members = tuple(line.strip() for line in raw[1:])
+    if (any(not re.fullmatch(r'[1-9][0-9]{0,9}', pid) for pid in members)
+            or len(set(members)) != len(members) or identity['hostPid'] not in members):
+        raise ValueError('Kernel owner members unproved')
+    return tuple(sorted(members, key=int))
+
+
+def _kernel_pid_stat(pid, deadline):
+    if not isinstance(pid, str) or not re.fullmatch(r'[1-9][0-9]{0,9}', pid):
+        raise ValueError('Kernel owner process unproved')
+    raw = _kernel_read(KERNEL_PROC_ROOT / pid / 'stat', 4096, deadline)
+    prefix, separator, tail = raw.rpartition(b')')
+    fields = tail.split()
+    # Field22 is starttime; the private comm field can itself contain spaces
+    # or parentheses, so never split the whole proc record on whitespace.
+    if (not separator or not prefix.startswith(pid.encode('ascii') + b' (') or len(fields) < 20
+            or not re.fullmatch(rb'[0-9]{1,20}', fields[19])):
+        raise ValueError('Kernel owner process unproved')
+    return fields[19].decode('ascii')
+
+
+def _kernel_listeners(main_pid, deadline):
+    selected = set()
+    for family in ('tcp', 'tcp6'):
+        raw = _kernel_read(KERNEL_PROC_ROOT / main_pid / 'net' / family,
+                           131072, deadline).decode('ascii')
+        lines = raw.splitlines()
+        if not lines or 'inode' not in lines[0]:
+            raise ValueError('Kernel owner sockets unproved')
+        for line in lines[1:]:
+            _kernel_deadline(deadline)
+            fields = line.split()
+            if len(fields) < 10:
+                raise ValueError('Kernel owner sockets unproved')
+            endpoint = fields[1].split(':')
+            if (len(endpoint) != 2 or not re.fullmatch(r'[0-9A-Fa-f]{4}', endpoint[1])
+                    or not re.fullmatch(r'[0-9A-Fa-f]{2}', fields[3])):
+                raise ValueError('Kernel owner sockets unproved')
+            if int(endpoint[1], 16) == KERNEL_INSPECTOR_PORT and fields[3].upper() == '0A':
+                if not re.fullmatch(r'[1-9][0-9]{0,19}', fields[9]):
+                    raise ValueError('Kernel owner sockets unproved')
+                selected.add(fields[9])
+                if len(selected) > 8:
+                    raise ValueError('Kernel owner socket bound')
+    if len(selected) != 1:
+        raise ValueError('Kernel owner listener ambiguous')
+    return next(iter(selected))
+
+
+def _socket_owner_snapshot(identity, deadline, budget=None):
+    budget = budget if budget is not None else {'fds': 0}
+    stage = 'members'
+    try:
+        members = _kernel_members(identity, deadline)
+        main = identity['hostPid']
+        processes = []
+        namespace = None
+        for pid in members:
+            stage = 'process_stat'
+            _kernel_deadline(deadline)
+            started = _kernel_pid_stat(pid, deadline)
+            stage = 'namespace'
+            network = os.readlink(KERNEL_PROC_ROOT / pid / 'ns' / 'net')
+            if not re.fullmatch(r'net:\[[1-9][0-9]{0,19}\]', network):
+                raise ValueError('Kernel owner namespace unproved')
+            if namespace is None:
+                namespace = network
+            if network != namespace:
+                raise ValueError('Kernel owner namespace differs')
+            processes.append((pid, started))
+        stage = 'listeners'
+        inode = _kernel_listeners(main, deadline)
+        owners = set()
+        stage = 'descriptors'
+        for pid in members:
+            with os.scandir(KERNEL_PROC_ROOT / pid / 'fd') as entries:
+                for entry in entries:
+                    _kernel_deadline(deadline)
+                    budget['fds'] += 1
+                    if budget['fds'] > 16384 or not re.fullmatch(r'[0-9]{1,10}', entry.name):
+                        raise ValueError('Kernel owner descriptor bound')
+                    target = os.readlink(entry.path)
+                    if len(target) > 4096:
+                        raise ValueError('Kernel owner descriptor bound')
+                    if target == 'socket:[' + inode + ']':
+                        owners.add(pid)
+        # Shared descriptors and unmapped listeners are not exclusive ownership.
+        if len(owners) != 1:
+            raise ValueError('Kernel owner descriptor ambiguous')
+        stage = 'recheck_process'
+        for pid, started in processes:
+            if (_kernel_pid_stat(pid, deadline) != started
+                    or os.readlink(KERNEL_PROC_ROOT / pid / 'ns' / 'net') != namespace):
+                raise ValueError('Kernel owner process changed')
+        stage = 'recheck_members'
+        if _kernel_members(identity, deadline) != members:
+            raise ValueError('Kernel owner snapshot changed')
+        stage = 'recheck_listeners'
+        if _kernel_listeners(main, deadline) != inode:
+            raise ValueError('Kernel owner snapshot changed')
+        return {'members': members, 'processes': tuple(processes), 'namespace': namespace,
+                'inode': inode, 'owners': tuple(sorted(owners, key=int))}
+    except KernelOwnerFailure:
+        raise
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise KernelOwnerFailure(stage, _kernel_error_code(error)) from None
+
+
+def pending_socket_owner_details(identity, deadline):
+    # The reason is a closed stage/code pair, never native exception text.
+    # Two equal complete snapshots and one shared FD/deadline budget remain
+    # mandatory. Partial ownership never becomes a positive observation.
+    if sys.platform != 'linux':
+        return 'unknown', {'stage': 'identity', 'code': 'unsupported'}
+    if (not isinstance(identity, dict) or not isinstance(identity.get('container'), str)
+            or not re.fullmatch('[0-9a-f]{64}', identity['container'])
+            or not isinstance(identity.get('hostPid'), str)
+            or not re.fullmatch(r'[1-9][0-9]{0,9}', identity['hostPid'])):
+        return 'unknown', {'stage': 'identity', 'code': 'unproved'}
+    try:
+        budget = {'fds': 0}
+        before = _kernel_observe('snapshot', lambda: _socket_owner_snapshot(identity, deadline, budget))
+        after = _kernel_observe('snapshot', lambda: _socket_owner_snapshot(identity, deadline, budget))
+        _kernel_observe('snapshot', lambda: _kernel_deadline(deadline))
+        if before != after:
+            return 'unknown', {'stage': 'snapshot', 'code': 'changed'}
+        owner = 'main' if before['owners'] == (identity['hostPid'],) else 'other_container_process'
+        return owner, {'stage': 'complete', 'code': 'exclusive'}
+    except KernelOwnerFailure as error:
+        return 'unknown', error.evidence
+
+
+def pending_socket_owner(identity, deadline):
+    return pending_socket_owner_details(identity, deadline)[0]
+
+
+def pending_tcp_presence(*, include_owner_evidence=False):
+    # One shared supplemental deadline, not eight seconds per native command.
+    # No identities or native exception text leave this helper.
+    deadline = time.monotonic() + 8
+    unknown = lambda code: {'state': 'unknown', 'binding': 'unproved', 'code': code}
+    def result(tcp, owner='unknown', evidence=None):
+        evidence = evidence if evidence is not None else {'stage': 'not_observed', 'code': 'tcp_unproved'}
+        validate_kernel_owner_evidence(evidence, owner, allow_not_observed=True)
+        return (tcp, owner, evidence) if include_owner_evidence else (tcp, owner)
+    failure = 'container_unproved'
+    try:
+        before = inspector_identity(deadline)
+        failure = 'health_unproved'
+        health = pending_tcp_health(deadline)
+        failure = 'image_unproved'
+        label = inspector_command(['docker', 'image', 'inspect', '--format',
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']],
+            deadline, limit=256).decode().strip()
+        if label != health['source']:
+            return result(unknown('image_unproved'))
+        failure = 'probe_unproved'
+        # Match the original gate's three-second native child ceiling; the
+        # eight-second envelope also includes identity/health binding reads.
+        probe_deadline = min(deadline, time.monotonic() + 3)
+        # Isolate only this reader child: inherited inspector flags or preloads
+        # must not create the very listener whose prior presence we observe.
+        raw = inspector_command(['docker', 'exec', '-i', '-e', 'NODE_OPTIONS=',
+            before['container'], 'node', '--no-inspect', '--input-type=module', '-'],
+            probe_deadline, input_bytes=TCP_PRESENCE_NODE.encode(), limit=1024)
+        probe = json.loads(raw, object_pairs_hook=unique_object)
+        if (not isinstance(probe, dict) or set(probe) != {'state', 'code'}
+                or any(not isinstance(probe[key], str) for key in probe)
+                or (probe.get('state'), probe.get('code')) not in {
+                    ('closed', 'connection_refused'), ('listening', 'connection_established'),
+                    ('unknown', 'probe_unproved')}):
+            return result(unknown('probe_unproved'))
+        owner = 'unknown'
+        owner_evidence = {'stage': 'not_observed', 'code': 'not_listening' if probe['state'] == 'closed' else 'tcp_unproved'}
+        if probe['state'] == 'listening':
+            try:
+                owner, owner_evidence = pending_socket_owner_details(before, deadline)
+                if not isinstance(owner, str) or owner not in {'main', 'other_container_process', 'unknown'}:
+                    raise ValueError('Kernel owner evidence refused')
+                validate_kernel_owner_evidence(owner_evidence, owner)
+            except (OSError, ValueError, subprocess.SubprocessError):
+                # An optional kernel read failure alone cannot erase an
+                # independently rebound TCP result; exhausted binding time can.
+                owner = 'unknown'
+                owner_evidence = {'stage': 'snapshot', 'code': 'unavailable'}
+        failure = 'container_unproved'
+        after = inspector_identity(deadline, stage='recheck_container')
+        failure = 'health_unproved'
+        after_health = pending_tcp_health(deadline)
+        if before != after or health != after_health:
+            return result(unknown('identity_changed'))
+        answer = ({**probe, 'binding': 'matched'} if probe['state'] != 'unknown'
+                  else unknown('probe_unproved'))
+        validate_pending_tcp(answer)
+        return result(answer, owner, owner_evidence)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        code = ('command_deadline' if isinstance(error, subprocess.TimeoutExpired)
+                else error.code if isinstance(error, ScopedRefusal)
+                else INSPECTOR_COMMAND_ERRORS.get(str(error)))
+        return result(unknown(code if code in {'command_deadline', 'command_size', 'command_nonzero'}
+                       else failure))
 
 
 # This mode observes the original one-shot checkpoint only. It never opens or
@@ -774,7 +1347,10 @@ def inspector_endpoint(raw, at):
 
 
 def inspector_probe(container, deadline, expected=None):
-    raw = inspector_command(['docker', 'exec', '-i', container, 'node', '--input-type=module', '-',
+    # Keep inherited inspector flags/preloads out of this reader child too;
+    # opening its own endpoint would corrupt the original target observation.
+    raw = inspector_command(['docker', 'exec', '-i', '-e', 'NODE_OPTIONS=',
+        container, 'node', '--no-inspect', '--input-type=module', '-',
         'read' if expected else 'probe', expected or ''], deadline,
         input_bytes=INSPECTOR_NODE.encode(), limit=16384, stage='probe')
     value = json.loads(raw, object_pairs_hook=unique_object)
@@ -908,11 +1484,288 @@ def validate_inspector(value, request):
     return value
 
 
+SERVING_ROLE_SCHEMA = 'current-serving-inspector-role/v2'
+SERVING_ROLE_LIMITATION = 'Kernel role only; no inspector ownership, provenance or action authority.'
+
+
+def _serving_boot_id(deadline):
+    value = _kernel_read(Path('/proc/sys/kernel/random/boot_id'), 64, deadline).decode('ascii').strip()
+    if not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', value):
+        raise ValueError('Serving boot identity unavailable')
+    return value
+
+
+def serving_role_remote(request):
+    request = selection(request)
+    if request.get('mode') != 'current_serving_inspector_role':
+        raise ValueError('Exact current serving identity required')
+    deadline = time.monotonic() + 8
+    try:
+        boot = _serving_boot_id(deadline)
+        before = inspector_identity(deadline)
+        started = _kernel_pid_stat(before['hostPid'], deadline)
+        health = pending_tcp_health(deadline)
+        if health != {'source': request['releaseSha'], 'instance': request['instanceId']}:
+            raise ScopedRefusal('serving_role', 'binding_unproved')
+        label = inspector_command(['docker', 'image', 'inspect', '--format',
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']],
+            deadline, limit=256).decode().strip()
+        if label != request['releaseSha']:
+            raise ScopedRefusal('serving_role', 'binding_unproved')
+        owner = 'unknown'
+        owner_evidence = {'stage': 'snapshot', 'code': 'unavailable'}
+        try:
+            projected, evidence = pending_socket_owner_details(before, deadline)
+            if not isinstance(projected, str) or projected not in {'main', 'other_container_process', 'unknown'}:
+                raise ValueError('Kernel owner evidence refused')
+            validate_kernel_owner_evidence(evidence, projected)
+            owner, owner_evidence = projected, evidence
+        except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+            pass
+        # A failed optional projection never removes these mandatory current
+        # runtime bindings. No retired release records are read or recreated.
+        after_boot = _serving_boot_id(deadline)
+        after_started = _kernel_pid_stat(before['hostPid'], deadline)
+        after = inspector_identity(deadline, stage='recheck_container')
+        after_health = pending_tcp_health(deadline)
+        _kernel_deadline(deadline)
+        if (boot != after_boot or started != after_started or before != after
+                or health != after_health):
+            raise ScopedRefusal('serving_role', 'binding_unproved')
+        return {'schema': SERVING_ROLE_SCHEMA, 'readOnly': True, **request,
+                'inspectorOwner': owner, 'inspectorOwnerEvidence': owner_evidence,
+                'limitation': SERVING_ROLE_LIMITATION}
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        if isinstance(error, ScopedRefusal) and error.phase == 'serving_role':
+            raise
+        raise ScopedRefusal('serving_role', 'evidence_unavailable') from None
+
+
+def validate_serving_role(value, request):
+    request = selection(request)
+    if (not isinstance(value, dict)
+            or set(value) != {'schema', 'readOnly', 'mode', 'releaseSha', 'instanceId', 'inspectorOwner', 'inspectorOwnerEvidence', 'limitation'}
+            or value['schema'] != SERVING_ROLE_SCHEMA or value['readOnly'] is not True
+            or request.get('mode') != 'current_serving_inspector_role'
+            or any(value[key] != expected for key, expected in request.items())
+            or not isinstance(value['inspectorOwner'], str)
+            or value['inspectorOwner'] not in {'main', 'other_container_process', 'unknown'}
+            or value['limitation'] != SERVING_ROLE_LIMITATION):
+        raise ValueError('Serving role export refused')
+    validate_kernel_owner_evidence(value['inspectorOwnerEvidence'], value['inspectorOwner'])
+    return value
+
+
+RETIREMENT_SCHEMA = 'existing-main-inspector-retirement-records/v1'
+RETIREMENT_LIMITATION = 'Historical files only; no current process, listener, cleanup, retry or action authority.'
+RETIREMENT_IMAGE = 'sha256:2eb1c5a7279032240c5fff8a6b3ecf5dc6af735cc1227a51430d50dcae1b065b'
+RETIREMENT_PREDICATES = ('ok', 'closeRequested', 'closeAcknowledged', 'connectionClosed', 'listenerAbsent')
+
+
+def retirement_records(request, root_fd):
+    # Only five exact files under fixed directories. No process, network,
+    # Inspector, journal, seal command, directory census or remote writes.
+    deadline = time.monotonic() + 3
+    def check():
+        if time.monotonic() >= deadline:
+            raise ValueError('retirement file deadline')
+    def read(directory, name, limit):
+        check()
+        try:
+            parent = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+        except OSError:
+            return ('unknown', None)
+        try:
+            try:
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            except FileNotFoundError:
+                return ('absent_at_read', None)
+            except OSError:
+                return ('unknown', None)
+            try:
+                before = os.fstat(fd)
+                if (not stat.S_ISREG(before.st_mode) or before.st_uid != 0
+                        or stat.S_IMODE(before.st_mode) != 0o600 or before.st_size > limit):
+                    return ('unknown', None)
+                raw = bytearray()
+                while len(raw) <= limit:
+                    check()
+                    chunk = os.read(fd, min(4096, limit + 1 - len(raw)))
+                    if not chunk:
+                        break
+                    raw.extend(chunk)
+                after = os.fstat(fd)
+                identity = lambda x: (x.st_dev, x.st_ino, x.st_size, x.st_mtime_ns, x.st_ctime_ns, x.st_uid, x.st_mode)
+                if identity(before) != identity(after) or len(raw) != before.st_size or len(raw) > limit:
+                    return ('unknown', None)
+                check()
+                return ('present_at_read', bytes(raw))
+            finally:
+                os.close(fd)
+        finally:
+            os.close(parent)
+    files = [('engine-release-requests', request['runKey'] + suffix, limit) for suffix, limit in (
+        ('.request', 4096), ('.intent', 4096),
+        ('.main-inspector-retirement-intent', 32768),
+        ('.main-inspector-retirement-receipt', 65536))]
+    files.append(('engine-release-results', request['runKey'] + '.json', 65536))
+    def snapshot():
+        return [read(*item) for item in files]
+    def parse(record):
+        if record[0] != 'present_at_read':
+            raise ValueError('retirement record unavailable')
+        value = json.loads(record[1], object_pairs_hook=unique_object)
+        if not isinstance(value, dict):
+            raise ValueError('retirement record shape')
+        return value
+    answer = {'schema': RETIREMENT_SCHEMA, 'readOnly': True, **request,
+              'intentPresence': 'unknown', 'receiptPresence': 'unknown',
+              'status': 'unknown', 'bindingKind': None, 'controlSha': None,
+              'claimIdentity': None, 'receiptMatchesClaim': False,
+              'outcomePredicates': None, 'positiveReceipt': False,
+              'retryAllowed': False, 'limitation': RETIREMENT_LIMITATION}
+    before = snapshot()
+    answer.update(intentPresence=before[2][0], receiptPresence=before[3][0])
+    try:
+        if before[0][0] == before[1][0] == 'present_at_read':
+            rows, original = [value[1].decode('utf8').splitlines() for value in before[:2]]
+            control, request_deadline, _ = pending_metadata(request, rows, original, None, None)
+            binding = {'kind': 'retained_request', 'control': control, 'invocation': None, 'deadline':request_deadline, 'completedAt':None}
+        elif before[0][0] == before[1][0] == 'absent_at_read':
+            result = parse(before[4])
+            fields = {'schema', 'runId', 'result', 'sha', 'controlSha', 'invocationId',
+                      'transactionExitStatus', 'recoveredDesiredSha', 'recoveredDesiredImageId', 'completedAt'}
+            if (set(result) != fields or type(result['schema']) is not int or result['schema'] != 1
+                    or result['runId'] != request['runKey'] or result['sha'] != request['releaseSha']
+                    or result['result'] != 'failed' or not SHA.fullmatch(result['controlSha'])
+                    or not INVOCATION.fullmatch(result['invocationId'])
+                    or result['recoveredDesiredSha'] != EED or result['recoveredDesiredImageId'] != RETIREMENT_IMAGE
+                    or type(result['transactionExitStatus']) is not int or not 1 <= result['transactionExitStatus'] <= 255
+                    or type(result['completedAt']) is not int or not 946684800 <= result['completedAt'] < 4102444800):
+                raise ValueError('retirement terminal binding')
+            binding = {'kind': 'terminal_failure', 'control': result['controlSha'], 'invocation': result['invocationId'], 'deadline':None, 'completedAt':result['completedAt']}
+        else:
+            raise ValueError('retirement partial request')
+        answer.update(bindingKind=binding['kind'], controlSha=binding['control'])
+        if before[2][0] == before[3][0] == 'absent_at_read':
+            answer['status'] = 'both_absent_at_read'
+        else:
+            claim = parse(before[2])
+            expected = {'schema','runId','invocationId','controlSha','requestDeadline','target','requestSha256',
+                        'nativeUnit','source','instance','containerIdentity','proposal','proposalSha256','deadlineMs','retryAllowed'}
+            proposal = claim.get('proposal')
+            if (set(claim) != expected or claim['schema'] != 'main-inspector-retirement-claim/v1'
+                    or claim['runId'] != request['runKey'] or claim['target'] != request['releaseSha']
+                    or claim['controlSha'] != binding['control'] or claim['source'] != EED
+                    or claim['retryAllowed'] is not False or not INVOCATION.fullmatch(claim['invocationId'])
+                    or (binding['invocation'] is not None and claim['invocationId'] != binding['invocation'])
+                    or not re.fullmatch(r'1-[0-9a-f]{8}', claim['instance'])
+                    or not re.fullmatch(r'[0-9a-f]{64}', claim['requestSha256'])
+                    or type(claim['requestDeadline']) is not int or not 946684800 <= claim['requestDeadline'] < 4102444800
+                    or (binding['deadline'] is not None and claim['requestDeadline'] != binding['deadline'])
+                    or type(claim['deadlineMs']) is not int or not 946684800000 <= claim['deadlineMs'] <= claim['requestDeadline'] * 1000
+                    or claim['nativeUnit'] not in [{'InvocationID':claim['invocationId'],'ActiveState':a,'SubState':b}
+                        for a in ('active','activating') for b in ('running','start')]
+                    or not isinstance(proposal, dict) or set(proposal) != {'schema','endpoint','binding'}
+                    or proposal['schema'] != 'main-inspector-retirement/v1'
+                    or not re.fullmatch(r'ws://127\.0\.0\.1:9229/[0-9a-f-]{36}', proposal['endpoint'], re.I)
+                    or not isinstance(proposal['binding'], dict)
+                    or claim['proposalSha256'] != hashlib.sha256(json.dumps(proposal, separators=(',', ':')).encode()).hexdigest()):
+                raise ValueError('retirement claim binding')
+            native = proposal['binding']
+            if (set(native) != {'schema','pid','startTicks','namespace','listener'}
+                    or native['schema'] != 'main-inspector-socket-binding/v1' or type(native['pid']) is not int or native['pid'] != 1
+                    or not re.fullmatch('[0-9]{1,20}',native['startTicks'])
+                    or not re.fullmatch(r'net:\[[1-9][0-9]*\]',native['namespace'])
+                    or not isinstance(native['listener'],dict) or set(native['listener']) != {'family','local','inode'}
+                    or native['listener']['family'] not in {'tcp','tcp6'}
+                    or native['listener']['local'] != {'tcp':'0100007F:240D','tcp6':'00000000000000000000000001000000:240D'}.get(native['listener']['family'])
+                    or not re.fullmatch('[1-9][0-9]*',native['listener']['inode'])):
+                raise ValueError('retirement proposal binding')
+            container = claim['containerIdentity'].split()
+            if (len(container) != 5 or not re.fullmatch('[0-9a-f]{64}', container[0])
+                    or container[1:3] != [RETIREMENT_IMAGE,'true']
+                    or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z', container[3])
+                    or not re.fullmatch(r'[1-9][0-9]*', container[4])):
+                raise ValueError('retirement container binding')
+            if binding['kind'] == 'retained_request' and claim['requestSha256'] != hashlib.sha256(before[0][1]).hexdigest():
+                raise ValueError('retirement request hash')
+            answer['claimIdentity'] = {'invocationId': claim['invocationId'], 'sourceSha': EED,
+                'instanceId': claim['instance'], 'proposalSha256': claim['proposalSha256'],
+                'containerIdentitySha256': hashlib.sha256(claim['containerIdentity'].encode()).hexdigest()}
+            completed = parse(before[3])
+            if set(completed) != {'claim','outcome','observedAt'} or completed['claim'] != claim:
+                raise ValueError('retirement receipt binding')
+            if (type(completed['observedAt']) not in {int,float}
+                    or not 946684800 <= completed['observedAt'] <= claim['requestDeadline']
+                    or (binding['completedAt'] is not None and not completed['observedAt'] < binding['completedAt'] + 1)):
+                raise ValueError('retirement receipt timestamp')
+            answer['receiptMatchesClaim'] = True
+            outcome = completed['outcome']
+            if not isinstance(outcome, dict) or outcome.get('retryAllowed') is not False:
+                raise ValueError('retirement outcome binding')
+            answer['outcomePredicates'] = {key: outcome.get(key) is True for key in RETIREMENT_PREDICATES}
+            answer['positiveReceipt'] = all(answer['outcomePredicates'].values())
+            if answer['positiveReceipt']:
+                answer['status'] = 'bound_positive_historical_receipt'
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, UnicodeError):
+        pass
+    if answer['bindingKind'] is None:
+        answer.update(intentPresence='unknown', receiptPresence='unknown')
+    if before != snapshot():
+        answer.update(status='unknown', bindingKind=None, controlSha=None, claimIdentity=None,
+                      receiptMatchesClaim=False, outcomePredicates=None, positiveReceipt=False,
+                      intentPresence='unknown', receiptPresence='unknown')
+    return validate_retirement_records(answer, request)
+
+
+def validate_retirement_records(value, request):
+    fields = {'schema','readOnly','runKey','releaseSha','mode','intentPresence','receiptPresence',
+              'status','bindingKind','controlSha','claimIdentity','receiptMatchesClaim',
+              'outcomePredicates','positiveReceipt','retryAllowed','limitation'}
+    if (not isinstance(value, dict) or set(value) != fields or value['schema'] != RETIREMENT_SCHEMA
+            or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
+            or value['mode'] != 'main_inspector_retirement' or value['retryAllowed'] is not False
+            or value['limitation'] != RETIREMENT_LIMITATION
+            or any(value[k] not in {'unknown','present_at_read','absent_at_read'} for k in ('intentPresence','receiptPresence'))
+            or value['status'] not in {'unknown','both_absent_at_read','bound_positive_historical_receipt'}
+            or value['bindingKind'] not in {None,'retained_request','terminal_failure'}
+            or (value['controlSha'] is not None and not SHA.fullmatch(value['controlSha']))
+            or type(value['receiptMatchesClaim']) is not bool or type(value['positiveReceipt']) is not bool):
+        raise ValueError('Retirement export refused')
+    claim = value['claimIdentity']
+    if claim is not None and (not isinstance(claim,dict) or set(claim) != {'invocationId','sourceSha','instanceId','proposalSha256','containerIdentitySha256'}
+            or not INVOCATION.fullmatch(claim['invocationId']) or claim['sourceSha'] != EED
+            or not re.fullmatch(r'1-[0-9a-f]{8}',claim['instanceId'])
+            or any(not re.fullmatch('[0-9a-f]{64}',claim[k]) for k in ('proposalSha256','containerIdentitySha256'))):
+        raise ValueError('Retirement claim export refused')
+    predicates = value['outcomePredicates']
+    if predicates is not None and (not isinstance(predicates,dict) or set(predicates) != set(RETIREMENT_PREDICATES)
+            or any(type(item) is not bool for item in predicates.values())):
+        raise ValueError('Retirement predicate export refused')
+    positive = (value['bindingKind'] is not None and value['controlSha'] is not None and claim is not None
+                and value['intentPresence'] == value['receiptPresence'] == 'present_at_read'
+                and value['receiptMatchesClaim'] is True and predicates is not None and all(predicates.values()))
+    absent = (value['bindingKind'] is not None and value['controlSha'] is not None
+              and value['intentPresence'] == value['receiptPresence'] == 'absent_at_read')
+    if (value['bindingKind'] is None and any(value[k] is not None for k in ('controlSha','claimIdentity','outcomePredicates'))
+            or (absent and (claim is not None or value['receiptMatchesClaim'] or predicates is not None))
+            or value['positiveReceipt'] != positive
+            or (value['status'] == 'bound_positive_historical_receipt') != positive
+            or (value['status'] == 'both_absent_at_read') != absent):
+        raise ValueError('Retirement outcome export refused')
+    return value
+
+
 def remote(request):
     request = selection(request)
+    if request.get('mode') == 'current_serving_inspector_role':
+        return validate_serving_role(serving_role_remote(request), request)
     # All production paths are fixed. No environment/caller path override.
     root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        if request.get('mode') == 'main_inspector_retirement':
+            return retirement_records(request, root_fd)
         if request.get('mode') == 'legacy_checkpoint_inspector':
             return validate_inspector(inspector_remote(request, root_fd), request)
         if request.get('mode') == 'pending_transaction':
@@ -937,10 +1790,14 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'main_inspector_retirement':
+        return validate_retirement_records(value, request)
+    if request.get('mode') == 'current_serving_inspector_role':
+        return validate_serving_role(value, request)
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'inspectorOwner', 'inspectorOwnerEvidence', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -954,6 +1811,10 @@ def validate_reply(value, request):
                 raise ValueError('Pending exported deadline refused')
             timestamp(value[key] * 1000)
         validate_pending_unit(value['unit'])
+        validate_pending_intent(value['legacyIntent'])
+        validate_pending_tcp(value['inspectorTcp'])
+        validate_pending_owner(value['inspectorOwner'], value['inspectorTcp'])
+        validate_kernel_owner_evidence(value['inspectorOwnerEvidence'], value['inspectorOwner'], allow_not_observed=True)
         validate_pending_journal(value['journalSigns'], value['journalFailure'])
         if value['journalStatus'] != ('observed' if value['journalFailure'] is None else 'unavailable'):
             raise ValueError('Pending journal status refused')

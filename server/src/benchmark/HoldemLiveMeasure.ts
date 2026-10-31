@@ -1,0 +1,602 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * HOLD'EM LIVE MEASURE - the four numbers the October 30 release is judged on
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Pure. No imports, no network, no clock. The CLI (server/scripts/
+ * holdem-live-measure.ts) fetches rows and health samples and hands them
+ * here; these functions turn them into the four measurements the owner asked
+ * for once a revision containing #8692 (heap), #8694 (V60), #8733 (V62) and
+ * #8705 (V61) serves:
+ *
+ *   1. heap growth        - GB/hour slope of heapUsedMb and rssMb per engine
+ *                           instance, from /health samples. A restart is a new
+ *                           instanceId and a new line; slopes never span one.
+ *   2. 3-bet shares       - 3-bet% and fold-to-3-bet% from horse_daily_play,
+ *                           the same accumulator the tuner and the panel read.
+ *   3. river one-pair     - how often a horse that called a river bet holding
+ *      call outcomes        one pair won, by the V62 size class of the bet it
+ *                           faced (small < 0.4 pot, medium < 0.7, large / raise),
+ *                           from horse_hand_reviews. THOSE ROWS EXIST ONLY FOR
+ *                           HANDS WITH |net| >= 20bb (HorseHandReview.FLAG_BB),
+ *                           so this is the big-pot subset, stated in the report.
+ *   4. receipt counts     - horse_brain_telemetry fires per day for
+ *                           v61_river_one_pair_shade, v63_large_river_bet_shade and v62_river_bettor_polarity.
+ *                           V62 is OPT-IN (default off since #8781), so zero V62
+ *                           fires on a containing revision is the expected
+ *                           state, not a wiring fault; V61 is the live witness.
+ *
+ * Every function answers "could not tell" distinctly from a number (CLAUDE.md
+ * 10.86): a slope over too few samples is null with a reason, never 0.
+ *
+ * NEVER refer to the horses as "bots" - they are HORSES only.
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. Heap growth
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface HealthSample {
+  /** epoch milliseconds when the sample was taken */
+  at: number;
+  instanceId: string;
+  releaseSha: string;
+  heapUsedMb: number;
+  rssMb: number;
+}
+
+export interface HeapSlope {
+  instanceId: string;
+  releaseSha: string;
+  samples: number;
+  spanMinutes: number;
+  /** least-squares slope in GB per hour, or null with `reason` */
+  heapGbPerHour: number | null;
+  rssGbPerHour: number | null;
+  heapR2: number | null;
+  firstHeapMb: number;
+  lastHeapMb: number;
+  reason?: string;
+}
+
+/** Minimum evidence for a slope: three samples over at least twenty minutes. */
+export const MIN_SLOPE_SAMPLES = 3;
+export const MIN_SLOPE_SPAN_MINUTES = 20;
+
+function leastSquares(xs: number[], ys: number[]): { slope: number; r2: number } {
+  const n = xs.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0;
+  let sxx = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+    syy += (ys[i] - my) ** 2;
+  }
+  const slope = sxx === 0 ? 0 : sxy / sxx;
+  const r2 = sxx === 0 || syy === 0 ? 1 : (sxy * sxy) / (sxx * syy);
+  return { slope, r2 };
+}
+
+/** One slope per instance, oldest first. Samples are sorted; duplicates kept. */
+export function heapSlopes(samples: HealthSample[]): HeapSlope[] {
+  const byInstance = new Map<string, HealthSample[]>();
+  for (const s of samples) {
+    if (!s || typeof s.at !== 'number' || !Number.isFinite(s.at)) continue;
+    if (typeof s.instanceId !== 'string' || !s.instanceId) continue;
+    if (!Number.isFinite(s.heapUsedMb) || !Number.isFinite(s.rssMb)) continue;
+    const list = byInstance.get(s.instanceId) ?? [];
+    list.push(s);
+    byInstance.set(s.instanceId, list);
+  }
+  const out: HeapSlope[] = [];
+  for (const [instanceId, list] of byInstance) {
+    list.sort((a, b) => a.at - b.at);
+    const spanMinutes = (list[list.length - 1].at - list[0].at) / 60000;
+    const base: HeapSlope = {
+      instanceId,
+      releaseSha: list[list.length - 1].releaseSha,
+      samples: list.length,
+      spanMinutes: Math.round(spanMinutes * 10) / 10,
+      heapGbPerHour: null,
+      rssGbPerHour: null,
+      heapR2: null,
+      firstHeapMb: list[0].heapUsedMb,
+      lastHeapMb: list[list.length - 1].heapUsedMb,
+    };
+    if (list.length < MIN_SLOPE_SAMPLES) {
+      out.push({ ...base, reason: `only ${list.length} sample(s); ${MIN_SLOPE_SAMPLES} needed` });
+      continue;
+    }
+    if (spanMinutes < MIN_SLOPE_SPAN_MINUTES) {
+      out.push({ ...base, reason: `${base.spanMinutes} minutes of samples; ${MIN_SLOPE_SPAN_MINUTES} needed` });
+      continue;
+    }
+    const hours = list.map((s) => (s.at - list[0].at) / 3600000);
+    const heap = leastSquares(hours, list.map((s) => s.heapUsedMb / 1000));
+    const rss = leastSquares(hours, list.map((s) => s.rssMb / 1000));
+    out.push({
+      ...base,
+      heapGbPerHour: Math.round(heap.slope * 1000) / 1000,
+      rssGbPerHour: Math.round(rss.slope * 1000) / 1000,
+      heapR2: Math.round(heap.r2 * 1000) / 1000,
+    });
+  }
+  // Oldest instance first, so a restart reads top to bottom.
+  const firstAt = new Map([...byInstance].map(([id, list]) => [id, list[0].at]));
+  out.sort((a, b) => (firstAt.get(a.instanceId) ?? 0) - (firstAt.get(b.instanceId) ?? 0));
+  return out;
+}
+
+/**
+ * Prometheus on engine-01 scrapes the engine every 15 s and keeps
+ * poker_engine_heap_used_bytes, poker_engine_process_rss_bytes and
+ * poker_engine_info{instance_id, version} (infra/monitoring/prometheus.yml,
+ * job engine_game_server). Three query_range results over the same window
+ * become HealthSamples - one per heap point, labelled with the instance that
+ * was serving at that instant - so a slope needs no sampler loop and survives
+ * the session that started one. A heap point with no serving instance known
+ * at that instant is dropped rather than guessed.
+ */
+export interface PrometheusRange {
+  status?: unknown;
+  data?: { resultType?: unknown; result?: Array<{ metric?: Record<string, string>; values?: Array<[number | string, string]> }> };
+}
+
+export function samplesFromPrometheus(heap: PrometheusRange, rss: PrometheusRange, info: PrometheusRange): HealthSample[] {
+  const series = (r: PrometheusRange): Array<{ metric: Record<string, string>; values: Array<[number, number]> }> => {
+    if (!r || r.status !== 'success' || !r.data || !Array.isArray(r.data.result)) return [];
+    return r.data.result.map((s) => ({
+      metric: s.metric ?? {},
+      values: (s.values ?? [])
+        .map(([ts, v]) => [Number(ts), Number(v)] as [number, number])
+        .filter(([ts, v]) => Number.isFinite(ts) && Number.isFinite(v)),
+    }));
+  };
+  // The serving instance over time: info series carry instance_id/version and
+  // a value of 1 while that instance is scraped.
+  const presence: Array<{ at: number; instanceId: string; version: string }> = [];
+  for (const s of series(info)) {
+    const instanceId = s.metric.instance_id;
+    const version = s.metric.version ?? '';
+    if (!instanceId) continue;
+    for (const [ts, v] of s.values) if (v === 1) presence.push({ at: ts, instanceId, version });
+  }
+  presence.sort((a, b) => a.at - b.at);
+  const instanceAt = (ts: number): { instanceId: string; version: string } | null => {
+    // Nearest presence point within one scrape interval either side.
+    let best: { at: number; instanceId: string; version: string } | null = null;
+    for (const p of presence) {
+      const d = Math.abs(p.at - ts);
+      if (d <= 30 && (!best || d < Math.abs(best.at - ts))) best = p;
+    }
+    return best ? { instanceId: best.instanceId, version: best.version } : null;
+  };
+  const rssAt = new Map<number, number>();
+  for (const s of series(rss)) for (const [ts, v] of s.values) rssAt.set(ts, v);
+  const out: HealthSample[] = [];
+  for (const s of series(heap)) {
+    for (const [ts, v] of s.values) {
+      const who = instanceAt(ts);
+      const r = rssAt.get(ts);
+      if (!who || r === undefined) continue;
+      out.push({ at: ts * 1000, instanceId: who.instanceId, releaseSha: who.version, heapUsedMb: Math.round(v / 1e6), rssMb: Math.round(r / 1e6) });
+    }
+  }
+  out.sort((a, b) => a.at - b.at);
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. 3-bet shares
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PlayRow {
+  horse_user_id: string;
+  day: string;
+  format: string;
+  hands: number;
+  three_bets: number;
+  three_bet_opps: number;
+  faced_3bets: number;
+  fold_to_3bets: number;
+}
+
+export interface ThreeBetShare {
+  format: string;
+  horses: number;
+  hands: number;
+  threeBets: number;
+  threeBetOpps: number;
+  /** percent, or null when there was no opportunity */
+  threeBetPct: number | null;
+  faced3Bets: number;
+  foldTo3Bets: number;
+  foldTo3BetPct: number | null;
+}
+
+const pct = (n: number, d: number): number | null => (d > 0 ? Math.round((1000 * n) / d) / 10 : null);
+
+/** Shares per format plus an `all` line. Rows with non-finite counts are skipped. */
+export function threeBetShares(rows: PlayRow[]): ThreeBetShare[] {
+  const acc = new Map<string, ThreeBetShare & { ids: Set<string> }>();
+  const touch = (format: string) => {
+    let s = acc.get(format);
+    if (!s) {
+      s = { format, horses: 0, hands: 0, threeBets: 0, threeBetOpps: 0, threeBetPct: null, faced3Bets: 0, foldTo3Bets: 0, foldTo3BetPct: null, ids: new Set() };
+      acc.set(format, s);
+    }
+    return s;
+  };
+  for (const r of rows) {
+    const counts = [r.hands, r.three_bets, r.three_bet_opps, r.faced_3bets, r.fold_to_3bets].map(Number);
+    if (counts.some((c) => !Number.isFinite(c) || c < 0)) continue;
+    for (const s of [touch(String(r.format || 'cash')), touch('all')]) {
+      s.ids.add(r.horse_user_id);
+      s.hands += counts[0];
+      s.threeBets += counts[1];
+      s.threeBetOpps += counts[2];
+      s.faced3Bets += counts[3];
+      s.foldTo3Bets += counts[4];
+    }
+  }
+  return [...acc.values()]
+    .map(({ ids, ...s }) => ({
+      ...s,
+      horses: ids.size,
+      threeBetPct: pct(s.threeBets, s.threeBetOpps),
+      foldTo3BetPct: pct(s.foldTo3Bets, s.faced3Bets),
+    }))
+    .sort((a, b) => (a.format === 'all' ? 1 : b.format === 'all' ? -1 : a.format.localeCompare(b.format)));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. River one-pair call outcomes by size class
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ReviewAction {
+  userId?: string;
+  action?: string;
+  amount?: number;
+  stage?: string;
+  isFullRaise?: boolean;
+}
+
+export interface ReviewRow {
+  horse_user_id: string;
+  game_variant: string | null;
+  net_bb: number | string | null;
+  hole_cards: unknown;
+  board: unknown;
+  actions: ReviewAction[] | null;
+}
+
+export type SizeClass = 'small' | 'medium' | 'large';
+
+export interface RiverOnePairCell {
+  sizeClass: SizeClass;
+  calls: number;
+  won: number;
+  /** percent of calls that won the hand, or null without a call */
+  wonPct: number | null;
+}
+
+export interface RiverOnePairReport {
+  cells: RiverOnePairCell[];
+  /** rows considered after the Hold'em / parsable filters */
+  consideredRows: number;
+  /** rows that could not be read (missing cards, board or actions) */
+  unreadableRows: number;
+  caveat: string;
+  /** who computed it: the database function or this module over fetched rows */
+  source?: 'fn_horse_river_one_pair_calls' | 'rows';
+}
+
+export const RIVER_ONE_PAIR_RPC_SCHEMA = 'horse-river-one-pair-calls/v1';
+
+/**
+ * The answer of public.fn_horse_river_one_pair_calls (migration
+ * 20261031024652), the same arithmetic run where the rows are. Returns null
+ * when the payload is not that function's contract, so a caller falls back to
+ * fetching rows rather than printing a shape it did not understand.
+ */
+export function riverOnePairFromRpc(payload: unknown): RiverOnePairReport | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as { schema?: unknown; cells?: unknown; consideredRows?: unknown; unreadableRows?: unknown; caveat?: unknown };
+  if (p.schema !== RIVER_ONE_PAIR_RPC_SCHEMA || !Array.isArray(p.cells) || p.cells.length !== 3) return null;
+  const order: SizeClass[] = ['small', 'medium', 'large'];
+  const cells: RiverOnePairCell[] = [];
+  for (const k of order) {
+    const c = (p.cells as Array<{ sizeClass?: unknown; calls?: unknown; won?: unknown }>).find((x) => x && x.sizeClass === k);
+    const calls = Number(c?.calls);
+    const won = Number(c?.won);
+    if (!c || !Number.isInteger(calls) || !Number.isInteger(won) || calls < 0 || won < 0 || won > calls) return null;
+    cells.push({ sizeClass: k, calls, won, wonPct: pct(won, calls) });
+  }
+  const considered = Number(p.consideredRows);
+  const unreadable = Number(p.unreadableRows);
+  if (!Number.isInteger(considered) || !Number.isInteger(unreadable) || considered < 0 || unreadable < 0) return null;
+  return {
+    cells,
+    consideredRows: considered,
+    unreadableRows: unreadable,
+    caveat: typeof p.caveat === 'string' && p.caveat ? p.caveat : RIVER_ONE_PAIR_CAVEAT,
+    source: 'fn_horse_river_one_pair_calls',
+  };
+}
+
+export const RIVER_ONE_PAIR_CAVEAT =
+  'horse_hand_reviews holds only hands with |net| >= 20bb, so these are big-pot river calls; compare before/after on the same subset';
+
+const RANKS = '23456789TJQKA';
+
+interface Card {
+  r: number;
+  s: string;
+}
+
+function parseCard(value: unknown): Card | null {
+  if (typeof value === 'string') {
+    const m = /^([2-9TJQKA])([shdc])$/i.exec(value.trim());
+    if (!m) return null;
+    return { r: RANKS.indexOf(m[1].toUpperCase()), s: m[2].toLowerCase() };
+  }
+  if (value && typeof value === 'object') {
+    const o = value as { rank?: unknown; suit?: unknown };
+    const rank = typeof o.rank === 'string' ? o.rank.toUpperCase() : typeof o.rank === 'number' ? RANKS[o.rank - 2] : '';
+    const suit = typeof o.suit === 'string' && o.suit.length > 0 ? o.suit[0].toLowerCase() : '';
+    if (!rank || !RANKS.includes(rank) || !'shdc'.includes(suit)) return null;
+    return { r: RANKS.indexOf(rank), s: suit };
+  }
+  return null;
+}
+
+function parseCards(value: unknown): Card[] | null {
+  if (typeof value === 'string') {
+    const parts = value.trim().split(/[\s,]+/).filter(Boolean);
+    const cards = parts.map(parseCard);
+    return cards.every((c): c is Card => c !== null) ? cards : null;
+  }
+  if (Array.isArray(value)) {
+    const cards = value.map(parseCard);
+    return cards.every((c): c is Card => c !== null) ? cards : null;
+  }
+  return null;
+}
+
+/**
+ * Does hero hold exactly one pair with a five-card river board: a pocket pair
+ * that does not trip up, or one hole card pairing the board once, on a board
+ * that is itself unpaired, with no flush or straight possible for hero? Kept
+ * simple on purpose - this is the same shape HorseHandReview's
+ * one_pair_river_stackoff reads, not a full evaluator.
+ */
+export function isOnePairOnRiver(hole: Card[], board: Card[]): boolean {
+  if (hole.length !== 2 || board.length !== 5) return false;
+  const boardCounts = new Map<number, number>();
+  for (const c of board) boardCounts.set(c.r, (boardCounts.get(c.r) ?? 0) + 1);
+  if ([...boardCounts.values()].some((n) => n >= 2)) return false;
+  const [a, b] = hole;
+  const hits = [a, b].filter((c) => boardCounts.has(c.r)).length;
+  const pocket = a.r === b.r;
+  if (pocket && hits > 0) return false; // a set
+  if (!pocket && hits !== 1) return false; // no pair, or two pair
+  // Flush: five of a suit among the seven. A board flush plays for everyone,
+  // so hero's pair is not what the hand is about either way.
+  const all = [...hole, ...board];
+  for (const suit of 'shdc') {
+    if (all.filter((c) => c.s === suit).length >= 5) return false;
+  }
+  // Straight among the seven (board straights included, for the same reason).
+  const ranks = new Set(all.map((c) => c.r));
+  if (ranks.has(12)) ranks.add(-1); // wheel ace
+  for (let low = -1; low <= 8; low++) {
+    if ([0, 1, 2, 3, 4].every((i) => ranks.has(low + i))) return false;
+  }
+  return true;
+}
+
+/** V62's size classes from the bet fraction of the pot it was made into. */
+export function sizeClassOf(betFraction: number, raised: boolean): SizeClass {
+  if (raised || betFraction >= 0.7) return 'large';
+  if (betFraction >= 0.4) return 'medium';
+  return 'small';
+}
+
+const STREETS = ['preflop', 'flop', 'turn', 'river'];
+const DEAD = '\u0000dead';
+
+/**
+ * Add one action to a player's contribution for its street, in the engine's
+ * own amount convention (HandController.processAction): a `call` amount is
+ * the INCREMENT just put in; `bet`, `raise`, `all_in` and the forced posts
+ * (`sb`, `bb`, `straddle`, `post`) carry the player's street TOTAL; a dead
+ * post (`dead: true` - an ante or a dead blind) is money that never counts
+ * toward the street level, so it is pooled; a live `ante` adds to the level.
+ */
+export function contribute(paid: Map<string, number>, a: ReviewAction & { dead?: boolean }): void {
+  if (typeof a.userId !== 'string') return;
+  const amt = typeof a.amount === 'number' && Number.isFinite(a.amount) ? a.amount : 0;
+  if (amt <= 0) return;
+  if (a.dead === true) {
+    // Dead money is pooled under its own key so a later street total from the
+    // same player (max) cannot swallow it.
+    paid.set(DEAD, (paid.get(DEAD) ?? 0) + amt);
+    return;
+  }
+  const prev = paid.get(a.userId) ?? 0;
+  // A live ante (HandController pushes 'ante' with dead:false for the part
+  // that joins the bet level) sits on top of the blind already posted.
+  if (a.action === 'call' || a.action === 'ante') paid.set(a.userId, prev + amt);
+  else paid.set(a.userId, Math.max(prev, amt));
+}
+
+const sum = (m: Map<string, number>): number => [...m.values()].reduce((x, y) => x + y, 0);
+
+/**
+ * The river call hero made facing a bet, with the bet's pot fraction, or null
+ * when hero made no river call. The pot before the river bet is every
+ * player's preflop/flop/turn contribution (forced posts are actions in the
+ * review rows: `sb` / `bb`, read 2026-10-30), plus whatever had gone in on the
+ * river before that bet.
+ */
+export function riverCallFaced(
+  actions: ReviewAction[],
+  hero: string
+): { betFraction: number; raised: boolean } | null {
+  const perStreet = new Map<string, Map<string, number>>();
+  for (const st of STREETS) perStreet.set(st, new Map());
+  for (const a of actions) {
+    if (typeof a.stage !== 'string' || !perStreet.has(a.stage) || a.stage === 'river') continue;
+    contribute(perStreet.get(a.stage)!, a);
+  }
+  let pot = 0;
+  for (const st of ['preflop', 'flop', 'turn']) pot += sum(perStreet.get(st)!);
+  const riverPaid = perStreet.get('river')!;
+  let aggressions = 0;
+  let lastBet = 0;
+  let lastBetPotBefore = pot;
+  for (const a of actions.filter((x) => x.stage === 'river')) {
+    if (typeof a.userId !== 'string') continue;
+    const amt = typeof a.amount === 'number' && Number.isFinite(a.amount) ? a.amount : 0;
+    const isCall = a.action === 'call' || (a.action === 'all_in' && a.isFullRaise === undefined);
+    const isAggr = a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise !== undefined);
+    if (a.userId === hero && isCall && aggressions > 0) {
+      const betFraction = lastBetPotBefore > 0 ? lastBet / lastBetPotBefore : 1;
+      return { betFraction: Math.round(betFraction * 1000) / 1000, raised: aggressions >= 2 };
+    }
+    if (isAggr) {
+      lastBet = Math.max(0, amt - (riverPaid.get(a.userId) ?? 0));
+      lastBetPotBefore = pot + sum(riverPaid);
+      aggressions += 1;
+    }
+    contribute(riverPaid, a);
+  }
+  return null;
+}
+
+/** Hold'em river one-pair calls by the size class faced, and how many won. */
+export function riverOnePairCalls(rows: ReviewRow[]): RiverOnePairReport {
+  const cells = new Map<SizeClass, RiverOnePairCell>(
+    (['small', 'medium', 'large'] as SizeClass[]).map((k) => [k, { sizeClass: k, calls: 0, won: 0, wonPct: null }])
+  );
+  let considered = 0;
+  let unreadable = 0;
+  for (const row of rows) {
+    // Hold'em only, named as the review rows name it ('nlh'; the CLI query
+    // asks for exactly that, so the two agree). No variant is not assumed.
+    if (String(row.game_variant ?? '').toLowerCase() !== 'nlh') continue;
+    const hole = parseCards(row.hole_cards);
+    const board = parseCards(row.board);
+    if (!hole || !board || !Array.isArray(row.actions)) {
+      unreadable += 1;
+      continue;
+    }
+    considered += 1;
+    if (board.length !== 5 || !isOnePairOnRiver(hole, board)) continue;
+    const faced = riverCallFaced(row.actions, row.horse_user_id);
+    if (!faced) continue;
+    const cell = cells.get(sizeClassOf(faced.betFraction, faced.raised))!;
+    cell.calls += 1;
+    if (Number(row.net_bb) > 0) cell.won += 1;
+  }
+  for (const c of cells.values()) c.wonPct = pct(c.won, c.calls);
+  return { cells: [...cells.values()], consideredRows: considered, unreadableRows: unreadable, caveat: RIVER_ONE_PAIR_CAVEAT, source: 'rows' };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. Receipt counts
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TelemetryRow {
+  day: string;
+  feature: string;
+  fires: number | string;
+}
+
+export const RECEIPT_FEATURES = ['v61_river_one_pair_shade', 'v63_large_river_bet_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold'] as const;
+
+export interface ReceiptCount {
+  feature: string;
+  byDay: Array<{ day: string; fires: number }>;
+  total: number;
+}
+
+export function receiptCounts(rows: TelemetryRow[], features: readonly string[] = RECEIPT_FEATURES): ReceiptCount[] {
+  return features.map((feature) => {
+    const byDay = rows
+      .filter((r) => r.feature === feature && Number.isFinite(Number(r.fires)))
+      .map((r) => ({ day: String(r.day), fires: Number(r.fires) }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+    return { feature, byDay, total: byDay.reduce((a, b) => a + b.fires, 0) };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Report
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface LiveMeasureReport {
+  generatedAt: string;
+  servingReleaseSha: string | null;
+  heap: HeapSlope[];
+  threeBet: ThreeBetShare[];
+  threeBetCaveat?: string;
+  riverOnePair: RiverOnePairReport;
+  receipts: ReceiptCount[];
+}
+
+const fmt = (v: number | null, unit = ''): string => (v === null ? 'n/a' : `${v}${unit}`);
+
+export function renderMarkdown(report: LiveMeasureReport): string {
+  const lines: string[] = [];
+  lines.push(`# Hold'em live measure - ${report.generatedAt}`);
+  lines.push('');
+  lines.push(`Serving release: ${report.servingReleaseSha ?? 'unknown'}`);
+  lines.push('');
+  lines.push('## 1. Heap growth (per engine instance)');
+  lines.push('');
+  lines.push('| instance | release | samples | span (min) | heap GB/h | rss GB/h | r2 | heap first -> last (MB) | note |');
+  lines.push('|---|---|---|---|---|---|---|---|---|');
+  for (const h of report.heap) {
+    lines.push(
+      `| ${h.instanceId} | ${h.releaseSha.slice(0, 9)} | ${h.samples} | ${h.spanMinutes} | ${fmt(h.heapGbPerHour)} | ${fmt(h.rssGbPerHour)} | ${fmt(h.heapR2)} | ${h.firstHeapMb} -> ${h.lastHeapMb} | ${h.reason ?? ''} |`
+    );
+  }
+  if (report.heap.length === 0) lines.push('| (no samples) | | | | | | | | |');
+  lines.push('');
+  lines.push('## 2. 3-bet shares (horse_daily_play)');
+  lines.push('');
+  if (report.threeBetCaveat) {
+    lines.push(`Caveat: ${report.threeBetCaveat}. Formats are the play rows' own (cash, tournament, lightning_<bb>bb); 'all' sums them.`);
+    lines.push('');
+  }
+  lines.push('| format | horses | hands | 3-bet % | fold to 3-bet % | 3-bets / opps | folds / faced |');
+  lines.push('|---|---|---|---|---|---|---|');
+  for (const t of report.threeBet) {
+    lines.push(`| ${t.format} | ${t.horses} | ${t.hands} | ${fmt(t.threeBetPct, '%')} | ${fmt(t.foldTo3BetPct, '%')} | ${t.threeBets} / ${t.threeBetOpps} | ${t.foldTo3Bets} / ${t.faced3Bets} |`);
+  }
+  if (report.threeBet.length === 0) lines.push('| (no rows) | | | | | | |');
+  lines.push('');
+  lines.push('## 3. River one-pair calls by size class faced (horse_hand_reviews)');
+  lines.push('');
+  lines.push(`Caveat: ${report.riverOnePair.caveat}. Rows read: ${report.riverOnePair.consideredRows}; unreadable: ${report.riverOnePair.unreadableRows}; computed by ${report.riverOnePair.source === 'rows' ? 'this module over fetched rows' : 'fn_horse_river_one_pair_calls in the database'}.`);
+  lines.push('');
+  lines.push('| size class | calls | won | won % |');
+  lines.push('|---|---|---|---|');
+  for (const c of report.riverOnePair.cells) lines.push(`| ${c.sizeClass} | ${c.calls} | ${c.won} | ${fmt(c.wonPct, '%')} |`);
+  lines.push('');
+  lines.push('## 4. Receipt counts (horse_brain_telemetry)');
+  lines.push('');
+  lines.push('V62 is opt-in (default off since #8781): zero v62 fires on a containing revision is expected; v61 is the live witness.');
+  lines.push('');
+  lines.push('| feature | total | by day |');
+  lines.push('|---|---|---|');
+  for (const r of report.receipts) {
+    lines.push(`| ${r.feature} | ${r.total} | ${r.byDay.map((d) => `${d.day}: ${d.fires}`).join(', ') || 'none'} |`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}

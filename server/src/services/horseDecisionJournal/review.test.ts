@@ -144,6 +144,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           v27GtoCharts: false,
           phase8Postflop: 'off',
@@ -168,6 +169,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           phase10EvidenceMode: true,
           phase8Postflop: 'off',
@@ -191,6 +193,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           phase11EvidenceMode: true,
           phase8Postflop: 'off',
@@ -215,6 +218,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           phase12EvidenceMode: true,
           phase8Postflop: 'off',
@@ -239,6 +243,7 @@ function fixture(
         {
           telemetry: false,
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 1000,
           phase8Postflop: 'off',
           phase10Plo4: 'off',
@@ -356,6 +361,9 @@ const directory = () => {
   dirs.push(d);
   return d;
 };
+// V61 (2026-10-29) shades hold'em one-pair river calls by default; these
+// captured replays keep the explicit off arm so the recorded receipts and
+// admissions still mean what they meant when they were captured.
 describe('private retained-hand journal consumer', () => {
   it('counts authorized pooled notes separately and rejects future provenance', () => {
     const f = fixture('nlh', [], false, false, false, false, false, true);

@@ -35,6 +35,7 @@ function harness() {
   const manager = () => ({
     stop: vi.fn().mockResolvedValue(undefined),
     getTournamentLeaseGeneration: () => null,
+    retainsTournamentAbortBoundary: () => false,
   });
   return { server, manager };
 }

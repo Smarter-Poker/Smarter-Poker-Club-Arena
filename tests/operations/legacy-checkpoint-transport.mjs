@@ -9,6 +9,86 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 const { runLegacyEngineCheckpoint } = await import(process.argv[3]);
 const scenario = process.argv[2];
+// No engine profile is substituted: exercise only the maintained receipt
+// publisher in an owned subprocess with real pipe backpressure and exit.
+if (scenario === 'receipt_publication') {
+  const result = {
+    ok: false,
+    reason: 'inspector cleanup not verified',
+    transportDetail: 'op=guardAwait,cause=request_timeout',
+    retryAllowed: false,
+  };
+  const payload = JSON.stringify(result) + '\n';
+  for (const mode of ['drain', 'blocked', 'closed']) {
+    const drain = mode === 'drain';
+    const child = spawn(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      const {publishLegacyCheckpointReceipt}=await import(process.argv[1]);
+      const result=JSON.parse(process.argv[2]);
+      await new Promise(resolve=>process.stdin.once('data',resolve));
+      process.stderr.write('x'.repeat(1048576));
+      const started=Date.now(),deadline=started+800;
+      setTimeout(()=>process.kill(process.pid,'SIGKILL'),800);
+      const published=await publishLegacyCheckpointReceipt(result,deadline);
+      process.stdout.write(JSON.stringify({published,elapsedMs:Date.now()-started,remainingMs:deadline-Date.now()})+'\\n',()=>process.exit(1));
+    `,
+        process.argv[3],
+        JSON.stringify(result),
+      ],
+      { stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    let output = '',
+      errors = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => (output += chunk));
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => (errors += chunk));
+    child.stderr.pause();
+    if (mode === 'closed') child.stderr.destroy();
+    child.stdin.end('go');
+    const kill = setTimeout(() => child.kill('SIGKILL'), 2500);
+    const resume = drain ? setTimeout(() => child.stderr.resume(), 200) : null;
+    const closed = new Promise((resolve) => child.once('close', resolve));
+    const exited = await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
+    child.stderr.resume();
+    await closed;
+    clearTimeout(kill);
+    clearTimeout(resume);
+    assert.deepEqual(exited, { code: 1, signal: null });
+    const receipt = JSON.parse(output);
+    assert.equal(receipt.published, drain);
+    assert.ok(
+      receipt.remainingMs >= 50,
+      'publication must retain exit/transport headroom before the real hard kill'
+    );
+    if (drain) assert.equal(errors, 'x'.repeat(1048576) + payload);
+    else if (mode === 'closed') {
+      assert.ok(receipt.elapsedMs < 1500);
+      assert.equal(errors, '');
+    } else {
+      assert.ok(receipt.elapsedMs >= 700 && receipt.elapsedMs < 800);
+      assert.ok(!errors.endsWith(payload));
+    }
+  }
+  console.log(
+    JSON.stringify({
+      ok: true,
+      scenario,
+      node: process.version,
+      backpressureFlushed: true,
+      blockedPublicationBounded: true,
+      closedReaderRefused: true,
+    })
+  );
+  process.exit(0);
+}
 // A real timer may wake before its requested wall-clock deadline. Exercise
 // that boundary deterministically while retaining the actual inspector/target.
 const originalSetTimeout = globalThis.setTimeout;
@@ -60,15 +140,23 @@ const bounded = (promise, ms = 2500, stage = 'fixture') => {
   ]).finally(() => clearTimeout(timer));
 };
 try {
-  const mode = ['timeout', 'early_timeout', 'disconnect'].includes(scenario)
-    ? 'hang'
-    : scenario === 'exception'
-      ? 'throw'
-      : scenario.startsWith('refusal')
-        ? 'refusal'
-        : scenario === 'malformed_refusal'
-          ? 'malformed_refusal'
-          : 'success';
+  const mode = scenario.startsWith('census_counts')
+    ? 'census_refusal'
+    : ['timeout', 'early_timeout', 'disconnect', 'promise_gc', 'receipt_deadline'].includes(
+          scenario
+        )
+      ? 'hang'
+      : scenario === 'exception'
+        ? 'throw'
+        : scenario === 'protocol_error'
+          ? 'protocol_error'
+          : scenario === 'promise_gc_settle'
+            ? 'gc_settle'
+            : scenario.startsWith('refusal')
+              ? 'refusal'
+              : scenario === 'malformed_refusal'
+                ? 'malformed_refusal'
+                : 'success';
   const count = scenario === 'zero' ? 0 : scenario === 'two' ? 2 : 1;
   writeFileSync(
     join(directory, 'owner.mjs'),
@@ -77,15 +165,20 @@ try {
       ' calls=0;',
       ' checkpoint(options,objects,modules,engines,managers,workers,hosts){',
       '  this.calls++;',
-      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(hosts)||hosts.length!==2||!hosts.every(h=>Object.getPrototypeOf(h)===modules.lightningHost.LightningHandHost.prototype)))throw Error('lightning host census refused');",
-      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(workers)||workers.length!==2||!workers.every(w=>Object.getPrototypeOf(w)===modules.lightningWorker.LightningClusterWorker.prototype)||new Set(workers.map(w=>w.kind)).size!==2))throw Error('lightning census refused');",
-      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(engines)||engines.length!==2||!engines.every(e=>Object.getPrototypeOf(e)===modules.engine.ServerTableEngine.prototype)||new Set(engines.map(e=>e.kind)).size!==2))throw Error('engine census refused');",
-      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(managers)||managers.length!==2||!managers.every(m=>Object.getPrototypeOf(m)===modules.manager.TournamentManager.prototype)||new Set(managers.map(m=>m.kind)).size!==2))throw Error('manager census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3]) && (!Array.isArray(hosts)||hosts.length!==2||!hosts.every(h=>Object.getPrototypeOf(h)===modules.lightningHost.LightningHandHost.prototype)))throw Error('lightning host census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3]) && (!Array.isArray(workers)||workers.length!==2||!workers.every(w=>Object.getPrototypeOf(w)===modules.lightningWorker.LightningClusterWorker.prototype)||new Set(workers.map(w=>w.kind)).size!==2))throw Error('lightning census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3]) && (!Array.isArray(engines)||engines.length!==2||!engines.every(e=>Object.getPrototypeOf(e)===modules.engine.ServerTableEngine.prototype)||new Set(engines.map(e=>e.kind)).size!==2))throw Error('engine census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3]) && (!Array.isArray(managers)||managers.length!==2||!managers.every(m=>Object.getPrototypeOf(m)===modules.manager.TournamentManager.prototype)||new Set(managers.map(m=>m.kind)).size!==2))throw Error('manager census refused');",
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
       "  process.stdout.write(JSON.stringify({type:'guard_started'})+'\\n');",
       "  if(process.argv[2]==='throw')throw Error('synthetic-secret-refusal');",
+      "  if(process.argv[2]==='gc_settle')return new Promise(resolve=>{globalThis.__fixtureResolve=()=>resolve({ok:true,completedCalls:1});});",
+      // A value the inspector cannot return by value (a BigInt): the CDP
+      // answer is an error object, not a result, and the client must say so.
+      "  if(process.argv[2]==='protocol_error')return {ok:true,completedCalls:1,unreturnable:1n};",
+      "  if(process.argv[3]==='receipt_deadline')setImmediate(()=>{const until=Date.now()+9000;while(Date.now()<until)Math.sqrt(Date.now());setImmediate(()=>process.stdout.write(JSON.stringify({type:'busy_done'})+'\\n'));});",
       "  if(process.argv[2]==='hang'){globalThis.__legacyEngineCheckpointProgress={schema:'legacy-engine-checkpoint-progress/v1',elapsedMs:123,stage:'preflight',note:'joinPreviousWork',detail:'rpc=fn_f06_prepare_mixed_manager_custody,phase=commit',attemptedTables:0,completedCalls:0,verifiedTables:0,reason:null,privatePayload:'synthetic-secret-must-not-export'};return new Promise(()=>{});}",
-      "  if(process.argv[2]==='refusal')return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
+      "  if(['refusal','census_refusal'].includes(process.argv[2]))return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:process.argv[2]==='census_refusal'?'retained_lightning_host_census_unproven':'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
       "  if(process.argv[2]==='malformed_refusal')return {schema:'synthetic-secret-schema',ok:false,reason:'synthetic-secret-refusal',stage:'synthetic-secret-stage',attemptedTables:'synthetic-secret-count',completedCalls:-1,verifiedTables:0.5,bankCount:Infinity,uninitializedSeats:true,remainingMs:-1,readyForRestart:'synthetic-secret-ready',checkpointOutcome:'synthetic-secret-outcome',paidAccountingQualification:'synthetic-secret-accounting',restartAuthorized:true};",
       "  return {ok:true,completedCalls:1,privatePayload:'synthetic-secret-must-not-export'};",
       ' }',
@@ -101,19 +194,22 @@ try {
     [
       "import {createInterface} from 'node:readline';",
       "import {GameServer,ServerTableEngine,TournamentManager,LightningClusterWorker,LightningHandHost} from './owner.mjs';",
+      'let nativeGcCalls=0,resolvedAfterGc=false;',
       'const instances=Array.from({length:' + count + '},()=>new GameServer());',
       "const engineInstances=[new ServerTableEngine('registered'),new ServerTableEngine('detached')];",
       "const managerInstances=[new TournamentManager('registered'),new TournamentManager('detached')];",
-      "const lightningWorkerInstances=[new LightningClusterWorker('registered'),new LightningClusterWorker('detached')];",
-      "const lightningHostInstances=[new LightningHandHost('registered'),new LightningHandHost('detached')];",
+      "const lightningWorkerInstances=process.argv[3]==='census_counts_zero'?[]:[new LightningClusterWorker('registered'),new LightningClusterWorker('detached')];",
+      "const lightningHostInstances=process.argv[3]==='census_counts_zero'?[]:[new LightningHandHost('registered'),new LightningHandHost('detached')];",
       "const inspector=process.getBuiltinModule('node:inspector');",
       "const lines=createInterface({input:process.stdin});const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');",
       "lines.on('line',line=>{const {type}=JSON.parse(line);",
-      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(['promise_gc','promise_gc_settle'].includes(process.argv[3])?{gcCalls:nativeGcCalls,...(process.argv[3]==='promise_gc_settle'?{resolvedAfterGc}:{})}:{}),...(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      " if(type==='gc'){globalThis.gc();nativeGcCalls++;send({type:'gc_complete',gcCalls:nativeGcCalls});}",
+      " if(type==='resolve'){if(nativeGcCalls!==1||typeof globalThis.__fixtureResolve!=='function')throw Error('fixture settlement before GC');const finish=globalThis.__fixtureResolve;delete globalThis.__fixtureResolve;resolvedAfterGc=true;finish();send({type:'settlement_resolved',gcCalls:nativeGcCalls,resolvedAfterGc});}",
       " if(type==='close'){inspector.close();send({type:'closed'});}",
       " if(type==='quit'){inspector.close();lines.close();process.stdin.pause();}",
       '});',
-      "globalThis.gc();send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      "globalThis.gc();send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
     ].join('\n')
   );
   const allocation = createServer();
@@ -140,7 +236,10 @@ try {
       stdio: ['pipe', 'pipe', 'pipe'],
     }
   );
-  hardStop = setTimeout(() => child.kill('SIGKILL'), scenario === 'shared_deadline' ? 35000 : 8000);
+  hardStop = setTimeout(
+    () => child.kill('SIGKILL'),
+    scenario === 'shared_deadline' ? 35000 : scenario === 'receipt_deadline' ? 14000 : 8000
+  );
   const waiting = new Map(),
     queued = new Map();
   let channelFailure;
@@ -175,7 +274,17 @@ try {
       assert.ok(line.length < 4096);
       const value = JSON.parse(line),
         waiter = waiting.get(value.type);
-      assert.ok(['ready', 'state', 'closed', 'guard_started'].includes(value.type));
+      assert.ok(
+        [
+          'ready',
+          'state',
+          'closed',
+          'guard_started',
+          'gc_complete',
+          'settlement_resolved',
+          'busy_done',
+        ].includes(value.type)
+      );
       mark('received_' + value.type);
       if (waiter) {
         waiting.delete(value.type);
@@ -225,7 +334,7 @@ try {
     "process.getBuiltinModule('node:vm').runInThisContext(" +
     JSON.stringify(inner) +
     ",{importModuleDynamically:process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER})";
-  const guard = function (options, objects, modules, engines, managers, workers, hosts) {
+  const guard = async function (options, objects, modules, engines, managers, workers, hosts) {
     return this.checkpoint(options, objects, modules, engines, managers, workers, hosts);
   };
   const options = {
@@ -240,6 +349,9 @@ try {
       'shared_deadline',
       'shared_deadline_exhausted',
       'memory_refusal',
+      'census_counts',
+      'census_counts_unknown',
+      'census_counts_zero',
     ].includes(scenario),
     workBudgetMs: 3000,
     cleanupBudgetMs: 2000,
@@ -249,19 +361,66 @@ try {
     withheldCloseNotifications = 0,
     nativeCensusRequests = 0;
   const nativeOrder = [];
+  let guardRequests = 0,
+    guardAwaitRequests = 0;
+  const nativeProtocolErrors = [];
   const sharedDeadline = Date.now() + 30000;
+  const receiptDeadline = Date.now() + 8000;
+  let receiptRemainingMs = null,
+    nativeShutdownRequests = 0;
   const observedWebSocket = (endpoint) => {
     const socket = new WebSocket(endpoint);
+    if (['promise_gc', 'promise_gc_settle', 'receipt_deadline'].includes(scenario)) {
+      const nativeSend = socket.send.bind(socket);
+      socket.send = (raw) => {
+        const request = JSON.parse(raw);
+        if (
+          request.method === 'Runtime.callFunctionOn' &&
+          (request.params.functionDeclaration === guard.toString() ||
+            (request.params.functionDeclaration.includes(guard.toString()) &&
+              request.params.functionDeclaration.includes('pendingCheckpoint')))
+        )
+          guardRequests++;
+        if (request.method === 'Runtime.awaitPromise') guardAwaitRequests++;
+        if (
+          request.method === 'Runtime.evaluate' &&
+          request.params.expression.includes("getBuiltinModule('node:inspector').close()")
+        )
+          nativeShutdownRequests++;
+        return nativeSend(raw);
+      };
+      socket.addEventListener('message', ({ data }) => {
+        const message = JSON.parse(data);
+        if (message.error) nativeProtocolErrors.push(message.error);
+      });
+    }
     if (
-      ['engine_census', 'shared_deadline', 'shared_deadline_exhausted', 'memory_refusal'].includes(
-        scenario
-      )
+      [
+        'engine_census',
+        'shared_deadline',
+        'shared_deadline_exhausted',
+        'memory_refusal',
+        'census_counts',
+        'census_counts_unknown',
+        'census_counts_zero',
+      ].includes(scenario)
     ) {
       let firstCensusId = null;
+      const groupReplyIndices = new Map();
       const send = socket.send.bind(socket);
       socket.send = (raw) => {
         const message = JSON.parse(raw);
-        if (message.method === 'Runtime.queryObjects') {
+        if (message.method === 'Runtime.callFunctionOn') {
+          const group = /^function\(\) \{ return this\[([0-4])\]; \}$/.exec(
+            message.params.functionDeclaration
+          );
+          if (group) groupReplyIndices.set(message.id, Number(group[1]));
+        }
+        if (
+          message.method === 'Runtime.queryObjects' ||
+          (message.method === 'Runtime.evaluate' &&
+            message.params.expression.includes('function collectMarkedLegacyCensus('))
+        ) {
           nativeCensusRequests++;
           nativeOrder.push('census');
           if (firstCensusId === null) firstCensusId = message.id;
@@ -273,7 +432,9 @@ try {
           nativeOrder.push('broadReleased');
         if (
           message.method === 'Runtime.callFunctionOn' &&
-          message.params.functionDeclaration === guard.toString()
+          (message.params.functionDeclaration === guard.toString() ||
+            (message.params.functionDeclaration.includes(guard.toString()) &&
+              message.params.functionDeclaration.includes('pendingCheckpoint')))
         )
           nativeOrder.push('guard');
         return send(raw);
@@ -284,11 +445,29 @@ try {
           type,
           type === 'message'
             ? (event) => {
+                if (scenario === 'census_counts_unknown') {
+                  const message = JSON.parse(event.data);
+                  const index = groupReplyIndices.get(message.id);
+                  if (index !== undefined) {
+                    // Keep the actual native handle and array. Only metadata
+                    // is malformed: it must never fabricate physical absence.
+                    const descriptor = message.result.result;
+                    if (index === 0) descriptor.type = 'number';
+                    if (index === 1) descriptor.description = 'Array(0002)';
+                    if (index === 2) descriptor.description = 'Array(2001)';
+                    if (index === 3) descriptor.className = 'synthetic-secret-census-class';
+                    if (index === 4) {
+                      descriptor.subtype = 'object';
+                      descriptor.description = 'synthetic-secret-census-description';
+                    }
+                    return listener({ data: JSON.stringify(message) });
+                  }
+                }
                 if (
                   ['shared_deadline', 'shared_deadline_exhausted'].includes(scenario) &&
                   JSON.parse(event.data).id === firstCensusId
                 )
-                  setTimeout(() => listener(event), scenario === 'shared_deadline' ? 21000 : 700);
+                  setTimeout(() => listener(event), scenario === 'shared_deadline' ? 21000 : 1700);
                 else listener(event);
               }
             : listener,
@@ -318,11 +497,16 @@ try {
   };
   let expectedCalls = 1,
     result;
-  if (['deadline_expired', 'deadline_future'].includes(scenario)) {
+  if (['deadline_expired', 'deadline_future', 'deadline_receipt_exhausted'].includes(scenario)) {
     await assert.rejects(
       runLegacyEngineCheckpoint({
         ...options,
-        checkpointDeadlineMs: scenario === 'deadline_expired' ? Date.now() - 1 : Date.now() + 41000,
+        checkpointDeadlineMs:
+          scenario === 'deadline_expired'
+            ? Date.now() - 1
+            : scenario === 'deadline_receipt_exhausted'
+              ? Date.now() + options.cleanupBudgetMs + 1000
+              : Date.now() + 41000,
       }),
       /legacy checkpoint invocation identity refused/
     );
@@ -361,6 +545,49 @@ try {
     send('close');
     await next('closed');
     expectedCalls = 0;
+  } else if (['promise_gc', 'promise_gc_settle'].includes(scenario)) {
+    // Collect only this isolated target, after the one real guard has entered
+    // and yielded. No production GC or synthetic CDP acknowledgement is used.
+    const response = runLegacyEngineCheckpoint({
+      ...options,
+      workBudgetMs: scenario === 'promise_gc' ? 500 : 3000,
+      createWebSocket: observedWebSocket,
+    });
+    await next('guard_started');
+    send('gc');
+    assert.deepEqual(await next('gc_complete'), { type: 'gc_complete', gcCalls: 1 });
+    if (scenario === 'promise_gc_settle') {
+      send('resolve');
+      assert.deepEqual(await next('settlement_resolved'), {
+        type: 'settlement_resolved',
+        gcCalls: 1,
+        resolvedAfterGc: true,
+      });
+    }
+    result = await response;
+    assert.equal(result.checkpointInvoked, true);
+    assert.equal(result.inspectorClosed, true);
+    assert.equal(result.cleanupConnections, 0);
+    assert.equal(result.retryAllowed, false);
+    assert.equal(guardRequests, 1, 'GC must never cause the guard to be invoked again');
+    assert.deepEqual(
+      nativeProtocolErrors,
+      [],
+      'the owned Promise must survive actual native GC: ' + JSON.stringify(result)
+    );
+    assert.equal(guardAwaitRequests, 1, 'the existing rooted Promise is awaited once');
+    if (scenario === 'promise_gc') {
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'inspector operation outcome unknown');
+      assert.match(
+        result.transportDetail,
+        /^op=guardAwait,cause=request_timeout,method=Runtime.awaitPromise,/
+      );
+    } else {
+      assert.equal(result.ok, true);
+      assert.equal(result.completedCalls, 1);
+    }
+    assert.equal(clientCloseCalls, 0, 'only the remote native shutdown owns cleanup');
   } else if (scenario === 'connection') {
     let connections = 0;
     result = await runLegacyEngineCheckpoint({
@@ -400,11 +627,14 @@ try {
     result = await runLegacyEngineCheckpoint({
       ...options,
       ...(['timeout', 'early_timeout'].includes(scenario) ? { workBudgetMs: 500 } : {}),
+      ...(scenario === 'receipt_deadline'
+        ? { checkpointDeadlineMs: receiptDeadline, createWebSocket: observedWebSocket }
+        : {}),
       ...(scenario === 'shared_deadline'
         ? { workBudgetMs: 20000, checkpointDeadlineMs: sharedDeadline }
         : {}),
       ...(scenario === 'shared_deadline_exhausted'
-        ? { workBudgetMs: 20000, cleanupBudgetMs: 200, checkpointDeadlineMs: Date.now() + 800 }
+        ? { workBudgetMs: 20000, cleanupBudgetMs: 200, checkpointDeadlineMs: Date.now() + 1800 }
         : {}),
       ...([
         'success',
@@ -412,6 +642,9 @@ try {
         'shared_deadline',
         'shared_deadline_exhausted',
         'memory_refusal',
+        'census_counts',
+        'census_counts_unknown',
+        'census_counts_zero',
         'cleanup_close_timeout',
         'refusal_cleanup_timeout',
       ].includes(scenario)
@@ -421,6 +654,53 @@ try {
         ? { cleanupBudgetMs: 200 }
         : {}),
     });
+    if (scenario === 'receipt_deadline') {
+      // Native V8 still ACKs Inspector interrupts during this owned target's
+      // busy JS, but its fixed setImmediate(close) cannot run yet. Work and
+      // cleanup therefore exhaust their slices without any synthetic reply.
+      receiptRemainingMs = receiptDeadline - Date.now();
+      assert.ok(
+        receiptRemainingMs >= 500,
+        `final receipt has no outer transport margin: ${receiptRemainingMs}`
+      );
+      assert.equal(result.reason, 'inspector cleanup not verified');
+      assert.equal(result.inspectorClosed, false);
+      assert.equal(result.checkpointInvoked, true);
+      assert.equal(result.cleanupConnections, 0);
+      assert.match(
+        result.transportDetail,
+        /^op=guardAwait,cause=request_timeout,method=Runtime.awaitPromise,/
+      );
+      assert.equal(guardRequests, 1);
+      assert.equal(guardAwaitRequests, 1);
+      assert.equal(nativeShutdownRequests, 1);
+      assert.equal(clientCloseCalls, 0, 'no competing close after the native request');
+      assert.deepEqual(nativeProtocolErrors, []);
+    }
+    if (scenario.startsWith('census_counts')) {
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'retained_lightning_host_census_unproven');
+      assert.equal(result.retryAllowed, false);
+      assert.equal(result.checkpointInvoked, true);
+      assert.equal(result.inspectorClosed, true);
+      assert.equal(result.checkpoint.attemptedTables, 0);
+      assert.equal(result.checkpoint.completedCalls, 0);
+      assert.deepEqual(result.nativeCensusCounts, {
+        schema: 'legacy-native-census-counts/v1',
+        gameServers: scenario === 'census_counts_unknown' ? null : 1,
+        tableEngines: scenario === 'census_counts_unknown' ? null : 2,
+        tournamentManagers: scenario === 'census_counts_unknown' ? null : 2,
+        lightningWorkers:
+          scenario === 'census_counts_unknown' ? null : scenario === 'census_counts_zero' ? 0 : 2,
+        lightningHosts:
+          scenario === 'census_counts_unknown' ? null : scenario === 'census_counts_zero' ? 0 : 2,
+      });
+      assert.equal(nativeCensusRequests, 1);
+      assert.deepEqual(nativeOrder, ['census', 'broadReleased', 'guard', 'broadReleased']);
+      assert.equal(JSON.stringify(result).includes('synthetic-secret'), false);
+      assert.ok(JSON.stringify(result.nativeCensusCounts).length < 220);
+    }
+    if (scenario === 'engine_census') assert.equal(result.nativeCensusCounts, undefined);
     if (scenario === 'success')
       assert.deepEqual(result, {
         ok: true,
@@ -447,6 +727,19 @@ try {
     }
     if (scenario === 'exception')
       assert.equal(result.reason, 'target checkpoint evaluation refused');
+    if (scenario === 'protocol_error') {
+      // A PROTOCOL REFUSAL SAYS WHICH ONE (2026-10-30, run 41071578166): the
+      // reason does not move, and the detail names the operation, the CDP
+      // method and the inspector's own error.
+      assert.equal(result.reason, 'inspector protocol refused');
+      assert.equal(result.checkpointInvoked, true);
+      assert.equal(result.retryAllowed, false);
+      assert.match(
+        result.transportDetail,
+        /^op=guardAwait,cause=cdp_error,method=Runtime.awaitPromise,code=-?\d+,message=/
+      );
+      assert.ok(!JSON.stringify(result).includes('unreturnable'));
+    }
     if (['timeout', 'early_timeout'].includes(scenario)) {
       assert.equal(result.reason, 'inspector operation outcome unknown');
       // An unknown outcome says how far the guard got (2026-09-24): the
@@ -471,7 +764,7 @@ try {
       // `reason` is byte-identical and `retryAllowed` is still false.
       assert.match(
         result.transportDetail,
-        /^op=guardCall,cause=request_timeout,method=Runtime\.callFunctionOn,allowanceMs=\d+,waitedMs=\d+,budgetMs=500,spentMs=\d+,invoked=yes$/
+        /^op=guardAwait,cause=request_timeout,method=Runtime\.awaitPromise,allowanceMs=\d+,waitedMs=\d+,budgetMs=500,spentMs=\d+,invoked=yes$/
       );
       const allowanceMs = Number(/allowanceMs=(\d+)/.exec(result.transportDetail)[1]);
       const waitedMs = Number(/waitedMs=(\d+)/.exec(result.transportDetail)[1]);
@@ -537,7 +830,7 @@ try {
   }
   assert.equal(
     result.ok,
-    ['success', 'engine_census', 'shared_deadline'].includes(scenario),
+    ['success', 'engine_census', 'shared_deadline', 'promise_gc_settle'].includes(scenario),
     JSON.stringify(result)
   );
   if (scenario === 'engine_census') {
@@ -554,15 +847,32 @@ try {
   mark('driver_returned');
   assert.equal(result.retryAllowed, false);
   assert.ok(!JSON.stringify(result).includes('synthetic-secret'));
-  if (!['preexisting', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario))
+  if (
+    ![
+      'preexisting',
+      'cleanup_close_timeout',
+      'refusal_cleanup_timeout',
+      'receipt_deadline',
+    ].includes(scenario)
+  )
     assert.equal(result.inspectorClosed, true);
+  if (scenario === 'receipt_deadline') await next('busy_done');
   send('state');
   assert.deepEqual(await next('state'), {
     type: 'state',
     pid: child.pid,
     calls: expectedCalls,
     inspectorOpen: false,
-    ...(['engine_census', 'shared_deadline', 'shared_deadline_exhausted'].includes(scenario)
+    ...(['promise_gc', 'promise_gc_settle'].includes(scenario)
+      ? { gcCalls: 1, ...(scenario === 'promise_gc_settle' ? { resolvedAfterGc: true } : {}) }
+      : {}),
+    ...([
+      'engine_census',
+      'shared_deadline',
+      'shared_deadline_exhausted',
+      'census_counts',
+      'census_counts_unknown',
+    ].includes(scenario)
       ? { engineCount: 2, managerCount: 2, lightningWorkerCount: 2, lightningHostCount: 2 }
       : {}),
   });
@@ -593,7 +903,20 @@ try {
       sameProcessAliveAfterCleanup: true,
       portClosed: true,
       normalExit: true,
+      ...(['promise_gc', 'promise_gc_settle'].includes(scenario)
+        ? { gcCalls: 1, guardRequests, guardAwaitRequests, nativeProtocolErrors }
+        : {}),
       ...(scenario.includes('refusal') ? { checkpointResult: result } : {}),
+      ...(scenario === 'receipt_deadline'
+        ? {
+            receiptRemainingMs,
+            checkpointResult: result,
+            guardRequests,
+            guardAwaitRequests,
+            nativeShutdownRequests,
+            clientCloseCalls,
+          }
+        : {}),
     })
   );
 } catch (error) {

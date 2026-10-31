@@ -174,6 +174,7 @@ describe('the web bundle does not know the native app exists', () => {
     expect(pkg.scripts['build:native']).toContain('CA_DIST=dist-native');
     expect(
       read('.github/workflows/publish-club-arena.yml') +
+        read('.github/workflows/publish-club-arena-client.yml') +
         read('.github/workflows/publish-club-arena-transaction.yml')
     ).not.toContain('VITE_NATIVE');
     expect(read('.gitignore')).toMatch(/^dist-native$/m);

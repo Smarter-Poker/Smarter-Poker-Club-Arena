@@ -208,6 +208,14 @@ export interface PreflopCtx {
   effectiveStackBB?: number;
   /** Dan 2026-10-25 NLH tournament aggression; undefined = on. */
   tournamentAggression?: boolean;
+  /** Dan 2026-10-24 NLH cash pressure (3-bet and defend wider); undefined = on. */
+  cashAggression?: boolean;
+  /** Short deck keeps its own calibration; the cash pressure layer skips it. */
+  isShortDeck?: boolean;
+  /** League calibration arm (2026-10-30): added to the tournament call bar
+   *  facing a single open (no callers yet), so the marginal flats become
+   *  folds while the 3-bet bar is untouched. Undefined = no change. */
+  tournamentFlatBump?: number;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
   /**
@@ -651,6 +659,22 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // survival pressure.
   const tAggro =
     ctx.tournamentAggression !== false && isTourney && !ctx.isOmaha && ctx.allInOrFold !== true;
+  // CASH PRESSURE (Dan 2026-10-24: "3BET AGGRESSIVE HUMANS MORE IN POSITION",
+  // "MAKE THESE HORSES KILLERS ... cash and tournament play alike"). Measured
+  // on 4 days of human-seated NLH cash hands (2026-10-26..29): facing a
+  // single open the horses folded 78.6%, called 17.0% and 3-bet 4.4%
+  // (humans 32.7 / 57.7 / 9.7); after opening they folded 61.8% to a 3-bet
+  // (humans 32.0%). The tournament layer above moved those numbers in
+  // tournaments only; this is the no-limit hold'em CASH counterpart, scoped
+  // the same way (not Omaha, not all-in-or-fold, not pot limit). Heads-up
+  // tables keep their own V11 defence.
+  const cAggro =
+    ctx.cashAggression !== false &&
+    ctx.mode === 'cash' &&
+    !ctx.isOmaha &&
+    ctx.isShortDeck !== true &&
+    !ctx.isPotLimit &&
+    ctx.allInOrFold !== true;
   // True heads-up: exactly one live opponent and hero is in a blind. HU is a
   // different game — the SB/BTN opens ~75-85% and the BB defends the wide
   // majority of hands against it.
@@ -1269,6 +1293,19 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       threeBetThresh = Math.min(threeBetThresh, t(0.72 - anteWiden));
       callThresh += 0.05;
     }
+    // League calibration arm (2026-10-30, tournament flats of an open measured
+    // -8.7 bb a hand on 54 human-seated hands): tighten the flat of a single
+    // open by a stated amount; the 3-bet bar does not move.
+    if (
+      isTourney &&
+      callers === 0 &&
+      !ctx.isOmaha &&
+      typeof ctx.tournamentFlatBump === 'number' &&
+      ctx.tournamentFlatBump > 0 &&
+      ctx.tournamentFlatBump <= 0.2
+    ) {
+      callThresh += ctx.tournamentFlatBump;
+    }
     // V12 ANTI-EXPLOIT: this raiser is hunting the horse — their opens carry
     // less real strength than the position suggests, so re-raise more and
     // defend wider until the hunt stops paying.
@@ -1329,6 +1366,35 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       if (aggroBar !== null) threeBetThresh = Math.min(threeBetThresh, t(aggroBar));
       else threeBetThresh -= 0.03;
       if (position === 'late' && stackBB >= 25) callThresh -= 0.03;
+    }
+    // CASH PRESSURE: value 3-bet bars as hand shares against the opener's
+    // width (same scale as the tournament bars above: 0.56 ~ top 15%,
+    // 0.64 ~ 11%, 0.70 ~ 9%, 0.76 ~ 6%). The blinds re-steal a late open
+    // rather than flat it out of position; the button and cutoff 3-bet a
+    // late open from the top 11%, a middle open from the top 9% and an
+    // early open from the top 6%. The exploit, pressure and heads-up layers
+    // above keep every bar they already lowered.
+    if (cAggro && !headsUp && callers === 0) {
+      const steal = vs === 'late' || vs === 'sb';
+      const cashBar =
+        position === 'sb'
+          ? steal
+            ? 0.56
+            : 0.7
+          : position === 'bb'
+            ? steal
+              ? 0.64
+              : 0.74
+            : position === 'late'
+              ? vs === 'early'
+                ? 0.76
+                : steal
+                  ? 0.64
+                  : 0.7
+              : null;
+      // The V12 hunter discount still applies below the cash bar.
+      if (cashBar !== null) threeBetThresh = Math.min(threeBetThresh, t(cashBar) - 0.05 * hunted);
+      else threeBetThresh -= 0.03;
     }
     threeBetThresh = phase6CapBar(threeBetThresh);
     callThresh = phase6CapBar(callThresh);
@@ -1431,7 +1497,9 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // V37: a covered raiser near the bubble folds to the 3-bet far more.
       (1 + 0.5 * Math.max(0, Math.min(1, ctx.bubblePressure ?? 0))) *
       // TOURNAMENT AGGRESSION: more re-steals.
-      (tAggro ? 1.3 : 1);
+      (tAggro ? 1.3 : 1) *
+      // CASH PRESSURE: the same re-steal volume in cash.
+      (cAggro ? 1.3 : 1);
     if (
       callers === 0 &&
       strength >= t53(bluffFloor, 'threeBet') &&
@@ -1583,6 +1651,16 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       callThresh = phase6CapBar(callThresh - 0.02);
       fourBetThresh = phase6CapBar(fourBetThresh - 0.015);
     }
+    // CASH PRESSURE: production folded 61.8% of opens to a 3-bet (humans
+    // 32%). Up to 100bb effective the opener continues from the top 10% in
+    // position (0.66) and the top 8% out of it (0.72) instead of the top 7%
+    // and 5%, and 4-bets a shade wider. Deeper than 100bb the V21 deep
+    // discipline still rules, and a credible re-raiser read still wins.
+    const cash3 = cAggro && (ctx.effectiveStackBB ?? stackBB) <= 100;
+    if (cash3) {
+      callThresh = phase6CapBar(Math.min(callThresh, t53(ip ? 0.66 : 0.72, 'call')));
+      fourBetThresh = phase6CapBar(fourBetThresh - 0.015);
+    }
     const vsReRaiser = ctx.exploitReRaiser;
     if (vsReRaiser) {
       fourBetThresh = phase6CapBar(Math.min(fourBetThresh, t53(vsReRaiser.fourBetBar, 'fourBet')));
@@ -1643,7 +1721,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       strength >= t(0.72) &&
       strength < fourBetThresh &&
       currentBet * 2.3 < stack * 0.35 &&
-      rand() < bluffBudget * 0.22 * blockerMult * (aggro3 ? 1.5 : 1)
+      rand() < bluffBudget * 0.22 * blockerMult * (aggro3 ? 1.5 : cash3 ? 1.4 : 1)
     ) {
       const mult = 2.2 + rand() * 0.2;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };

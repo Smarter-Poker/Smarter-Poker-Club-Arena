@@ -1,4 +1,5 @@
 import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
+import { TournamentAbortBoundary, type AbortBoundaryRequest } from './TournamentAbortBoundary.js';
 import { noteTerminalFinishClub } from './terminalSettlementRpc.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
 import {
@@ -3224,7 +3225,7 @@ export abstract class TournamentManagerBase {
    */
   protected urgentRedrivesRequested = 0;
   /** What this manager last told the scheduler about its consolidation work. */
-  private consolidationDeclared = false;
+  protected consolidationDeclared = false;
 
   /**
    * A HELD LEVEL ON A SPREAD FIELD ASKS FOR ITS BALANCE PASS (2026-09-29).
@@ -3974,6 +3975,11 @@ export abstract class TournamentManagerBase {
     // the synchronized break becomes the pause owner until one of them ends.
     const addOnBreakAlreadyOwnsLevelClock = this.addOnBreakActive && this.addOnBreakOwnsLevelClock;
     const acceptedBreakGeneration = ++this.synchronizedBreakStartGeneration;
+    const proposedBreakStartedAt = new Date().toISOString();
+    this.breakCountdownAnchor = {
+      generation: acceptedBreakGeneration,
+      startedAt: proposedBreakStartedAt,
+    };
     this.onBreak = true;
     if (this.addOnBreakActive) this.addOnBreakOwnsPause = false;
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
@@ -4024,7 +4030,7 @@ export abstract class TournamentManagerBase {
         .from('tournaments')
         .update({
           on_break: true,
-          break_started_at: new Date().toISOString(),
+          break_started_at: proposedBreakStartedAt,
           break_ends_at: null,
         })
         .eq('id', this.tournamentId);
@@ -4169,7 +4175,28 @@ export abstract class TournamentManagerBase {
    * tournament. Writes the real end time so the countdown players see reflects
    * when the break ACTUALLY started, not when the last hand was announced.
    */
+  private breakCountdownAnchor: { generation: number; startedAt: string } | null = null;
+  private breakCountdownOperation: { generation: number; promise: Promise<void> } | null = null;
+
   async beginBreakCountdown(
+    breakDurationMs: number,
+    deadlineMs = Date.now() + breakDurationMs
+  ): Promise<void> {
+    const generation = this.synchronizedBreakStartGeneration;
+    if (this.breakCountdownOperation?.generation === generation)
+      return this.breakCountdownOperation.promise;
+    const operation = {
+      generation,
+      promise: Promise.resolve() as Promise<void>,
+    };
+    this.breakCountdownOperation = operation;
+    operation.promise = this.persistBreakCountdown(breakDurationMs, deadlineMs).finally(() => {
+      if (this.breakCountdownOperation === operation) this.breakCountdownOperation = null;
+    });
+    return operation.promise;
+  }
+
+  private async persistBreakCountdown(
     breakDurationMs: number,
     deadlineMs = Date.now() + breakDurationMs
   ): Promise<void> {
@@ -4190,17 +4217,101 @@ export abstract class TournamentManagerBase {
      */
     if (this.breakCountdownStarted) return;
     const breakGeneration = this.synchronizedBreakStartGeneration;
-    this.breakCountdownStarted = true;
-    this.synchronizedBreakEndsAtMs = deadlineMs;
-    const endsAt = new Date(deadlineMs).toISOString();
+    // A refused/unknown write keeps this same proposal; another caller must
+    // never buy a later deadline by retrying the original break request.
+    if (this.synchronizedBreakEndsAtMs === 0) this.synchronizedBreakEndsAtMs = deadlineMs;
+    const endsAt = new Date(this.synchronizedBreakEndsAtMs).toISOString();
+    const projection = 'id,on_break,break_started_at,break_ends_at';
+    const anchorRead = await supabase
+      .from('tournaments')
+      .select(projection)
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
+    const anchor = anchorRead.data;
+    if (
+      anchorRead.error ||
+      anchor?.id !== this.tournamentId ||
+      anchor.on_break !== true ||
+      typeof anchor.break_started_at !== 'string' ||
+      !Number.isFinite(Date.parse(anchor.break_started_at))
+    )
+      throw anchorRead.error ?? new Error('Tournament Break Anchor Is Unproven');
+    if (
+      this.breakCountdownAnchor?.generation !== breakGeneration ||
+      Date.parse(this.breakCountdownAnchor.startedAt) !== Date.parse(anchor.break_started_at)
+    )
+      throw new Error('Tournament Break Anchor Changed');
+    this.breakCountdownAnchor = { generation: breakGeneration, startedAt: anchor.break_started_at };
+    let receipt: {
+      id?: string;
+      on_break?: boolean;
+      break_started_at?: string;
+      break_ends_at?: string | null;
+    } | null = null;
+    let writeError: unknown;
+    if (
+      anchor.break_ends_at !== null &&
+      Date.parse(anchor.break_ends_at) !== this.synchronizedBreakEndsAtMs
+    )
+      throw new Error('Tournament Break Deadline Changed');
+    if (Date.parse(anchor.break_ends_at ?? '') === this.synchronizedBreakEndsAtMs) receipt = anchor;
     try {
-      await supabase
-        .from('tournaments')
-        .update({ break_ends_at: endsAt })
-        .eq('id', this.tournamentId);
+      if (!receipt) {
+        const result = await supabase
+          .from('tournaments')
+          .update({ break_ends_at: endsAt })
+          .eq('id', this.tournamentId)
+          .eq('on_break', true)
+          .eq('break_started_at', anchor.break_started_at)
+          .is('break_ends_at', null)
+          .select(projection)
+          .maybeSingle();
+        receipt = result.error ? null : result.data;
+        writeError = result.error;
+      }
     } catch (err) {
-      reportError(err, 'TournamentManagerBase.beginBreakCountdown_persist');
+      writeError = err;
     }
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
+    if (!receipt) {
+      // A lost acknowledgement is not permission for another write. Read the
+      // exact durable result once inside this original operation.
+      const result = await supabase
+        .from('tournaments')
+        .select(projection)
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (!result.error) receipt = result.data;
+      else writeError = result.error;
+    }
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
+    if (
+      receipt?.id !== this.tournamentId ||
+      receipt.on_break !== true ||
+      receipt.break_started_at !== anchor.break_started_at ||
+      Date.parse(receipt.break_ends_at ?? '') !== this.synchronizedBreakEndsAtMs
+    ) {
+      const error = writeError ?? new Error('Tournament Break Countdown Is Not Durably Proven');
+      reportError(error, 'TournamentManagerBase.beginBreakCountdown_persist');
+      throw error;
+    }
+    this.breakCountdownStarted = true;
     // The database write began while this manager owned the generation. If its
     // response crosses the stop fence, do not announce a countdown from a
     // manager that no longer owns the tournament.
@@ -9358,6 +9469,194 @@ export abstract class TournamentManagerBase {
     if (this.teardownPromise || this.stopFenceApplied || this.shutdownDrainFenceApplied) return;
     this.shutdownDrainFenceApplied = true;
     this.applyManagerMutationFence(false);
+  }
+
+  private tournamentAbortBoundary: TournamentAbortBoundary | null = null;
+  private tournamentAbortRetirementReleased = false;
+
+  retainsTournamentAbortBoundary(): boolean {
+    return (
+      this.tournamentAbortBoundary !== null &&
+      !this.tournamentAbortRetirementReleased &&
+      this.hasCurrentTournamentLeaseAuthority() &&
+      !this.stopFenceApplied
+    );
+  }
+
+  releaseTournamentAbortBoundary(operationId: string): void {
+    if (this.tournamentAbortBoundary?.request.operation_id !== operationId)
+      throw new Error('tournament_abort_operation_mismatch');
+    this.tournamentAbortRetirementReleased = true;
+  }
+
+  /** Every strong reference must name one exact original object, including
+   * diagnostics and retained qualifier sources that may shadow a live UUID.
+   * Child managers add their own source registries below this boundary.
+   */
+  protected tournamentAbortSourcesMatch(
+    expected: readonly (readonly [string, ServerTableEngine])[]
+  ): boolean {
+    const byId = new Map(expected);
+    for (const map of [
+      this.tableEngines,
+      this.stoppedDiagnosticOriginals,
+      this.satelliteQualifierEngines,
+    ])
+      for (const [id, engine] of map) if (byId.get(id) !== engine) return false;
+    if (this.drainedF06Originals)
+      for (const [id, engine] of this.drainedF06Originals)
+        if (byId.get(id) !== engine) return false;
+    for (const [id, engine] of this.tableEngineRecoveryExpected)
+      if (engine === null || byId.get(id) !== engine) return false;
+    return true;
+  }
+
+  protected tournamentAbortBusinessTailsDrained(): boolean {
+    return !this.isProcessingEliminations && !this.boundaryBalanceInFlight;
+  }
+
+  protected joinTournamentAbortOwnedTails(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  protected tournamentAbortOwnedTailIdentity(): unknown {
+    return null;
+  }
+
+  /** Join only already owned promises, including writers admitted by another
+   * accepted writer while it finishes. No timer, sweep or retry is started.
+   */
+  private async joinTournamentAbortManagerTails(includeStoppedRuns: boolean): Promise<void> {
+    for (;;) {
+      await this.joinTournamentAbortOwnedTails();
+      if (this.lifecycleOperation) await this.lifecycleOperation;
+      await this.drainTableEngineStartJobs();
+      if (includeStoppedRuns) await this.drainTableEngineRunJobs();
+      await this.drainLifecycleJobs();
+      await this.drainEliminationSchedulerJobs();
+      const owned = this.tournamentAbortOwnedTailIdentity();
+      await this.joinTournamentAbortOwnedTails();
+      if (
+        owned === this.tournamentAbortOwnedTailIdentity() &&
+        this.lifecycleOperation === null &&
+        this.tableEngineStartJobs.size === 0 &&
+        this.lifecycleJobs.size === 0 &&
+        this.eliminationSchedulerJobs.size === 0 &&
+        (!includeStoppedRuns || this.tableEngineRunJobs.size === 0)
+      )
+        return;
+    }
+  }
+
+  /** Called only by the explicit, persisted operator request, outside any
+   * dealer/manager callback. Retain this owner and its originals on UNKNOWN.
+   */
+  async acknowledgeTournamentAbortBoundary(request: AbortBoundaryRequest): Promise<unknown> {
+    if (
+      request.tournament_id !== this.tournamentId ||
+      request.current_generation !== this.tournamentLeaseGeneration
+    )
+      throw new Error('tournament_abort_owner_mismatch');
+    if (this.tournamentAbortBoundary) {
+      if (this.tournamentAbortBoundary.request.operation_id !== request.operation_id)
+        throw new Error('tournament_abort_operation_already_owned');
+      // GameServer already read an ineffective current DB certificate. Keep
+      // the same originals but re-prove rather than replaying a stale ACK.
+      return this.tournamentAbortBoundary.run(true);
+    }
+    await this.joinTournamentAbortOwnedTails();
+    const tailIdentity = this.tournamentAbortOwnedTailIdentity();
+    const { data: fresh, error: readError } = await supabase.rpc(
+      'fn_ca_tournament_abort_stop_state',
+      {
+        p_operation_id: request.operation_id,
+        p_tournament_id: this.tournamentId,
+      }
+    );
+    if (
+      readError ||
+      fresh?.ok !== true ||
+      fresh.operation_id !== request.operation_id ||
+      fresh.tournament_id !== this.tournamentId ||
+      !Array.isArray(fresh.tables)
+    )
+      throw new Error('tournament_abort_request_read_unknown');
+    if (
+      fresh.current_generation !== request.current_generation ||
+      !isDeepStrictEqual(fresh.tables, request.tables) ||
+      tailIdentity !== this.tournamentAbortOwnedTailIdentity()
+    )
+      return {
+        state: 'pending',
+        operation_id: request.operation_id,
+        reason: 'original_graph_changed_before_capture',
+      };
+    // Concurrent requests may have joined the same physical preflight.
+    const concurrent = this.tournamentAbortBoundary as TournamentAbortBoundary | null;
+    if (concurrent) {
+      if (concurrent.request.operation_id !== request.operation_id)
+        throw new Error('tournament_abort_operation_already_owned');
+      return concurrent.run(true);
+    }
+    const originals = [...this.tableEngines.entries()];
+    const required = request.tables.filter((table) => table.required);
+    // No physical side effect or original-roster capture precedes a complete
+    // graph. An accepted table move/start may still publish its original
+    // outcome; the same durable request can observe that outcome afterward.
+    if (
+      this.lifecycleOperation !== null ||
+      this.tableEngineStartJobs.size !== 0 ||
+      !this.tournamentAbortBusinessTailsDrained() ||
+      !this.tournamentAbortSourcesMatch(originals) ||
+      required.length === 0 ||
+      required.length !== originals.length ||
+      required.some((table) => !this.tableEngines.has(table.table_id))
+    )
+      return Promise.resolve({
+        state: 'pending',
+        operation_id: request.operation_id,
+        reason: 'original_graph_not_ready',
+      });
+    const current = () =>
+      this.hasCurrentTournamentLeaseAuthority() &&
+      !this.stopFenceApplied &&
+      this.tournamentAbortSourcesMatch(originals) &&
+      this.tableEngines.size === originals.length &&
+      originals.every(
+        ([id, engine]) =>
+          this.tableEngines.get(id) === engine && !this.tableEngineRecoveries.has(engine)
+      );
+    this.tournamentAbortBoundary = new TournamentAbortBoundary(request, originals, {
+      current,
+      joinManagerTails: () => this.joinTournamentAbortManagerTails(false),
+      joinRetiredManagerTails: () => this.joinTournamentAbortManagerTails(true),
+      managerReadyToFence: () => this.tournamentAbortBusinessTailsDrained(),
+      fenceManager: () => this.beginServerShutdownDrain(),
+      managerDrained: () =>
+        this.tournamentAbortBusinessTailsDrained() &&
+        this.shutdownDrainFenceApplied &&
+        !this.running &&
+        this.lifecycleOperation === null &&
+        this.lifecycleJobs.size === 0 &&
+        this.tableEngineStartJobs.size === 0 &&
+        this.eliminationSchedulerJobs.size === 0 &&
+        this.lifecycleTimeouts.size === 0 &&
+        this.lifecycleIntervals.size === 0 &&
+        this.seatMoveQuarantineRefusal() === null,
+      acknowledge: async (tableId, handNumber, evidence) => {
+        const { data, error } = await supabase.rpc('fn_ca_ack_tournament_abort_boundary', {
+          p_operation_id: request.operation_id,
+          p_tournament_id: this.tournamentId,
+          p_table_id: tableId,
+          p_lease_generation: request.current_generation,
+          p_hand_number: handNumber,
+          p_evidence: evidence,
+        });
+        if (error || data?.ok !== true) throw new Error('tournament_abort_ack_unknown_or_refused');
+        return data;
+      },
+    });
+    return this.tournamentAbortBoundary.run();
   }
 
   /** Final shutdown fence, applied only after the between-hands drain. */

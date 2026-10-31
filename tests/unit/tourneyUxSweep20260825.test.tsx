@@ -88,7 +88,7 @@ describe('Item 1 - a running tournament can be watched', () => {
     const src = code(read(DETAILS));
     /* 2026-10-04: the tab's label rides along, because Ranking and Tables now
        open through this one door instead of calling the helper themselves. */
-    expect(src).toMatch(/openTableAsObserver\(navigate, \{ tableId, tableName \}\)/);
+    expect(src).toMatch(/openTableAsObserver\(navigate, \{ tableId, tableName, followPlayer \}\)/);
     expect(src).not.toMatch(/navigate\(`\/table\/\$\{tableId\}`\)/);
   });
 
@@ -136,7 +136,9 @@ describe('Item 1 - a running tournament can be watched', () => {
     }
 
     const contract = code(read(TAB_TYPES));
-    expect(contract).toMatch(/onWatchPlayer\?: \(tableId: string, tableName\?: string\) => void/);
+    expect(contract).toMatch(
+      /onWatchPlayer\?: \(\s*tableId: string,\s*tableName\?: string,\s*followPlayer\?: FollowTournamentPlayer\s*\) => void/
+    );
 
     // Only rows that really have a table become buttons.
     const tab = code(read(RANKING_TAB));
@@ -151,6 +153,7 @@ describe('Item 1 - a running tournament can be watched', () => {
     const page = code(read('src/pages/TournamentPage.tsx'));
     expect(page).toMatch(/<RankingTab\b/);
     expect(page).toMatch(/onWatchPlayer=\{watchPlayerTable\}/);
+    expect(page).toMatch(/openTableAsObserver\(navigate, \{ tableId, tableName, followPlayer \}\)/);
     expect(page).not.toMatch(/TournamentStandings/);
   });
 
@@ -166,7 +169,9 @@ describe('Item 1 - a running tournament can be watched', () => {
     expect(src).toMatch(
       /const watchable = !!onWatchPlayer && entry\.status === 'playing' && !!entry\.table_id/
     );
-    expect(src).toMatch(/onWatchPlayer\?\.\(entry\.table_id as string\)/);
+    expect(src).toMatch(
+      /onWatchPlayer\?\.\(entry\.table_id as string, undefined, \{\s*tournamentId: tournament\.id,\s*userId: entry\.user_id,\s*username: entry\.username,?\s*\}\)/
+    );
   });
 
   it('Ranking rows are clickable whenever the event is LIVE, late reg included', () => {
@@ -518,7 +523,9 @@ describe('Item 9 - the level shown is the level being played', () => {
     expect(src).not.toMatch(/POLL_MS/);
     expect(src).toMatch(/const SAFETY_READ_MS = 300_000;/);
     // A failed read must reach the HUD as a failure, not as a null row.
-    expect(src).toMatch(/getTournament\(this\.tournamentId, \{ throwOnError: true \}\)/);
+    expect(src).toMatch(
+      /getTournament\(this\.tournamentId, \{\s*throwOnError: true,\s*signal: controller\.signal,?\s*\}\)/
+    );
     // The level arrives on both carriers, through the bus, not a private binding.
     expect(src).toMatch(/masterBus\.subscribe\('BLIND_LEVEL_CHANGE'/);
     expect(src).toMatch(/masterBus\.subscribe\('TOURNAMENT_LEVEL_UP'/);

@@ -1,3 +1,13 @@
+import PlayerFollowSubscription, {
+  type FollowDestination,
+} from '../components/table/PlayerFollowSubscription';
+import {
+  movePlayerFollow,
+  readPlayerFollow,
+  samePlayerFollow,
+  writePlayerFollow,
+  type FollowTournamentPlayer,
+} from '../utils/followTournamentPlayer';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { setVisiblePokerTable } from '../lib/visiblePokerTable';
@@ -115,7 +125,12 @@ import {
   lightningCapabilities,
 } from '../lightning/lightningCapabilities';
 import { useLightningDecisions } from '../components/lightning/useLightningDecisions';
-import { getLightningPoolSession } from '../lightning/lightningSession';
+import {
+  getLightningPoolSession,
+  getLightningEntryIntent,
+  registerLightningPoolSession,
+} from '../lightning/lightningSession';
+import { resolveLightningSeatRooms } from '../lightning/lightningSeatRecovery';
 import { anchorsShownByOpenRooms } from '../lightning/lightningAnchorTabs';
 
 // Lazy-load TablePage for code splitting
@@ -144,6 +159,7 @@ const TournamentDetails = lazyWithRetry(() => import('./tournament/TournamentDet
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface TableInstance {
+  followPlayer?: FollowTournamentPlayer;
   id: string;
   name: string;
   stakes: string;
@@ -425,6 +441,7 @@ const tableQuery = (t: TableInstance): string => {
   if (t.name && !/^Table \d+$/.test(t.name)) p.set('name', t.name);
   if (t.stakes) p.set('stakes', t.stakes);
   if (t.gameCode) p.set('code', t.gameCode);
+  writePlayerFollow(p, t.followPlayer);
   const qs = p.toString();
   return qs ? `?${qs}` : '';
 };
@@ -825,6 +842,7 @@ export default function MultiTablePage() {
           isMyTurn: false,
           pot: 0,
           kind: 'table' as const,
+          followPlayer: readPlayerFollow(searchParams),
           // `seated` and `isTournament` stay unset on purpose: a URL proves
           // neither. TABLE_SEATED sets the first, TablePage reports the second.
         },
@@ -1021,6 +1039,22 @@ export default function MultiTablePage() {
     };
     requestSeatResync();
   });
+  useMasterBusSubscription('LIGHTNING_ROOM_OPENED', (event) => {
+    if (event.userId === user?.id && seatReadScopeRef.current.userId === user.id)
+      requestSeatResync();
+  });
+  useEffect(() => {
+    if (!user?.id) return;
+    const recover = () => {
+      if (document.visibilityState === 'visible') requestSeatResync();
+    };
+    window.addEventListener('online', recover);
+    document.addEventListener('visibilitychange', recover);
+    return () => {
+      window.removeEventListener('online', recover);
+      document.removeEventListener('visibilitychange', recover);
+    };
+  }, [user?.id, requestSeatResync]);
   useEffect(() => {
     if (!seatRebuildNotice || deliveredSeatNoticeRef.current === seatRebuildNotice) return;
     deliveredSeatNoticeRef.current = seatRebuildNotice;
@@ -1085,10 +1119,10 @@ export default function MultiTablePage() {
         for (const id of voluntarilyLeftTablesRef.current) {
           if (!returnedIds.has(id)) voluntarilyLeftTablesRef.current.delete(id);
         }
-        const ids = [...returnedIds].filter((id) => !voluntarilyLeftTablesRef.current.has(id));
+        let ids = [...returnedIds].filter((id) => !voluntarilyLeftTablesRef.current.has(id));
         // An authoritative empty seat set still reaches the prune. It needs no
         // metadata query, and is distinct from an unknown or failed seat read.
-        const { data: tblRows, error: tableErr } =
+        const { data: anchorRows, error: tableErr } =
           ids.length > 0
             ? await supabase
                 .from('tables')
@@ -1099,7 +1133,23 @@ export default function MultiTablePage() {
                 )
                 .in('id', ids)
             : { data: [], error: null };
-        if (!isCurrent() || tableErr || !Array.isArray(tblRows)) return;
+        if (!isCurrent() || tableErr || !Array.isArray(anchorRows)) return;
+        // A live seated tab that converts still owns its explicit View Game
+        // choice. Cold recovery and the player's original Join intent restore
+        // the private room; a conversion alone never changes their active game.
+        const keepAnchors = new Set(
+          tablesRef.current
+            .filter(
+              (tab) => isTableTab(tab) && tab.seated === true && !getLightningEntryIntent(tab.id)
+            )
+            .map((tab) => tab.id)
+        );
+        const recovered = await resolveLightningSeatRooms(anchorRows, undefined, keepAnchors);
+        if (!isCurrent()) return;
+        recovered.rooms.forEach((room) => registerLightningPoolSession(room));
+        const tblRows = recovered.rows;
+        const restoredIds = new Map(anchorRows.map((row, index) => [row.id, tblRows[index].id]));
+        ids = ids.map((id) => restoredIds.get(id) ?? id);
         const previousSeatedIds = tablesRef.current
           .filter((tab) => isTableTab(tab) && tab.seated === true)
           .map((tab) => tab.id);
@@ -1272,6 +1322,9 @@ export default function MultiTablePage() {
           // setTables above has not committed yet at this line.
           setTimeout(() => {
             if (!isCurrent()) return;
+            // Seat refreshes must never take focus from an open page.
+            const visible = tablesRef.current[activeIndexRef.current];
+            if (visible && !isTableTab(visible)) return;
             try {
               const lastId = sessionStorage.getItem('ca_last_active_table');
               if (lastId) {
@@ -1554,17 +1607,7 @@ export default function MultiTablePage() {
         seated: true,
       };
 
-      // Dan 2026-08-15: if the player reached this table from a lobby tab
-      // opened by the in-table "+", replace that lobby tab IN PLACE. Appending
-      // instead would leave a dead lobby tab behind and consume one of the
-      // four slots. Oldest lobby tab wins, which is the one they just used.
-      const lobbyIdx = prev.findIndex(isLobbyTab);
-      if (lobbyIdx !== -1) {
-        const next = [...prev];
-        next[lobbyIdx] = { ...seatedTab, name: seatedTab.name };
-        return next;
-      }
-
+      // Seat events never consume a page the player still has open.
       if (prev.length >= MAX_TABLES) {
         // Engine seated us (tournament start, waitlist promotion) but the
         // device is full. Say so — silently dropping this used to leave the
@@ -1701,36 +1744,7 @@ export default function MultiTablePage() {
     const prev = tablesRef.current;
     const existingLobby = prev.findIndex(isLobbyTab);
     if (existingLobby !== -1) {
-      /**
-       * Already have one — focus it rather than stacking duplicates, AND put
-       * it back on the lobby (Dan 2026-08-28 round 2).
-       *
-       * It used to focus the tab and leave `lobbyTournamentId` alone, so "+"
-       * — a button whose entire meaning is "show me the games" — reopened
-       * whatever tournament page the tab happened to be parked on. If that tab
-       * was already active it did nothing visible at all, which reads as the
-       * button being broken. Pressing "+" is a request for the lobby; give
-       * them the lobby.
-       */
-      setTables((cur) =>
-        cur.map((t) =>
-          isLobbyTab(t) ? { ...clearLobbyTournaments(t), lobbyPageHistory: undefined } : t
-        )
-      );
-      /* A page still showing a list an earlier request landed it on is
-         remounted, so a plain request opens on the player's own saved tab.
-         `openLobbyTabOn` emits BEFORE it stamps, so its own request is
-         re-stamped with a newer nonce and the marker right after this. */
-      if (prev[existingLobby]?.lobbyLandedList === true) {
-        const nonce = ++lobbyLandingNonceRef.current;
-        setTables((cur) =>
-          cur.map((t) =>
-            isLobbyTab(t) && t.lobbyLandedList
-              ? { ...t, lobbyLandedList: undefined, lobbyLandingNonce: nonce }
-              : t
-          )
-        );
-      }
+      // Reopening a page focuses it without discarding its navigation state.
       setActiveIndex(existingLobby);
       revealPageTabOffRoute(existingLobby, prev);
       return;
@@ -1803,7 +1817,12 @@ export default function MultiTablePage() {
    */
   useMasterBusSubscription(
     'OPEN_OBSERVE_TABLE',
-    (payload: { tableId: string; tableName?: string; stakes?: string }) => {
+    (payload: {
+      tableId: string;
+      tableName?: string;
+      stakes?: string;
+      followPlayer?: FollowTournamentPlayer;
+    }) => {
       if (!payload?.tableId) return;
       const prev = tablesRef.current;
 
@@ -1819,6 +1838,12 @@ export default function MultiTablePage() {
       const slot = pickObserveSlot(prev, activeIndexRef.current, payload.tableId, MAX_TABLES);
 
       if (slot.action === 'focus') {
+        const next = prev.map((t, i) =>
+          i === slot.index ? { ...t, followPlayer: payload.followPlayer } : t
+        );
+        tablesRef.current = next;
+        setTables(next);
+        activeIndexRef.current = slot.index;
         setActiveIndex(slot.index);
         return;
       }
@@ -1830,6 +1855,7 @@ export default function MultiTablePage() {
 
       const observerTab: TableInstance = {
         id: payload.tableId,
+        followPlayer: payload.followPlayer,
         name: formatGameTitle(payload.tableName) || `Table ${prev.length + 1}`,
         stakes: payload.stakes || '',
         isMyTurn: false,
@@ -1846,10 +1872,81 @@ export default function MultiTablePage() {
          law (10.6.2) — nothing here moves on its own. */
       const next = [...prev];
       next[slot.index] = observerTab;
+      tablesRef.current = next;
+      activeIndexRef.current = slot.index;
       setTables(next);
       setActiveIndex(slot.index);
     }
   );
+
+  // Owner October 30: a player-specific Watch gesture follows that player's seat.
+  // Background follows update their own tab without stealing the current view.
+  const stopPlayerFollow = useCallback(
+    (sourceId: string, target: FollowTournamentPlayer) => {
+      const prev = tablesRef.current;
+      const next = prev.map((t) =>
+        t.id === sourceId && samePlayerFollow(t.followPlayer, target)
+          ? { ...t, followPlayer: undefined }
+          : t
+      );
+      tablesRef.current = next;
+      setTables(next);
+      const active = next[activeIndexRef.current];
+      if (!hidden && active?.id === sourceId)
+        navigate(`/table/${active.id}${tableQuery(active)}`, { replace: true });
+    },
+    [hidden, navigate]
+  );
+  const onFollowEnded = useCallback(
+    (sourceId: string, target: FollowTournamentPlayer) => {
+      stopPlayerFollow(sourceId, target);
+      toast.info(`${target.username} Is No Longer Playing. Following Stopped.`);
+    },
+    [stopPlayerFollow, toast]
+  );
+  const onFollowMove = useCallback(
+    (
+      sourceId: string,
+      target: FollowTournamentPlayer,
+      destination: FollowDestination,
+      sourceSeated: boolean
+    ) => {
+      const result = movePlayerFollow(
+        tablesRef.current.map((t) =>
+          sourceSeated && t.id === sourceId ? { ...t, seated: true } : t
+        ),
+        activeIndexRef.current,
+        sourceId,
+        target,
+        {
+          id: destination.id,
+          name: destination.name,
+          stakes: '',
+          isMyTurn: false,
+          pot: 0,
+          kind: 'table',
+          isTournament: true,
+        } as TableInstance,
+        MAX_TABLES
+      );
+      if (!result) return;
+      const wasActive = tablesRef.current[activeIndexRef.current]?.id === sourceId;
+      tablesRef.current = result.tabs;
+      activeIndexRef.current = result.activeIndex;
+      setTables(result.tabs);
+      setActiveIndex(result.activeIndex);
+      if (wasActive && !hidden) {
+        const active = result.tabs[result.activeIndex];
+        navigate(`/table/${active.id}${tableQuery(active)}`, { replace: true });
+      }
+      if (result.full) toast.warning('Following Stopped. Close A Tab To Watch The New Table.');
+      else toast.info(`Following ${target.username} To ${destination.name}`);
+    },
+    [hidden, navigate, toast]
+  );
+  const onFollowUnavailable = useCallback(() => {
+    toast.warning('Player Location Unavailable. Reopen The Rankings To Check Their Table.');
+  }, [toast]);
 
   // A leave queued behind its hand has now closed the seat: recount the cap.
   useMasterBusSubscription('SEAT_CASHED_OUT', () => {
@@ -2856,8 +2953,8 @@ export default function MultiTablePage() {
   /**
    * Open the lobby tab ON a named list (Dan 2026-10-04).
    *
-   * From a tournament table, "Browse Full Lobby" means that club's
-   * tournaments. OPEN_LOBBY_TAB does everything it always did (reuse the
+   * Explicit tournament-list navigation requests a named list. Generic
+   * Browse Full Lobby restores the saved view. OPEN_LOBBY_TAB reuses the
    * parked lobby tab or append one, announce the cap); this only stamps which
    * list the tab should show. The bus dispatches synchronously, so the lobby
    * tab already exists in the queued state by the time this updater runs, and
@@ -2876,7 +2973,13 @@ export default function MultiTablePage() {
       cur.some(isLobbyTab)
         ? cur.map((t) =>
             isLobbyTab(t)
-              ? { ...t, lobbyGameType: list, lobbyLandingNonce: nonce, lobbyLandedList: true }
+              ? {
+                  ...clearLobbyTournaments(t),
+                  lobbyPageHistory: undefined,
+                  lobbyGameType: list,
+                  lobbyLandingNonce: nonce,
+                  lobbyLandedList: true,
+                }
               : t
           )
         : cur
@@ -3135,9 +3238,9 @@ export default function MultiTablePage() {
         if (stale()) return;
         if (tournamentRows === null) {
           // Stalled or unreadable, not empty: the same exit the cash path
-          // takes, except that the lobby it lands on is the tournament list.
+          // takes: keep the player's last lobby view.
           setQuickJoin({ open: false, loading: false, rows: [] });
-          openLobbyTabOn(lobbyList);
+          masterBus.emit('OPEN_LOBBY_TAB', {});
           return;
         }
         setQuickJoin((q) =>
@@ -3307,12 +3410,11 @@ export default function MultiTablePage() {
       if (stale()) return;
       reportError(err, 'MultiTablePage.quickJoin_read_failed');
       // Query failed - fall back to the lobby tab rather than a dead sheet.
-      // A tournament sheet falls to the tournament list, as its stalled exit does.
+      // Both sheet families restore the player's last lobby view.
       setQuickJoin({ open: false, loading: false, rows: [] });
-      if (sheetTournamentList) openLobbyTabOn(sheetTournamentList);
-      else masterBus.emit('OPEN_LOBBY_TAB', {});
+      masterBus.emit('OPEN_LOBBY_TAB', {});
     }
-  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id, openLobbyTabOn]);
+  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id]);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════
@@ -3418,13 +3520,10 @@ export default function MultiTablePage() {
   );
 
   const handleQuickJoinLobby = useCallback(() => {
-    /* From a tournament table the full lobby is the tournament list (Dan
-       2026-10-04). From a cash table it is exactly what it was. */
-    const list = quickJoin.tournamentLobby;
+    // Generic lobby navigation restores the page and view the player last used.
     closeQuickJoin();
-    if (list) openLobbyTabOn(list);
-    else masterBus.emit('OPEN_LOBBY_TAB', {});
-  }, [closeQuickJoin, openLobbyTabOn, quickJoin.tournamentLobby]);
+    masterBus.emit('OPEN_LOBBY_TAB', {});
+  }, [closeQuickJoin]);
 
   // ─── Update table info (called by child TablePage instances) ─────────
   // P1-2 FIX: bail out when nothing actually changed so setTables returns the
@@ -4578,6 +4677,7 @@ export default function MultiTablePage() {
     const nameFromUrl = searchParams.get('name') || `Table ${prev.length + 1}`;
     const fromUrl: TableInstance = {
       id: routeTableId,
+      followPlayer: readPlayerFollow(searchParams),
       name: nameFromUrl,
       stakes: searchParams.get('stakes') || '',
       gameCode: searchParams.get('code') || gameCodeFromName(nameFromUrl),
@@ -4585,13 +4685,8 @@ export default function MultiTablePage() {
       pot: 0,
       kind: 'table',
     };
-    const lobbyIdx = prev.findIndex(isLobbyTab);
-    if (lobbyIdx !== -1) {
-      const next = [...prev];
-      next[lobbyIdx] = fromUrl;
-      setTables(next);
-      setActiveIndex(lobbyIdx); // focus the table they just picked
-    } else if (prev.length < MAX_TABLES) {
+    // Opening a game adds its tab; the page stays open until manually closed.
+    if (prev.length < MAX_TABLES) {
       setTables([...prev, fromUrl]);
       setActiveIndex(prev.length); // Switch to new table
     } else {
@@ -4962,6 +5057,20 @@ export default function MultiTablePage() {
      * /tournaments/:id.
      */
     <InTabLobbyContext.Provider value={inTabLobbyNav}>
+      {user?.id &&
+        tables
+          .filter((t) => t.followPlayer)
+          .map((t) => (
+            <PlayerFollowSubscription
+              key={`${user.id}:${t.id}:${t.followPlayer!.tournamentId}:${t.followPlayer!.userId}`}
+              tableId={t.id}
+              accountId={user.id}
+              target={t.followPlayer!}
+              onMove={onFollowMove}
+              onEnd={onFollowEnded}
+              onUnavailable={onFollowUnavailable}
+            />
+          ))}
       {/**
        * ─── THE BAR IS PINNED OFF-ROUTE (Dan 2026-08-28 round 3) ─────────────
        *
@@ -5188,6 +5297,19 @@ export default function MultiTablePage() {
           </div>
         )}
 
+        {tables[activeIndex]?.followPlayer && (
+          <div className="mtp-player-follow" role="status">
+            <span>Following {tables[activeIndex].followPlayer!.username}</span>
+            <button
+              type="button"
+              onClick={() =>
+                stopPlayerFollow(tables[activeIndex].id, tables[activeIndex].followPlayer!)
+              }
+            >
+              Stop Following
+            </button>
+          </div>
+        )}
         {/* Batch 5: aggregated session popover */}
         {showSessionAgg && sessionAgg && (
           <>
@@ -5411,6 +5533,7 @@ export default function MultiTablePage() {
                         <TablePage
                           key={table.id}
                           embeddedTableId={table.id}
+                          followingPlayer={!!table.followPlayer}
                           openBuyInOnArrival={table.buyInRequested}
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           isMultiTable={true}
@@ -5678,6 +5801,7 @@ export default function MultiTablePage() {
                         <TablePage
                           key={table.id}
                           embeddedTableId={table.id}
+                          followingPlayer={!!table.followPlayer}
                           openBuyInOnArrival={table.buyInRequested}
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           muted={mutedIds.includes(table.id)}

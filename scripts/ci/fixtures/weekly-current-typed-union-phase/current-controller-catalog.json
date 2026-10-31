@@ -1,0 +1,132 @@
+{
+  "kind": "union_round_receipt_current_catalog",
+  "owner": {
+    "md5": "f34d653a6d05b9245c81336d69e2c453",
+    "metadata": {
+      "oid": "277353657",
+      "proacl": ["postgres=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "prolang": "13573",
+      "proname": "weekly_payout_execute",
+      "prorows": 0,
+      "pronargs": 1,
+      "proowner": "16384",
+      "proconfig": ["search_path=pg_catalog, public", "lock_timeout=1s"],
+      "proretset": false,
+      "prosecdef": true,
+      "prorettype": "3802",
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_run"],
+      "proargtypes": ["2950"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "pronamespace": "24465641",
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    },
+    "signature": "smarter_private.weekly_payout_execute(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.weekly_payout_execute(p_run uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\n SET lock_timeout TO '1s'\nAS $function$\nDECLARE r public.weekly_accounting_payout_pauses%ROWTYPE;item jsonb;res jsonb;prep jsonb;\n round integer;k text;id uuid;ws timestamptz;we timestamptz;receipts jsonb:='[]'::jsonb;\n began timestamptz:=smarter_private.weekly_payout_clock();\nBEGIN\n IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'service_role_required' USING ERRCODE='42501';END IF;\n IF current_setting('statement_timeout')::interval IS DISTINCT FROM interval '240 seconds'\n  OR COALESCE(current_setting('app.weekly_accounting_chunked',true),'')<>'on'\n THEN RAISE EXCEPTION 'weekly_payout_original_240s_tick_required' USING ERRCODE='55000';END IF;\n SELECT * INTO STRICT r FROM public.weekly_accounting_payout_pauses WHERE run_id=p_run;\n -- The original 04:00 invocation waits for its own physical fleet barrier.\n -- Do not lock the row before ACK: that would block the engine transaction\n -- needed to release this very wait. This bounded wait is part of the SAME\n -- original DUE statement, never a repair worker, new payer or renewed lease.\n WHILE r.phase='draining' AND smarter_private.weekly_payout_clock()>=r.money_starts_at\n  AND smarter_private.weekly_payout_clock()+interval '180 seconds'<r.money_deadline_at LOOP\n  PERFORM pg_sleep(0.05);\n  SELECT * INTO STRICT r FROM public.weekly_accounting_payout_pauses WHERE run_id=p_run;\n END LOOP;\n SELECT * INTO STRICT r FROM public.weekly_accounting_payout_pauses WHERE run_id=p_run FOR UPDATE;\n began:=smarter_private.weekly_payout_clock();\n IF r.phase='released' THEN RETURN r.result||jsonb_build_object('duplicate',true);END IF;\n -- The original 180s scope must fit before the absolute money deadline and\n -- the original 240s statement must fit before the gameplay lease. Admission\n -- never renews either clock. Actual start time is retained rather than\n -- calling a late cron invocation an on-time four-o'clock payout.\n IF r.phase<>'ready' OR r.acknowledged_at>=r.money_deadline_at OR r.acknowledged_at IS NULL\n  OR began<r.money_starts_at OR began+interval '180 seconds'>=r.money_deadline_at\n  OR statement_timestamp()+interval '240 seconds'>=r.expires_at\n  OR NOT smarter_private.weekly_payout_claims_match(r.instance_id,r.lease_claims)\n THEN RAISE EXCEPTION 'weekly_payout_not_prepared_and_parked_at_four' USING ERRCODE='55000';END IF;\n IF r.scope_plan IS DISTINCT FROM smarter_private.weekly_payout_scope_plan(r.period_end,began)\n THEN RAISE EXCEPTION 'weekly_payout_prepared_scope_changed' USING ERRCODE='55000';END IF;\n PERFORM public.fn_weekly_accounting_attempt_begin(true);\n -- Revalidate original prepared earning/certificate owners immediately before\n -- any financial capability exists. Changed applicable source evidence must\n -- refuse or be admitted by its original producer, never by a current-rate\n -- rewrite here. No old paid JSON, timestamps or fingerprints are retagged.\n FOR item IN SELECT value FROM jsonb_array_elements(r.scope_plan) LOOP\n  PERFORM public.fn_weekly_accounting_deadline_check();\n  prep:=public.fn_prepare_accounting_week(CASE WHEN item->>'kind'='union' THEN (item->>'id')::uuid END,\n   CASE WHEN item->>'kind'='club' THEN (item->>'id')::uuid END,(item->>'period_start')::timestamptz,(item->>'period_end')::timestamptz);\n  IF prep->>'success' IS DISTINCT FROM 'true' THEN\n   RAISE EXCEPTION 'weekly_payout_precommit_preparation_changed' USING ERRCODE='55000',DETAIL=prep::text;END IF;\n END LOOP;\n UPDATE public.weekly_accounting_payout_pauses SET phase='paying' WHERE run_id=r.run_id;\n -- This outer order is deliberate: ALL club funding, then ALL agent gross\n -- pass-downs, and only then ANY player/horse secondary payment.\n FOR round IN 1..3 LOOP\n  FOR item IN SELECT value FROM jsonb_array_elements(r.scope_plan) LOOP\n   k:=item->>'kind';id:=(item->>'id')::uuid;ws:=(item->>'period_start')::timestamptz;we:=(item->>'period_end')::timestamptz;\n   PERFORM public.fn_weekly_accounting_deadline_check();\n   IF smarter_private.weekly_payout_clock()>=r.money_deadline_at THEN\n    RAISE EXCEPTION 'weekly_payout_absolute_money_deadline' USING ERRCODE='57014';END IF;\n   INSERT INTO smarter_private.weekly_payout_owned_transactions(backend_pid,transaction_id,run_id,scope_kind,scope_id,period_start,period_end,round_no)\n   VALUES(pg_backend_pid(),txid_current(),r.run_id,k,id,ws,we,round)\n   ON CONFLICT(backend_pid,transaction_id)DO UPDATE SET scope_kind=EXCLUDED.scope_kind,scope_id=EXCLUDED.scope_id,\n    period_start=EXCLUDED.period_start,period_end=EXCLUDED.period_end,round_no=EXCLUDED.round_no;\n   IF round=1 THEN\n    -- The original R1 closes and posts its own treasury debit; there is no\n    -- transaction-local debit deferred until slow post-money documents.\n    PERFORM set_config('app.union_close_defer_rake_debit','',true);\n    IF k='union' THEN\n     res:=public.fn_union_weekly_rakeback_close(id,ws,we);\n     IF res->>'success' IS DISTINCT FROM 'true' AND res->>'error' IS DISTINCT FROM 'already_executed' THEN\n      RAISE EXCEPTION 'weekly_payout_original_round1_refused' USING DETAIL=res::text;END IF;\n    ELSE\n     res:=public.fn_bank_standalone_week_rake(id,ws,we);\n     IF res->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'weekly_payout_original_club_bank_refused' USING DETAIL=res::text;END IF;\n    END IF;\n   ELSIF round=2 THEN\n    res:=public.fn_settle_accounting_commission_stage(k,id,ws,we);\n   ELSE\n    res:=public.fn_settle_accounting_rakeback_stage(k,id,ws,we);\n   END IF;\n   IF round IN(2,3) AND (res->>'success' IS DISTINCT FROM 'true' OR res->>'routing_version' IS DISTINCT FROM '3'\n    OR res->>'source_version' IS DISTINCT FROM '2' OR COALESCE((res->>'shortfalls')::integer,0)<>0\n    OR res->>'batch_committed'='true' OR NOT EXISTS(SELECT FROM public.accounting_routed_settlement_runs x\n     WHERE x.scope_kind=k AND x.scope_id=id AND x.period_start=ws AND x.period_end=we AND x.round_no=round AND x.result=(res-'duplicate')))\n   THEN RAISE EXCEPTION 'weekly_payout_original_financial_receipt_required' USING ERRCODE='23514',DETAIL=res::text;END IF;\n   IF k='union' THEN\n    INSERT INTO public.union_settlement_rounds(union_id,period_start,period_end,round_no,round_name,payers,payees,amount,shortfalls,detail)\n    VALUES(id,ws,we,round,CASE round WHEN 1 THEN 'union_to_clubs' WHEN 2 THEN 'club_to_agents' ELSE 'agents_to_players' END,\n     CASE WHEN round=1 THEN 1 END,COALESCE((res->>'payees')::integer,(res->>'clubs_paid')::integer,0),\n     COALESCE((res->>'amount')::numeric,(res->>'total_rakeback')::numeric,0),COALESCE((res->>'shortfalls')::integer,0),res)\n    ON CONFLICT(union_id,period_start,period_end,round_no)DO NOTHING;\n   END IF;\n   receipts:=receipts||jsonb_build_array(jsonb_build_object('scope',item,'round',round,'receipt',res));\n  END LOOP;\n END LOOP;\n PERFORM public.fn_weekly_accounting_deadline_check();\n IF smarter_private.weekly_payout_clock()>=r.money_deadline_at THEN\n  RAISE EXCEPTION 'weekly_payout_absolute_money_deadline' USING ERRCODE='57014';END IF;\n FOR item IN SELECT value FROM jsonb_array_elements(r.scope_plan) LOOP\n  INSERT INTO smarter_private.weekly_payout_financial_receipts(scope_kind,scope_id,period_start,period_end,run_id,original_round_receipts)\n  VALUES(item->>'kind',(item->>'id')::uuid,(item->>'period_start')::timestamptz,(item->>'period_end')::timestamptz,r.run_id,\n   (SELECT jsonb_agg(j ORDER BY (j->>'round')::int) FROM jsonb_array_elements(receipts)j WHERE j->'scope'=item));\n END LOOP;\n DELETE FROM smarter_private.weekly_payout_owned_transactions WHERE backend_pid=pg_backend_pid() AND transaction_id=txid_current();\n PERFORM public.fn_weekly_accounting_attempt_end();\n res:=jsonb_build_object('success',true,'owns_tick',true,'advanced',true,'stage','weekly_payout_financial_complete',\n  'run_id',r.run_id,'scheduled_for',r.money_starts_at,'financial_started_at',began,\n  'financial_finished_at',smarter_private.weekly_payout_clock(),'books_complete',false,'original_receipts',receipts);\n UPDATE public.weekly_accounting_payout_pauses SET phase='released',result=res WHERE run_id=r.run_id;\n RETURN res;\nEND $function$\n"
+  },
+  "table": {
+    "name": "union_settlement_rounds",
+    "owner": "postgres",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "period_start",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "period_end",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "round_no",
+        "type": "integer",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "round_name",
+        "type": "text",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "payers",
+        "type": "integer",
+        "default": "0",
+        "notnull": true
+      },
+      {
+        "name": "payees",
+        "type": "integer",
+        "default": "0",
+        "notnull": true
+      },
+      {
+        "name": "amount",
+        "type": "numeric(20,2)",
+        "default": "0",
+        "notnull": true
+      },
+      {
+        "name": "shortfalls",
+        "type": "integer",
+        "default": "0",
+        "notnull": true
+      },
+      {
+        "name": "detail",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "executed_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      }
+    ],
+    "triggers": null,
+    "constraints": [
+      {
+        "name": "union_settlement_rounds_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "union_settlement_rounds_union_id_period_start_period_end_ro_key",
+        "validated": true,
+        "definition": "UNIQUE (union_id, period_start, period_end, round_no)"
+      }
+    ]
+  },
+  "read_only": "on",
+  "observed_at": "2026-10-30T01:40:06.061707+00:00"
+}

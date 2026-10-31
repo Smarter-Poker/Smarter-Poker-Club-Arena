@@ -1,0 +1,9 @@
+# Preserve existing recovery-announcement refusal signs
+
+The production v3 pending read now preserves certificate counts and exact-run intent presence, but the later missed announcement remains unknown. The same bounded reader previously selected none of the maintained request_recovery_window messages for a newer owner, unproved inspector absence, an unestablished reservation, rate limiting or a fixed announcement result.
+
+Extend only the closed pending v3 category vocabulary. Exact producer literals and validated identifier/reason/timestamp grammar classify four refusal/defer signs and eight fixed-result statuses. All details remain NULL: private release/run identifiers, cause text and announcement timestamps are validated then discarded. The original journal observation time remains. These signs supply no admission, retry, inspector, cleanup or activation authority.
+
+The twelve-row, 8 KiB/five-second journal and 4 KiB transport limits and mandatory request/unit ownership rechecks are unchanged. Late below-budget also-shut chatter remains excluded. Repeated legitimate recovery refusals can evict earlier rows; the native selection regression preserves that limitation and the explicit absence-is-unknown verdict. Earlier silent producer returns remain unknown. No producer, control predicate, runtime, workflow, production call or timer changes.
+
+Five focused regression cases initially report three failures and one error against the previous reader. The complete corrected Python suite passes 71 cases, including real native ERE selection, private-tail refusal and strict transport validation. The existing connected Vitest law requires the exact 71-case execution. Source publication and a separately owned explicit production read remain distinct from engine deployment and full horse qualification.

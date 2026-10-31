@@ -446,6 +446,9 @@ export function useTableEnvironment(
       }
     };
 
+    // A table can mount after the document was already backgrounded.
+    // Do not wait for a second visibility event to pause its animations.
+    handleVisibility();
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);

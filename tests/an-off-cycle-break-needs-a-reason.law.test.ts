@@ -133,7 +133,8 @@ describe('an off-cycle break needs a reason, and the newest release owns it', ()
   it('allows one off-cycle window per rolling hour, decided by the seal under its lock', () => {
     expect(seal).toContain('RECOVERY_WINDOW_MIN_INTERVAL_MS = 3600 * 1000');
     const cause = reserve.indexOf('if not cause:');
-    const limit = reserve.indexOf('if recent_recovery_window(run_id, now_ms):');
+    const limit = reserve.indexOf('if blocker:');
+    expect(reserve).toContain('blocker, eligible_at = recovery_window_eligibility(run_id, now_ms)');
     const write = reserve.indexOf('write_json_atomic(path, value)');
     expect(reserve.indexOf('with SealLock():')).toBeLessThan(cause);
     expect(cause).toBeLessThan(limit);

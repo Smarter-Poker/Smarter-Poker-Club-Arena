@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "cases": [
+    "exact_two_real_owner_DDL5_post15_tx60_lock1_UTC_native_authority_pass",
+    "role_and_JWT_refused",
+    "own_version_replay_refused",
+    "wrong_DDL15_regression_refused",
+    "post_metadata_fault_rolls_back_both_real_replacements",
+    "all_actual_nine_authority_history_financial_GEN_index_guards_grammar_only"
+  ],
+  "native_two_owner_metadata_adapter_inverse": true,
+  "all9_actual_guards_preserved_in_source": true,
+  "financial_and_GEN_runtime_NOT_faked": true,
+  "unallocated_version_adapter_explicit": false,
+  "actual_allocated_version_guard_tested": true,
+  "source_sha256": "ca7016039faab68bce7314c13f8108eb1bf90f71d3ccaa20428819e89a375985",
+  "public_install_or_whole_capacity_claim": false
+}

@@ -4,8 +4,8 @@
  * Three leftovers from the 2026-10-04 review of the "+" sheet:
  *
  *   1. A lobby page a Browse Full Lobby request landed on a tournament list
- *      stayed on that list for a later cash "+", because a plain request only
- *      focused the tab. It is now remounted onto the player's saved tab.
+ *      now stays on its current page when reopened, per the owner's
+ *      October 30 instruction. Explicit list navigation still remounts it.
  *   2. A "+" press whose reads finished after the sheet was dismissed, or
  *      after a newer press, still painted rows or took a lobby exit. Every
  *      press now carries a run number checked after each await.
@@ -20,7 +20,7 @@ import { sliceBetween } from '../helpers/sourceWindow';
 
 const MULTI = readFileSync(resolve(__dirname, '../../src/pages/MultiTablePage.tsx'), 'utf8');
 
-describe('a landed lobby page is remounted by a plain lobby request', () => {
+describe('a landed lobby page stays open on a plain lobby request', () => {
   const reuse = sliceBetween(
     MULTI,
     "useMasterBusSubscription('OPEN_LOBBY_TAB', () => {",
@@ -42,10 +42,10 @@ describe('a landed lobby page is remounted by a plain lobby request', () => {
     expect(consume).not.toContain('lobbyLandedList');
   });
 
-  it('the reuse branch clears the mark and takes a fresh nonce', () => {
-    expect(reuse).toContain('prev[existingLobby]?.lobbyLandedList === true');
-    expect(reuse).toContain('++lobbyLandingNonceRef.current');
-    expect(reuse).toContain('lobbyLandedList: undefined, lobbyLandingNonce: nonce');
+  it('the reuse branch focuses the page without remounting or resetting it', () => {
+    expect(reuse).toContain('setActiveIndex(existingLobby)');
+    expect(reuse).not.toContain('setTables(');
+    expect(reuse).not.toContain('++lobbyLandingNonceRef.current');
   });
 });
 
@@ -76,7 +76,9 @@ describe('a stale "+" press writes nothing', () => {
   it('the failure catch checks before taking a lobby exit', () => {
     const tail = handler.slice(handler.lastIndexOf('} catch {'));
     expect(tail.indexOf('if (stale()) return;')).toBeGreaterThan(-1);
-    expect(tail.indexOf('if (stale()) return;')).toBeLessThan(tail.indexOf('openLobbyTabOn'));
+    expect(tail.indexOf('if (stale()) return;')).toBeLessThan(
+      tail.indexOf("masterBus.emit('OPEN_LOBBY_TAB', {});")
+    );
   });
 
   it('the spin read is timed', () => {

@@ -214,6 +214,7 @@ describe('shipped functionality is still here', () => {
   describe('the publish path cannot be quietly disarmed', () => {
     const publisher = () =>
       readFileSync(root('.github/workflows/publish-club-arena.yml'), 'utf8') +
+      readFileSync(root('.github/workflows/publish-club-arena-client.yml'), 'utf8') +
       '\n' +
       readFileSync(root('.github/workflows/publish-club-arena-transaction.yml'), 'utf8');
 

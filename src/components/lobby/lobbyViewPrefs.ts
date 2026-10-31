@@ -95,7 +95,16 @@ export function isUnsynced(key: string): boolean {
   }
 }
 
-export type LobbyTabKey = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+export type LobbyTabKey =
+  | 'ALL'
+  | 'HOLDEM'
+  | 'OMAHA'
+  | 'LIMIT'
+  | 'MIXED'
+  | 'MTT'
+  | 'SNG'
+  | 'SPIN'
+  | 'SATELLITE';
 export type LobbySortKey =
   | 'recommended'
   | 'stakes_high'
@@ -113,6 +122,7 @@ export interface LobbyViewPrefs {
 }
 
 const VALID_TABS: ReadonlySet<string> = new Set<LobbyTabKey>([
+  'SATELLITE',
   'ALL',
   'HOLDEM',
   'OMAHA',

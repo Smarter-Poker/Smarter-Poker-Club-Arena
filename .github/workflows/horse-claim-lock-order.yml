@@ -15,6 +15,17 @@ on:
     branches: [main]
     paths:
       - supabase/migrations/20261015032612_a_horse_claim_never_waits_on_a_player_lock.sql
+      - supabase/migrations/20261030003124_tournament_rebuy_player_contention_releases_the_event_lane.sql
+      - supabase/migrations/*_tournament_entry_receipts_use_the_charged_club_wallet.sql
+      - supabase/migrations/20260910020626_the_host_club_is_in_its_own_union.sql
+      - supabase/migrations/20260910023919_the_entry_is_charged_to_the_wallet_the_entry_is_stamped_with.sql
+      - scripts/dev/mtt_player_lock_cases.py
+      - scripts/dev/probe-tournament-registration-funding-pg17.py
+      - scripts/dev/tournament_purchase_funding_cases.py
+      - scripts/dev/fixtures/mtt-player-lock/**
+      - scripts/dev/fixtures/tournament-purchase-funding/**
+      - scripts/dev/fixtures/registration-funding/**
+      - scripts/dev/fixtures/satellite-refund/**
       - scripts/ci/fixtures/horse-claim-lock-order/**
       - scripts/ci/test-horse-claim-lock-order.py
       - .github/workflows/horse-claim-lock-order.yml
@@ -58,11 +69,17 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-claim-lock-order.py --output artifacts/horse-claim-lock-order
+      - name: Tournament purchase contention releases the event lane
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          python3 scripts/dev/probe-tournament-registration-funding-pg17.py --purchases-only --mtt-player-lock | tee artifacts/horse-claim-lock-order/mtt-player-lock.log
       - name: Retain the regression evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: horse-claim-lock-order-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/horse-claim-lock-order/RESULTS.json
+          path: artifacts/horse-claim-lock-order/
           retention-days: 7
           if-no-files-found: warn

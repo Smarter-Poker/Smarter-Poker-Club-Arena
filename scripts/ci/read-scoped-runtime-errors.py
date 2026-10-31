@@ -377,6 +377,36 @@ def restart_log_signs(raw):
             'absenceMeans': 'unknown; bounded retained logs may omit the failure'}
 
 
+def kernel_restart_signs(data):
+    """Classify native faults without exporting journal text, addresses or paths.
+
+    A host node process is not necessarily this container. Docker's original
+    event window must be correlated independently; never infer attribution.
+    """
+    rows = []
+    for line in data.splitlines():
+        value = json.loads(line)
+        message = value.get('MESSAGE', '')
+        if not isinstance(message, str):
+            continue
+        timestamp = value.get('__REALTIME_TIMESTAMP')
+        row = {'timestampUs': timestamp if isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}', timestamp) else None,
+               'engineAttribution': 'unproven'}
+        if re.search(r'Out of memory: Killed process|oom-kill:|Memory cgroup out of memory', message):
+            rows.append({**row, 'kind': 'host_oom_observed'})
+            continue
+        fault = re.search(r'^(?:traps: )?([^\s\[\]]{1,64})\[[0-9]{1,10}\]:? (segfault at|general protection fault)\b', message)
+        if not fault:
+            continue
+        module = re.search(r'\bin ([^\s\[\]]{1,80})\[', message)
+        module_class = {'node': 'node', 'libc.so.6': 'libc', 'libstdc++.so.6': 'libstdc++',
+                        'libuv.so.1': 'libuv', 'libcrypto.so.3': 'libcrypto'}.get(module[1] if module else '', 'unknown')
+        rows.append({**row, 'kind': 'host_native_fault_observed',
+                     'fault': 'segmentation_fault' if fault[2] == 'segfault at' else 'general_protection_fault',
+                     'processClass': 'node' if fault[1] == 'node' else 'other', 'moduleClass': module_class})
+    return rows
+
+
 def read_restart_incident(window, raw):
     """Read the fixed engine container and original host window; no mutation."""
     result = {'engineLogSigns': restart_log_signs(raw), 'sources': {},
@@ -429,13 +459,7 @@ def read_restart_incident(window, raw):
                     if stamp and re.search(r'(?<![A-Za-z0-9_-])club-arena-engine(?![A-Za-z0-9_-])', line) and re.search(r'(?i)unhealthy|restart', line):
                         rows.append({'timestamp': stamp[1], 'kind': 'autoheal_engine_restart_observed'})
             else:
-                for line in data.splitlines():
-                    value = json.loads(line)
-                    message = value.get('MESSAGE', '')
-                    if isinstance(message, str) and re.search(r'Out of memory: Killed process|oom-kill:|Memory cgroup out of memory', message):
-                        timestamp = value.get('__REALTIME_TIMESTAMP')
-                        rows.append({'timestampUs': timestamp if isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}', timestamp) else None,
-                                     'kind': 'host_oom_observed', 'engineAttribution': 'unproven'})
+                rows = kernel_restart_signs(data)
             result['sources'][source] = {'status': 'observed', 'records': rows[-40:],
                                          'matchingRecords': len(rows), 'inputBytes': len(data)}
         except Exception:
@@ -501,6 +525,38 @@ def continuation_failure(block):
     return {'category': category, 'phase': phase}
 
 
+def rebuy_decision(block, selected_events):
+    """Only the original input's fixed, scoped diagnostic fields; never arbitrary payloads."""
+    prefix = '[Tournament.horse_rebuy_decision] '
+    if not block or not block[0].startswith(prefix):
+        return None
+    try:
+        value = json.loads(block[0][len(prefix):])
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(value, dict) or value.get('schema') != 'horse-rebuy-decision/v1':
+        return None
+    if not isinstance(value.get('tournamentId'), str) or value.get('tournamentId') not in selected_events or not isinstance(value.get('userId'), str) or not UUID.fullmatch(value['userId']):
+        return None
+    if type(value.get('handNumber')) is not int or not 0 < value['handNumber'] <= 9007199254740991 or type(value.get('choice')) is not bool:
+        return None
+    if not isinstance(value.get('phase'), str) or value.get('phase') not in {'choice', 'deferred', 'expired', 'capacity_deferred', 'purchase_pending', 'purchase_started', 'purchased', 'purchase_unproven'}:
+        return None
+    result = {k: value[k] for k in ('schema', 'tournamentId', 'userId', 'handNumber', 'choice', 'phase')}
+    share = value.get('choiceShare')
+    result['choiceShare'] = share if type(share) in (int, float) and math.isfinite(share) and 0 <= share <= 1 else None
+    for key in ('bustAtMs', 'promptUntilMs', 'dueAtMs', 'startedAtMs', 'observedAtMs', 'remainingMs', 'elapsedMs'):
+        number = value.get(key)
+        if number is not None and (type(number) not in (int, float) or not math.isfinite(number) or abs(number) > 9007199254740991):
+            return None
+        result[key] = number
+    state = value.get('sqlstate')
+    result['sqlstate'] = state if isinstance(state, str) and re.fullmatch(r'[0-9A-Z]{5}', state) else None
+    category = value.get('failureClass')
+    result['failureClass'] = category if isinstance(category, str) and category in {'cutoff', 'funding', 'limit', 'generation', 'seat', 'bounty', 'freeze', 'timeout', 'transport', 'unknown'} else None
+    return result
+
+
 def extract(raw, scopes):
     allowed = {x for s in scopes for x in ([s['tournamentId']] if 'tournamentId' in s else []) + s['tableIds']}
     allowed_tables = {x for s in scopes for x in s['tableIds']}
@@ -529,6 +585,10 @@ def extract(raw, scopes):
                       'symbolicErrors': sorted(set(ERROR.findall(text))),
                       'engineReasons': sorted(set(ENGINE_REASON.findall(text)))
                       if context == 'ServerTableEngine.watchdog_kill' else []}
+            if context == 'Tournament.horse_rebuy_decision':
+                decision = rebuy_decision(block, {s['tournamentId'] for s in scopes if 'tournamentId' in s})
+                if decision is not None:
+                    record['rebuyDecision'] = decision
             if context == 'ServerTableEngine.hand_continuation_unproven':
                 record['continuationFailure'] = continuation_failure(block)
             if context == 'GameServer.stalled_elimination_successor_drain_requested':

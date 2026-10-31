@@ -1,0 +1,22 @@
+[
+  {
+    "md5": "8642c205e23f7724000393487a54e108",
+    "signature": "fn_ca_house_board_allows_automation(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_house_board_allows_automation(p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  -- DERIVED FIRST: the platform club is the house board, and always will be, without anybody\n  -- remembering to add it to a list. This is the half that cannot rot.\n  SELECT COALESCE((SELECT c.is_platform FROM public.clubs c WHERE c.id = p_club_id), false)\n     -- LEGACY, AND IT IS DEBT: four chip house boards that predate clubs.is_platform and carry no\n     -- flag of their own. Give them one and these four lines delete themselves.\n     OR p_club_id = ANY (ARRAY[\n          'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid,   -- Club JAQK\n          'a0000000-0000-0000-0000-000000000001'::uuid,   -- SHARK CLUB\n          'fade0000-0000-0000-0000-000000000001'::uuid,   -- Midway Union\n          '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid,   -- Deep Stack Society\n          -- Lightning Internal Pilot: Dan's ruling 2026-10-14 (20261015032740)\n          'e14bc9f7-736d-425f-8f2c-e78305ebac1d'::uuid\n        ]);\n$function$\n"
+  },
+  {
+    "md5": "a88280fe6aec4d3dcc8f436d8fe7d3bb",
+    "signature": "fn_lightning_table_size_allowed(integer)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_lightning_table_size_allowed(p_handedness integer)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$ SELECT coalesce(p_handedness = 6, false) $function$\n"
+  },
+  {
+    "md5": "95bfa03b98abc72cca5eb76f16378156",
+    "signature": "fn_lightning_template_allowed(text,jsonb)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_lightning_template_allowed(p_template text, p_rules jsonb)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$ SELECT coalesce(p_template IN ('action','madness') AND p_rules->>'template'=p_template,false) $function$\n"
+  },
+  {
+    "md5": "18845e84e706f7526a197951fcec8eb0",
+    "signature": "fn_lightning_variant_allowed(text)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_lightning_variant_allowed(p_variant text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$ SELECT coalesce(lower(p_variant) NOT IN\n  ('short_deck','shortdeck','flo8','plo8','omaha8','o8','pineapple','pineapple_holdem'), false) $function$\n"
+  }
+]

@@ -8,10 +8,13 @@ import {
   readLegacyCensusMemory,
   legacyCensusMemoryAdmission,
   projectLegacyCensus,
+  bindLegacyCensusModules,
+  collectMarkedLegacyCensus,
+  retireLegacyCensusBinding,
 } from '../server/scripts/legacy-engine-checkpoint.mjs';
 
 describe('legacy native heap census projection', () => {
-  it('matches five native concrete identity sets using one broad census without invoking traps', () => {
+  it('matches five native concrete identity sets using one bounded marked census without invoking traps', () => {
     const result = spawnSync(
       process.execPath,
       [
@@ -32,7 +35,9 @@ describe('legacy native heap census projection', () => {
     expect(receipt).toMatchObject({
       ok: true,
       nativeBaselineScans: 5,
-      broadScans: 1,
+      markedUnionScans: 1,
+      bindingRemoved: true,
+      inheritedBehaviorPreserved: true,
       traps: 0,
       admission: true,
       sameProcessAliveAfterCleanup: true,
@@ -41,6 +46,115 @@ describe('legacy native heap census projection', () => {
     });
     expect(receipt.exactSets).toHaveLength(5);
     expect(receipt.exactIdentityEquality).toEqual([true, true, true, true, true]);
+  });
+
+  it.each(['connect', 'query', 'deferred', 'disconnect', 'expired', 'restore'])(
+    'restores every prototype and releases its own binding on %s failure',
+    (failure) => {
+      class Shared {
+        inherited() {
+          return 19;
+        }
+      }
+      const classes = [
+        class A {},
+        class B extends Shared {},
+        class C extends Shared {},
+        class D {},
+        class E {},
+      ];
+      const tops = [
+        classes[0].prototype,
+        Shared.prototype,
+        classes[3].prototype,
+        classes[4].prototype,
+      ];
+      const modules = {
+        gameServer: { GameServer: classes[0] },
+        engine: { ServerTableEngine: classes[1] },
+        manager: { TournamentManager: classes[2] },
+        lightningWorker: { LightningClusterWorker: classes[3] },
+        lightningHost: { LightningHandHost: classes[4] },
+      };
+      const key = '__legacyEngineCensus_22222222222222222222222222222222';
+      let restoreAttempts = 0;
+      const object = Object.create(Object);
+      object.setPrototypeOf = (target: object, parent: object) => {
+        if (parent === Object.prototype) {
+          restoreAttempts++;
+          if (failure === 'restore' && target === tops[0])
+            throw Error('synthetic restoration refusal');
+        }
+        return Object.setPrototypeOf(target, parent);
+      };
+      class NativeSession {
+        connect() {
+          if (failure === 'connect') throw Error('synthetic connect failure');
+        }
+        post(
+          method: string,
+          params: Record<string, string>,
+          callback: (error: Error | null, result?: unknown) => void
+        ) {
+          if (method === 'Runtime.evaluate')
+            return callback(null, { result: { objectId: 'marker' } });
+          if (method === 'Runtime.queryObjects') {
+            expect(new classes[1]().inherited()).toBe(19);
+            if (failure === 'query') return callback(Error('synthetic query failure'));
+            if (failure === 'deferred') return;
+            return callback(null, { objects: { objectId: 'native' } });
+          }
+          vm.runInContext(`(${params.functionDeclaration})`, context).call([]);
+          callback(null, { result: { value: true } });
+        }
+        disconnect() {
+          if (failure === 'disconnect') throw Error('synthetic disconnect failure');
+        }
+      }
+      const context: vm.Context = vm.createContext({
+        Object: object,
+        Date,
+        process: {
+          getBuiltinModule: (name: string) =>
+            name === 'node:inspector' ? { Session: NativeSession } : process.getBuiltinModule(name),
+        },
+      });
+      const bind = vm.runInContext(`(${bindLegacyCensusModules.toString()})`, context);
+      const collect = vm.runInContext(`(${collectMarkedLegacyCensus.toString()})`, context);
+      const deadline = Date.now() + 5000;
+      bind.call(modules, key, deadline);
+      if (failure === 'expired') context.Date = { now: () => deadline + 1 };
+      try {
+        expect(() => collect(key, deadline)).toThrow();
+        expect(Object.hasOwn(context, key)).toBe(false);
+        if (failure === 'restore') {
+          expect(restoreAttempts).toBe(tops.length);
+          expect(
+            tops.slice(1).every((top) => Object.getPrototypeOf(top) === Object.prototype)
+          ).toBe(true);
+        } else
+          expect(tops.every((top) => Object.getPrototypeOf(top) === Object.prototype)).toBe(true);
+      } finally {
+        for (const top of tops) Object.setPrototypeOf(top, Object.prototype);
+      }
+    }
+  );
+
+  it('retires only its exact unentered binding, preserving foreign or active ownership', () => {
+    const context = vm.createContext({ process, Object, Date });
+    const bind = vm.runInContext(`(${bindLegacyCensusModules.toString()})`, context);
+    const retire = vm.runInContext(`(${retireLegacyCensusBinding.toString()})`, context);
+    const key = '__legacyEngineCensus_33333333333333333333333333333333';
+    const deadline = Date.now() + 5000;
+    bind.call({}, key, deadline);
+    expect(() => bind.call({}, key, deadline)).toThrow('native census binding refused');
+    expect(() => retire(key, deadline + 1)).toThrow();
+    expect(retire(key, deadline)).toBe(true);
+    expect(retire(key, deadline)).toBe(true);
+    bind.call({}, key, deadline);
+    Object.defineProperty(context[key], 'marker', { value: {} });
+    expect(() => retire(key, deadline)).toThrow('native census binding is not unentered');
+    expect(Object.hasOwn(context, key)).toBe(true);
   });
 
   it('refuses excessive prototype diversity or depth instead of omitting owners or growing an unbounded cache', () => {

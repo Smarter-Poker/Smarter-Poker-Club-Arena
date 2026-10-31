@@ -34,7 +34,11 @@ vi.mock('../../src/components/stats/SessionHistory', () => ({ default: () => nul
 vi.mock('../../src/components/stats/AdvancedStatsSummary', () => ({ default: () => null }));
 vi.mock('../../src/components/stats/LeakPanel', () => ({ default: () => null }));
 vi.mock('../../src/components/agent/DownlineRakePanel', () => ({
-  default: () => <div>Downline Panel Rendered</div>,
+  default: ({ liveRevision, viewerId }: { liveRevision?: number; viewerId?: string }) => (
+    <div data-live-revision={liveRevision} data-viewer-id={viewerId}>
+      Downline Panel Rendered
+    </div>
+  ),
 }));
 
 import OverviewTab from '../../src/pages/stats/OverviewTab';
@@ -465,6 +469,33 @@ describe('the Rake tab tells a failed read from an empty ledger (defects 1 and 2
     isOwnProfile: true,
     panelResetKey: 'k',
   };
+
+  it('forwards the parent record revision through the lazy downline boundary', async () => {
+    const agentRoles = [
+      {
+        club_id: 'club-1',
+        club_name: 'Club',
+        role: 'agent' as const,
+        agent_id: 'agent-1',
+        is_overseer: false,
+      },
+    ];
+    const view = render(
+      <RakeTab {...base} agentRoles={agentRoles} liveRevision={0} viewerId="viewer-a" />
+    );
+    expect(await screen.findByText('Downline Panel Rendered')).toHaveAttribute(
+      'data-live-revision',
+      '0'
+    );
+    view.rerender(
+      <RakeTab {...base} agentRoles={agentRoles} liveRevision={3} viewerId="viewer-b" />
+    );
+    expect(screen.getByText('Downline Panel Rendered')).toHaveAttribute('data-live-revision', '3');
+    expect(screen.getByText('Downline Panel Rendered')).toHaveAttribute(
+      'data-viewer-id',
+      'viewer-b'
+    );
+  });
 
   it('a successful read of nothing is the designed empty ledger', () => {
     render(<RakeTab {...base} rakeStats={EMPTY_RAKE} />);

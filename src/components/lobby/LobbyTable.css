@@ -2106,6 +2106,15 @@ abbr.lt-variant[title] {
   object-fit: contain;
 }
 
+.lobby-table tr[data-kind='cash'][data-lightning-format='true'] {
+  outline: 2px solid #f4f7fb;
+  outline-offset: -2px;
+  box-shadow: 0 0 5px rgb(244 247 251 / 45%);
+}
+.lobby-table tr[data-kind='cash'][data-lightning-format='true'].is-cursor {
+  outline-color: #45adff;
+}
+
 /* October 31 event schema. The row's format owns its rail; selection and a
    guarantee never repaint black glass with the retired amber/gold wash. */
 .lobby-table tr[data-kind]:not([data-kind='cash']) {
@@ -2154,8 +2163,24 @@ abbr.lt-variant[title] {
   border-color: var(--accent-red, #f02849);
   box-shadow: none;
 }
+/* Paint at the cell layer so opaque cell backgrounds cannot cover the frame. */
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-featured td {
+  box-shadow:
+    inset 0 2px 0 var(--accent-red, #f02849),
+    inset 0 -2px 0 var(--accent-red, #f02849);
+}
 .lobby-table tr[data-kind]:not([data-kind='cash']).is-featured td:first-child {
-  box-shadow: inset 6px 0 0 var(--tournament-row-accent);
+  box-shadow:
+    inset 0 2px 0 var(--accent-red, #f02849),
+    inset 0 -2px 0 var(--accent-red, #f02849),
+    inset 2px 0 0 var(--accent-red, #f02849),
+    inset 6px 0 0 var(--tournament-row-accent);
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-featured td:last-child {
+  box-shadow:
+    inset 0 2px 0 var(--accent-red, #f02849),
+    inset 0 -2px 0 var(--accent-red, #f02849),
+    inset -2px 0 0 var(--accent-red, #f02849);
 }
 .lobby-table tr[data-kind]:not([data-kind='cash']).is-featured .lt-name__line1 {
   color: var(--accent-red, #f02849);
@@ -2182,4 +2207,29 @@ abbr.lt-variant[title] {
   .lobby-table tr[data-kind]:not([data-kind='cash']).is-featured {
     border-left-color: var(--accent-red, #f02849);
   }
+}
+
+/* Lightning frames share the cells' paint layer in both schedule layouts. */
+.lobby-table tr[data-kind='cash'][data-lightning-format='true'] {
+  --lightning-frame-ink: #f4f7fb;
+}
+.lobby-table tr[data-kind='cash'][data-lightning-format='true'].is-cursor {
+  --lightning-frame-ink: #45adff;
+}
+.lobby-table tr[data-kind='cash'][data-lightning-format='true'] td {
+  box-shadow:
+    inset 0 2px 0 var(--lightning-frame-ink),
+    inset 0 -2px 0 var(--lightning-frame-ink);
+}
+.lobby-table tr[data-kind='cash'][data-lightning-format='true'] td:first-child {
+  box-shadow:
+    inset 0 2px 0 var(--lightning-frame-ink),
+    inset 0 -2px 0 var(--lightning-frame-ink),
+    inset 2px 0 0 var(--lightning-frame-ink);
+}
+.lobby-table tr[data-kind='cash'][data-lightning-format='true'] td:last-child {
+  box-shadow:
+    inset 0 2px 0 var(--lightning-frame-ink),
+    inset 0 -2px 0 var(--lightning-frame-ink),
+    inset -2px 0 0 var(--lightning-frame-ink);
 }

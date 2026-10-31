@@ -249,14 +249,29 @@ test('both executable publisher predicates reject CI markers even when ancestry 
   }
 });
 
-test('only the two PR CI build steps select validation-only provenance', () => {
+test('only the production check and two exclusive PR harness build paths select validation-only provenance', () => {
   const ci = parse(readFileSync(path.join(sourceRoot, '.github/workflows/ci.yml'), 'utf8')) as {
-    jobs: Record<string, { steps?: Array<{ run?: string; env?: Record<string, string> }> }>;
+    jobs: Record<
+      string,
+      { if?: string; steps?: Array<{ if?: string; run?: string; env?: Record<string, string> }> }
+    >;
   };
   const builds = Object.values(ci.jobs)
     .flatMap((job) => job.steps || [])
     .filter((step) => step.run === 'npm run build:ci');
-  expect(builds).toHaveLength(2);
+  expect(builds).toHaveLength(3);
+  expect(
+    Object.entries(ci.jobs)
+      .filter(([, job]) => job.steps?.some((step) => step.run === 'npm run build:ci'))
+      .map(([name]) => name)
+  ).toEqual(['build', 'css-beats-build', 'css-beats-e2e']);
+  const producer = ci.jobs['css-beats-build'];
+  const browser = ci.jobs['css-beats-e2e'];
+  expect(producer.if).toBe(`${browser.if} && needs.changes.outputs.server == 'true'`);
+  expect(producer.steps?.find((step) => step.run === 'npm run build:ci')?.if).toBeUndefined();
+  expect(browser.steps?.find((step) => step.run === 'npm run build:ci')?.if).toBe(
+    "needs.changes.outputs.server != 'true'"
+  );
   for (const step of builds) {
     const expression = step.env?.CA_BUILD_PURPOSE;
     expect(expression).toMatch(/^\$\{\{.*\}\}$/);

@@ -877,6 +877,21 @@ describe('a real break shows its own countdown', () => {
     expect(screen.getByText('9:00')).toBeTruthy();
   });
 
+  it('does not call an early Free Buy offer a pause before the engine parks the field', async () => {
+    fx.tournamentAnswer = () =>
+      ok(
+        running({
+          addon_from_start: true,
+          add_on_available: true,
+          addon_period_started_at: iso(Date.now() - 3600000),
+          addon_period_ends_at: iso(Date.now() + 45000),
+        })
+      );
+    await mount();
+    expect(screen.queryByText('Break')).toBeNull();
+    expect(screen.getByText('Next')).toBeTruthy();
+  });
+
   it('shows the add-on break at the end of the persisted add-on window', async () => {
     fx.tournamentAnswer = () =>
       ok(

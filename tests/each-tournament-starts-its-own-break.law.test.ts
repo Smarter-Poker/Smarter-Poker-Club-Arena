@@ -70,8 +70,12 @@ describe('each tournament starts its own break', () => {
   });
 
   it('the table break clock is told the phase and the real end, and shows Last Hand until then', () => {
-    expect(MODALS).toMatch(/phase=\{tournamentBreak\.phase \?\? 'last_hand'\}/);
-    expect(MODALS).toMatch(/breakEndsAtMs=\{tournamentBreak\.breakEndsAtMs \?\? null\}/);
+    expect(MODALS).toMatch(
+      /phase=\{addOnBreakNotice \? 'counting_down' : \(tournamentBreak\.phase \?\? 'last_hand'\)\}/
+    );
+    expect(MODALS).toMatch(
+      /breakEndsAtMs=\{addOnBreakNotice\?\.endsAtMs \?\? tournamentBreak\.breakEndsAtMs \?\? null\}/
+    );
     expect(SCREEN).toContain(
       "countingDown ? `Break: ${formatTime(displayTime)}` : 'Break: Last Hand'"
     );

@@ -218,12 +218,8 @@ export function classifyAddOnBreakHold(input: {
 }): AddOnBreakHold {
   const breakEndsAt = Date.parse(String(input.addonPeriodEndsAt ?? ''));
   if (!Number.isFinite(breakEndsAt)) return { held: false, reason: 'no persisted add-on window' };
-  const configured = Number(input.addonBreakMinutes ?? 1);
-  const minutes = Math.min(
-    10,
-    Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : 1)
-  );
-  const breakStartedAt = breakEndsAt - minutes * 60_000;
+  const minutes = 1;
+  const breakStartedAt = breakEndsAt - 60_000;
   if (
     !Number.isFinite(input.silenceStartedAt) ||
     !Number.isFinite(input.observedAt) ||

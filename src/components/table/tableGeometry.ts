@@ -422,7 +422,7 @@ export const CHIP_COLLECT_FRACTION = 0.9;
  *
  * Readability update, October 12: the plate fills the seat and is at least
  * 48px tall on phones and 54px otherwise. The enlarged pod bounds below
- * preserve chip and dealer-marker clearance. The hero keeps its avatar ratio
+ * preserve chip and dealer-marker clearance. All seats now use the former hero size
  * and now shares the text-width floor with every other player.
  *
  * NOT MODELLED, deliberately: the action label, the position chip and the
@@ -456,41 +456,34 @@ export const SEAT_POD_LADDER: ReadonlyArray<{
  * `outboardCardSide` gives in tableSeatGeometry.ts: an index means a different
  * chair on every ring.
  */
+/** One shared avatar slot for the hero, top seats and side seats. */
+export function seatAvatarSizePx(
+  viewportWidthPx: number,
+  canvasWidthPx: number,
+  height?: number
+): number {
+  const full = Math.min(124, Math.max(50, canvasWidthPx * 0.158)) * (4 / 3);
+  if (viewportWidthPx > 480 || !height || height <= canvasWidthPx) return full;
+  const fit =
+    viewportWidthPx <= 340
+      ? Math.max(32, 32 + (height - 324) * 0.75)
+      : Math.max(36, 40 + (height - 324) * 0.25);
+  return Math.min(full, fit);
+}
+
 export function seatPodPx(
   viewportWidthPx: number,
-  isHero: boolean,
+  _isHero: boolean,
   canvasWidthPx?: number,
-  ring?: { seats?: number; canvasHeightPx?: number }
+  _ring?: { seats?: number; canvasHeightPx?: number }
 ): Size {
-  /* DENSE RINGS ON A PHONE (Dan 2026-10-22) - mirrors the rule of the same
-     name at the foot of SeatSlot.css: a 7-9 max villain pod on a portrait
-     phone is sized from the smaller of the felt's width and its height.
-     Include the production phone's desktop-reference viewport, matching the
-     existing portrait card-lane boundary and the CSS media query. */
-  if (
-    !isHero &&
-    viewportWidthPx <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX &&
-    canvasWidthPx &&
-    Number.isFinite(canvasWidthPx) &&
-    (ring?.seats ?? 0) >= 7
-  ) {
-    const h = ring?.canvasHeightPx && ring.canvasHeightPx > 0 ? ring.canvasHeightPx : 600;
-    const avatar = Math.min(52, Math.max(34, Math.min(canvasWidthPx * 0.14, h * 0.085)));
-    const minWidth = Math.min(112, Math.max(66, canvasWidthPx * 0.235));
-    // 11px name + 13px stack at 1.3 line height, 2px pads, 1.5px borders.
-    const plateHeight = Math.max(36, (11 + 13) * 1.3 + 4 + 3);
-    return {
-      w: Math.max(minWidth, avatar * 1.143),
-      h: avatar + plateHeight - Math.max(3, avatar * 0.0714),
-    };
-  }
   const rung =
     SEAT_POD_LADDER.find((r) => viewportWidthPx <= r.maxViewportWidthPx) ??
     SEAT_POD_LADDER[SEAT_POD_LADDER.length - 1];
-  const pod = isHero ? rung.hero : rung.villain;
+  const pod = rung.hero;
   if (!canvasWidthPx || !Number.isFinite(canvasWidthPx)) return pod;
-  const avatar = Math.min(124, Math.max(50, canvasWidthPx * 0.158));
-  const proportionalWidth = isHero ? avatar * (4 / 3) * (8 / 7) : avatar * 1.143;
+  const slot = seatAvatarSizePx(viewportWidthPx, canvasWidthPx, _ring?.canvasHeightPx);
+  const proportionalWidth = slot * (8 / 7);
   const minWidth = Math.min(112, Math.max(66, canvasWidthPx * 0.235));
   const mobile = viewportWidthPx <= 640;
   const minimumHeight = mobile ? Math.min(48, Math.max(40, canvasWidthPx * 0.105)) : 54;
@@ -499,7 +492,6 @@ export function seatPodPx(
   const padding = mobile ? Math.min(7, Math.max(3, canvasWidthPx * 0.012)) : 8;
   // Two 1.3-line-height lines, both vertical pads and the 1.5px border.
   const plateHeight = Math.max(minimumHeight, (nameFont + stackFont) * 1.3 + padding * 2 + 3);
-  const slot = isHero ? avatar * (4 / 3) : avatar;
   return {
     w: Math.max(minWidth, proportionalWidth),
     h: slot + plateHeight - Math.max(3, slot * 0.0714),
@@ -530,35 +522,63 @@ export function fitSeatToViewport(
   // occupy, so a top player's plate and tag landed on the high side player's
   // tag and bounty. They now keep their ring x (27/73 on 7-9 max), which puts
   // them over the top of the rail, clear of both side columns.
-  const portraitPhone = viewportWidthPx <= 480 && canvas.h > canvas.w;
+  const portraitPhone =
+    viewportWidthPx <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX && canvas.h > canvas.w;
   // Full-width spectator caps keep their desktop ring positions. The very
   // shortest phones retain the separate compact cap lanes.
   const desktopCaps = portraitPhone && canvas.portraitTaper === 0 && viewportWidthPx > 340;
   // A top cap also stays inboard of the side column, which on a phone is a
   // pod pinned to the screen edge: its far edge is at 2 + pod.w px, and the
   // cap keeps 4px of air beyond it (only binds on the narrowest phones).
-  const capClearX = ((2 + pod.w + 4 + pod.w / 2 - canvasLeftPx) / canvas.w) * 100;
+  // Reserve the fixed maximum tabled-hand lane even before a reveal. Equal
+  // hero-size top plates must not force the side player's cards into its bet.
+  const sideLane =
+    maxPlayers >= 7
+      ? Math.max(
+          pod.w,
+          tabledCardWidthPx(canvas.w, viewportWidthPx, viewportWidthPx <= 480, maxPlayers, true) *
+            3.5 +
+            8
+        )
+      : pod.w;
+  const capClearX = Math.min(
+    // Reserve the shared bust footprint and a complete wager between the top seats.
+    (((viewportWidthPx -
+      seatAvatarSizePx(viewportWidthPx, canvas.w, canvas.h) * 1.45 -
+      Math.max(42, canvas.w * 0.12)) /
+      2 -
+      canvasLeftPx) /
+      canvas.w) *
+      100,
+    50 - ((pod.w + 4) * 50) / canvas.w,
+    ((2 + sideLane + 4 + pod.w / 2 - canvasLeftPx) / canvas.w) * 100
+  );
   // The 320px nine-seat ring needs separate cap and side lanes.
   const compactNine = portraitPhone && viewportWidthPx <= 340 && maxPlayers === 9;
   const targetX =
-    portraitPhone && seat.y >= 20 && seat.y < 100
+    portraitPhone && viewportWidthPx > 480 && seat.y >= 80 && seat.y < 100
       ? seat.x < 50
-        ? minX
-        : maxX
-      : portraitPhone &&
-          !desktopCaps &&
-          seat.y < 20 &&
-          seat.x !== 50 &&
-          canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX &&
-          !compactNine
+        ? Math.max(minX, 14)
+        : Math.min(maxX, 86)
+      : portraitPhone && seat.y >= 20 && seat.y < 100
         ? seat.x < 50
-          ? 15
-          : 85
-        : portraitPhone && !desktopCaps && seat.y < 20 && seat.x !== 50
+          ? minX
+          : maxX
+        : portraitPhone &&
+            !desktopCaps &&
+            seat.y < 20 &&
+            seat.x !== 50 &&
+            canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX &&
+            !compactNine &&
+            maxPlayers < 7
           ? seat.x < 50
-            ? Math.min(50, Math.max(seat.x, capClearX))
-            : Math.max(50, Math.min(seat.x, 100 - capClearX))
-          : seat.x;
+            ? 15
+            : 85
+          : portraitPhone && !desktopCaps && seat.y < 20 && seat.x !== 50
+            ? seat.x < 50
+              ? Math.min(50, Math.max(seat.x, capClearX))
+              : Math.max(50, Math.min(seat.x, 100 - capClearX))
+            : seat.x;
   const x = Math.max(minX, Math.min(maxX, targetX));
   // Dan 2026-10-21, same report: on a phone the side column is a stack of
   // whole pods (tag, avatar, plate), and the lower side chair sat 24.5 points
@@ -569,20 +589,29 @@ export function fitSeatToViewport(
   // to even the column.
   // Equal 29.75-point gaps between the three side chairs leave room for
   // each existing avatar, plate and action label on the 324px canvas.
+  const fullPortraitRing =
+    maxPlayers >= 7 &&
+    (viewportWidthPx > 480 || canvas.portraitTaper === 0) &&
+    viewportWidthPx <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX &&
+    canvas.h > canvas.w;
   const y =
-    compactNine && canvas.h <= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX && seat.y >= 20 && seat.y < 100
-      ? seat.y < 35
-        ? 23
-        : seat.y < 70
-          ? 52.75
-          : 82.5
-      : portraitPhone &&
-          canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
-          seat.x !== 50 &&
-          seat.y > 50 &&
-          seat.y < 70
-        ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
-        : seat.y;
+    fullPortraitRing && seat.y >= 50 && seat.y < 100
+      ? seat.y < 70
+        ? 67
+        : 94
+      : compactNine && canvas.h <= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX && seat.y >= 20 && seat.y < 100
+        ? seat.y < 35
+          ? 23
+          : seat.y < 70
+            ? 52.75
+            : 82.5
+        : portraitPhone &&
+            canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
+            seat.x !== 50 &&
+            seat.y > 50 &&
+            seat.y < 70
+          ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
+          : seat.y;
   return x === seat.x && y === seat.y ? seat : { ...seat, x, y };
 }
 

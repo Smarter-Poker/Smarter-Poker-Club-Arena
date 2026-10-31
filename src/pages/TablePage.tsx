@@ -653,7 +653,7 @@ import {
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
-import { submitTableDecision } from '../lib/tableActionDecision';
+import { submitTableDecision, tableDecisionIsReady } from '../lib/tableActionDecision';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 import { visibleTimeBankAllowance } from '../utils/timeBankAllowanceView';
@@ -7358,6 +7358,16 @@ function LiveTablePage({
    * clock costs them anything - it just never prompts them for a turn the
    * engine is already taking on their behalf.
    */
+  // Retention can keep a real actor visible while withholding its decision
+  // capability. Keep its existing clock running, but offer no unsendable input.
+  // The original retained-ready publication supplies a fresh authoritative token.
+  const heroDecisionReady = tableDecisionIsReady({
+    actionContext: tableState.actionContext,
+    allowContextless: Boolean(lightningRoom),
+    clientStateStale:
+      !tableState.players[tableState.heroSeat - 1] ||
+      tableState.players[tableState.heroSeat - 1]?.status === 'folded',
+  });
   const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;
 
   /**
@@ -24679,7 +24689,13 @@ function LiveTablePage({
       const staleHero =
         action !== 'fold' &&
         (!live.players[live.heroSeat - 1] || live.players[live.heroSeat - 1]?.status === 'folded');
-      if ((!lightningRoomRef.current && !live.actionContext) || staleHero) {
+      if (
+        !tableDecisionIsReady({
+          actionContext: live.actionContext,
+          allowContextless: Boolean(lightningRoomRef.current),
+          clientStateStale: staleHero,
+        })
+      ) {
         try {
           if (tableId) {
             await submitActionWithToast(tableId, userId, action, amount, 'panel-missing-decision');
@@ -24910,7 +24926,7 @@ function LiveTablePage({
        fields are 0, `0 === 0` made this true and the number keys armed a raise
        on a table where hero had no hand. That is the identical false-trigger the
        note on isHeroTurnContext documents. */
-    isHeroTurn: isHeroTurnContext,
+    isHeroTurn: isHeroTurnContext && heroDecisionReady,
     isSizingOpen: raiseIntent.open,
     isSpectator: !heroAtTable,
     isModalOpen:
@@ -29409,6 +29425,7 @@ function LiveTablePage({
             tableState.currentPlayerSeat > 0 &&
             tableState.currentPlayerSeat === tableState.heroSeat &&
             tableState.isHandInProgress &&
+            heroDecisionReady &&
             /* "only after all cards are dealt out does the action start" —
                released by DealAnimation.onComplete, or by the 2.6s ceiling in
                beginDealHold if the animation never reports back. */

@@ -219,8 +219,23 @@ export function useProtectedCardLayout(
           placeProtectedCardRow(candidate, others, bounds, cards.length >= 5 ? 3 : 4, ownsIt) ??
           placeProtectedCardRow(candidate, others, bounds, 0, ownsIt) ??
           placeProtectedCardRow(candidate, others, bounds);
+        // Larger, equal-size pods still own their shown cards. Prefer the
+        // avatar directly above the plate to the neighbouring betting lane.
+        const plate = seat?.querySelector('.seat__info')?.getBoundingClientRect();
+        const avatarAnchor =
+          seat &&
+          mineAt &&
+          plate &&
+          window.innerWidth <= 768 &&
+          window.innerHeight > window.innerWidth
+            ? {
+                ...box,
+                left: mineAt.left + mineAt.width / 2 - box.width / 2,
+                top: plate.top - box.height - 3 * scale,
+              }
+            : box;
         let natural = box;
-        let next = place(box);
+        let next = place(avatarAnchor);
         // Shorter tabled rows that cannot stay at their own player
         // at full spacing closes up, a step at a time, before it is allowed to
         // leave: every card keeps the board's size and its rank and suit
@@ -314,12 +329,35 @@ export function useProtectedCardLayout(
         // Every tabled hand (Hold'em through PLO6) keeps this slot, spacing and
         // size for the rest of the hand; only a new hand or a real change in
         // the table's own geometry may place it again.
-        settled.current.rows.set(row, row.style.translate || '');
+        // Deal/flip transforms are transient geometry. The existing animation
+        // completion event performs the final placement; only that resting
+        // result is retained through later board runouts.
+        const animating = (row.getAnimations?.({ subtree: true }) ?? []).some(
+          (animation) =>
+            animation.effect?.getComputedTiming().iterations !== Infinity &&
+            animation.playState !== 'finished' &&
+            animation.playState !== 'idle'
+        );
+        if (!animating) settled.current.rows.set(row, row.style.translate || '');
       }
     };
     const place = () => {
       refreshGeometry();
       resetWagers();
+      // Full names may wrap. Share the tallest natural panel across this ring
+      // so a longer name cannot make one player's panel larger than the hero's.
+      scaler.style.removeProperty('--sp-seat-panel-h');
+      const panels = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__info'));
+      const panelHeight = Math.max(0, ...panels.map((panel) => panel.offsetHeight));
+      if (panelHeight > 0) scaler.style.setProperty('--sp-seat-panel-h', `${panelHeight}px`);
+      scaler.style.removeProperty('--sp-seat-action-w');
+      const actionWidth = Math.max(
+        0,
+        ...Array.from(scaler.querySelectorAll<HTMLElement>('.seat__action')).map(
+          (caption) => caption.offsetWidth
+        )
+      );
+      if (actionWidth > 0) scaler.style.setProperty('--sp-seat-action-w', `${actionWidth}px`);
       scaler.querySelector<HTMLElement>('.dealer-button')?.style.removeProperty('translate');
       const rows = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__cards--revealed'));
       rows.forEach((row) => {
@@ -379,7 +417,7 @@ export function useProtectedCardLayout(
       const chromeBottom = chrome.length
         ? Math.max(...chrome.map((box) => box.bottom))
         : pageBox.top + plateHeight;
-      if (sixMax || pageBox.width <= 768) {
+      if (topPods().length) {
         for (const pod of topPods()) {
           if (settled.current.pods.has(pod)) continue;
           const avatar = pod.querySelector<HTMLImageElement>('.seat__avatar-img');
@@ -436,6 +474,79 @@ export function useProtectedCardLayout(
             pod.style.setProperty('--sp-top-seat-shift', `${shift}px`);
             settled.current.pods.set(pod, String(shift));
           }
+        }
+      }
+      // Equal-size top pods need one authoritative caption lane. Place their
+      // labels against the actual chrome and player boxes before shown cards
+      // and wagers consume those same boxes. Preserve each label's pop motion.
+      if (window.innerWidth <= 768 && window.innerHeight > window.innerWidth) {
+        const captions = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__action'));
+        captions.forEach((caption) => caption.style.removeProperty('translate'));
+        const entries = Array.from(
+          page.querySelectorAll(
+            '.community-area,.table-brand,.pot-display,.pot-display__pile,.seat__bet-chips,.seat__info,.seat__avatar-img,.seat__bounty,.seat__position-badge,.bbj-widget,.bbj-mini-plate,.chat-collapsed,.mtp-lobby-btn'
+          )
+        )
+          .map((element) => ({ element, box: element.getBoundingClientRect() }))
+          .filter(({ box }) => box.width > 0 && box.height > 0);
+        const obstacles: CardBox[] = entries.map(({ box }) => box);
+        const avatars = Array.from(
+          scaler.querySelectorAll('.seat:not(.seat--empty) .seat__avatar-img')
+        );
+        const centre = (element: Element) => {
+          const box = element.getBoundingClientRect();
+          return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+        };
+        const centres = avatars.map((element) => ({ element, point: centre(element) }));
+        const bounds = {
+          left: pageBox.left + 2 * scale,
+          top: pageBox.top + 2 * scale,
+          width: pageBox.width - 4 * scale,
+          height: pageBox.height - 4 * scale,
+        };
+        for (const caption of captions) {
+          const measured = caption.getBoundingClientRect();
+          const box: CardBox = {
+            left: measured.left,
+            top: measured.top,
+            width: measured.width,
+            height: measured.height,
+          };
+          const avatar = caption.closest('.seat')?.querySelector('.seat__avatar-img');
+          if (!avatar || !box.width || !box.height) continue;
+          const own = centre(avatar);
+          const owns = (candidate: CardBox) => {
+            const x = candidate.left + candidate.width / 2,
+              y = candidate.top + candidate.height / 2;
+            const distance = Math.hypot(x - own.x, y - own.y);
+            return centres.every(
+              ({ element, point }) =>
+                element === avatar || distance + 1 < Math.hypot(x - point.x, y - point.y)
+            );
+          };
+          const ownImage = entries.find((entry) => entry.element === avatar)?.box;
+          const plate = caption
+            .closest('.seat')
+            ?.querySelector('.seat__info')
+            ?.getBoundingClientRect();
+          // A full short ring may have no empty lane above the crown. Keep the
+          // label on its own shoulder above the name plate, never on a neighbour,
+          // the jackpot, the pot, the board or a player's name/chip count.
+          const shoulder = plate
+            ? { ...box, left: own.x - box.width / 2, top: plate.top - box.height - 3 * scale }
+            : box;
+          const next =
+            placeProtectedCardRow(
+              shoulder,
+              obstacles.filter((entry) => entry !== ownImage),
+              bounds,
+              3 * scale,
+              owns
+            ) ?? placeProtectedCardRow(box, obstacles, bounds, 3 * scale, owns);
+          if (next) {
+            caption.style.translate = `${(next.left - box.left) / scale}px ${(next.top - box.top) / scale}px`;
+            obstacles.push(next);
+          } else obstacles.push(box);
         }
       }
       const visibleBox = (element: Element): CardBox | null => {
@@ -635,7 +746,7 @@ export function useProtectedCardLayout(
             // Sample exact obstacle edges as well as the oval, so a clear slot
             // beside a label is found before the overlapping last-resort tier.
             // Wider portrait side pods need the same exact slots.
-            if (sixMax || window.innerWidth > 480 || window.innerWidth <= 375) {
+            {
               const xs = new Set([anchor.x - box.width / 2]);
               const ys = new Set([anchor.y - box.height / 2]);
               for (const obstacle of hardObstacles) {
@@ -851,6 +962,11 @@ export function useProtectedCardLayout(
     scaler.addEventListener('load', schedule, true);
     return () => {
       document.fonts?.removeEventListener('loadingdone', schedule);
+      scaler.style.removeProperty('--sp-seat-panel-h');
+      scaler.style.removeProperty('--sp-seat-action-w');
+      scaler
+        .querySelectorAll<HTMLElement>('.seat__action')
+        .forEach((caption) => caption.style.removeProperty('translate'));
       resetWagers();
       observer.disconnect();
       mutations.disconnect();

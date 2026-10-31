@@ -18,6 +18,13 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
+vi.mock('../../src/services/readTournamentStandings', () => ({
+  readTournamentStandings: () => reads.result,
+}));
+vi.mock('../../src/services/tournamentStandingsUpdates', () => ({
+  subscribeTournamentStandings: () => () => {},
+}));
+
 const props = {
   isVisible: true,
   breakTimeRemaining: 241,

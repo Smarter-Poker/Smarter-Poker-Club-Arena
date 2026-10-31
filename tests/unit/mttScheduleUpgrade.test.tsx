@@ -100,6 +100,21 @@ describe('MTT schedule upgrade', () => {
     expect(tournamentClockLine(stale, now)?.text).toBe('Late Reg Ends In 75:30');
     expect(tournamentClockLine(stale, now + 80 * 60000)).toBeNull();
   });
+  it('shows the level-only late-reg clock from the confirmed first-level start', () => {
+    const e = event('just-started', {
+      status: 'RUNNING',
+      started_at: new Date(now - 270000).toISOString(),
+      current_level: 0,
+      level_started_at: null,
+      late_reg_levels: 10,
+      late_reg_mins: 0,
+      blind_structure: JSON.stringify(Array.from({ length: 10 }, () => ({ durationMinutes: 8 }))),
+    });
+    expect(tournamentClockLine(e, now)?.text).toBe('Late Reg Ends In 75:30');
+    expect(tournamentClockLine({ ...e, raw: { ...e.raw, started_at: null } }, now)).toBeNull();
+    expect(tournamentClockLine({ ...e, raw: { ...e.raw, current_level: 1 } }, now)).toBeNull();
+    expect(tournamentClockLine({ ...e, raw: { ...e.raw, current_level: null } }, now)).toBeNull();
+  });
   it('shows no live countdown for terminal events or missing start clocks', () => {
     expect(tournamentClockLine(event('completed', { status: 'COMPLETED' }), now)).toBeNull();
     expect(tournamentClockLine(event('cancelled', { status: 'CANCELLED' }), now)).toBeNull();

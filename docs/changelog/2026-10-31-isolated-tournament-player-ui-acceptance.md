@@ -36,3 +36,19 @@ and financial observer contracts pass. Changed JavaScript and Python syntax
 pass. Full-schema connected execution remains unverified pending an admitted
 immutable runtime and exact engine/web/schema input tuple. No live pass,
 protected delivery or publication is claimed by these contract results.
+
+## Native control dependency closure
+
+Native CI41218460465 built the image but refused observation bridge startup.
+The closed smoke helper list in `smoke-image.sh` and the corresponding source
+hash inventory in `ci/fixture-smoke.py` still contained only the original three
+helpers; the protocol's new `tournament-player-observations.mjs` import was
+missing from that isolated mount. All five native cleanup observations passed.
+
+An actual isolated staging/import regression reproduces ERR_MODULE_NOT_FOUND
+before repair. Add only that exact reviewed fourth helper to both closed
+allowlists, preserving read-only committed bytes, source hashes, separate
+identity and the container/network/image cleanup. A second assertion requires
+the native source-hash inventory to equal the actual staged helper list.
+The native retry remains required after this source correction; no application
+qualification or previously failed native result is represented as passing.

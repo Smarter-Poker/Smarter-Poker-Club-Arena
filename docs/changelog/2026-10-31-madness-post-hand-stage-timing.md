@@ -56,7 +56,7 @@ field. This read does not certify latency or instrument adoption.
 ## Change 3: retain the existing pause/progress source contract
 
 **File:** `tests/a-parked-table-is-not-a-stalled-one.law.test.ts`.
-**Lines before:** the liveness-snapshot method locator, line 233.
+**Lines before:** the liveness-snapshot method locator, line 212.
 **What existed:** the declaration locator required the old no-argument method
 signature and therefore could not locate its new optional observation scope.
 **What changed:** use the existing line-start/access-modifier anchored declaration

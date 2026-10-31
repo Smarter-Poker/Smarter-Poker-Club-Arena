@@ -4703,11 +4703,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * announced as the top mystery bounty. The pre-phase ladder was removed on
    * 2026-10-05; `bounty_collected` carries no rank.
    *
-   * THE TOP SLICE. The read is ordered largest-first and capped, rather than
-   * pulling a whole field. PostgREST caps an uncapped select at 1,000 rows in
-   * an unspecified order, so ordering makes the slice the TOP of the ladder by
-   * construction: a prize outside it comes back ranked past the end of it,
-   * which every consumer reads as "not the top three".
+   * Read the complete tier aggregate, not a slice of individual chests:
+   * duplicate top amounts can fill that slice and hide lower distinct rungs.
+   * The existing inventory RPC aggregates all statuses in one snapshot.
    *
    * The chest's rung, in CENTS, against the inventory seeded at activation.
    *
@@ -4719,16 +4717,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    */
   private async chestPrizeRank(amountCents: number | undefined): Promise<number | undefined> {
     try {
-      const { data } = await supabase
-        .from('tournament_bounty_chests')
-        .select('amount_cents')
-        .eq('tournament_id', this.tournamentId)
-        .order('amount_cents', { ascending: false })
-        .limit(200);
-
-      const ladder = buildPrizeLadder(
-        ((data ?? []) as Array<{ amount_cents: unknown }>).map((r) => r.amount_cents)
-      );
+      const { data, error } = await supabase.rpc('fn_mystery_bounty_inventory', {
+        p_tournament_id: this.tournamentId,
+      });
+      const tiers = (data as { tiers?: unknown } | null)?.tiers;
+      if (error || !Array.isArray(tiers)) return undefined;
+      const amounts: number[] = [];
+      for (const tier of tiers) {
+        const amount = (tier as { amount_cents?: unknown } | null)?.amount_cents;
+        if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0)
+          return undefined;
+        amounts.push(amount);
+      }
+      const ladder = buildPrizeLadder(amounts);
       const rank = prizeRankOf(amountCents, ladder);
       return rank > 0 ? rank : undefined;
     } catch {

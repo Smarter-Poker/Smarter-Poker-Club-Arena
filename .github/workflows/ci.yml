@@ -2131,6 +2131,16 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-satellite-bounty-seat-split.py
+      - name: Add-ons wait for the last late-entry level at transition and purchase
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-addon-after-entry-levels.py
+      - name: Only highlighted tournaments may use ten-minute levels
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-highlighted-level-clock.py
       - name: Late registration closes at whichever of its level or clock deadline comes first
         if: matrix.shard == 4
         env:

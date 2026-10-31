@@ -145,8 +145,14 @@ describe('the MTT add-on is one persisted deadline', () => {
     const offerGate = offer.indexOf('isMaintenanceFrozen()');
     expect(offerGate).toBeGreaterThanOrEqual(0);
     expect(offerGate).toBeLessThan(offer.indexOf(".from('tournament_players')"));
-    expect(offer).toMatch(
-      /group\.map\(async \(h\) => \{[\s\S]*?if \(isMaintenanceFrozen\(\) \|\| !this\.eliminationMutationAllowed\(\)\) return null;[\s\S]*?process_tournament_rebuy/
+    const heldOffer = sliceMethod(manager, 'offerAddOnsWhileTheFieldIsHeld(');
+    expect(offer).toContain('this.offerAddOnsWhileTheFieldIsHeld(rotated, heldPurchaseEndsAt)');
+    expect(offer).not.toContain("supabase.rpc('process_tournament_rebuy'");
+    expect(heldOffer).toMatch(
+      /const mayContinue = \(\) =>[\s\S]*?!isMaintenanceFrozen\(\) &&[\s\S]*?this\.eliminationMutationAllowed\(\) &&[\s\S]*?this\.addOnBreakHoldsTheField\(Date\.now\(\)\)/
+    );
+    expect(heldOffer).toMatch(
+      /while \(nextIndex < horseRows\.length && mayContinue\(\)\) \{[\s\S]*?supabase\.rpc\('process_tournament_rebuy'/
     );
     const finalFreeze = finalize.indexOf('if (isMaintenanceFrozen()) return false;');
     const closeRpc = finalize.indexOf("supabase.rpc('fn_close_tournament_addon_period'");

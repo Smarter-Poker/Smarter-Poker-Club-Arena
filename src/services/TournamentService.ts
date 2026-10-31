@@ -1,5 +1,6 @@
 import { runWithRequestDeadline } from '../utils/requestDeadline';
 import { withTournamentRegistrationReadBoundary } from './TournamentRegistrationReadBoundary';
+import { tournamentAddOnEntryBoundaryPassed } from '../utils/tournamentAddOnBoundary';
 import { validateMttBlindStructure } from '../../server/src/domain/tournamentBlindContract';
 import {
   isUnlimitedMtt,
@@ -2485,12 +2486,13 @@ class TournamentService {
     if (!tournament) return { allowed: false, reason: 'Tournament not found' };
 
     if (!tournament.add_on_available) return { allowed: false, reason: 'Add-ons not available' };
-    // Free Buy events open their durable add-on window as soon as the field is
-    // pre-seated, up to one minute before the advertised first hand. The
-    // server money door accepts that REGISTERING-with-live-seat phase; a
-    // stricter browser pre-check made the visible offer impossible to buy.
-    if (!['REGISTERING', 'RUNNING'].includes(String(tournament.status)))
-      return { allowed: false, reason: 'Tournament is not accepting add-ons' };
+    if (
+      !tournamentAddOnEntryBoundaryPassed(
+        tournament as unknown as Record<string, unknown>,
+        Date.now()
+      )
+    )
+      return { allowed: false, reason: 'Add-On Period Has Not Begun' };
     if (tournament.prize_pool_finalized)
       return { allowed: false, reason: 'The prize pool is finalized' };
 

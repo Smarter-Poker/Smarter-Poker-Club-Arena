@@ -35,8 +35,14 @@ describe('every tournament level is a locked, defined clock', () => {
 
   it.each([
     ['Morning Free Buy (NLH)', { buy_in_amount: 0, buy_in_fee: 0 }, MTT_BLIND_PRESETS.STANDARD, 5],
-    ['Coffee Break Freeroll (PLO4)', { buy_in_amount: 0, buy_in_fee: 0 }, MTT_BLIND_PRESETS.HYPER_TURBO, 5],
+    [
+      'Coffee Break Freeroll (PLO4)',
+      { buy_in_amount: 0, buy_in_fee: 0 },
+      MTT_BLIND_PRESETS.HYPER_TURBO,
+      5,
+    ],
     ['Midday Turbo (NLH)', {}, MTT_BLIND_PRESETS.TURBO, 5],
+    ['Highlighted Turbo', { is_pinned: true }, MTT_BLIND_PRESETS.TURBO, 5],
     ['Friday Graveyard', {}, MTT_BLIND_PRESETS.TURBO, 5],
     ['Turbo Tuesday PKO', { is_pko: true }, MTT_BLIND_PRESETS.TURBO, 5],
     ['Daily 25 Chip Freezeout', {}, MTT_BLIND_PRESETS.STANDARD, 8],
@@ -44,9 +50,9 @@ describe('every tournament level is a locked, defined clock', () => {
     ['Midweek Bounty', { is_bounty: true, variant: 'bounty' }, MTT_BLIND_PRESETS.STANDARD, 8],
     ['Midnight Bounty (NLH)', { is_bounty: true }, MTT_BLIND_PRESETS.TURBO, 8],
     ['Night Owl Special (NLH)', { bounty_amount: 10 }, MTT_BLIND_PRESETS.TURBO, 8],
-    ['Sunday 200 Deep Stack', {}, MTT_BLIND_PRESETS.STANDARD, 10],
-    ['Friday Night Feature', {}, MTT_BLIND_PRESETS.DEEPSTACK, 10],
-    ['Saturday Night Big Stack', {}, MTT_BLIND_PRESETS.DEEPSTACK, 10],
+    ['Sunday 200 Deep Stack', {}, MTT_BLIND_PRESETS.STANDARD, 8],
+    ['Friday Night Feature', { is_pinned: true }, MTT_BLIND_PRESETS.DEEPSTACK, 10],
+    ['Saturday Night Big Stack', {}, MTT_BLIND_PRESETS.DEEPSTACK, 8],
     ['Friday Feature Satellite 5', { variant: 'satellite' }, MTT_BLIND_PRESETS.TURBO, 5],
     ['Sunday Deep Stack Satellite 10', { variant: 'satellite' }, MTT_BLIND_PRESETS.STANDARD, 8],
   ])('%s runs %#', (name, over, ladder, minutes) => {
@@ -79,23 +85,66 @@ describe('every tournament level is a locked, defined clock', () => {
 
   it('re-derives late registration from the locked clock', () => {
     const row = withLockedLevelClock(
-      mtt({ name: 'Wednesday Reload', blind_structure: MTT_BLIND_PRESETS.STANDARD, late_reg_mins: 59 })
+      mtt({
+        name: 'Wednesday Reload',
+        blind_structure: MTT_BLIND_PRESETS.STANDARD,
+        late_reg_mins: 59,
+      })
     );
     // STANDARD tapers 10,10,10,9,9,9 = 57 for six levels; 59 is not derived, so kept.
     expect(row.late_reg_mins).toBe(59);
     const derived = withLockedLevelClock(
-      mtt({ name: 'Wednesday Reload', blind_structure: MTT_BLIND_PRESETS.STANDARD, late_reg_mins: 57 })
+      mtt({
+        name: 'Wednesday Reload',
+        blind_structure: MTT_BLIND_PRESETS.STANDARD,
+        late_reg_mins: 57,
+      })
     );
     expect(derived.late_reg_mins).toBe(48);
   });
 
-  it('never touches a Spin or a Sit & Go', () => {
+  it('preserves faster Spin and Sit & Go clocks', () => {
     for (const row of [
-      { tournament_type: 'SPIN', variant: 'spin', name: 'Spin', blind_structure: MTT_BLIND_PRESETS.HYPER_TURBO },
-      { tournament_type: 'SNG', variant: 'sng', name: 'SNG', blind_structure: MTT_BLIND_PRESETS.TURBO },
+      {
+        tournament_type: 'SPIN',
+        variant: 'spin',
+        name: 'Spin',
+        blind_structure: MTT_BLIND_PRESETS.HYPER_TURBO,
+      },
+      {
+        tournament_type: 'SNG',
+        variant: 'sng',
+        name: 'SNG',
+        blind_structure: MTT_BLIND_PRESETS.TURBO,
+      },
     ]) {
       expect(withLockedLevelClock(row)).toBe(row);
     }
+  });
+
+  it('enforces the highlighted cap in the database and required native CI', () => {
+    const root = new URL('../../../', import.meta.url);
+    const migration = readFileSync(
+      new URL(
+        'supabase/migrations/20261031212642_only_highlighted_tournaments_may_have_ten_minute_levels.sql',
+        root
+      ),
+      'utf8'
+    );
+    expect(migration).toContain('CASE WHEN NEW.is_pinned IS TRUE THEN 10 ELSE 8 END');
+    expect(migration).toContain('UPDATE public.tournament_schedules');
+    expect(readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8')).toContain(
+      'python3 -B scripts/ci/test-highlighted-level-clock.py'
+    );
+  });
+
+  it('caps an oversized custom short format without slowing its faster levels', () => {
+    const row = withLockedLevelClock({
+      tournament_type: 'SNG',
+      variant: 'sng',
+      blind_structure: [{ durationMinutes: 12 }, { duration: 180 }],
+    });
+    expect(row.blind_structure).toEqual([{ durationMinutes: 8 }, { duration: 180 }]);
   });
 
   it('the database applies the same rule on every insert', () => {

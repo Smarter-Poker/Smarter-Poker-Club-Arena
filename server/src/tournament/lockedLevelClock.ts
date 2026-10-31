@@ -1,5 +1,7 @@
 /**
- * LOCKED LEVEL CLOCK (Dan, 2026-10-21, BINDING)
+ * LOCKED LEVEL CLOCK (owner update 2026-10-31)
+ * Non-highlighted events are capped at eight minutes. Only is_pinned events
+ * may retain the ten-minute deep clock. Faster turbo/freeroll clocks stay.
  *
  * Dan, verbatim: "TOURNAMENT LEVELS CAN NEVER EVER BE A 'RANGE'. ALL
  * TOURNAMENTS NEED TO HAVE SET MINUTE BLIND LEVELS. TURBOS AND FREE ROLLS 5
@@ -56,6 +58,7 @@ export interface LockedLevelFacts {
   variant?: unknown;
   tournament_type?: unknown;
   blind_structure?: unknown;
+  is_pinned?: unknown;
 }
 
 function parseStructure(raw: unknown): unknown[] {
@@ -119,7 +122,8 @@ export function lockedLevelCategory(facts: LockedLevelFacts): LockedLevelCategor
 }
 
 export function lockedLevelMinutes(facts: LockedLevelFacts): 5 | 8 | 10 {
-  return LOCKED_LEVEL_MINUTES[lockedLevelCategory(facts)];
+  const minutes = LOCKED_LEVEL_MINUTES[lockedLevelCategory(facts)];
+  return minutes === 10 && facts.is_pinned !== true ? 8 : minutes;
 }
 
 /** Every playable level carries exactly `minutes`. Breaks keep their own clock.
@@ -151,7 +155,19 @@ export function isLockedClockFormat(row: Record<string, unknown>): boolean {
  * the locked one, so the level count the engine enforces and the minutes the
  * lobby prints keep agreeing. Rows outside the rule are returned untouched. */
 export function withLockedLevelClock<T extends Record<string, unknown>>(row: T): T {
-  if (!isLockedClockFormat(row)) return row;
+  if (!isLockedClockFormat(row)) {
+    const cap = row.is_pinned === true ? 10 : 8;
+    const authored = parseStructure(row.blind_structure);
+    if (!authored.some((entry) => (levelMinutes(entry) ?? 0) > cap)) return row;
+    const capped = authored.map((entry) => {
+      if ((levelMinutes(entry) ?? 0) <= cap) return entry;
+      return lockStructureClock([entry], cap)[0];
+    });
+    return {
+      ...row,
+      blind_structure: typeof row.blind_structure === 'string' ? JSON.stringify(capped) : capped,
+    };
+  }
   const authored = parseStructure(row.blind_structure);
   if (authored.length === 0) return row;
   const minutes = lockedLevelMinutes(row);

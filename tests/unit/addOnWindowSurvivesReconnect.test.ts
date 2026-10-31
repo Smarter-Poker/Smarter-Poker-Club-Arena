@@ -24,7 +24,7 @@ describe('an open add-on window survives client reconnects', () => {
       /void presentPersistedAddOnOffer\([\s\S]*?tournData as Record<string, unknown>/
     );
     expect(tablePage).toMatch(
-      /data\?\.type === 'ADDON_PERIOD_START'[\s\S]*?presentAddOnOffer\(\(data\.payload \|\| \{\}\)/
+      /data\?\.type === 'ADDON_PERIOD_START'[\s\S]*?refreshPersistedAddOnOffer\(/
     );
     expect(tablePage).not.toMatch(
       /resolvedEndMs\s*=\s*Number\.isFinite\(broadcastEndMs\)[\s\S]*?Date\.now\(\)\s*\+/
@@ -78,12 +78,10 @@ describe('an open add-on window survives client reconnects', () => {
     );
   });
 
-  it('lets a pre-seated Free Buy player use the offer before the first hand', () => {
-    expect(tablePage).toMatch(
-      /\['REGISTERING', 'RUNNING'\]\.includes\(String\(tournamentRow\.status\)\)/
-    );
+  it('requires the completed late-entry boundary even for pre-seated Free Buy players', () => {
+    expect(tablePage).toContain('tournamentAddOnEntryBoundaryPassed(tournamentRow, Date.now())');
     expect(tournamentService).toMatch(
-      /async canAddOn\([\s\S]*?\['REGISTERING', 'RUNNING'\]\.includes\(String\(tournament\.status\)\)/
+      /async canAddOn\([\s\S]*?tournamentAddOnEntryBoundaryPassed\(/
     );
   });
 });

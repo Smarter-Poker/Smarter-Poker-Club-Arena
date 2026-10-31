@@ -612,7 +612,8 @@ describe('a tournament pays every place or none', () => {
     const eventHandler = TABLE_PAGE.slice(eventStart, eventEnd);
     expect(eventStart).toBeGreaterThan(-1);
     expect(eventEnd).toBeGreaterThan(eventStart);
-    expect(eventHandler).toMatch(/presentAddOnOffer\(/);
+    expect(eventHandler).toMatch(/refreshPersistedAddOnOffer\(/);
+    expect(TABLE_PAGE).toContain('tournamentAddOnEntryBoundaryPassed(tournamentRow, Date.now())');
     expect(ADD_ON_PRESENTER).toMatch(/addonData\.endsAt/);
     expect(ADD_ON_PRESENTER).toMatch(/remainingSeconds <= 0[\s\S]*?return/);
     expect(ADD_ON_PRESENTER).toMatch(/endsAtMs: resolvedEndMs/);

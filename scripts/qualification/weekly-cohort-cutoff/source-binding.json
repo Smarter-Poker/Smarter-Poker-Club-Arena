@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 271733,
-      "sha256": "e539e5040954d7389b78d26b1a32ca70cf58007d3cd22ba5ef462254970df4c0"
+      "bytes": 272197,
+      "sha256": "890d21fcce14ce142221ade4002df9ed84580c85b232b97365af479959ef43d9"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1894,5 +1894,49 @@
     },
     "execution_performed": false,
     "historicalEvidenceRestamped": false
+  },
+  "addonEntryLevelQualification20261031": {
+    "reason": "Adds isolated PostgreSQL add-on entry-level boundary regression to required accounting shard 4. Existing financial commands, assertions and historical certificates unchanged. Current source identity only; no financial or live certification.",
+    "previous": {
+      "bytes": 262384,
+      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+    },
+    "current": {
+      "bytes": 262624,
+      "sha256": "e0f9a6c8b5d3eac8c7627272aad96f7237eb630fe6c3fe58b4d78be88421c6b9"
+    }
+  },
+  "addonProtectedMainComposition20261031": {
+    "reason": "Preserve seven-shard and browser-artifact main changes plus exact add-on regression. Current source identity only; every historical certificate and qualification state unchanged.",
+    "previousMain": {
+      "bytes": 271733,
+      "sha256": "e539e5040954d7389b78d26b1a32ca70cf58007d3cd22ba5ef462254970df4c0"
+    },
+    "current": {
+      "bytes": 271973,
+      "sha256": "6e5b8c4ccce1adc8c0858295bab3e2f24994b249d89d5967d93e38802f05eab9"
+    }
+  },
+  "highlightedClockQualification20261031": {
+    "reason": "Adds isolated PostgreSQL highlighted-level clock cap regression to required accounting shard 4. Existing financial commands, assertions and historical certificates unchanged. Current source identity only; no financial or live certification.",
+    "previous": {
+      "bytes": 262384,
+      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+    },
+    "current": {
+      "bytes": 262608,
+      "sha256": "16171791330ca441deead2de61ab57f084a271d8d3a0c1af03b765399e2636b7"
+    }
+  },
+  "tournamentTimingComposition20261031": {
+    "reason": "Combine exact add-on boundary and highlighted level clock native gates with current seven-shard CI; preserve commands and historical qualification receipts. Source identity only.",
+    "previous": {
+      "bytes": 271973,
+      "sha256": "6e5b8c4ccce1adc8c0858295bab3e2f24994b249d89d5967d93e38802f05eab9"
+    },
+    "current": {
+      "bytes": 272197,
+      "sha256": "890d21fcce14ce142221ade4002df9ed84580c85b232b97365af479959ef43d9"
+    }
   }
 }

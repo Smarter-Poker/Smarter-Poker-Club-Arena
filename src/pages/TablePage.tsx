@@ -1,4 +1,5 @@
 import { earlyHeroCardsReady, type EarlyHeroCards } from '../utils/earlyHeroCards';
+import { tournamentAddOnEntryBoundaryPassed } from '../utils/tournamentAddOnBoundary';
 import { useTopUpAccounting } from '../hooks/useTopUpAccounting';
 import { autoTopUpRequest, type AutoTopUpRequest } from '../utils/autoTopUpRequest';
 import { tournamentTableLabel } from '../utils/tournamentTableLabel';
@@ -14511,7 +14512,7 @@ function LiveTablePage({
             tournamentRow?.addon_period_triggered === true &&
             tournamentRow.add_on_available === true &&
             tournamentRow.prize_pool_finalized !== true &&
-            ['REGISTERING', 'RUNNING'].includes(String(tournamentRow.status)) &&
+            tournamentAddOnEntryBoundaryPassed(tournamentRow, Date.now()) &&
             Number.isFinite(startsAt) &&
             Number.isFinite(endsAt) &&
             startsAt <= Date.now() &&
@@ -14541,7 +14542,7 @@ function LiveTablePage({
           const { data, error } = await supabase
             .from('tournaments')
             .select(
-              'add_on_available, addon_cost, addon_chips, buy_in_amount, starting_chips, status, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized'
+              'add_on_available, addon_cost, addon_chips, buy_in_amount, starting_chips, status, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, current_level, late_reg_levels, rebuy_levels, late_reg_mins, started_at, addon_from_start'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -14715,7 +14716,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time, is_rebuy, is_reentry'
+              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, late_reg_levels, rebuy_levels, late_reg_mins, addon_from_start, prize_pool_finalized, start_time, is_rebuy, is_reentry'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -15801,9 +15802,9 @@ function LiveTablePage({
                   phase: 'counting_down',
                   breakEndsAtMs: null,
                 });
-              } else if (data?.type === 'ADDON_PERIOD_START') {
-                // Both live frames and reconnect recovery use one quote/deadline path.
-                void presentAddOnOffer((data.payload || {}) as Record<string, unknown>);
+              } else if (data?.type === 'ADDON_PERIOD_START' || data?.type === 'addon_break') {
+                // A live frame is an invalidation, never authority for an early offer.
+                void refreshPersistedAddOnOffer();
               } else if (data?.type === 'ADDON_PERIOD_END') {
                 addOnPresentationEpochRef.current += 1;
                 if (!addOnPurchasePendingRef.current)

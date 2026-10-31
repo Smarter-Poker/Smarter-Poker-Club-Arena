@@ -7,7 +7,6 @@ const manager = readFileSync(
   join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'),
   'utf8'
 );
-const freeBuy = readFileSync(join(process.cwd(), 'src/services/FreeBuy.ts'), 'utf8');
 
 describe('the Free Buy add-on is one durable lifecycle', () => {
   const start = sliceMethod(
@@ -42,54 +41,19 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     'finishAddOnTail(finalPool: number, alreadyRepriced = false): Promise<void>'
   );
 
-  it('opens after seating but before the pre-seat deal hold is applied', () => {
-    const seatsExist = start.indexOf('await this.createTablesAndSeatPlayers(tournament)');
-    const freeBuyOpen = start.indexOf('await this.triggerAddOnPeriod()', seatsExist);
-    const advertisedDealHold = start.indexOf('engine.holdDealingUntil(launchStartMs)', freeBuyOpen);
-
-    expect(seatsExist).toBeGreaterThanOrEqual(0);
-    expect(freeBuyOpen).toBeGreaterThan(seatsExist);
-    expect(advertisedDealHold).toBeGreaterThan(freeBuyOpen);
-    expect(start.slice(seatsExist, advertisedDealHold)).toMatch(
-      /tournament\.addon_from_start && tournament\.add_on_available/
-    );
-    const durableProof = start.indexOf('if (!this.addOnPeriodTriggered)', freeBuyOpen);
-    const standDown = start.indexOf('this.running = false', durableProof);
-    expect(durableProof).toBeGreaterThan(freeBuyOpen);
-    expect(standDown).toBeGreaterThan(durableProof);
-    expect(standDown).toBeLessThan(advertisedDealHold);
-    expect(start.slice(freeBuyOpen, durableProof)).toContain(
-      'this.assertLifecycleCurrent(lifecycle)'
-    );
+  it('never opens from seating and requires the committed entry boundary', () => {
+    expect(start).not.toContain('await this.triggerAddOnPeriod()');
+    expect(trigger).toContain('!this.tournamentEntryWindowClosed');
+    expect(trigger).toContain('if (!this.areAllTablesParked()) return');
   });
 
-  it('anchors the break and close to the later of advertised start and the actual seat, plus late reg plus configured break', () => {
-    expect(trigger).toContain('const requestedStart = new Date().toISOString()');
+  it('persists one full minute after every dealer parks, also for Free Buy', () => {
     expect(trigger).toContain(
-      "const advertisedStartMs = Date.parse(String(this.tournamentCache?.start_time ?? ''))"
+      'const requestedEndMs = requestedStartMs + this.addOnBreakDurationMs()'
     );
-    // 2026-09-09: the anchor is max(advertised, seat). On time that IS the
-    // advertised start (the pre-seat minute runs early), so the break still
-    // falls at the advertised clock. A field seated late - the 2026-09-09
-    // outage left ten Free Buys hours past their start - gets the full
-    // promised window from the seat instead of a window that ends before it
-    // starts and a launch that can never complete.
-    expect(trigger).toMatch(
-      /const windowAnchorMs = fromStart \? Math\.max\(advertisedStartMs, requestedStartMs\) : NaN;/
-    );
-    // A paid (non-Free-Buy) add-on keeps its configured minute, stretched only
-    // to the end of a :55 break it opens inside (Dan 2026-10-25; pinned by
-    // AnAddOnAtTheBreakIsTheBreak.test.ts). The Free Buy branch is unchanged.
-    expect(trigger).toMatch(
-      /const requestedEndMs = fromStart\s*\? windowAnchorMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*Math\.max\(\s*requestedStartMs \+ this\.addOnBreakDurationMs\(\),\s*this\.coincidingSynchronizedBreakEndMs\(requestedStartMs\)\s*\)/
-    );
+    expect(trigger).not.toContain('const fromStart');
     expect(trigger).toContain('addon_period_started_at: requestedStart');
     expect(trigger).toContain('addon_period_ends_at: requestedEnd');
-    // Never the seat ALONE: that would move an on-time event's break off the
-    // advertised clock by the pre-seat minute.
-    expect(trigger).not.toMatch(/\? requestedStartMs \+ lateRegMs/);
-    expect(trigger).not.toMatch(/\? advertisedStartMs \+ lateRegMs/);
-
     expect(breakStart).toMatch(/endMs - this\.addOnBreakDurationMs\(\)/);
     expect(scheduleBreak).toContain('const breakStartMs = this.addOnBreakStartMs(endsAt)');
   });
@@ -130,26 +94,13 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     );
   });
 
-  it('gives the deterministic 35% tranche at opening and every remaining live horse at break', () => {
-    expect(freeBuy).toContain('export const HORSE_ADDON_IMMEDIATE_RATE = 0.35');
-    expect(manager).toContain(
-      "import { horseAddsOnImmediately, horseTakesAddOn } from '../services/FreeBuy.js'"
-    );
-    expect(offer).toMatch(
-      /if \(Date\.now\(\) < breakStartMs\)[\s\S]*?eligibleHorseRows = eligibleHorseRows\.filter[\s\S]*?horseAddsOnImmediately\(horse\.id, this\.tournamentId\)/
-    );
-    expect(beginBreak).toContain(
-      'this.lastAddOnOfferAt = Date.now() - TournamentManagerBase.ADD_ON_RETRY_MS'
-    );
-    expect(beginBreak).toContain('this.requestEliminationSweep()');
+  it('purchases only while the whole field is held, with no early tranche', () => {
+    expect(manager).not.toContain('horseAddsOnImmediately');
+    const hold = offer.indexOf('if (!this.addOnBreakHoldsTheField(Date.now())) return');
+    expect(hold).toBeGreaterThanOrEqual(0);
+    expect(offer.indexOf('this.offerAddOnsWhileTheFieldIsHeld(', hold)).toBeGreaterThan(hold);
     expect(beginBreak).toContain('this.scheduleAddOnRetry()');
-    expect(blankNonCode(beginBreak)).not.toContain('this.tryTournamentAddOns(');
-
-    const split = offer.indexOf('if (Date.now() < breakStartMs)');
-    const purchase = offer.indexOf("p_rebuy_type: 'addon'", split);
-    expect(split).toBeGreaterThanOrEqual(0);
-    expect(purchase).toBeGreaterThan(split);
-    expect(offer.slice(split, purchase)).not.toMatch(/else\s+return/);
+    expect(beginBreak).toContain('this.requestEliminationSweep()');
   });
 
   it('offers only the still-playing, live-seated rows that have not consumed the boolean entitlement', () => {
@@ -157,7 +108,7 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     expect(offer).toMatch(/\.filter\(\(r:[\s\S]*?\) => !r\.add_on\)/);
     expect(offer).toMatch(/\.is\('left_at', null\)/);
     expect(offer).toContain('withoutAddOn.filter((id) => seated.has(id))');
-    expect(offer).toContain("p_rebuy_type: 'addon'");
+    expect(offer).toContain('this.offerAddOnsWhileTheFieldIsHeld(');
     expect(blankNonCode(resume)).not.toMatch(/add_on\s*[:=]\s*false/);
   });
 

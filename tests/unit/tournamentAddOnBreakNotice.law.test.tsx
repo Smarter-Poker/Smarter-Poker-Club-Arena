@@ -45,6 +45,8 @@ beforeEach(() => {
   fx.stop.mockClear();
   fx.row = {
     status: 'RUNNING',
+    current_level: 8,
+    late_reg_levels: 8,
     add_on_available: true,
     addon_from_start: false,
     addon_period_triggered: true,
@@ -66,6 +68,15 @@ describe('every player receives the public add-on break notice', () => {
     expect(screen.getByRole('status')).toHaveTextContent('15/20000/1060000');
     view.unmount();
     expect(fx.stop).toHaveBeenCalledOnce();
+  });
+  it('refuses an elapsed-clock window while late-entry levels are unfinished', async () => {
+    fx.row.current_level = 3;
+    render(<Witness />);
+    await flush();
+    expect(screen.getByRole('status')).toHaveTextContent('None');
+    fx.row.current_level = 8;
+    await act(async () => fx.listener!());
+    expect(screen.getByRole('status')).toHaveTextContent('15/20000/1060000');
   });
   it('uses the same legacy cost and chip fallback as the purchase owner', async () => {
     fx.row.addon_cost = null;

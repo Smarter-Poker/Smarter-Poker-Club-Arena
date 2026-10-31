@@ -6,6 +6,22 @@ import { submitTableDecision } from '../../src/lib/tableActionDecision';
 const page = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 
 describe('Mongo missing decision recovery', () => {
+  it('a stale hero refreshes once without posting or replaying the bet', async () => {
+    const send = vi.fn();
+    const refresh = vi.fn(async () => true);
+    const result = await submitTableDecision({
+      actionContext: 'turn:1',
+      allowContextless: false,
+      clientStateStale: true,
+      send,
+      refresh,
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ success: false, code: 'CLIENT_DECISION_REFRESHED' });
+    expect(result.error).toContain('Not Sent');
+  });
+
   it('the page submits the decision visible at the tap, rather than a render closure', () => {
     expect(page).toContain('actionContext: tableStateRef.current.actionContext');
     expect(page).toContain('await submitTableDecision({');
@@ -26,7 +42,7 @@ describe('Mongo missing decision recovery', () => {
   });
   it('does not send a context-free Classic fold and requests state exactly once', async () => {
     const send = vi.fn();
-    const refresh = vi.fn(async () => {});
+    const refresh = vi.fn(async () => true);
     const result = await submitTableDecision({
       actionContext: undefined,
       allowContextless: false,
@@ -43,9 +59,10 @@ describe('Mongo missing decision recovery', () => {
     'STALE_ACTION',
     'ACTION_NOT_DELIVERED',
     'ACTION_STATE_PENDING',
+    'ACTION_NOT_ACCEPTED',
   ])('refreshes a %s refusal without replaying the choice', async (code) => {
     const send = vi.fn(async () => ({ success: false, code, error: 'refused' }));
-    const refresh = vi.fn(async () => {});
+    const refresh = vi.fn(async () => true);
     expect(
       (
         await submitTableDecision({
@@ -61,13 +78,32 @@ describe('Mongo missing decision recovery', () => {
   });
   it('preserves the contextless Lightning path and successful actions', async () => {
     const send = vi.fn(async () => ({ success: true }));
-    const refresh = vi.fn(async () => {});
+    const refresh = vi.fn(async () => true);
     expect(
       await submitTableDecision({ actionContext: undefined, allowContextless: true, send, refresh })
     ).toEqual({ success: true });
     expect(send).toHaveBeenCalledExactlyOnceWith(undefined);
     expect(refresh).not.toHaveBeenCalled();
   });
+  it('a lost accepted bet with no snapshot stays explicitly unconfirmed, never a refusal', async () => {
+    const send = vi.fn(async () => ({ success: false, code: 'ACTION_NOT_DELIVERED' }));
+    const result = await submitTableDecision({
+      actionContext: 'turn:1',
+      allowContextless: false,
+      send,
+      refresh: async () => false,
+    });
+    expect(send).toHaveBeenCalledExactlyOnceWith('turn:1');
+    expect(result).toMatchObject({ success: false, outcomeUnconfirmed: true });
+    const panel = page.slice(
+      page.indexOf('const handleActionPanelAction = useCallback('),
+      page.indexOf('// handleConfirmRaise was removed')
+    );
+    expect(panel.match(/if \(ok === false\) revert\(\);/g)).toHaveLength(5);
+    expect(page).toContain('return res.outcomeUnconfirmed ? null : false;');
+    expect(page).toMatch(/error: res.outcomeUnconfirmed\s*\? ACTION_NOT_DELIVERED_MESSAGE/);
+  });
+
   it('keeps ordinary rejection details without requesting another state', async () => {
     const result = {
       success: false,
@@ -75,7 +111,7 @@ describe('Mongo missing decision recovery', () => {
       error: 'Raise is below the minimum',
       hint: { minRaise: 20 },
     };
-    const refresh = vi.fn(async () => {});
+    const refresh = vi.fn(async () => true);
     expect(
       await submitTableDecision({
         actionContext: 'turn:1',

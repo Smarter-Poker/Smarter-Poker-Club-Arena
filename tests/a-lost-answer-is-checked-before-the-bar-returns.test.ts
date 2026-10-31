@@ -36,6 +36,16 @@ describe('awaitEngineState', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('distinguishes a fresh snapshot from a timed-out unknown outcome', async () => {
+    const waiters = new Set<() => void>();
+    const missing = awaitEngineState(waiters, () => {});
+    await vi.advanceTimersByTimeAsync(ACTION_OUTCOME_STATE_BUDGET_MS);
+    expect(await missing).toBe(false);
+    const observed = awaitEngineState(waiters, () => {});
+    for (const release of [...waiters]) release();
+    expect(await observed).toBe(true);
+  });
+
   it('never waits past its budget when no snapshot comes', async () => {
     const waiters = new Set<() => void>();
     let done = false;

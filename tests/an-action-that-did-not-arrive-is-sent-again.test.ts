@@ -101,6 +101,144 @@ async function settle<T>(work: Promise<T>): Promise<T> {
 }
 
 describe('submitAction re-sends an action nobody answered', () => {
+  it.each(['raise', 'fold'])(
+    'bounds a stalled %s response body and keeps the original intent',
+    async (action) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ...ok(), json: () => new Promise(() => {}) })
+        .mockResolvedValueOnce(ok());
+      vi.stubGlobal('fetch', fetchMock);
+      let result: unknown;
+      void api
+        .submitAction('table-1', 'u1', action, action === 'raise' ? 40 : undefined, 'ctx-1')
+        .then((r) => {
+          result = r;
+        });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(result).toEqual({ success: true });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(new Set(keysOf(fetchMock)).size).toBe(1);
+      expect(new Set(fetchMock.mock.calls.map((c) => (c[1] as RequestInit).body)).size).toBe(1);
+    }
+  );
+
+  it('a truncated acknowledgement recovers under the same key, never a new bet', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...ok(),
+        json: async () => {
+          throw new SyntaxError('truncated');
+        },
+      })
+      .mockResolvedValueOnce(ok());
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await settle(api.submitAction('table-1', 'u1', 'raise', 40, 'ctx-1'))).toEqual({
+      success: true,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Set(keysOf(fetchMock)).size).toBe(1);
+  });
+
+  it('an unbound truncated answer is unknown and is never replayed', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ...ok(),
+      json: async () => {
+        throw new SyntaxError('truncated');
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await settle(api.submitAction('table-1', 'u1', 'fast_fold'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ success: false, code: 'ACTION_NOT_DELIVERED' });
+    expect(result.error).toContain('Could Not Be Confirmed');
+    expect(shouldSurfaceError(result.error)).toBe(true);
+  });
+
+  it('a lost body exhausts its bounded budget with an unknown, visible outcome', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ...ok(), json: () => new Promise(() => {}) })
+    );
+    const started = Date.now();
+    const result = await settle(api.submitAction('table-1', 'u1', 'raise', 40, 'ctx-1'));
+    expect(Date.now() - started).toBeLessThanOrEqual(api.ACTION_DELIVERY_BUDGET_MS + 500);
+    expect(result.code).toBe('ACTION_NOT_DELIVERED');
+    expect(result.error).toContain('Could Not Be Confirmed');
+  });
+
+  it('a lost acknowledgement followed by throttling remains unknown under one key', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...ok(),
+        json: async () => {
+          throw new SyntaxError('lost acknowledgement after commit');
+        },
+      })
+      .mockResolvedValue(status(429));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await settle(api.submitAction('table-1', 'u1', 'raise', 40, 'ctx-1'));
+    expect(result.code).toBe('ACTION_NOT_DELIVERED');
+    expect(result.error).toContain('Could Not Be Confirmed');
+    expect(new Set(keysOf(fetchMock)).size).toBe(1);
+  });
+
+  it('a complete explicit refusal is not retried', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(status(400, { error: 'Raise is below the minimum', code: 'MIN_RAISE' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await settle(api.submitAction('table-1', 'u1', 'raise', 40, 'ctx-1'));
+    expect(result).toMatchObject({ success: false, code: 'MIN_RAISE' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['truncated', 'stalled'])(
+    'a %s refusal body never replays the refused bet',
+    async (body) => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ...status(400),
+        json: () =>
+          body === 'stalled' ? new Promise(() => {}) : Promise.reject(new SyntaxError('truncated')),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const result = await settle(api.submitAction('table-1', 'u1', 'raise', 40, 'ctx-1'));
+      expect(result.code).toBe('ACTION_NOT_ACCEPTED');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(shouldSurfaceError(result.error)).toBe(true);
+    }
+  );
+
+  it('a stale refusal after a lost acknowledgement does not deny the original outcome', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...ok(),
+        json: async () => {
+          throw new SyntaxError('lost after commit');
+        },
+      })
+      .mockResolvedValue(
+        status(400, { success: false, code: 'STALE_ACTION', error: 'Turn moved' })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await settle(api.submitAction('table-1', 'u1', 'raise', 40, 'ctx-1'));
+    expect(result.code).toBe('ACTION_NOT_DELIVERED');
+    expect(result.error).toContain('Could Not Be Confirmed');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Set(keysOf(fetchMock)).size).toBe(1);
+  });
+
+  it('exhausted admission throttling is a visible action refusal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(status(429)));
+    const result = await settle(api.submitAction('table-1', 'u1', 'raise', 40, 'ctx-1'));
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('ACTION_NOT_ACCEPTED');
+    expect(shouldSurfaceError(result.error)).toBe(true);
+  });
+
   it('a request cut twice by the network lands on the third send, under one key', async () => {
     const fetchMock = vi
       .fn()

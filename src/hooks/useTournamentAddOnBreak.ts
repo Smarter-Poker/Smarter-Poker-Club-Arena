@@ -38,7 +38,7 @@ export function useTournamentAddOnBreak(tournamentId: string | null | undefined)
         const { data: row, error } = await supabase
           .from('tournaments')
           .select(
-            'status, add_on_available, addon_from_start, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, addon_cost, addon_chips'
+            'status, add_on_available, addon_from_start, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, addon_cost, addon_chips, buy_in_amount, starting_chips'
           )
           .eq('id', tournamentId)
           .maybeSingle();
@@ -48,8 +48,8 @@ export function useTournamentAddOnBreak(tournamentId: string | null | undefined)
         if (error) throw error;
         const start = Date.parse(String(row?.addon_period_started_at ?? ''));
         const end = Date.parse(String(row?.addon_period_ends_at ?? ''));
-        const cost = Number(row?.addon_cost);
-        const chips = Number(row?.addon_chips);
+        const cost = Number(row?.addon_cost || row?.buy_in_amount);
+        const chips = Number(row?.addon_chips || row?.starting_chips);
         const eligible =
           row?.status === 'RUNNING' &&
           row.add_on_available === true &&

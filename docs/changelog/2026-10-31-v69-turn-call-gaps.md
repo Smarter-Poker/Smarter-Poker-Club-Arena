@@ -57,7 +57,12 @@ pot > 0`) with `cat === 2`, the implied bonus is 0 when
   (2) lets V65 shade a hand the old read exempted, or when (3) withholds the
   pass-through. Ledger: flag `v69TurnCallGaps` (V69), receipt
   `v69_turn_call_gaps`.
-- The opponent-exploit neutrality corpus did not diverge; no off arm added.
+- The opponent-exploit neutrality corpus did not diverge; no off arm added
+  there. The V53 byte-identity corpus (`HorseOmahaTournamentPressure.test.ts`,
+  `mind: false`) did: its NLH digest moved with V69 on, so
+  `CORPUS_BASE_OPTS` in `HorseOmahaTournamentPressureCorpus.test-support.ts`
+  carries `v69TurnCallGaps: false` beside V61's off arm, exactly as V61 did.
+  The pinned digests are unchanged.
 - Gap 3 is production-inert today: `v32FacingDefense` is opt-in (default off
   since 2026-10-16). It is live for any league or arm that turns V32 on.
 
@@ -102,7 +107,8 @@ are the primary evidence.
 `HorseTurnOnePairShade`, `HorseTurnAirDrawCalls`, `HorseBetRaisedOnePair`,
 `HorseDataLedger`, `HorseOpponentExploitNeutrality`, `HorsePhase8Replay`,
 `HorseV28Postflop`, `GtoFacingDefenseV32`, `HorseV32Wiring` are green;
-`tsc --noEmit` is clean. No existing pin changed.
+`tsc --noEmit` is clean. No pinned digest or expectation changed; the V53
+corpus gained the V69 off arm (above).
 
 ## Found on the way (not changed here)
 

@@ -86,7 +86,7 @@ describe('a persisted add-on break is an authoritative hold', () => {
     ).toBe(false);
   });
 
-  it('clamps the configured break to the engine range of 1 to 10 minutes', () => {
+  it('never excuses a longer hold from a legacy break setting', () => {
     const long = classifyAddOnBreakHold({
       addonPeriodEndsAt: ENDS_ISO,
       addonBreakMinutes: 60,
@@ -94,7 +94,7 @@ describe('a persisted add-on break is an authoritative hold', () => {
       observedAt: BREAK_ENDS_AT - 500_000,
       maxSilenceMs: MAX_SILENCE,
     });
-    expect(long.held && long.breakStartedAt).toBe(BREAK_ENDS_AT - 600_000);
+    expect(long.held).toBe(false);
     const missing = classifyAddOnBreakHold({
       addonPeriodEndsAt: ENDS_ISO,
       addonBreakMinutes: null,

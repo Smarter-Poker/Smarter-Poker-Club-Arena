@@ -236,15 +236,6 @@ type HudPause =
   | { kind: 'break'; endsAtMs: number | null }
   | { kind: 'addon'; endsAtMs: number };
 
-function addOnBreakMs(row: Tournament): number {
-  const configured = Number(row.addon_break_minutes ?? 1);
-  const minutes = Math.min(
-    10,
-    Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : 1)
-  );
-  return minutes * 60_000;
-}
-
 function hudPause(row: Tournament, nowMs: number): HudPause {
   if (String(row.status ?? '').toUpperCase() !== 'RUNNING') return { kind: 'none' };
   const breakEndsAt = epochMs(row.break_ends_at);
@@ -256,8 +247,9 @@ function hudPause(row: Tournament, nowMs: number): HudPause {
   if (
     addOnStarts !== null &&
     addOnEnds !== null &&
+    !(row.addon_from_start === true && addOnEnds - addOnStarts > 60_000) &&
     nowMs < addOnEnds &&
-    nowMs >= Math.max(addOnStarts, addOnEnds - addOnBreakMs(row))
+    nowMs >= Math.max(addOnStarts, addOnEnds - 60_000)
   ) {
     return { kind: 'addon', endsAtMs: addOnEnds };
   }

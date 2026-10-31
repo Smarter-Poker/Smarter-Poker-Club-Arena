@@ -55,6 +55,8 @@ export interface BlindLevel {
 
 export interface TournamentBreakScreenProps {
   isVisible: boolean;
+  /** Public notice for every player, including those who already purchased. */
+  addOnNotice?: { cost: number; chips: number; asset?: 'chips' | 'diamonds' };
   /** The owning table canvas, so the minimized clock never covers its action bar. */
   tableAnchorRef?: React.RefObject<HTMLElement | null>;
   breakTimeRemaining: number; // seconds
@@ -129,6 +131,7 @@ function formatStack(amount: number): string {
 
 export function TournamentBreakScreen({
   isVisible,
+  addOnNotice,
   tableAnchorRef,
   breakTimeRemaining,
   phase = 'counting_down',
@@ -148,6 +151,9 @@ export function TournamentBreakScreen({
   onDismiss,
 }: TournamentBreakScreenProps) {
   const [minimized, setMinimized] = useState(false);
+  useEffect(() => {
+    if (isVisible) setMinimized(false);
+  }, [isVisible, tournamentId, !!addOnNotice, breakEndsAtMs]);
   const sharing = useRef(false);
   const [shareMessage, setShareMessage] = useState('');
   const shareTournament = async () => {
@@ -426,7 +432,7 @@ export function TournamentBreakScreen({
         />
         <SpadeConsole
           className="break-screen__content"
-          title="Tournament Break"
+          title={addOnNotice ? 'Add-On Break' : 'Tournament Break'}
           onClose={() => setMinimized(true)}
           pill="Share"
           pillInk="gold"
@@ -444,7 +450,11 @@ export function TournamentBreakScreen({
           <div className="break-screen__resumption">
             <div className="break-screen__timer-container">
               <span className="break-screen__time-label">
-                {countingDown ? 'Play Resumes In' : 'Finishing The Last Hand'}
+                {addOnNotice
+                  ? 'Add-On Closes In'
+                  : countingDown
+                    ? 'Play Resumes In'
+                    : 'Finishing The Last Hand'}
               </span>
               <span
                 className={`break-screen__time ${!countingDown ? 'break-screen__time--waiting' : ''}`}
@@ -489,6 +499,34 @@ export function TournamentBreakScreen({
                 ? 'Waiting For Play To Resume'
                 : 'Play Resumes Automatically'}
           </p>
+
+          {addOnNotice && (
+            <div className="break-screen__stats" aria-label="Add-On Details">
+              <div className="break-screen__stat">
+                <span className="break-screen__stat-label">Add-On Cost</span>
+                <span className="break-screen__stat-value">
+                  {addOnNotice.cost.toLocaleString('en-US')}
+                </span>
+                <span className="break-screen__stat-sub">
+                  {addOnNotice.asset === 'diamonds'
+                    ? 'Diamonds Total'
+                    : addOnNotice.asset === 'chips'
+                      ? 'Chips Total'
+                      : 'Total Cost'}
+                </span>
+              </div>
+              <div className="break-screen__stat">
+                <span className="break-screen__stat-label">Chips Received</span>
+                <span
+                  className="break-screen__stat-value"
+                  title={addOnNotice.chips.toLocaleString('en-US')}
+                >
+                  {formatStack(addOnNotice.chips)}
+                </span>
+                <span className="break-screen__stat-sub">All Tables Paused</span>
+              </div>
+            </div>
+          )}
 
           <div className="break-screen__stats">
             <div className="break-screen__stat">

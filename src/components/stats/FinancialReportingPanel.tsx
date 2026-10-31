@@ -16,6 +16,7 @@ interface Props {
   timezone: string;
   asset: string;
   resetKey?: string;
+  tournamentOnly?: boolean;
 }
 const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const money = (v: unknown, asset: string) =>
@@ -126,7 +127,7 @@ export default function FinancialReportingPanel(p: Props) {
             <span>The Chip Wallet Journal Is Never Re-Labeled Or Added To A Diamond Report.</span>
           </div>
         )}
-        {p.asset === 'diamonds' && !availability.rakeback && (
+        {!p.tournamentOnly && p.asset === 'diamonds' && !availability.rakeback && (
           <div className="financial-unavailable" role="status">
             <strong>Diamond Rakeback Receipts Unavailable</strong>
             <span>The Chip Rakeback Ledger Is Never Re-Labeled Or Added To A Diamond Report.</span>
@@ -157,18 +158,22 @@ export default function FinancialReportingPanel(p: Props) {
                 : 'Unavailable'}
             </strong>
           </article>
-          <article>
-            <span>Rakeback Pending</span>
-            <strong>
-              {availability.rakeback ? money(rake.pending_amount, p.asset) : 'Unavailable'}
-            </strong>
-          </article>
-          <article>
-            <span>Rakeback Paid</span>
-            <strong>
-              {availability.rakeback ? money(rake.paid_amount, p.asset) : 'Unavailable'}
-            </strong>
-          </article>
+          {!p.tournamentOnly && (
+            <>
+              <article>
+                <span>Rakeback Pending</span>
+                <strong>
+                  {availability.rakeback ? money(rake.pending_amount, p.asset) : 'Unavailable'}
+                </strong>
+              </article>
+              <article>
+                <span>Rakeback Paid</span>
+                <strong>
+                  {availability.rakeback ? money(rake.paid_amount, p.asset) : 'Unavailable'}
+                </strong>
+              </article>
+            </>
+          )}
         </div>
         {wallet.capped && (
           <p className="financial-coverage" role="status">
@@ -216,83 +221,89 @@ export default function FinancialReportingPanel(p: Props) {
               </div>
             )}
           </section>
-          <section>
-            <h3>Rakeback Periods & Payouts</h3>
-            {!availability.rakeback ? (
-              <p className="financial-empty">Rakeback Receipts Unavailable In This Asset.</p>
-            ) : periods.length === 0 && payouts.length === 0 ? (
-              <p className="financial-empty">No Rakeback Period Or Payout Receipt In This Scope.</p>
-            ) : (
-              <div className="financial-receipts">
-                {periods.map((r) => (
-                  <details key={`period-${r.id}`}>
-                    <summary>
-                      <span>Period {label(r.status)}</span>
-                      <strong>{money(r.amount, p.asset)}</strong>
-                      <time>{receiptDate(r.period_end, p.timezone)}</time>
-                    </summary>
-                    <dl>
-                      <div>
-                        <dt>Period Receipt</dt>
-                        <dd>{r.id}</dd>
-                      </div>
-                      {r.deferred_reason && (
+          {!p.tournamentOnly && (
+            <section>
+              <h3>Rakeback Periods & Payouts</h3>
+              {!availability.rakeback ? (
+                <p className="financial-empty">Rakeback Receipts Unavailable In This Asset.</p>
+              ) : periods.length === 0 && payouts.length === 0 ? (
+                <p className="financial-empty">
+                  No Rakeback Period Or Payout Receipt In This Scope.
+                </p>
+              ) : (
+                <div className="financial-receipts">
+                  {periods.map((r) => (
+                    <details key={`period-${r.id}`}>
+                      <summary>
+                        <span>Period {label(r.status)}</span>
+                        <strong>{money(r.amount, p.asset)}</strong>
+                        <time>{receiptDate(r.period_end, p.timezone)}</time>
+                      </summary>
+                      <dl>
                         <div>
-                          <dt>Deferred</dt>
-                          <dd>{label(r.deferred_reason)}</dd>
+                          <dt>Period Receipt</dt>
+                          <dd>{r.id}</dd>
                         </div>
-                      )}
-                    </dl>
-                  </details>
-                ))}
-                {payouts.map((r) => (
-                  <details key={`payout-${r.id}`} className={`status-${r.status}`}>
-                    <summary>
-                      <span>Payout {label(r.status)}</span>
-                      <strong>{money(r.payout_amount, p.asset)}</strong>
-                      <time>{receiptDate(r.paid_at ?? r.created_at, p.timezone)}</time>
-                    </summary>
-                    <dl>
-                      <div>
-                        <dt>Payout Receipt</dt>
-                        <dd>{r.id}</dd>
-                      </div>
-                      <div>
-                        <dt>
-                          {rows(r.wallet_transactions).length > 1
-                            ? 'Wallet Receipts'
-                            : 'Wallet Receipt'}
-                        </dt>
-                        <dd>
-                          {rows(r.wallet_transactions).length > 0
-                            ? rows(r.wallet_transactions)
-                                .map(
-                                  (part) =>
-                                    `${part.wallet_transaction_id} (${money(part.amount, p.asset)})`
-                                )
-                                .join('; ')
-                            : (r.wallet_transaction_id ?? 'Not Issued')}
-                        </dd>
-                      </div>
-                      {r.failure_reason && (
+                        {r.deferred_reason && (
+                          <div>
+                            <dt>Deferred</dt>
+                            <dd>{label(r.deferred_reason)}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </details>
+                  ))}
+                  {payouts.map((r) => (
+                    <details key={`payout-${r.id}`} className={`status-${r.status}`}>
+                      <summary>
+                        <span>Payout {label(r.status)}</span>
+                        <strong>{money(r.payout_amount, p.asset)}</strong>
+                        <time>{receiptDate(r.paid_at ?? r.created_at, p.timezone)}</time>
+                      </summary>
+                      <dl>
                         <div>
-                          <dt>Failure</dt>
-                          <dd>{label(r.failure_reason)}</dd>
+                          <dt>Payout Receipt</dt>
+                          <dd>{r.id}</dd>
                         </div>
-                      )}
-                    </dl>
-                  </details>
-                ))}
-              </div>
-            )}
-          </section>
+                        <div>
+                          <dt>
+                            {rows(r.wallet_transactions).length > 1
+                              ? 'Wallet Receipts'
+                              : 'Wallet Receipt'}
+                          </dt>
+                          <dd>
+                            {rows(r.wallet_transactions).length > 0
+                              ? rows(r.wallet_transactions)
+                                  .map(
+                                    (part) =>
+                                      `${part.wallet_transaction_id} (${money(part.amount, p.asset)})`
+                                  )
+                                  .join('; ')
+                              : (r.wallet_transaction_id ?? 'Not Issued')}
+                          </dd>
+                        </div>
+                        {r.failure_reason && (
+                          <div>
+                            <dt>Failure</dt>
+                            <dd>{label(r.failure_reason)}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </details>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </div>
-        <div className="financial-limitations">
-          <article>
-            <strong>Bankroll Series Not Yet Available</strong>
-            <span>{label(availability.bankroll_reason ?? 'No Club-Scoped Balance Ledger')}</span>
-          </article>
-        </div>
+        {!p.tournamentOnly && (
+          <div className="financial-limitations">
+            <article>
+              <strong>Bankroll Series Not Yet Available</strong>
+              <span>{label(availability.bankroll_reason ?? 'No Club-Scoped Balance Ledger')}</span>
+            </article>
+          </div>
+        )}
       </section>
     </SpadeConsole>
   );

@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { handAssetTotals } from '../../src/lib/handAssetTotals';
 
 describe('hand archive monetary denominations', () => {
+  it('excludes tournament stacks even when denominated in the same asset', () => {
+    expect(
+      handAssetTotals([
+        { arenaAsset: 'chips', net: 5, pot: 20 },
+        { arenaAsset: 'chips', tournamentId: 'event', net: 10000, pot: 20000 },
+      ])
+    ).toEqual([{ asset: 'chips', net: 5, biggestPot: 20 }]);
+  });
   it('never offsets chip losses with Diamond wins or unclassified amounts', () => {
     expect(
       handAssetTotals([

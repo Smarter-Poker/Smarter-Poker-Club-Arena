@@ -130,6 +130,7 @@ export interface ReplayShowdownInput {
 }
 
 export interface ReplayInput {
+  tournamentId?: string | null;
   handNumber: number | string | null;
   playedAt: string | null;
   gameVariant: string | null;
@@ -438,6 +439,8 @@ export interface ReplayRecordedBoardAward {
 }
 
 export interface ReplayModel {
+  /** Recorded event identity; undefined means the producer did not classify the hand. */
+  tournamentId?: string | null;
   /** Read from the owning table arena; never inferred from a route or amount. */
   arenaAsset?: 'chips' | 'diamonds';
   handNumber: number | string | null;
@@ -1357,6 +1360,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
   });
 
   return {
+    ...(input.tournamentId !== undefined ? { tournamentId: input.tournamentId } : {}),
     handNumber: input.handNumber,
     playedAt: input.playedAt,
     gameVariant: input.gameVariant,
@@ -1469,6 +1473,7 @@ function replayKillPot(
  * mapper is fed by three different SELECT lists and must read what is there.
  */
 export interface HandHistoryRowLike {
+  tournament_id?: string | null;
   id?: string | null;
   created_at?: string | null;
   started_at?: string | null;
@@ -1570,6 +1575,9 @@ export function replayInputFromRow(
   });
   const buttonRaw = Number(row.button_seat);
   return {
+    ...(row.tournament_id === null || typeof row.tournament_id === 'string'
+      ? { tournamentId: row.tournament_id }
+      : {}),
     handNumber: (row.hand_number as number | string | null | undefined) ?? null,
     playedAt: row.started_at || row.created_at || null,
     gameVariant: row.game_variant ?? null,

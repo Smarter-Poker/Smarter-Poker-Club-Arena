@@ -102,6 +102,7 @@ export interface HandHistoryStreet {
  */
 export interface HandRecord {
   arenaAsset?: 'chips' | 'diamonds';
+  tournamentId?: string | null;
   id: string;
   handNumber: number;
   timestamp: number;
@@ -377,6 +378,7 @@ function HandEntry({
           Pot {formatAmount(hand.replay.potTotal || hand.potTotal)}
         </span>
         <span className="hh-entry__tags">
+          {hand.tournamentId && <span className="hh-entry__tag">Tournament</span>}
           {hand.arenaAsset === 'diamonds' && <span className="hh-entry__tag">Diamonds</span>}
           {runs > 1 && (
             <span className="hh-entry__tag">

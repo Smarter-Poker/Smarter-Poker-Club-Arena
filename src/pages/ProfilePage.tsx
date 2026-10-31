@@ -1,3 +1,4 @@
+import { readSeparatedProfileStats } from '../services/ProfileStatsRead';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Profile Page
@@ -63,7 +64,6 @@ import {
   profileStatsFromV2,
   type PokerStats,
 } from '../utils/profileStats';
-import { CHIP_STATS, statsScopeArgs } from '../services/statsScope';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -499,20 +499,10 @@ export default function ProfilePage() {
           // Owner-only v2 Stats snapshot. This used to be promised as loaded
           // separately but was never called, leaving a dashboard of fabricated
           // zeroes on every profile.
-          retryFetch(
-            () =>
-              supabase
-                .rpc('ca_player_stats_overview_v2', {
-                  /* Scoped to chips: this figure is a chip figure and must
-                     never silently become a chip+Diamond total. See
-                     src/services/statsScope.ts. */
-                  ...statsScopeArgs(CHIP_STATS),
-                  p_user: requestedUserId,
-                  p_days: null,
-                })
-                .then((r) => r),
-            { maxRetries: 2, isMountedRef: isMountedRef }
-          ),
+          retryFetch(() => readSeparatedProfileStats(requestedUserId).then((r) => r), {
+            maxRetries: 2,
+            isMountedRef: isMountedRef,
+          }),
         ]);
 
         // Fetch basic profile and stats
@@ -692,22 +682,13 @@ export default function ProfilePage() {
           .then(({ data: { user: authUser } }) => {
             if (authUser && ownsActiveAccount(authUser.id)) {
               const requestedUserId = authUser.id;
-              supabase
-                .rpc('ca_player_stats_overview_v2', {
-                  /* Scoped to chips: this figure is a chip figure and must
-                     never silently become a chip+Diamond total. See
-                     src/services/statsScope.ts. */
-                  ...statsScopeArgs(CHIP_STATS),
-                  p_user: requestedUserId,
-                  p_days: null,
-                })
-                .then(({ data, error }) => {
-                  const freshStats = !error ? profileStatsFromV2(data) : null;
-                  if (freshStats && ownsActiveAccount(requestedUserId)) {
-                    setStats(freshStats);
-                    setStatsAvailable(true);
-                  }
-                });
+              readSeparatedProfileStats(requestedUserId).then(({ data, error }) => {
+                const freshStats = !error ? profileStatsFromV2(data) : null;
+                if (freshStats && ownsActiveAccount(requestedUserId)) {
+                  setStats(freshStats);
+                  setStatsAvailable(true);
+                }
+              });
             }
           })
           .catch((e) => console.warn('[Profile] Refreshing hand stats failed:', e));
@@ -1001,7 +982,7 @@ export default function ProfilePage() {
             <dd>{memberSinceLabel}</dd>
           </div>
           <div className={styles.telemetryCell}>
-            <dt>Hands</dt>
+            <dt>Cash Hands</dt>
             <dd>{statsAvailable ? stats.lifetimeHands.toLocaleString() : NO_DATA}</dd>
           </div>
           <div className={styles.telemetryCell}>
@@ -1242,7 +1223,7 @@ export default function ProfilePage() {
                     >
                       <CircularGauge
                         value={stats.vpip}
-                        label="VPIP"
+                        label="Cash VPIP"
                         sublabel="Volun. Put In Pot"
                         accent="#3aa8ff"
                         size={gaugeSize}
@@ -1253,7 +1234,7 @@ export default function ProfilePage() {
                     >
                       <CircularGauge
                         value={stats.pfr}
-                        label="PFR"
+                        label="Cash PFR"
                         sublabel="Pre-Flop Raise"
                         accent="#d6ad52"
                         size={gaugeSize}
@@ -1274,7 +1255,7 @@ export default function ProfilePage() {
                   <div className={styles.statsGrid}>
                     <StatCard
                       value={stats.totalHands.toLocaleString()}
-                      label={stats.analysisCapped ? 'Hands Analyzed' : 'Hands Played'}
+                      label={stats.analysisCapped ? 'Cash Hands Analyzed' : 'Cash Hands Played'}
                       isVisible={visibleStats.has(3)}
                     />
                     {/* The v2 payload has carried `cash_hands` and

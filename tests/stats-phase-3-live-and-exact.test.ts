@@ -229,7 +229,7 @@ describe("phase 3 page: the player's zone, end to end", () => {
   it('sends p_tz on both overview calls', () => {
     const calls =
       PAGE.match(
-        /\.rpc\(statsRpcName\('ca_player_stats_overview_v2', selectedClubId\), \{[\s\S]*?\}\)/g
+        /\.rpc\(statsRpcName\('ca_player_stats_overview_separated', selectedClubId\), \{[\s\S]*?\}\)/g
       ) ?? [];
     expect(calls).toHaveLength(2);
     for (const c of calls) expect(c).toMatch(/p_tz: statsTimezone/);

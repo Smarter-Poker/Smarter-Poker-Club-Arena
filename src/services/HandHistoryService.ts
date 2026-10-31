@@ -31,6 +31,7 @@ export const HAND_HISTORY_COLUMNS = [
   'created_at',
   'started_at',
   'table_id',
+  'tournament_id',
   'hand_number',
   'pot_size',
   'community_cards',
@@ -214,6 +215,7 @@ export interface HandRecord {
   table_id: string;
   table_name: string;
   arenaAsset?: 'chips' | 'diamonds';
+  tournament_id?: string | null;
   /** Seats at the table, when the table row still exists. */
   table_max_seats?: number | null;
   played_at: string;
@@ -421,6 +423,7 @@ class HandHistoryServiceClass {
        * nothing; a live table always passes its own id.
        */
       tableId?: string | null;
+      gameMode?: 'cash' | 'tournament';
       /** Older physical-table hands, anchored independently of newly completed hands. */
       beforeHandNumber?: number | null;
       /** Lightning rooms are pool sessions, not hand_history.table_id values. */
@@ -506,12 +509,16 @@ class HandHistoryServiceClass {
       }
     }
     if (clubId) {
-      const { data, error } = await supabase.rpc(HAND_HISTORY_ARENA_RPC, {
-        p_club_id: clubId,
-        p_table_id: opts.tableId || null,
-        p_limit: Math.max(1, Math.min(200, Math.floor(limit))),
-        p_offset: offset,
-      });
+      const { data, error } = await supabase.rpc(
+        opts.gameMode ? 'ca_own_hand_history_separated_by_club' : HAND_HISTORY_ARENA_RPC,
+        {
+          ...(opts.gameMode ? { p_game_mode: opts.gameMode } : {}),
+          p_club_id: clubId,
+          p_table_id: opts.tableId || null,
+          p_limit: Math.max(1, Math.min(200, Math.floor(limit))),
+          p_offset: offset,
+        }
+      );
       if (error || !data) {
         if (error) {
           if (opts.throwOnError) throw error;
@@ -526,13 +533,15 @@ class HandHistoryServiceClass {
 
     const floor =
       opts.indexedArchive && !opts.tableId
-        ? await this.archiveHandNumberFloor(userId, offset + limit, containmentJson)
+        ? await this.archiveHandNumberFloor(userId, offset + limit, containmentJson, opts.gameMode)
         : null;
     let query = supabase
       .from('hand_history')
       .select(HAND_HISTORY_COLUMNS)
       .contains('players', containmentJson);
     if (floor !== null) query = query.or(`hand_number.gte.${floor},hand_number.is.null`);
+    if (opts.gameMode === 'cash') query = query.is('tournament_id', null);
+    if (opts.gameMode === 'tournament') query = query.not('tournament_id', 'is', null);
     if (opts.tableId) query = query.eq('table_id', opts.tableId);
     if (
       opts.tableId &&
@@ -573,7 +582,8 @@ class HandHistoryServiceClass {
   private async archiveHandNumberFloor(
     userId: string,
     required: number,
-    containmentJson: string
+    containmentJson: string,
+    gameMode?: 'cash' | 'tournament'
   ): Promise<number | null> {
     if (!Number.isSafeInteger(required) || required < 1) return null;
     const chunkSize = 1000;
@@ -582,10 +592,14 @@ class HandHistoryServiceClass {
       // Each request respects PostgREST's row ceiling; page depth is not capped.
       for (let start = 0; start < required; start += chunkSize) {
         const end = Math.min(start + chunkSize, required) - 1;
-        const { data: indexed, error: indexError } = await supabase
-          .from('ca_hand_player_idx')
-          .select('hand_id')
-          .eq('user_id', userId)
+        const seeds = gameMode
+          ? supabase
+              .from('ca_hand_player_stat')
+              .select('hand_id')
+              .eq('user_id', userId)
+              .eq('is_cash', gameMode === 'cash')
+          : supabase.from('ca_hand_player_idx').select('hand_id').eq('user_id', userId);
+        const { data: indexed, error: indexError } = await seeds
           .order('created_at', { ascending: false })
           .order('hand_id', { ascending: true })
           .range(start, end);
@@ -603,11 +617,15 @@ class HandHistoryServiceClass {
       const eligible = new Map<string, number>();
       for (let start = 0; start < ids.length; start += chunkSize) {
         const chunk = ids.slice(start, start + chunkSize);
-        const { data: retained, error: seedError } = await supabase
+        let retainedQuery = supabase
           .from('hand_history')
           .select('id, hand_number')
           .in('id', chunk)
           .contains('players', containmentJson);
+        if (gameMode === 'cash') retainedQuery = retainedQuery.is('tournament_id', null);
+        if (gameMode === 'tournament')
+          retainedQuery = retainedQuery.not('tournament_id', 'is', null);
+        const { data: retained, error: seedError } = await retainedQuery;
         if (seedError) {
           reportError(seedError, 'HandHistoryService.archive_seed_hands');
           return null;
@@ -1196,6 +1214,7 @@ class HandHistoryServiceClass {
       table_id: row.table_id,
       table_name: tableNames?.get(String(row.table_id))?.name || 'Table',
       arenaAsset: tableNames?.get(String(row.table_id))?.arenaAsset,
+      tournament_id: row.tournament_id ?? null,
       /* The table's real seat count, for the tracker export's `N-max`. Absent
          when the table row has been recycled; the writer then derives a floor
          from the occupied seats rather than assuming one. */

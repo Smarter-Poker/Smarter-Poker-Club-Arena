@@ -59,16 +59,7 @@ export function ratioOrUnmeasured(
   return format(value);
 }
 
-/**
- * WHICH HANDS A FIGURE COUNTS - the words a StatRow `scope` tag prints.
- *
- * The split is the SQL's, not a design choice: in ca_player_stats_full (which
- * ca_player_stats_overview_v2 wraps) the money aggregates and bb/100 are
- * `FILTER (WHERE is_cash)`, while VPIP, PFR, 3-bet, fold to 3-bet, c-bet,
- * WTSD, the showdown split, the aggression factor, hands won and lost, and
- * hours played are over every scored hand, tournament included.
- * tests/components/stats-contract-truth.test.tsx derives the split from the
- * migration text and fails if a tag stops matching it.
- */
+/** Cash panels render only the cash population selected by the separated RPC. */
 export const SCOPE_CASH = 'Cash';
-export const SCOPE_ALL_GAMES = 'All Games';
+/** Compatibility for external tab consumers; new code names the cash scope directly. */
+export const SCOPE_ALL_GAMES = SCOPE_CASH;

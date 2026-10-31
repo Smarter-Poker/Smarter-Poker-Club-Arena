@@ -57,6 +57,6 @@ describe('the words the page prints', () => {
     }
     expect(NOT_YET_MEASURED).toBe('Not Yet Measured');
     expect(SCOPE_CASH).toBe('Cash');
-    expect(SCOPE_ALL_GAMES).toBe('All Games');
+    expect(SCOPE_ALL_GAMES).toBe('Cash');
   });
 });

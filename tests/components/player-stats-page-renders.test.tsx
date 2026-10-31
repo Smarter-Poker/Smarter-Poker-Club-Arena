@@ -18,7 +18,7 @@ import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-libra
 
 // ── Network and platform boundaries ──────────────────────────────────────────
 
-/** Exactly what ca_player_stats_overview_v2 returns for an account with NO hands. */
+/** Exactly what ca_player_stats_overview_separated returns for an account with NO hands. */
 const EMPTY_OVERALL = {
   pfr: 0,
   vpip: 0,
@@ -97,8 +97,8 @@ const toastApi = vi.hoisted(() => ({
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
-      if (fn === 'ca_player_hands_v2') return { data: notableHandsPayload, error: null };
+      if (fn === 'ca_player_stats_overview_separated') return { data: rpcPayload, error: null };
+      if (fn === 'ca_player_hands_separated') return { data: notableHandsPayload, error: null };
       return { data: null, error: null };
     }),
     from: vi.fn((table: string) => {
@@ -248,8 +248,8 @@ beforeEach(() => {
   preferencesError = null;
   rpcMock.mockReset();
   rpcMock.mockImplementation(async (fn: string) => {
-    if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
-    if (fn === 'ca_player_hands_v2') return { data: notableHandsPayload, error: null };
+    if (fn === 'ca_player_stats_overview_separated') return { data: rpcPayload, error: null };
+    if (fn === 'ca_player_hands_separated') return { data: notableHandsPayload, error: null };
     return { data: null, error: null };
   });
   rpcPayload = {
@@ -259,6 +259,7 @@ beforeEach(() => {
       target_user_id: 'user-1',
       club_id: null,
       asset: 'chips',
+      game_mode: 'cash',
       range_days: null,
       range_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       visibility: 'owner',
@@ -298,6 +299,7 @@ beforeEach(() => {
       target_user_id: 'user-1',
       club_id: null,
       asset: 'chips',
+      game_mode: 'cash',
       visibility: 'owner',
     },
     hands: [],
@@ -311,6 +313,81 @@ afterEach(() => {
 });
 
 describe('PlayerStatsPage mounts', () => {
+  it('renders an independent tournament population without cash analysis tools', async () => {
+    statsRouteState.search = '?gameMode=tournament';
+    rpcPayload = {
+      ...rpcPayload,
+      scope: { ...(rpcPayload.scope as object), game_mode: 'tournament' },
+      overall: { ...EMPTY_OVERALL, total_hands: 800, tourney_hands: 800, hands_lost: 800 },
+      coverage: { ...(rpcPayload.coverage as object), analysis_hands_capped: true },
+      lifetime: { hands: 800, first_hand_at: null, last_hand_at: null, indexed_complete: false },
+    };
+    render(<PlayerStatsPage />);
+    expect(await screen.findByRole('tab', { name: 'Tournaments', exact: true })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { name: 'Tournament Playing Statistics' })
+    ).toBeVisible();
+    expect(screen.queryByRole('tab', { name: 'Analysis', exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Overview', exact: true })).not.toBeInTheDocument();
+    expect(rpcMock).toHaveBeenCalledWith(
+      'ca_player_stats_overview_separated',
+      expect.objectContaining({ p_game_mode: 'tournament' })
+    );
+  });
+
+  it('refuses a cash population returned under a tournament label', async () => {
+    statsRouteState.search = '?gameMode=tournament';
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      render(<PlayerStatsPage />);
+      expect(await screen.findByText("Couldn't Load Your Stats")).toBeVisible();
+      expect(
+        screen.queryByRole('heading', { name: 'Tournament Playing Statistics' })
+      ).not.toBeInTheDocument();
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it('drops an in-flight cash response after switching to tournament statistics', async () => {
+    let resolveCash!: (value: any) => void;
+    let resolveTournament!: (value: any) => void;
+    rpcMock.mockImplementation(async (name, args) => {
+      if (name !== 'ca_player_stats_overview_separated') return { data: null, error: null };
+      return new Promise((resolve) => {
+        if (args.p_game_mode === 'cash') resolveCash = resolve;
+        else resolveTournament = resolve;
+      });
+    });
+    const cash = {
+      ...rpcPayload,
+      overall: { ...EMPTY_OVERALL, total_hands: 111, cash_hands: 111, hands_lost: 111 },
+      quality: { ...(rpcPayload.quality as object), exact_cash_hands: 111 },
+    };
+    const tournament = {
+      ...rpcPayload,
+      scope: { ...(rpcPayload.scope as object), game_mode: 'tournament' },
+      overall: { ...EMPTY_OVERALL, total_hands: 222, tourney_hands: 222, hands_lost: 222 },
+      lifetime: { hands: 222, first_hand_at: null, last_hand_at: null, indexed_complete: false },
+    };
+    const view = render(<PlayerStatsPage />);
+    await waitFor(() => expect(resolveCash).toBeTypeOf('function'));
+    statsRouteState.search = '?gameMode=tournament';
+    view.rerender(<PlayerStatsPage />);
+    await waitFor(() => expect(resolveTournament).toBeTypeOf('function'));
+    await act(async () => {
+      resolveCash({ data: cash, error: null });
+    });
+    expect(screen.queryByText('111')).not.toBeInTheDocument();
+    await act(async () => {
+      resolveTournament({ data: tournament, error: null });
+    });
+    expect(
+      await screen.findByRole('heading', { name: 'Tournament Playing Statistics' })
+    ).toBeVisible();
+    expect(screen.queryByText('111')).not.toBeInTheDocument();
+  });
+
   it('keeps independent agent-book records live while a different personal club is selected', async () => {
     const personalClub = '60000000-0000-0000-0000-000000000001';
     const agentClub = '60000000-0000-0000-0000-000000000002';
@@ -331,8 +408,10 @@ describe('PlayerStatsPage mounts', () => {
     });
     rpcPayload.scope = { ...(rpcPayload.scope as object), club_id: personalClub };
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn.startsWith('ca_player_stats_overview_v2')) return { data: rpcPayload, error: null };
-      if (fn.startsWith('ca_player_hands_v2')) return { data: notableHandsPayload, error: null };
+      if (fn.startsWith('ca_player_stats_overview_separated'))
+        return { data: rpcPayload, error: null };
+      if (fn.startsWith('ca_player_hands_separated'))
+        return { data: notableHandsPayload, error: null };
       return { data: null, error: null };
     });
     render(<PlayerStatsPage />);
@@ -385,7 +464,10 @@ describe('PlayerStatsPage mounts', () => {
       p_target_user: 'user-2',
       p_asset: 'chips',
     });
-    expect(rpcMock).not.toHaveBeenCalledWith('ca_player_stats_overview_v2', expect.anything());
+    expect(rpcMock).not.toHaveBeenCalledWith(
+      'ca_player_stats_overview_separated',
+      expect.anything()
+    );
   });
 
   it('renders for an account with NO hands without hitting the error boundary', async () => {
@@ -500,7 +582,8 @@ describe('PlayerStatsPage mounts', () => {
   });
 
   it('renders the owner mystery-bounty split and net from verified v2 fields', async () => {
-    statsRouteState.search = '?tab=tournaments';
+    statsRouteState.search = '?gameMode=tournament&tab=tournaments';
+    rpcPayload.scope = { ...(rpcPayload.scope as object), game_mode: 'tournament' };
     rpcPayload = {
       ...rpcPayload,
       overall: {
@@ -574,7 +657,7 @@ describe('PlayerStatsPage mounts', () => {
     expect(await screen.findByText('20,000')).toBeInTheDocument();
 
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_player_stats_overview_v2') {
+      if (fn === 'ca_player_stats_overview_separated') {
         return { data: null, error: { code: '57014', message: 'timed out' } };
       }
       return { data: null, error: null };
@@ -864,7 +947,7 @@ describe('PlayerStatsPage mounts', () => {
       window_days: 30,
     };
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn !== 'ca_player_stats_overview_v2') return { data: null, error: null };
+      if (fn !== 'ca_player_stats_overview_separated') return { data: null, error: null };
       if (args?.p_days === null) {
         return {
           data: {
@@ -897,7 +980,7 @@ describe('PlayerStatsPage mounts', () => {
     let resolveSecond!: (value: { data: Record<string, unknown>; error: null }) => void;
     let overviewCalls = 0;
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn !== 'ca_player_stats_overview_v2') return { data: null, error: null };
+      if (fn !== 'ca_player_stats_overview_separated') return { data: null, error: null };
       overviewCalls += 1;
       return new Promise((resolve) => {
         if (overviewCalls === 1) resolveFirst = resolve;
@@ -925,7 +1008,11 @@ describe('PlayerStatsPage mounts', () => {
     await waitFor(() => expect(overviewCalls).toBe(2));
     expect(screen.queryByText('111')).not.toBeInTheDocument();
     resolveSecond({ data: second, error: null });
-    expect(await screen.findByText('222')).toBeVisible();
+    expect(
+      (await screen.findAllByText('222')).some((element) =>
+        element.className.includes('hero-stat-value')
+      )
+    ).toBe(true);
   });
 
   it('completes a dossier shortcut by selecting, focusing, and revealing its destination', async () => {
@@ -1035,6 +1122,7 @@ describe('PlayerStatsPage mounts', () => {
         target_user_id: 'user-1',
         club_id: null,
         asset: 'chips',
+        game_mode: 'cash',
         visibility: 'owner',
       },
       hands: [hand],
@@ -1100,7 +1188,7 @@ describe('PlayerStatsPage mounts', () => {
       fireEvent.click(await screen.findByRole('tab', { name: 'Analysis' }, { timeout: 6_000 }));
       await waitFor(() =>
         expect(rpcMock).toHaveBeenCalledWith(
-          'ca_player_hands_v2',
+          'ca_player_hands_separated',
           expect.objectContaining({ p_user: 'user-1', p_asset: 'chips' })
         )
       );

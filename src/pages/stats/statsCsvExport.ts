@@ -30,6 +30,7 @@ const metadataColumns = (metadata: StatsExportMetadata) => ({
   analysis_range: metadata.privacyPresentationMode ? 'Hidden' : metadata.range,
   timezone: metadata.privacyPresentationMode ? 'Hidden' : metadata.timezone,
   asset: metadata.asset,
+  game_mode: 'cash',
   unit: metadata.unit,
   coverage: metadata.privacyPresentationMode ? 'Hidden' : metadata.coverage,
   source: metadata.source,

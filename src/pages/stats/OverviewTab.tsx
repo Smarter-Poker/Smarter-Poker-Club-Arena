@@ -16,7 +16,7 @@ import { compactChips } from '../../utils/format';
 import { enumToTitleCase } from '../../utils/titleCase';
 import type { playerStyleFromStats } from '../../components/stats/playerStyleFromStats';
 import { StatRow } from './StatRow';
-import { NOT_YET_MEASURED, SCOPE_ALL_GAMES, SCOPE_CASH, ratioOrUnmeasured } from './format';
+import { NOT_YET_MEASURED, SCOPE_CASH, ratioOrUnmeasured } from './format';
 import { RANGES, type FullStats, type OverallStats, type HandEvidenceFilter } from './types';
 import type { StatsMetricAvailabilityContract } from '../../services/statsContract';
 
@@ -94,7 +94,7 @@ export default function OverviewTab({
             (v) => `${(v * 100).toFixed(1)}%`
           )}
           color="#00d4ff"
-          scope={SCOPE_ALL_GAMES}
+          scope={SCOPE_CASH}
         />
         <StatRow
           label="PFR"
@@ -104,7 +104,7 @@ export default function OverviewTab({
             (v) => `${(v * 100).toFixed(1)}%`
           )}
           color="#8b5cf6"
-          scope={SCOPE_ALL_GAMES}
+          scope={SCOPE_CASH}
         />
         {/* Aggressive actions over CALL actions. The payload does not carry
             call_actions, and with none the SQL returns the raw aggressive
@@ -121,7 +121,7 @@ export default function OverviewTab({
                 )
           }
           color="#f59e0b"
-          scope={SCOPE_ALL_GAMES}
+          scope={SCOPE_CASH}
         />
         <StatRow
           label="Hours Played"
@@ -131,13 +131,13 @@ export default function OverviewTab({
               : `${overall.hours_played.toFixed(1)}h`
           }
           color="#06b6d4"
-          scope={SCOPE_ALL_GAMES}
+          scope={SCOPE_CASH}
         />
         <StatRow
           label="Showdown Win %"
           value={showdownWinRate}
           color="#22c55e"
-          scope={SCOPE_ALL_GAMES}
+          scope={SCOPE_CASH}
         />
         <StatRow
           label="BB/100"
@@ -147,11 +147,6 @@ export default function OverviewTab({
           scope={SCOPE_CASH}
         />
         <StatRow label="Cash Hands" value={overall.cash_hands.toLocaleString()} color="#00d4ff" />
-        <StatRow
-          label="Tournament Hands"
-          value={overall.tourney_hands.toLocaleString()}
-          color="#8b5cf6"
-        />
       </div>
 
       <div className="stats-ledger-grid">

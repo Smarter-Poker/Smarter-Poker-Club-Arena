@@ -22,14 +22,25 @@ vi.mock('../../src/lib/supabase', () => ({
       const read = { table, calls: [] as Array<[string, ...any[]]> };
       state.reads.push(read);
       const query: any = {};
-      for (const method of ['select', 'eq', 'order', 'limit', 'range', 'in', 'contains', 'or'])
+      for (const method of [
+        'select',
+        'eq',
+        'order',
+        'limit',
+        'range',
+        'in',
+        'contains',
+        'or',
+        'is',
+        'not',
+      ])
         query[method] = (...args: any[]) => {
           read.calls.push([method, ...args]);
           return query;
         };
       query.then = (done: (value: any) => void) => {
         const selected = read.calls.find((call) => call[0] === 'select')?.[1];
-        if (table === 'ca_hand_player_idx') {
+        if (table === 'ca_hand_player_idx' || table === 'ca_hand_player_stat') {
           const range = read.calls.find((call) => call[0] === 'range')!;
           return Promise.resolve({
             data: state.seeds.slice(range[1], range[2] + 1),
@@ -192,5 +203,23 @@ describe('Archive-only indexed bounds', () => {
       p_limit: 25,
       p_offset: 25,
     });
+  });
+  it('anchors the page with seeds of the same game mode and filters before pagination', async () => {
+    setupSeeds([10, 30]);
+    await handHistoryService.getPlayerHands('viewer', 2, {
+      indexedArchive: true,
+      gameMode: 'cash',
+      offset: 0,
+    });
+    expect(state.reads[0].table).toBe('ca_hand_player_stat');
+    expect(state.reads[0].calls).toContainEqual(['eq', 'is_cash', true]);
+    expect(finalRead().calls).toContainEqual(['is', 'tournament_id', null]);
+    expect(finalRead().calls.findIndex((call) => call[0] === 'is')).toBeLessThan(
+      finalRead().calls.findIndex((call) => call[0] === 'limit')
+    );
+    state.reads.length = 0;
+    await handHistoryService.getPlayerHands('viewer', 2, { gameMode: 'tournament', offset: 4 });
+    expect(finalRead().calls).toContainEqual(['not', 'tournament_id', 'is', null]);
+    expect(finalRead().calls).toContainEqual(['range', 4, 5]);
   });
 });

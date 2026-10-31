@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { PRIVATE_RECORD_CLIENT_TITLE } from '../../scripts/ci/private-record-client-proof.mjs';
+import {
+  PRIVATE_RECORD_CLIENT_TITLE,
+  snapshotPrivateRecordFixtureProfile,
+  readPrivateRecordFixturePlayerNumber,
+  assertPrivateRecordFixtureRoster,
+} from '../../scripts/ci/private-record-client-proof.mjs';
 import { installPrivateRecordEngineInterruption } from './support/privateRecordEngineInterruption';
 import {
   hasLiveGatewayReady,
@@ -37,7 +42,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
   let socketId = 0;
   let observationsOverflow = false;
   let originalProfile:
-    | { id: string; alias: string; avatar_url: string | null; arena_avatar_url: string | null }
+    | { id: string; avatar_url: string | null; arena_avatar_url: string | null }
     | undefined;
   page.on('websocket', (socket) => {
     const url = new URL(socket.url());
@@ -176,25 +181,45 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       { api: API, key: KEY, email: process.env.SP_EMAIL }
     );
     expect(userId).toMatch(/^[0-9a-f-]{36}$/);
-    originalProfile = await page.evaluate(
+    const profileRows = await page.evaluate(
       async ({ api, key, id }) => {
         const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || '{}');
         if (session.user?.id !== id || !session.access_token) throw Error('Reserved actor changed');
         const response = await fetch(
-          `${api}/rest/v1/profiles?id=eq.${id}&select=id,alias,avatar_url,arena_avatar_url`,
+          `${api}/rest/v1/profiles?id=eq.${id}&select=id,avatar_url,arena_avatar_url`,
           {
             headers: { apikey: key, Authorization: `Bearer ${session.access_token}` },
             signal: AbortSignal.timeout(10_000),
           }
         );
         if (!response.ok) throw Error('Own profile snapshot unavailable');
-        const rows = await response.json();
-        if (rows.length !== 1 || rows[0].id !== id || !rows[0].alias)
-          throw Error('Own profile identity missing');
-        return rows[0];
+        return response.json();
       },
       { api: API, key: KEY, id: userId }
     );
+    originalProfile = snapshotPrivateRecordFixtureProfile(profileRows, userId);
+    const fixtureDetail = await page.evaluate(
+      async ({ api, key, id, club }) => {
+        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || '{}');
+        if (session.user?.id !== id || !session.access_token) throw Error('Reserved actor changed');
+        const response = await fetch(`${api}/rest/v1/rpc/ca_club_member_detail`, {
+          method: 'POST',
+          headers: {
+            apikey: key,
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            'x-client-info': 'club-arena-member-results/2',
+          },
+          body: JSON.stringify({ p_club_id: club, p_user_id: id, p_from: null, p_to: null }),
+          signal: AbortSignal.timeout(40_000),
+        });
+        if (!response.ok) throw Error('Authorized fixture member identity unavailable');
+        return response.json();
+      },
+      { api: API, key: KEY, id: userId, club: CLUB }
+    );
+    const playerNumber = readPrivateRecordFixturePlayerNumber(fixtureDetail, userId);
+    proof.authoritativeFixtureIdentity = true;
     proof.genuineSession = true;
     const topic = `member-record:${CLUB}:${userId}`;
     await page.goto(`clubs/kings-club/members/${userId}`, { waitUntil: 'domcontentloaded' });
@@ -373,12 +398,29 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     await fault.block();
     const rosterStart = frames.length;
     await page.goto('clubs/kings-club/members?view=all', { waitUntil: 'domcontentloaded' });
-    await page.getByRole('textbox', { name: 'Search Club Members' }).fill(originalProfile!.alias);
-    const rosterAvatar = page
-      .getByRole('listitem')
-      .filter({ has: page.locator('.member-alias').filter({ hasText: originalProfile!.alias }) })
-      .locator('.member-avatar img');
+    const initialRosterRead = page.waitForResponse(
+      (response) => {
+        if (!response.ok() || !response.url().includes('/rest/v1/rpc/ca_club_members_page'))
+          return false;
+        const args = response.request().postDataJSON();
+        return args?.p_club_id === CLUB && args?.p_search === playerNumber;
+      },
+      { timeout: 45_000 }
+    );
+    void initialRosterRead.catch(() => {});
+    await page
+      .getByRole('searchbox', { name: 'Search Club Members' })
+      .fill(playerNumber, { timeout: 45_000 });
+    assertPrivateRecordFixtureRoster(await (await initialRosterRead).json(), userId, playerNumber);
+    const rosterRow = page.getByRole('listitem').filter({
+      has: page
+        .locator('.member-number')
+        .filter({ hasText: new RegExp(`^PlayerID: ${playerNumber}$`) }),
+    });
+    await expect(rosterRow).toHaveCount(1, { timeout: 45_000 });
+    const rosterAvatar = rosterRow.locator('.member-avatar img');
     await expect(rosterAvatar).toHaveCount(1, { timeout: 45_000 });
+    proof.rosterIdentityVerified = true;
     await expect
       .poll(
         () =>
@@ -416,11 +458,15 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
           )
             return false;
           const args = response.request().postDataJSON();
-          if (args?.p_club_id !== CLUB || (!roster && args?.p_user_id !== userId)) return false;
+          if (
+            args?.p_club_id !== CLUB ||
+            (roster ? args?.p_search !== playerNumber : args?.p_user_id !== userId)
+          )
+            return false;
           try {
             const body = await response.json();
             const row = roster
-              ? body?.items?.find((item: any) => item.user_id === userId)
+              ? assertPrivateRecordFixtureRoster(body, userId, playerNumber)
               : body?.identity;
             return row?.user_id === userId && String(row.avatar_url).includes(image);
           } catch {

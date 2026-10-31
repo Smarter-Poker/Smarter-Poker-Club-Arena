@@ -46,6 +46,7 @@ const LIGHTNING_ERROR = {
 
 vi.mock('../services/supabase/client.js', () => {
   const rpc = vi.fn(async (fn: string, args: Record<string, any>) => {
+    if (fn === 'fn_cash_addon_receipt') return { data: null, error: null };
     if (fn === 'fn_cashout_seat_occupancy') {
       db.cashoutCalls.push(args);
       const verdict = db.cashout.get(args.p_user_id) ?? 'ok';

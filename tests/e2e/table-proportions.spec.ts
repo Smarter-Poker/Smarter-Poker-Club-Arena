@@ -842,7 +842,7 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 // tabled-hand and marker placement (PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX). On
 // 2026-10-24 they parked shown PLO5/PLO6 hands under the hero or in front of
 // another player. They are certified on the PLO5/PLO6 scenes this regime is
-// for; their seat pods keep the tablet ring (see `largePortrait` below).
+// for; dense rings retain their compact pods through this same boundary.
 const occupiedViewports: Array<[number, number?]> = [
   ...[320, 375, 393, 430, 480, 600, 768, 1024].map((width): [number] => [width]),
   [600, 852],
@@ -902,8 +902,12 @@ for (const [width, heightOverride] of occupiedViewports)
       );
 
       const avatarBytes = readFileSync(tableArtFixture('vip_wolf@2x.webp'));
+      const wideAvatarBytes = readFileSync(tableArtFixture('vip_aztec_warrior@2x.webp'));
       await page.route('**/avatars/table/**', (route) =>
-        route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
+        route.fulfill({
+          body: route.request().url().includes('vip_aztec_warrior') ? wideAvatarBytes : avatarBytes,
+          contentType: 'image/webp',
+        })
       );
       const sheets = [
         ...new Set([
@@ -1005,7 +1009,7 @@ for (const [width, heightOverride] of occupiedViewports)
         if (scaledPhone && (width !== 600 || count !== 9)) continue;
         if (width > 480 && villainCards < 5 && !scaledPhone) continue;
         await page.setViewportSize({
-          width,
+          width: scaledPhone ? 599 : width,
           height: scaledPhone
             ? 1065
             : width === 320
@@ -1024,7 +1028,7 @@ for (const [width, heightOverride] of occupiedViewports)
         await page.route('https://smarter.poker/hub/club-arena/__isolated_rail_fixture', (route) =>
           route.fulfill({
             contentType: 'text/html',
-            body: `<html data-seats="${count}" data-cards="${villainCards >= 5 ? villainCards : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+            body: `<html data-avatar="${scaledPhone ? 'vip_aztec_warrior@2x.webp' : 'vip_wolf@2x.webp'}" data-seats="${count}" data-cards="${villainCards >= 5 ? villainCards : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
           })
         );
         await page.goto('https://smarter.poker/hub/club-arena/__isolated_rail_fixture', {
@@ -1234,15 +1238,37 @@ for (const [width, heightOverride] of occupiedViewports)
                 box.top +
                 box.height * ((file && crowns[file]) || 0) -
                 document.querySelector('.table-page')!.getBoundingClientRect().top;
+              // Live hand admission can clear folded seat state before the
+              // final fold gesture class is retired. Its retained CSS final
+              // frame must use the same semantic resting anchor.
+              seat.classList.remove('seat--folded');
+              wrap.classList.add('seat__avatar-wrap--fold');
+              await frame();
+              const foldGesture = wrap
+                .getAnimations()
+                .find(
+                  (animation) =>
+                    animation instanceof CSSAnimation && animation.animationName === 'spAvatarFold'
+                );
+              if (!foldGesture) throw new Error('Real Fold Animation Missing');
+              await foldGesture.finished;
+              await frame();
+              const retainedBox = head.getBoundingClientRect();
+              const retainedFoldGap =
+                retainedBox.top +
+                retainedBox.height * ((file && crowns[file]) || 0) -
+                document.querySelector('.table-page')!.getBoundingClientRect().top;
               seat.className = originalSeat;
+              wrap.className = originalWrap;
               document.dispatchEvent(new Event('fixture-next-hand'));
               await frame();
-              return { raisedShift, restingShift, foldedShift, gap };
+              return { raisedShift, restingShift, foldedShift, gap, retainedFoldGap };
             }, AVATAR_CROWN_TOP);
             expect(anchoring.restingShift).toBeCloseTo(anchoring.raisedShift, 1);
             if (width > 768) {
               expect(anchoring.foldedShift).toBeLessThan(anchoring.restingShift);
               expect(anchoring.gap).toBeLessThan(0);
+              expect(anchoring.retainedFoldGap).toBeLessThan(0);
             } else {
               // Folding may reclaim crown space, but cannot consume the
               // newly reserved revealed-hand lane.
@@ -1282,11 +1308,11 @@ for (const [width, heightOverride] of occupiedViewports)
             if (box(row).top < pageTop + 7.5)
               violations.push('Top Revealed Hand Clips Mobile Header');
           }
-          // Above 480px the seat pods keep their tablet sizes and ring: the
-          // phone-only pod rules (compact 7-9 max top pod, outboard lanes off
-          // the painted felt, dense-ring pods clear of the board) are not
-          // theirs. Every ownership, overlap, readability and fixed-placement
-          // rule for hands, wagers and the button still applies.
+          // Above 480px the ring keeps its tablet positions. Dense 7-9 max
+          // pods retain their compact sizes through the phone's desktop
+          // reference viewport; the scaled-phone scene below also reads
+          // decoded painted art rather than transparent image rectangles.
+          // Ownership and fixed-placement checks remain unchanged.
           const largePortrait = innerWidth > 480;
           const compactPlo6 =
             innerWidth <= 340 &&

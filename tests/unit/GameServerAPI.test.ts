@@ -322,6 +322,36 @@ describe('GameServerAPI.addChips tells a refusal from an unknown outcome', () =>
     expect(result).toMatchObject({ success: false, code: 'TRANSPORT' });
   });
 
+  it('preserves an engine 400 whose committed outcome is explicitly unknown', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        success: false,
+        error: 'The Top Up Outcome Is Unknown',
+        code: 'TRANSPORT',
+      }),
+    });
+    await expect(GameServerAPI.addChips('table', 50, 'op-1')).resolves.toMatchObject({
+      success: false,
+      code: 'TRANSPORT',
+    });
+  });
+
+  it('carries a recovered operation and its actual amount to bookkeeping', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, applied: 5, queued: false, replayed: true }),
+    });
+    await expect(GameServerAPI.addChips('table', 50, 'op-1')).resolves.toMatchObject({
+      success: true,
+      applied: 5,
+      queued: false,
+      replayed: true,
+    });
+  });
+
   it('a request that never got an answer stays TRANSPORT', async () => {
     mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
     const result = await GameServerAPI.addChips('table', 50, 'op-1');

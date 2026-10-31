@@ -571,7 +571,7 @@ export interface BusPayloadMap {
     playersMoved?: number;
   };
   // Cashier events
-  CHIPS_ADDED: { tableId: string; userId: string; amount: number; newStack: number };
+  CHIPS_ADDED: { tableId: string; userId: string; amount: number; newStack?: number };
   CHIPS_WITHDRAWN: { tableId: string; userId: string; amount: number; newStack: number };
   // Settlement cron lifecycle
   SETTLEMENT_CYCLE_STARTED: { periodId: string; startedAt: string };

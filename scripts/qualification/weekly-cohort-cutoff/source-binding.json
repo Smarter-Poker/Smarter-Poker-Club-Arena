@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 260841,
-      "sha256": "5903dabba3ef64b2152b41b09590c297914d742de92a2d7891d8ea2355fb1127"
+      "bytes": 261100,
+      "sha256": "8b6b7d1a4ad6b80795ae646f383c7be81fb24065a175f65dc19a832b83b0ec35"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1620,5 +1620,44 @@
       "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
     },
     "change": "Only add shard4 funded same-value Chips/Diamond ticket native qualification and retained artifact. Every prior command, partition, guard, permission and budget retained."
+  },
+  "autoTopUpReadOnlyReceiptCi20261023": {
+    "reason": "Add the isolated read-only top-up receipt qualifier to existing accounting shard 1. Current workflow input identity only; historical financial evidence, assertions and qualification status remain unchanged. No financial certificate restamp.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 230971,
+      "sha256": "b5141dafd9e67779d7566bef7a5c965aaacee39bc35d4e809064345bc16fe533"
+    }
+  },
+  "autoTopUpIntegration20261026": {
+    "reason": "Preserve current main qualifications and additive top-up reader qualification. Current workflow input identity only; historical evidence, financial assertions and qualification states retained.",
+    "previous": {
+      "bytes": 237490,
+      "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+    },
+    "current": {
+      "bytes": 237749,
+      "sha256": "9048bf1936560404c70189d0ac06b0df3733670c0dcf71c7ed60cd78474869bd"
+    }
+  },
+  "autoTopUpRecovery20261031": {
+    "reason": "Three-way composition preserves current weekly accounting admission and all existing native CI commands; adds original top-up receipt qualification only. Current CI fingerprint refreshed after inspecting combined workflow, historical receipt records and qualification verdicts unchanged.",
+    "currentWorkflowPin": {
+      "bytes": 260283,
+      "sha256": "ee357f77ae898d976025839707e3ff7e530b56ae41b5c2be0d59a03fb72d9b02"
+    },
+    "execution_performed": false
+  },
+  "satelliteFinalTopUpComposition20261031": {
+    "reason": "Source-only three-way integration preserves both satellite and top-up qualifiers, every earlier audit and all financial assertions. Only active workflow identity refreshed; no historical result restamped.",
+    "currentWorkflowPin": {
+      "bytes": 261100,
+      "sha256": "8b6b7d1a4ad6b80795ae646f383c7be81fb24065a175f65dc19a832b83b0ec35"
+    },
+    "execution_performed": false,
+    "qualificationStateChanged": false
   }
 }

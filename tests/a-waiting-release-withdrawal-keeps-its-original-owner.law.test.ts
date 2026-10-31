@@ -11,12 +11,12 @@ it('qualifies exact waiting attempt admission and its original terminal signal b
       cwd: resolve(import.meta.dirname, '..'),
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
       encoding: 'utf8',
-      timeout: 15000,
+      timeout: 60000,
     }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 10 tests');
-});
+  expect(result.stderr).toContain('Ran 25 tests');
+}, 75000);
 
 it('keeps the revoked off-cycle owner order closed', () => {
   const windows = JSON.parse(

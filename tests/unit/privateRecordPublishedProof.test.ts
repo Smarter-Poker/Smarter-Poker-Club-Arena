@@ -10,6 +10,9 @@ import {
   readPrivateRecordClientPin,
   assertPrivateRecordClientProof,
   PRIVATE_RECORD_CLIENT_TITLE,
+  snapshotPrivateRecordFixtureProfile,
+  readPrivateRecordFixturePlayerNumber,
+  assertPrivateRecordFixtureRoster,
 } from '../../scripts/ci/private-record-client-proof.mjs';
 import { installPrivateRecordEngineInterruption } from '../e2e/support/privateRecordEngineInterruption';
 const client = 'a'.repeat(40),
@@ -71,6 +74,8 @@ const browserEvidence = () => ({
   clientSha: client,
   gatewaySha: gateway,
   actualPublishedClient: true,
+  authoritativeFixtureIdentity: true,
+  rosterIdentityVerified: true,
   genuineSession: true,
   engineReadyBefore: true,
   isolatedEngineChannelFault: true,
@@ -263,6 +268,8 @@ describe('finite published record client proof admission and verdict', () => {
       { gatewayReadyAfterFault: false },
       { gatewayRecordChangedAfterRestore: false },
       { genuineSession: false },
+      { authoritativeFixtureIdentity: false },
+      { rosterIdentityVerified: false },
       { readerReadback: false },
       { faultRestored: false },
       { syntheticFrames: 1 },
@@ -403,6 +410,10 @@ describe('finite published record client proof admission and verdict', () => {
     );
     expect(workflow).toContain('node scripts/ci/private-record-client-proof.mjs verify');
     const source = readFileSync('tests/e2e/production-private-record-failover.spec.ts', 'utf8');
+    const roster = readFileSync('src/pages/ClubMembersPage.tsx', 'utf8');
+    expect(roster).toMatch(/<input\s+type="search"[\s\S]*?aria-label="Search Club Members"/);
+    expect(source).toContain("getByRole('searchbox', { name: 'Search Club Members' })");
+    expect(source).not.toContain("getByRole('textbox', { name: 'Search Club Members' })");
     expect(source).not.toMatch(/route\.fulfill|\.send\(|setContent\(/);
     expect(source).toContain('ca_club_member_detail');
     expect(source).toContain('arena_avatar_url');
@@ -427,4 +438,50 @@ it('selects the verified independent fallback in both actual client build inputs
       'https://ca-static.smarter.poker/private-record'
     );
   }
+});
+
+it('uses authorized player identity with a nullable alias and exact cosmetic snapshot', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const profile = { id, alias: null, avatar_url: null, arena_avatar_url: '/avatars/fixture.webp' };
+  expect(snapshotPrivateRecordFixtureProfile([profile], id)).toEqual({
+    id,
+    avatar_url: null,
+    arena_avatar_url: '/avatars/fixture.webp',
+  });
+  expect(
+    readPrivateRecordFixturePlayerNumber({ identity: { user_id: id, player_number: '001042' } }, id)
+  ).toBe('001042');
+  for (const rows of [
+    [],
+    [profile, profile],
+    [{ ...profile, id: 'foreign' }],
+    [{ id }],
+    [{ ...profile, avatar_url: 1 }],
+  ])
+    expect(() => snapshotPrivateRecordFixtureProfile(rows, id)).toThrow();
+  for (const identity of [
+    null,
+    { user_id: 'foreign', player_number: '001042' },
+    { user_id: id },
+    { user_id: id, player_number: '' },
+    { user_id: id, player_number: 1042 },
+    { user_id: id, player_number: '1'.repeat(21) },
+    { user_id: id, player_number: 'Alias Name' },
+  ])
+    expect(() => readPrivateRecordFixturePlayerNumber({ identity }, id)).toThrow();
+});
+it('requires one actual roster row for both the authoritative number and exact actor', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const row = { user_id: id, player_number: '001042', alias: null };
+  expect(assertPrivateRecordFixtureRoster({ items: [row] }, id, '001042')).toBe(row);
+  for (const items of [
+    [],
+    [row, row],
+    [{ ...row, user_id: 'foreign' }],
+    [{ ...row, player_number: '1042' }],
+    [row, { ...row, user_id: 'foreign' }],
+    [row, { ...row, player_number: '1043' }],
+  ])
+    expect(() => assertPrivateRecordFixtureRoster({ items }, id, '001042')).toThrow();
+  expect(() => assertPrivateRecordFixtureRoster({}, id, '001042')).toThrow();
 });

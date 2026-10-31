@@ -56,3 +56,5 @@ quality commands are preserved; reviewed workflow binding keeps historical
 qualification status unchanged. Policy2.9 manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b
 loaded under overall chat audit. Protected checks, merge, exact installation
 and receipt readback remain outstanding; the correction is still unpaid.
+
+07:42Z protected main integration preserves Monday recovery audit and its additional Chicago assertion, both independent native qualifiers and both historical binding audits. Union migration/financial fixture bytes are unchanged; no prior native outcome is restamped.

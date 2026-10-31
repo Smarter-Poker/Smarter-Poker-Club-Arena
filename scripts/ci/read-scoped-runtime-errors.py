@@ -377,25 +377,91 @@ def restart_log_signs(raw):
             'absenceMeans': 'unknown; bounded retained logs may omit the failure'}
 
 
+def kernel_restart_signs(data):
+    """Classify native faults without exporting journal text, addresses or paths.
+
+    A host node process is not necessarily this container. Docker's original
+    event window must be correlated independently; never infer attribution.
+    """
+    rows = []
+    for line in data.splitlines():
+        value = json.loads(line)
+        message = value.get('MESSAGE', '')
+        if not isinstance(message, str):
+            continue
+        timestamp = value.get('__REALTIME_TIMESTAMP')
+        row = {'timestampUs': timestamp if isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}', timestamp) else None,
+               'engineAttribution': 'unproven'}
+        if re.search(r'Out of memory: Killed process|oom-kill:|Memory cgroup out of memory', message):
+            rows.append({**row, 'kind': 'host_oom_observed'})
+            continue
+        fault = re.search(r'^(?:traps: )?([^\s\[\]]{1,64})\[[0-9]{1,10}\]:? (segfault at|general protection fault)\b', message)
+        if not fault:
+            continue
+        module = re.search(r'\bin ([^\s\[\]]{1,80})\[', message)
+        module_class = {'node': 'node', 'libc.so.6': 'libc', 'libstdc++.so.6': 'libstdc++',
+                        'libuv.so.1': 'libuv', 'libcrypto.so.3': 'libcrypto'}.get(module[1] if module else '', 'unknown')
+        rows.append({**row, 'kind': 'host_native_fault_observed',
+                     'fault': 'segmentation_fault' if fault[2] == 'segfault at' else 'general_protection_fault',
+                     'processClass': 'node' if fault[1] == 'node' else 'other', 'moduleClass': module_class})
+    return rows
+
+
+def coredump_restart_signs(data, container_id, window):
+    """Metadata only; exact Docker cgroup identity, never core bytes or paths."""
+    start, end = [int(datetime.datetime.fromisoformat(window[k].replace('Z', '+00:00')).timestamp()*1000000)
+                  for k in ('since', 'until')]
+    rows = []
+    for line in data.splitlines():
+        value = json.loads(line)
+        stamp = value.get('COREDUMP_TIMESTAMP')
+        signal = value.get('COREDUMP_SIGNAL')
+        if (not isinstance(stamp, str) or not re.fullmatch(r'[0-9]{1,20}', stamp)
+                or not start <= int(stamp) < end
+                or not isinstance(signal, str) or not re.fullmatch(r'[0-9]{1,2}', signal)
+                or not 1 <= int(signal) <= 64):
+            continue
+        cgroup = value.get('COREDUMP_CGROUP')
+        match = (re.fullmatch(r'/(?:system.slice/docker-([0-9a-f]{64})\.scope|docker/([0-9a-f]{64}))', cgroup)
+                 if isinstance(cgroup, str) else None)
+        captured_id = next((part for part in match.groups() if part), None) if match else None
+        attribution = ('current_container_cgroup_match' if container_id and captured_id == container_id
+                       else 'different_container' if container_id and captured_id else 'unproven')
+        rows.append({'timestampUs': stamp, 'signal': int(signal),
+                     'processClass': 'node' if value.get('COREDUMP_COMM') == 'node' else 'other',
+                     'engineAttribution': attribution,
+                     'rootCause': 'unproven'})
+    return rows
+
+
 def read_restart_incident(window, raw):
     """Read the fixed engine container and original host window; no mutation."""
     result = {'engineLogSigns': restart_log_signs(raw), 'sources': {},
               'absenceMeans': 'unknown; Docker events and host journals have finite retention'}
+    container_id = None
     commands = {
-        'container': ['docker', 'inspect', '--format', '{{json .State}}', 'club-arena-engine'],
+        'container': ['docker', 'inspect', '--format', '{"Id":{{json .Id}},"State":{{json .State}}}', 'club-arena-engine'],
         'events': ['docker', 'events', '--since', window['since'], '--until', window['until'],
                    '--filter', 'container=club-arena-engine', '--format', '{{json .}}'],
         'autoheal': ['docker', 'logs', '--since', window['since'], '--until', window['until'],
                      '--tail', '1000', '--timestamps', 'sp-autoheal'],
         'kernel': ['journalctl', '-k', '--since', window['since'], '--until', window['until'],
                    '--no-pager', '-n', '1000', '-o', 'json', '--output-fields=MESSAGE'],
+        'coredump': ['journalctl', 'MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1',
+                     '--since', window['since'], '--until', window['until'],
+                     '--no-pager', '-n', '1000', '-o', 'json',
+                     '--output-fields=COREDUMP_TIMESTAMP,COREDUMP_SIGNAL,COREDUMP_COMM,COREDUMP_CGROUP'],
     }
     for source, command in commands.items():
         try:
             data = capture(command, seconds=4)
             rows = []
             if source == 'container':
-                value = json.loads(data)
+                inspected = json.loads(data)
+                candidate = inspected.get('Id')
+                if isinstance(candidate, str) and re.fullmatch(r'[0-9a-f]{64}', candidate):
+                    container_id = candidate
+                value = inspected.get('State', {})
                 row = {}
                 for key in ['OOMKilled', 'Running', 'Restarting']:
                     if type(value.get(key)) is bool:
@@ -428,14 +494,10 @@ def read_restart_incident(window, raw):
                     stamp = STAMP.match(line)
                     if stamp and re.search(r'(?<![A-Za-z0-9_-])club-arena-engine(?![A-Za-z0-9_-])', line) and re.search(r'(?i)unhealthy|restart', line):
                         rows.append({'timestamp': stamp[1], 'kind': 'autoheal_engine_restart_observed'})
+            elif source == 'kernel':
+                rows = kernel_restart_signs(data)
             else:
-                for line in data.splitlines():
-                    value = json.loads(line)
-                    message = value.get('MESSAGE', '')
-                    if isinstance(message, str) and re.search(r'Out of memory: Killed process|oom-kill:|Memory cgroup out of memory', message):
-                        timestamp = value.get('__REALTIME_TIMESTAMP')
-                        rows.append({'timestampUs': timestamp if isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}', timestamp) else None,
-                                     'kind': 'host_oom_observed', 'engineAttribution': 'unproven'})
+                rows = coredump_restart_signs(data, container_id, window)
             result['sources'][source] = {'status': 'observed', 'records': rows[-40:],
                                          'matchingRecords': len(rows), 'inputBytes': len(data)}
         except Exception:

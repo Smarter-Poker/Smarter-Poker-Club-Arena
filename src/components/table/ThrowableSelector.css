@@ -1101,3 +1101,76 @@
     height: auto;
   }
 }
+
+.throwable-selector__status {
+  padding: 8px 16px;
+  color: var(--ts-text-primary);
+  text-align: center;
+}
+
+/* The existing master supplies the frame; controls print on its glass. */
+.throwable-selector.sc {
+  --sc-max: 420px;
+  width: min(420px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.throwable-selector.sc::before {
+  display: none;
+}
+.throwable-selector.sc .throwable-selector__header {
+  padding: 0 0 8px;
+  background: transparent;
+  border: 0;
+}
+.throwable-selector.sc .throwable-selector__tabs {
+  padding: 4px 0 8px;
+  grid-template-columns: 1.15fr 0.7fr 0.85fr 1.25fr 0.55fr;
+}
+.throwable-selector.sc .throwable-selector__tab,
+.throwable-selector.sc .throwable-selector__close,
+.throwable-selector.sc .throwable-selector__item,
+.throwable-selector.sc .throwable-selector__buy {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.throwable-selector.sc .throwable-selector__tab {
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 0 !important;
+  font:
+    600 clamp(10px, 3.25cqw, 14px) / 1.2 'Roboto Condensed',
+    sans-serif !important;
+  letter-spacing: 0;
+  text-overflow: clip;
+  color: #9aa5b3 !important;
+}
+.throwable-selector.sc .throwable-selector__tab--active {
+  color: #45adff !important;
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+.throwable-selector.sc .throwable-selector__tab[data-cat='premium'] {
+  color: #b79dff !important;
+}
+.throwable-selector.sc .throwable-selector__grid {
+  padding: 0;
+  max-height: min(360px, 45dvh);
+}
+.throwable-selector.sc .throwable-selector__item {
+  min-width: 0;
+  padding: 6px 2px !important;
+}
+.throwable-selector.sc .throwable-selector__name {
+  font-size: 12px;
+  white-space: normal;
+}

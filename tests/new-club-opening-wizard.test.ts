@@ -192,6 +192,7 @@ describe('paid leaderboard funding waterfall', () => {
     expect(sweepSql).toContain('CREATE OR REPLACE FUNCTION public.fn_settle_due_leaderboards()');
     expect(sweepScheduleSql).toContain("'leaderboard-payout-waterfall-daily'");
     expect(sweepScheduleSql).toContain("'0 7,8 * * 1'");
+    expect(sweepScheduleSql).toContain("AT TIME ZONE 'America/Chicago'");
     expect(sweepScheduleSql).toContain(
       "extract(hour FROM now() AT TIME ZONE 'America/Chicago') = 2"
     );

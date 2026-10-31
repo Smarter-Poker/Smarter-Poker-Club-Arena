@@ -104,6 +104,10 @@ it('runs only the two owned browser journeys with cleanup and no caller-selected
   const { readFileSync } = await import('node:fs');
   const workflow = readFileSync('.github/workflows/lobby-ui-proof.yml', 'utf8');
   expect(workflow).toContain('types: [verify-lobby-ui]');
+  expect(workflow).toContain('npx playwright install --with-deps chromium webkit');
+  expect(readFileSync('tests/e2e/production-mobile-lobby-chrome.spec.ts', 'utf8')).toContain(
+    "...devices['iPhone 13']"
+  );
   expect(workflow).not.toContain('workflow_dispatch:');
   expect(workflow).not.toContain('schedule:');
   expect(workflow).not.toContain('client_payload.');

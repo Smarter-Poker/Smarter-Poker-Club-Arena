@@ -48,5 +48,15 @@
     "previousWorkflowSha256": "9082550dfadaa75c64b74f7df2fe4264ec01ed93bc7d32741ded9697d8fcc9e1",
     "reason": "Preserve protected-main weekly quality and all prior commands, adding only original Monday and union leaderboard PostgreSQL qualification. Historical quality inputs and verdicts remain unchanged.",
     "execution_performed": false
+  },
+  "mondayScheduleComposition": {
+    "priorWorkflowSha256": "9082550dfadaa75c64b74f7df2fe4264ec01ed93bc7d32741ded9697d8fcc9e1",
+    "reason": "PR8450 recovery adds Monday calendar qualifier and its fixture/runner trigger paths; reviewed diff preserves every prior typed quality and weekly close command byte for byte.",
+    "runtimeOrFinancialInputsChanged": false,
+    "priorQualificationStatusUnchanged": true
+  },
+  "unionLeaderboardIntegration20261031": {
+    "reason": "Retain Monday protected recovery audit, extra Chicago source assertion and every existing native qualifier; exact union SQL and fixture inputs unchanged.",
+    "financialInputsChanged": false
   }
 }

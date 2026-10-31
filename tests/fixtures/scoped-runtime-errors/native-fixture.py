@@ -105,15 +105,18 @@ class NativeLogReader(unittest.TestCase):
         events = [{'Action': 'die', 'timeNano': 1793228940000000000,
                    'Actor': {'Attributes': {'name': 'club-arena-engine', 'exitCode': '137', 'PRIVATE': 'SECRET'}}},
                   {'Action': 'die', 'timeNano': 1, 'Actor': {'Attributes': {'name': 'other'}}}]
-        sources = [json.dumps({'Running': True, 'OOMKilled': False, 'ExitCode': 0,
-                               'StartedAt': '2026-10-28T23:09:14Z', 'Error': 'SECRET'}).encode(),
+        sources = [json.dumps({'Id': 'a'*64, 'State': {'Running': True, 'OOMKilled': False, 'ExitCode': 0,
+                               'StartedAt': '2026-10-28T23:09:14Z', 'Error': 'SECRET'}}).encode(),
                    ('\n'.join(json.dumps(e) for e in events)).encode(),
                    (STAMP+'Container /club-arena-engine unhealthy - Restarting PRIVATE\n').encode(),
                    json.dumps({'MESSAGE': 'Out of memory: Killed process PRIVATE',
-                               '__REALTIME_TIMESTAMP': '1793228940000000'}).encode()]
+                               '__REALTIME_TIMESTAMP': '1793228940000000'}).encode(),
+                   json.dumps({'COREDUMP_TIMESTAMP': '1793228940000000', 'COREDUMP_SIGNAL': '11',
+                               'COREDUMP_COMM': 'node', 'COREDUMP_CGROUP': '/docker/'+('a'*64),
+                               'MESSAGE': 'PRIVATE'}).encode()]
         with patch.object(reader, 'capture', side_effect=sources) as capture:
             result = reader.read_restart_incident(window, b'')
-        self.assertEqual(len(capture.call_args_list), 4)
+        self.assertEqual(len(capture.call_args_list), 5)
         for call in capture.call_args_list:
             command = call.args[0]
             self.assertNotIn('restart', command)
@@ -122,11 +125,59 @@ class NativeLogReader(unittest.TestCase):
         self.assertEqual(result['sources']['events']['records'], [
             {'action': 'die', 'timeNano': 1793228940000000000, 'exitCode': 137}])
         self.assertEqual(result['sources']['kernel']['records'][0]['engineAttribution'], 'unproven')
+        self.assertEqual(result['sources']['coredump']['records'][0]['engineAttribution'], 'current_container_cgroup_match')
+        core_command = capture.call_args_list[-1].args[0]
+        self.assertEqual(core_command[-1], '--output-fields=COREDUMP_TIMESTAMP,COREDUMP_SIGNAL,COREDUMP_COMM,COREDUMP_CGROUP')
+        self.assertNotIn('a'*64, json.dumps(result))
         self.assertNotIn('SECRET', json.dumps(result))
         self.assertNotIn('PRIVATE', json.dumps(result))
         with patch.object(reader, 'capture', side_effect=OSError('SECRET')):
             failed = reader.read_restart_incident(window, b'')
         self.assertTrue(all(s == {'status': 'unavailable'} for s in failed['sources'].values()))
+
+    def test_coredump_metadata_attributes_exact_container_without_exposing_identity(self):
+        window = {'since': '2026-10-31T06:00:00Z', 'until': '2026-10-31T06:15:00Z'}
+        event = {'COREDUMP_TIMESTAMP': '1793427052000000', 'COREDUMP_SIGNAL': '11',
+                 'COREDUMP_COMM': 'node', 'COREDUMP_CGROUP': '/system.slice/docker-'+('a'*64)+'.scope',
+                 'MESSAGE': 'PRIVATE stack pointer', 'COREDUMP_CMDLINE': 'SECRET', 'COREDUMP': 'SECRET'}
+        def read(row, identity='a'*64):
+            return reader.coredump_restart_signs(json.dumps(row).encode(), identity, window)
+        result = read(event)
+        self.assertEqual(result[0]['engineAttribution'], 'current_container_cgroup_match')
+        self.assertEqual(result[0]['signal'], 11)
+        self.assertEqual(result[0]['rootCause'], 'unproven')
+        for secret in ['PRIVATE', 'SECRET', 'a'*64, '/system.slice']:
+            self.assertNotIn(secret, json.dumps(result))
+        self.assertEqual(read(event, 'b'*64)[0]['engineAttribution'], 'different_container')
+        self.assertEqual(read(event, None)[0]['engineAttribution'], 'unproven')
+        for group in [None, '/system.slice/docker-'+('a'*12)+'.scope', '/PRIVATE/'+('a'*64), ['PRIVATE']]:
+            self.assertEqual(read({**event, 'COREDUMP_CGROUP': group})[0]['engineAttribution'], 'unproven')
+        self.assertEqual(read({**event, 'COREDUMP_CGROUP': '/docker/'+('a'*64)})[0]['engineAttribution'], 'current_container_cgroup_match')
+        for patch in [{'COREDUMP_TIMESTAMP': '0'}, {'COREDUMP_TIMESTAMP': []},
+                      {'COREDUMP_SIGNAL': '65'}, {'COREDUMP_SIGNAL': 'PRIVATE'}]:
+            self.assertEqual(read({**event, **patch}), [])
+
+    def test_kernel_native_fault_is_classified_without_exporting_addresses_or_payload(self):
+        events = [
+            {'MESSAGE': 'node[123]: segfault at deadbeef ip 0000 sp 0000 error 4 in node[abcd+1234] PRIVATE', '__REALTIME_TIMESTAMP': '1793427054862585'},
+            {'MESSAGE': 'traps: node[123] general protection fault ip:abcd sp:1234 error:0 in libc.so.6[abc+def] PRIVATE'},
+            {'MESSAGE': 'PRIVATE[123]: segfault at 0 ip 0 sp 0 error 4 in PRIVATE[abc+123]'},
+            {'MESSAGE': 'Out of memory: Killed process PRIVATE'},
+            {'MESSAGE': 'unrelated PRIVATE text'},
+            {'MESSAGE': ['segfault']},
+        ]
+        rows = reader.kernel_restart_signs(('\n'.join(json.dumps(e) for e in events)).encode())
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0], {'timestampUs': '1793427054862585', 'kind': 'host_native_fault_observed',
+                                  'fault': 'segmentation_fault', 'processClass': 'node',
+                                  'moduleClass': 'node', 'engineAttribution': 'unproven'})
+        self.assertEqual(rows[1]['fault'], 'general_protection_fault')
+        self.assertEqual(rows[1]['moduleClass'], 'libc')
+        self.assertEqual(rows[2]['processClass'], 'other')
+        self.assertEqual(rows[2]['moduleClass'], 'unknown')
+        self.assertEqual(rows[3]['kind'], 'host_oom_observed')
+        for secret in ['PRIVATE', 'deadbeef', 'abcd', '1234']:
+            self.assertNotIn(secret, json.dumps(rows))
 
     def test_failure_diagnostics_never_export_exception_or_transport_text(self):
         cases = [(RuntimeError('PRIVATE host token query'), 'refused'),

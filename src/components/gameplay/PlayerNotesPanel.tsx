@@ -12,7 +12,7 @@ import { supabase } from '../../lib/supabase';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { vipService, FEATURE_PRICING } from '../../services/VIPService';
-import { NOTE_COLORS, PLAYER_TAGS } from '../../services/PlayerNotesService';
+import { NOTE_COLORS, PLAYER_TAGS, playerNotesService } from '../../services/PlayerNotesService';
 import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import { useToast } from '../common/Toast';
 import styles from './PlayerNotesPanel.module.css';
@@ -63,6 +63,8 @@ export default function PlayerNotesPanel({
      the player cannot see. The save button refuses until a reload succeeds. */
   const [noteLoadFailed, setNoteLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   /** In-flight latch for the paid tag purchase — see toggleTag. */
   const tagPurchaseRef = useRef(false);
   const accountRequestRef = useRef(0);
@@ -113,6 +115,7 @@ export default function PlayerNotesPanel({
     setSelectedColor('none');
     setIsVIP(false);
     setSaving(false);
+    savingRef.current = false;
     setNoteLoadFailed(false);
     setLoading(!!requestedUserId);
     tagPurchaseRef.current = false;
@@ -193,7 +196,12 @@ export default function PlayerNotesPanel({
       if (isCurrent()) setLoading(false);
     };
 
-    void (requestedTargetUserId ? loadSingleNote() : loadAllNotes());
+    void (requestedTargetUserId ? loadSingleNote() : loadAllNotes()).catch((error) => {
+      if (!isCurrent()) return;
+      reportError(error, 'PlayerNotesPanel.Load');
+      setNoteLoadFailed(true);
+      setLoading(false);
+    });
     void vipService
       .checkVIPStatus(requestedUserId)
       .then((status) => {
@@ -209,13 +217,19 @@ export default function PlayerNotesPanel({
       mounted = false;
       if (accountRequestRef.current === requestId) accountRequestRef.current += 1;
     };
-  }, [activeScope, targetUserId, toast, user?.id]);
+  }, [activeScope, targetUserId, toast, user?.id, loadAttempt]);
 
   const saveNote = async () => {
     const requestedUserId = user?.id;
     const requestedScope = activeScope;
     const note = visibleCurrentNote.trim();
-    if (!requestedUserId || !targetUserId || !note || !stateBelongsToActiveScope || visibleLoading)
+    if (
+      !requestedUserId ||
+      !targetUserId ||
+      savingRef.current ||
+      !stateBelongsToActiveScope ||
+      visibleLoading
+    )
       return;
     if (visibleLoadFailed) {
       toast.error('Your Existing Note Could Not Be Read. Reopen The Panel Before Saving.');
@@ -224,27 +238,34 @@ export default function PlayerNotesPanel({
     const requestId = ++accountRequestRef.current;
     const isCurrent = () =>
       activeScopeRef.current === requestedScope && accountRequestRef.current === requestId;
+    savingRef.current = true;
     setSaving(true);
 
-    const { error } = await supabase.from('player_notes').upsert(
-      {
-        user_id: requestedUserId,
-        target_user_id: targetUserId,
-        notes: note,
-        tags: visibleSelectedTags,
-        color_label: visibleSelectedColor,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,target_user_id' }
-    );
+    try {
+      const { error } = await supabase.from('player_notes').upsert(
+        {
+          user_id: requestedUserId,
+          target_user_id: targetUserId,
+          notes: note,
+          tags: visibleSelectedTags,
+          color_label: visibleSelectedColor,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,target_user_id' }
+      );
 
-    if (!isCurrent()) return;
-    setSaving(false);
-    if (error) {
-      toast.error('Failed To Save Note');
-      return;
+      if (error) throw error;
+      playerNotesService.clearCache();
+      if (isCurrent()) onClose?.();
+    } catch (error) {
+      reportError(error, 'PlayerNotesPanel.Save');
+      if (isCurrent()) toast.error('Failed To Save Note. Your Draft Is Still Here.');
+    } finally {
+      if (isCurrent()) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
-    onClose?.();
   };
 
   const toggleTag = async (tag: string) => {
@@ -336,13 +357,10 @@ export default function PlayerNotesPanel({
   if (targetUserId) {
     const saveLabel = saving ? 'Saving...' : 'Save Note';
     const saveDisabled =
-      saving ||
-      visibleLoading ||
-      visibleLoadFailed ||
-      !visibleCurrentNote.trim() ||
-      !stateBelongsToActiveScope;
+      saving || visibleLoading || visibleLoadFailed || !stateBelongsToActiveScope;
     const body = (
       <>
+        <p className="sc-copy sc-ink--muted">Private Notes. Only You Can See These.</p>
         <label className={styles.srOnly} htmlFor="player-note-input">
           Notes About This Player
         </label>
@@ -353,12 +371,18 @@ export default function PlayerNotesPanel({
           value={visibleCurrentNote}
           onChange={(e) => setCurrentNote(e.target.value)}
           rows={compact ? 3 : 5}
-          disabled={visibleLoading || visibleLoadFailed}
+          disabled={visibleLoading || visibleLoadFailed || saving}
         />
 
         {visibleLoadFailed && (
           <div className={`${styles.empty} sc-ink--red`} role="alert">
-            Player Note Could Not Be Loaded. Close And Try Again.
+            Player Note Could Not Be Loaded.
+            <button
+              className={`${styles.word} sc-ink--white`}
+              onClick={() => setLoadAttempt((n) => n + 1)}
+            >
+              Retry
+            </button>
           </div>
         )}
 
@@ -374,7 +398,9 @@ export default function PlayerNotesPanel({
                   className={`${styles.word} ${styles.tag} ${on ? `${styles.selected} sc-ink--white` : 'sc-ink--muted'}`}
                   aria-pressed={on}
                   onClick={() => toggleTag(tag)}
-                  disabled={!stateBelongsToActiveScope || visibleLoading || visibleLoadFailed}
+                  disabled={
+                    !stateBelongsToActiveScope || visibleLoading || visibleLoadFailed || saving
+                  }
                 >
                   {tag}
                 </button>
@@ -396,7 +422,9 @@ export default function PlayerNotesPanel({
                 title={color.name}
                 aria-label={color.name}
                 aria-pressed={visibleSelectedColor === color.value}
-                disabled={!stateBelongsToActiveScope || visibleLoading || visibleLoadFailed}
+                disabled={
+                  !stateBelongsToActiveScope || visibleLoading || visibleLoadFailed || saving
+                }
               />
             ))}
           </div>
@@ -462,7 +490,7 @@ export default function PlayerNotesPanel({
         placeholder="Search Notes..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        disabled={visibleLoading || visibleLoadFailed}
+        disabled={visibleLoading || visibleLoadFailed || saving}
       />
 
       <div className={styles.notesList}>

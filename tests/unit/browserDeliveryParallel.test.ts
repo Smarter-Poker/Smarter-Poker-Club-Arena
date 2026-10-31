@@ -377,7 +377,9 @@ describe('one exact-run disposable browser artifact', () => {
   const verify = step("Verify this run's browser build");
 
   it('retains admission, free runners, same-run identity and a separate production build', () => {
-    expect(producer.if).toBe(browser.if);
+    expect(producer.if.trim()).toBe(
+      browser.if.trim() + " && needs.changes.outputs.server == 'true'"
+    );
     expect(producer.needs).toBe('changes');
     expect(browser.needs).toEqual(['changes', 'css-beats-build']);
     expect(producer['runs-on']).toBe('ubuntu-latest');
@@ -394,13 +396,31 @@ describe('one exact-run disposable browser artifact', () => {
     expect(upload.with['retention-days']).toBe(1);
     expect(upload.with['include-hidden-files']).toBe(true);
     expect(upload.with['if-no-files-found']).toBe('error');
-    expect(browser.steps.some((s: { run?: string }) => s.run === 'npm run build:ci')).toBe(false);
+    expect(step('Build this commit').if).toBe("needs.changes.outputs.server != 'true'");
+    expect(step('Cache optimized dist media').if).toBe("needs.changes.outputs.server != 'true'");
+    expect(download.if).toBe("needs.changes.outputs.server == 'true'");
+    expect(verify.if).toBe(download.if);
     expect(
       producer.steps.filter((s: { run?: string }) => s.run === 'npm run build:ci')
     ).toHaveLength(1);
     expect(ci.jobs.build.needs).not.toContain('css-beats-build');
     for (const s of producer.steps) expect(s['continue-on-error']).toBeUndefined();
   });
+
+  it.each([undefined, '', 'false', 'unknown', 'true', 'TRUE'])(
+    'chooses exactly one build source for classifier output %s',
+    (value) => {
+      const output = typeof value === 'string' ? value.toLowerCase() : value;
+      const needs = { changes: { outputs: { server: output } } };
+      const evaluate = (condition: string) =>
+        new Function('needs', `return (${condition});`)(needs);
+      const local = evaluate(step('Build this commit').if);
+      const artifact = evaluate(step("Download this run's browser build").if);
+      expect(Number(local) + Number(artifact)).toBe(1);
+      expect(artifact).toBe(output === 'true');
+      expect(evaluate(verify.if)).toBe(artifact);
+    }
+  );
 
   it.each([
     'valid',

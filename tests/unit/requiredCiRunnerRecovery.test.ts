@@ -133,7 +133,7 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
     const exactHash = (value: unknown) =>
       createHash('sha256').update(JSON.stringify(value)).digest('hex');
     expect(exactHash(browserBuild)).toBe(
-      '6abe39f87d822b66068184b7978b47d325e4fbce13451d0ac9c3a7f63a673ca7'
+      '1d75a0c1c211190a532d247c4f6009f2c876ffe0f0775465ab0732f4005462bc'
     );
     expect(browserJob.needs).toEqual(['changes', 'css-beats-build']);
     browserJob.needs = 'changes';
@@ -151,17 +151,15 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
         .map((step: { name: string }) => step.name)
     ).toEqual(transferNames);
     expect(exactHash(browserJob.steps.slice(transferStart, transferStart + 2))).toBe(
-      '1608419a74db967a8e45a3bfc10c698a26f1865e3d5a9a336b10f516669090bb'
+      'ff193edb18cbf4c4ddc745ada4cac0d08e589b177afc226b5e40b0b647aadc15'
     );
-    browserJob.steps.splice(
-      transferStart,
-      2,
-      ...['Cache optimized dist media', 'Build this commit'].map((name) => {
-        const selected = browserBuild.steps.filter((step: { name: string }) => step.name === name);
-        expect(selected).toHaveLength(1);
-        return selected[0];
-      })
-    );
+    browserJob.steps.splice(transferStart, 2);
+    for (const name of ['Cache optimized dist media', 'Build this commit']) {
+      const selected = browserJob.steps.filter((step: { name: string }) => step.name === name);
+      expect(selected).toHaveLength(1);
+      expect(selected[0].if).toBe("needs.changes.outputs.server != 'true'");
+      delete selected[0].if;
+    }
     delete normalized.jobs['css-beats-build'];
     normalizeFrameCoverAddition(normalized.jobs.accounting_postgres);
     normalizePostpaidQualityAddition(normalized.jobs.accounting_postgres);

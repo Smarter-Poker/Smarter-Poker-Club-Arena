@@ -4231,7 +4231,8 @@ jobs:
     if: >-
       !cancelled() && github.event_name == 'pull_request' &&
       needs.changes.outputs.head_current != 'false' &&
-      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true') &&
+      needs.changes.outputs.server == 'true'
     name: Browser harness build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -4513,13 +4514,69 @@ jobs:
       - name: Install Chromium and WebKit
         run: npx playwright install chromium webkit --with-deps
 
+      # Same content-addressed media cache as Production Build, same key, so
+      # whichever of the two runs first warms it for the other.
+      - name: Cache optimized dist media
+        if: needs.changes.outputs.server != 'true'
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/dist-media
+          key: >-
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
+            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
+          restore-keys: dist-media-v1-${{ runner.os }}-
+
+      # `build:ci` - see the long note on the Production Build step for why
+      # dropping `tsc -b` here checks nothing less than before. This job is the
+      # critical path of the whole pipeline, so the 47.8s it was spending on a
+      # typecheck the required `typecheck` job had already performed was 47.8s
+      # added to every push-to-live.
+      - name: Build this commit
+        if: needs.changes.outputs.server != 'true'
+        env:
+          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
+          # The app fails closed before React mounts when these Vite values are
+          # absent. Footer route probes do not call Supabase, so deterministic
+          # non-secret placeholders are the correct isolated CI configuration.
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: footer-probe-ci
+          # ── ONE BUILD, THREE SUITES (2026-09-05) ───────────────────────────
+          #
+          # These two flags gate lazy-loaded dev showcase routes in App.tsx.
+          # Without them here, the two harness suites below could not use this
+          # build, so each started a Vite DEV server of its own and compiled
+          # the whole app again on demand. Measured on runs 8843 and 8844 that
+          # second compile was 141-200s - roughly HALF of this job, which is
+          # itself the critical path of every merge (CSS Beat p50 334s of a
+          # 6.8m ci.yml, and PR-to-merge p50 was also 6.8m: CI *is* the merge
+          # latency here).
+          #
+          # WHY THIS IS SAFE, and the reason the flags stay BUILD-time rather
+          # than becoming a runtime toggle: this bundle is thrown away. The
+          # `Production Build` job and `publish-club-arena.yml` both build
+          # WITHOUT these flags, so nothing a player downloads contains the
+          # harness routes. tests/one-build-three-suites.law.test.ts asserts
+          # they appear in this job and nowhere else - a flag like this leaking
+          # into the publisher is the one way this change could hurt.
+          #
+          # The beats are unaffected: two extra lazy routes change no CSS and
+          # no component the fixtures render.
+          VITE_CUSTOMIZATION_TEST_HARNESS: 'true'
+          VITE_FINANCIAL_DECISION_TEST_HARNESS: 'true'
+        run: npm run build:ci
+
+      # Full qualification already waits on native suites. UI-only checks keep
+      # parallel builds rather than inheriting a shared-producer setup barrier.
       - name: Download this run's browser build
+        if: needs.changes.outputs.server == 'true'
         uses: actions/download-artifact@v4
         with:
           name: browser-harness-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: dist
 
       - name: Verify this run's browser build
+        if: needs.changes.outputs.server == 'true'
         env:
           EXPECTED_SHA: ${{ github.sha }}
         run: |

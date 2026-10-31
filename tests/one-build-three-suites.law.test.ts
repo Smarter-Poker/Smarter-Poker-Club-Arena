@@ -95,7 +95,7 @@ describe('the harness never reaches a bundle a player downloads', () => {
   it('the flags appear only in the CSS Beat build job', () => {
     // Any OTHER job setting them is either shipping them or wasting the build
     // cache on a bundle that differs from the one it is meant to verify.
-    const beats = job(CI, 'css-beats-build');
+    const beats = job(CI, 'css-beats-build') + job(CI, 'css-beats-e2e');
     for (const flag of HARNESS_FLAGS) {
       const everywhere = (CI.match(new RegExp(flag, 'g')) || []).length;
       const inBeats = (beats.match(new RegExp(flag, 'g')) || []).length;

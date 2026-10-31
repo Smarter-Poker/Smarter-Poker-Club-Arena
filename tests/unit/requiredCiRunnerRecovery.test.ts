@@ -100,7 +100,12 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
           ? `always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)`
           : previous;
       expect(selected[0].if).toBe(
-        oldCondition.replace(/matrix.shard == [34]/, 'matrix.shard == 2')
+        oldCondition.replace(
+          /matrix.shard == [34]/,
+          name === 'Backed payout discovery preserves every conservation term'
+            ? 'matrix.shard == 3'
+            : 'matrix.shard == 2'
+        )
       );
       selected[0].if = oldCondition;
     }
@@ -120,6 +125,44 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       );
       selected[0].if = previous;
     }
+    // Pin the entire reviewed producer and transfer pair before reconstructing
+    // the former browser shape. The historical job hash still protects every
+    // original build command, browser assertion, timeout and step ordering.
+    const browserBuild = normalized.jobs['css-beats-build'];
+    const browserJob = normalized.jobs['css-beats-e2e'];
+    const exactHash = (value: unknown) =>
+      createHash('sha256').update(JSON.stringify(value)).digest('hex');
+    expect(exactHash(browserBuild)).toBe(
+      '6abe39f87d822b66068184b7978b47d325e4fbce13451d0ac9c3a7f63a673ca7'
+    );
+    expect(browserJob.needs).toEqual(['changes', 'css-beats-build']);
+    browserJob.needs = 'changes';
+    const transferNames = ["Download this run's browser build", "Verify this run's browser build"];
+    for (const name of transferNames)
+      expect(browserJob.steps.filter((step: { name: string }) => step.name === name)).toHaveLength(
+        1
+      );
+    const transferStart = browserJob.steps.findIndex(
+      (step: { name: string }) => step.name === transferNames[0]
+    );
+    expect(
+      browserJob.steps
+        .slice(transferStart, transferStart + 2)
+        .map((step: { name: string }) => step.name)
+    ).toEqual(transferNames);
+    expect(exactHash(browserJob.steps.slice(transferStart, transferStart + 2))).toBe(
+      '1608419a74db967a8e45a3bfc10c698a26f1865e3d5a9a336b10f516669090bb'
+    );
+    browserJob.steps.splice(
+      transferStart,
+      2,
+      ...['Cache optimized dist media', 'Build this commit'].map((name) => {
+        const selected = browserBuild.steps.filter((step: { name: string }) => step.name === name);
+        expect(selected).toHaveLength(1);
+        return selected[0];
+      })
+    );
+    delete normalized.jobs['css-beats-build'];
     normalizeFrameCoverAddition(normalized.jobs.accounting_postgres);
     normalizePostpaidQualityAddition(normalized.jobs.accounting_postgres);
     const formerClientRoute = '$' + '{{ ' + trusted + " && 'ca-linux-4core' || 'ubuntu-latest' }}";

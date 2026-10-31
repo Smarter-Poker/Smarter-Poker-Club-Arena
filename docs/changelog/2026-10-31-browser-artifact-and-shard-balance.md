@@ -1,0 +1,7 @@
+# Browser artifact reuse and measured shard balance
+
+The normal full validation run 41229613031 took 35m04s. Nineteen completed browser build steps consumed 1,287 runner-seconds while compiling the same disposable harness. CI now builds that harness once and transfers its sealed files to the unchanged twenty browser shards. Each consumer verifies the exact checkout SHA, validation-only provenance and complete file hashes before preview. The artifact is unique to the run, attempt and merge SHA, retained one day, and never used by production publication. All browser commands, assertions, isolated previews and required aggregate behavior remain.
+
+The same run measured PostgreSQL shards at 29m48s, 34m10s, 27m30s and 32m04s. Moving only the isolated 145-second backed-payout scan from shard 2 to shard 3 predicts about two minutes off that particular critical path. All four shards, native commands, financial assertions and deadlines remain. Neither prediction is a measured final speedup; normal required CI and publication supply the final observation.
+
+Repositories remain public, runner labels stay standard Ubuntu, and paid-runner spending controls are unchanged. No benchmark dispatch or artificial UI edit is introduced. The 12m37s server river-bluff test and weekly accounting safeguards remain intact. Existing dependency cache hits do not justify new speculative caching.

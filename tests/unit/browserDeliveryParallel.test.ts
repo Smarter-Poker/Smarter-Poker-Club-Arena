@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import {
+  readFileSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -357,6 +365,94 @@ describe('eight client shards retain the required verdict and unchanged safeguar
       // GitHub compares expression strings without case; JavaScript does not.
       const output = typeof presentation === 'string' ? presentation.toLowerCase() : presentation;
       expect(evaluate({ compile_scope: { outputs: { [key]: output } } })).toBe(expected);
+    }
+  });
+});
+
+describe('one exact-run disposable browser artifact', () => {
+  const producer = ci.jobs['css-beats-build'];
+  const seal = producer.steps.find(
+    (s: { name?: string }) => s.name === "Seal this run's browser build"
+  );
+  const verify = step("Verify this run's browser build");
+
+  it('retains admission, free runners, same-run identity and a separate production build', () => {
+    expect(producer.if).toBe(browser.if);
+    expect(producer.needs).toBe('changes');
+    expect(browser.needs).toEqual(['changes', 'css-beats-build']);
+    expect(producer['runs-on']).toBe('ubuntu-latest');
+    expect(producer.strategy).toBeUndefined();
+    expect(producer['continue-on-error']).toBeUndefined();
+    const upload = producer.steps.find(
+      (s: { uses?: string }) => s.uses === 'actions/upload-artifact@v4'
+    );
+    const download = step("Download this run's browser build");
+    expect(upload.with.name).toBe(
+      'browser-harness-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}'
+    );
+    expect(download.with).toEqual({ name: upload.with.name, path: 'dist' });
+    expect(upload.with['retention-days']).toBe(1);
+    expect(upload.with['include-hidden-files']).toBe(true);
+    expect(upload.with['if-no-files-found']).toBe('error');
+    expect(browser.steps.some((s: { run?: string }) => s.run === 'npm run build:ci')).toBe(false);
+    expect(
+      producer.steps.filter((s: { run?: string }) => s.run === 'npm run build:ci')
+    ).toHaveLength(1);
+    expect(ci.jobs.build.needs).not.toContain('css-beats-build');
+    for (const s of producer.steps) expect(s['continue-on-error']).toBeUndefined();
+  });
+
+  it.each([
+    'valid',
+    'changed',
+    'missing',
+    'extra',
+    'wrong-sha',
+    'production',
+    'symlink',
+    'wrong-provenance',
+  ])('verifies the actual transferred bytes: %s', (mutation) => {
+    const root = mkdtempSync(join(tmpdir(), 'browser-artifact-'));
+    try {
+      mkdirSync(join(root, 'dist'));
+      const head = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+      // Read-only Git identity of this checkout; the isolated fixture never writes Git state.
+      const gitDir = spawnSync('git', ['rev-parse', '--absolute-git-dir'], {
+        encoding: 'utf8',
+      }).stdout.trim();
+      writeFileSync(join(root, 'dist/index.html'), '<main>browser fixture</main>');
+      writeFileSync(
+        join(root, 'dist/ca-provenance.json'),
+        JSON.stringify({ validationOnly: true, commit: head })
+      );
+      const run = (command: string) =>
+        spawnSync('bash', ['-c', command], {
+          cwd: root,
+          encoding: 'utf8',
+          env: { ...process.env, EXPECTED_SHA: head, RUNNER_TEMP: root, GIT_DIR: gitDir },
+        });
+      const sealed = run(seal.run);
+      expect(sealed.status, sealed.stderr).toBe(0);
+      if (mutation === 'changed') writeFileSync(join(root, 'dist/index.html'), 'changed');
+      if (mutation === 'missing') rmSync(join(root, 'dist/index.html'));
+      if (mutation === 'extra') writeFileSync(join(root, 'dist/unsealed.js'), 'extra');
+      if (mutation === 'wrong-sha')
+        writeFileSync(join(root, 'dist/.browser-build-sha'), '0'.repeat(40));
+      if (mutation === 'production')
+        writeFileSync(
+          join(root, 'dist/ca-provenance.json'),
+          JSON.stringify({ validationOnly: false, commit: head })
+        );
+      if (mutation === 'symlink') symlinkSync('index.html', join(root, 'dist/link.html'));
+      if (mutation === 'wrong-provenance')
+        writeFileSync(
+          join(root, 'dist/ca-provenance.json'),
+          JSON.stringify({ validationOnly: true, commit: '0'.repeat(40) })
+        );
+      const checked = run(verify.run);
+      expect(checked.status, checked.stderr).toBe(mutation === 'valid' ? 0 : 1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

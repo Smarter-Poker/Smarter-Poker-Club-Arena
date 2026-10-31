@@ -155,8 +155,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 262364,
-      "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
+      "bytes": 267865,
+      "sha256": "874777c40dd4d8ffa5e1bbdd1c2fb0f66b1f44ea73eeb5519854730aebe2b982"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1810,5 +1810,17 @@
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false,
     "qualification": "Source binding only; not financial/native recertification, installation or live proof. Exact-candidate required checks remain necessary."
+  },
+  "browserArtifactAndShardBalance20261031": {
+    "reason": "Build the exact-run disposable browser harness once, transfer sealed bytes to every unchanged browser suite, and move the unchanged isolated backed-payout scan from accounting shard 2 to shard 3. Free runners, all assertions, required verdicts and production artifact separation preserved.",
+    "previous": {
+      "bytes": 262364,
+      "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
+    },
+    "current": {
+      "bytes": 267865,
+      "sha256": "874777c40dd4d8ffa5e1bbdd1c2fb0f66b1f44ea73eeb5519854730aebe2b982"
+    },
+    "qualification": "Current source identity only; no financial/native execution or installation is recertified. Historical records unchanged."
   }
 }

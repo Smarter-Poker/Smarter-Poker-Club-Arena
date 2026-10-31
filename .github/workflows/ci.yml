@@ -1935,7 +1935,7 @@ jobs:
         run: python3 scripts/ci/test-certification-retirement-postgres.py
 
       - name: Backed payout discovery preserves every conservation term
-        if: matrix.shard == 2
+        if: matrix.shard == 3
         run: python3 scripts/ci/test-backed-payout-scan-postgres.py
 
       - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
@@ -4225,6 +4225,149 @@ jobs:
   # evening of concurrent agent pushes; this is the net that turns the next
   # one red before it ships.
   # ───────────────────────────────────────────────────────────────────────────
+  # Build the disposable harness once per exact PR event. Production has its own build.
+  css-beats-build:
+    needs: changes
+    if: >-
+      !cancelled() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
+    name: Browser harness build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Validate this event's exact merge/base/head with full ancestry.
+          # Main may advance while queued; this disposable PR build never
+          # qualifies as a publishable current-main artifact.
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # This job had NO cache of any kind, alone among the jobs that build.
+      # It therefore paid a cold `npm ci` (45s) and a fully cold build (235s on
+      # 2026-09-04) on every run. node_modules carries `node_modules/.vite` and
+      # `node_modules/.tmp/*.tsbuildinfo` with it, so restoring it warms the vite
+      # transform cache and lets `tsc -b` run incrementally rather than from
+      # scratch.
+      #
+      # Its own key, deliberately, and it is worth saying why so nobody merges
+      # it later to "tidy up". `nm-full` belongs to `unit` and `build`, which
+      # install with a plain `npm ci`; this job uses `--ignore-scripts`, so that
+      # tree is NOT interchangeable - the same class of mistake as reusing a
+      # Node 20 cache in a Node 22 job. `nm-lite` (typecheck) DOES install
+      # identically, but typecheck never builds, so its tree carries no warm
+      # `.vite` or `.tsbuildinfo` - which is the entire point here. Separate key,
+      # so this job restores a tree that has already built once.
+      - name: Restore node_modules (vite + tsbuildinfo ride along)
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-beats-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      # THE GUARD BELOW IS THE POINT OF THE CACHE ABOVE (added 2026-09-04).
+      #
+      # This step had no `if:`, alone among the four jobs that install, so
+      # `npm ci` ran on EVERY run - and `npm ci` DELETES node_modules before
+      # installing. The restore above put a ~1GB tree back, complete with the
+      # warm `node_modules/.vite` and `node_modules/.tmp/*.tsbuildinfo` the
+      # comment above brags about carrying, and this step then threw all of it
+      # away and re-installed from scratch. The cache was doing nothing except
+      # cost the time to download and unpack it.
+      #
+      # It cost the CRITICAL PATH twice over: the install itself (45s warm,
+      # minutes on a contended box - 8.6m was measured on 2026-09-04 in the
+      # sibling typecheck job while twelve runners installed at once), and then
+      # a cold Vite transform and a cold `tsc -b` on top, because the two
+      # caches that ride inside node_modules had just been deleted with it.
+      #
+      # The other three installing jobs (`unit`, `build`, `typecheck`, and the
+      # publisher's shards) have carried this `if:` since 2026-09-01. This one
+      # was simply missed.
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      # Same content-addressed media cache as Production Build, same key, so
+      # whichever of the two runs first warms it for the other.
+      - name: Cache optimized dist media
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/dist-media
+          key: >-
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
+            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
+          restore-keys: dist-media-v1-${{ runner.os }}-
+
+      # `build:ci` - see the long note on the Production Build step for why
+      # dropping `tsc -b` here checks nothing less than before. This job is the
+      # critical path of the whole pipeline, so the 47.8s it was spending on a
+      # typecheck the required `typecheck` job had already performed was 47.8s
+      # added to every push-to-live.
+      - name: Build this commit
+        env:
+          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
+          # The app fails closed before React mounts when these Vite values are
+          # absent. Footer route probes do not call Supabase, so deterministic
+          # non-secret placeholders are the correct isolated CI configuration.
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: footer-probe-ci
+          # ── ONE BUILD, THREE SUITES (2026-09-05) ───────────────────────────
+          #
+          # These two flags gate lazy-loaded dev showcase routes in App.tsx.
+          # Without them here, the two harness suites below could not use this
+          # build, so each started a Vite DEV server of its own and compiled
+          # the whole app again on demand. Measured on runs 8843 and 8844 that
+          # second compile was 141-200s - roughly HALF of this job, which is
+          # itself the critical path of every merge (CSS Beat p50 334s of a
+          # 6.8m ci.yml, and PR-to-merge p50 was also 6.8m: CI *is* the merge
+          # latency here).
+          #
+          # WHY THIS IS SAFE, and the reason the flags stay BUILD-time rather
+          # than becoming a runtime toggle: this bundle is thrown away. The
+          # `Production Build` job and `publish-club-arena.yml` both build
+          # WITHOUT these flags, so nothing a player downloads contains the
+          # harness routes. tests/one-build-three-suites.law.test.ts asserts
+          # they appear in this job and nowhere else - a flag like this leaking
+          # into the publisher is the one way this change could hurt.
+          #
+          # The beats are unaffected: two extra lazy routes change no CSS and
+          # no component the fixtures render.
+          VITE_CUSTOMIZATION_TEST_HARNESS: 'true'
+          VITE_FINANCIAL_DECISION_TEST_HARNESS: 'true'
+        run: npm run build:ci
+
+      - name: Seal this run's browser build
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -s dist/index.html
+          node -e 'const p = require("./dist/ca-provenance.json"); if (p.validationOnly !== true || p.commit !== process.env.EXPECTED_SHA) process.exit(1)'
+          test -z "$(find dist -type l -print -quit)"
+          printf '%s\n' "$EXPECTED_SHA" > dist/.browser-build-sha
+          (cd dist && find . -type f ! -name .browser-build-seal -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > .browser-build-seal)
+
+      - name: Upload this run's browser build
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-harness-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: dist
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 6
+
   css-beats-e2e:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
@@ -4233,7 +4376,7 @@ jobs:
     # when it takes twenty seconds.
     # This one builds the app AGAIN, installs Chromium and serves it - four
     # billed minutes, and only src/ can change what it measures.
-    needs: changes
+    needs: [changes, css-beats-build]
     # FAILS CLOSED, and this is the whole point.
     #
     # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
@@ -4370,55 +4513,25 @@ jobs:
       - name: Install Chromium and WebKit
         run: npx playwright install chromium webkit --with-deps
 
-      # Same content-addressed media cache as Production Build, same key, so
-      # whichever of the two runs first warms it for the other.
-      - name: Cache optimized dist media
-        uses: actions/cache@v4
+      - name: Download this run's browser build
+        uses: actions/download-artifact@v4
         with:
-          path: node_modules/.cache/dist-media
-          key: >-
-            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
-            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
-            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
-          restore-keys: dist-media-v1-${{ runner.os }}-
+          name: browser-harness-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: dist
 
-      # `build:ci` - see the long note on the Production Build step for why
-      # dropping `tsc -b` here checks nothing less than before. This job is the
-      # critical path of the whole pipeline, so the 47.8s it was spending on a
-      # typecheck the required `typecheck` job had already performed was 47.8s
-      # added to every push-to-live.
-      - name: Build this commit
+      - name: Verify this run's browser build
         env:
-          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
-          # The app fails closed before React mounts when these Vite values are
-          # absent. Footer route probes do not call Supabase, so deterministic
-          # non-secret placeholders are the correct isolated CI configuration.
-          VITE_SUPABASE_URL: https://example.supabase.co
-          VITE_SUPABASE_ANON_KEY: footer-probe-ci
-          # ── ONE BUILD, THREE SUITES (2026-09-05) ───────────────────────────
-          #
-          # These two flags gate lazy-loaded dev showcase routes in App.tsx.
-          # Without them here, the two harness suites below could not use this
-          # build, so each started a Vite DEV server of its own and compiled
-          # the whole app again on demand. Measured on runs 8843 and 8844 that
-          # second compile was 141-200s - roughly HALF of this job, which is
-          # itself the critical path of every merge (CSS Beat p50 334s of a
-          # 6.8m ci.yml, and PR-to-merge p50 was also 6.8m: CI *is* the merge
-          # latency here).
-          #
-          # WHY THIS IS SAFE, and the reason the flags stay BUILD-time rather
-          # than becoming a runtime toggle: this bundle is thrown away. The
-          # `Production Build` job and `publish-club-arena.yml` both build
-          # WITHOUT these flags, so nothing a player downloads contains the
-          # harness routes. tests/one-build-three-suites.law.test.ts asserts
-          # they appear in this job and nowhere else - a flag like this leaking
-          # into the publisher is the one way this change could hurt.
-          #
-          # The beats are unaffected: two extra lazy routes change no CSS and
-          # no component the fixtures render.
-          VITE_CUSTOMIZATION_TEST_HARNESS: 'true'
-          VITE_FINANCIAL_DECISION_TEST_HARNESS: 'true'
-        run: npm run build:ci
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(cat dist/.browser-build-sha)" = "$EXPECTED_SHA"
+          test -s dist/index.html
+          node -e 'const p = require("./dist/ca-provenance.json"); if (p.validationOnly !== true || p.commit !== process.env.EXPECTED_SHA) process.exit(1)'
+          test -s dist/.browser-build-seal
+          test -z "$(find dist -type l -print -quit)"
+          (cd dist && find . -type f ! -name .browser-build-seal -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "$RUNNER_TEMP/browser-build-seal"
+          cmp dist/.browser-build-seal "$RUNNER_TEMP/browser-build-seal"
 
       # PER-RUNNER PREVIEW PORT (2026-09-04). 4173 was hardcoded, which was
       # fine while this job ran on a GitHub-hosted VM of its own and stopped

@@ -88,6 +88,31 @@ LEGACY_CHECKPOINT_BUDGET_SECONDS=40
 # The publisher's bounded work inside that budget, from the .mjs figures
 # above; what is left of the budget is the allowance for the entry.
 LEGACY_CHECKPOINT_WORK_MS=25000
+# THE EED PREDECESSOR IS REPLACED AT A DRAINED HAND BOUNDARY (owner, 2026-10-31)
+# ───────────────────────────────────────────────────────────────────────────
+# Engine eed06fe5 was the only legacy profile whose checkpoint discovers its
+# owners with a full-heap native census (V8 HeapProfiler::QueryObjects). That
+# census has never fitted on the live engine. Measured by the previous release
+# agent on an application-shaped heap: 11-12 ms of single-core work per MB of
+# used heap; at the live 3.85 GB the census needs ~45 s, against the 30.3 s the
+# census request was actually granted inside the 40 s checkpoint budget at
+# 19:55Z on 2026-10-31 (run 41233374402, checkpoint at elapsedEntryMs=2915,
+# 35000 ms of work less the measured entry and guard boot). Each attempt held
+# the predecessor's main thread for 45-60 s and the 19:55Z break stayed frozen
+# for 1512 s. A freshly restarted eed06fe5 passes 2.3 GB inside an hour.
+#
+# So the census is only ever entered when the predecessor's own /health heap
+# reading, at the conservative 12 ms/MB, fits the 30300 ms allowance. That is
+# decided BEFORE any notice is requested, and again immediately before the
+# one-shot intent. Otherwise the census is refused before notice and this
+# release may replace eed06fe5 only at a DRAINED HAND BOUNDARY: the strict
+# restart certificate (readyForRestart, zero unparked tables, no bounded-F06
+# admission) plus the database's own witness that no tournament hand is
+# reserved or retained and no hand anywhere is moving
+# (engine-release-inflight-hands.py --drained-predecessor). No hand is
+# checkpointed, voided, forced or invented; every ceiling is unchanged.
+LEGACY_CENSUS_MS_PER_HEAP_MB=12
+LEGACY_CENSUS_ALLOWANCE_MS=30300
 NON_BREAK_RECOVERY_MAX_SECONDS=300
 # CLAUDE.md 13: routine activation starts at 04:00 America/Chicago. This is the same minute every other surface reads, and
 # tests/the-break-clocks-agree.law.test.ts pins them together.
@@ -1037,7 +1062,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" legacy_entry_read python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" STRICT_RESTART_CERTIFICATE="${DRAINED_PREDECESSOR_CUTOVER:-0}" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" legacy_entry_read python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -1095,6 +1120,11 @@ def _name_the_shut_certificate():
     if not _admitted[0]:
         sys.stderr.write("[engine-release-transaction] the restart certificate is shut with %dms of the break left: unparkedTables=%r unparkedReasons=%r handsInFlightTotal=%r\n" % (remaining, m.get("unparkedTables"), m.get("unparkedReasons"), d.get("handsInFlightTotal")))
 __import__("atexit").register(_name_the_shut_certificate)
+# A drained-boundary replacement of eed06fe5 (LEGACY_CENSUS_* above) accepts
+# only the engine own open certificate. A bounded F06 preparation is a
+# retained hand, not a drained boundary, so it never reaches the database
+# admission below; the shut certificate is still named on stderr.
+if os.environ.get("STRICT_RESTART_CERTIFICATE")=="1": raise SystemExit(1)
 # ── Refusing. Is this "a hand is in the air", or "a preparation that can never
 # resolve in this process"? Those are different facts and only the first is a
 # reason not to restart. See the block comment above this function.
@@ -1917,6 +1947,55 @@ exact_runtime_instance() {
   printf '%s\n' "$local_instance"
 }
 
+# THE CENSUS IS ENTERED ONLY WHEN IT FITS (2026-10-31, LEGACY_CENSUS_* above).
+# Reads the serving eed06fe5's own /health heap. 0 fits, 1 does not fit, 3
+# could not tell. Only 0 permits the census; "could not tell" is never a fit
+# (CLAUDE.md 10.86 rule 1), and a heap that is absent is never a zero.
+legacy_census_fits() {
+  local response http_code body
+  response="$(legacy_entry_read curl -sS --max-time 5 --write-out $'\n%{http_code}' \
+    http://127.0.0.1:8080/health 2>/dev/null)" || return 3
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in 200|503) ;; *) return 3 ;; esac
+  printf '%s' "$body" | EXPECTED_SHA="$CHECKPOINT_EED_SHA" MS_PER_MB="$LEGACY_CENSUS_MS_PER_HEAP_MB" \
+    ALLOWANCE_MS="$LEGACY_CENSUS_ALLOWANCE_MS" legacy_entry_read python3 -c '
+import json, math, os, sys
+try: d = json.load(sys.stdin)
+except Exception: raise SystemExit(3)
+if not isinstance(d, dict) or d.get("releaseSha") != os.environ["EXPECTED_SHA"]: raise SystemExit(3)
+memory = d.get("memory")
+heap = memory.get("heapUsedMb") if isinstance(memory, dict) else None
+if isinstance(heap, bool) or not isinstance(heap, (int, float)) or not math.isfinite(heap) or heap <= 0:
+    raise SystemExit(3)
+# heapUsedMb is rounded; one more MB keeps the estimate on the high side.
+need = math.ceil((heap + 1) * int(os.environ["MS_PER_MB"]))
+allowance = int(os.environ["ALLOWANCE_MS"])
+fits = need <= allowance
+sys.stderr.write("[engine-release-transaction] legacy census estimate heapUsedMb=%s censusEstimateMs=%d allowanceMs=%d fits=%s\n" % (heap, need, allowance, fits))
+raise SystemExit(0 if fits else 1)
+'
+}
+
+# The database half of a drained hand boundary for eed06fe5. Exit 0 only when
+# the helper read every witness and every one is quiet; 1 is "a hand is
+# reserved, retained or moving"; anything else is UNKNOWN and refuses.
+drained_predecessor_witness() {
+  local rc
+  set +e
+  legacy_entry_read "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --drained-predecessor --timeout-seconds 5 >&2
+  rc=$?
+  set -e
+  case "$rc" in
+    0) echo "[engine-release-transaction] the database confirms a drained hand boundary: no tournament hand or incomplete snapshot moving, no recently formed Lightning hand unsettled" >&2 ;;
+    1) echo "[engine-release-transaction] the database says the predecessor is not at a drained hand boundary; no cutover this pass" >&2 ;;
+    126|127) echo "[engine-release-transaction] UNKNOWN: $INFLIGHT_HANDS is missing or not executable (status $rc); the drained-boundary witness was NEVER ASKED" >&2; rc=3 ;;
+    3) echo "[engine-release-transaction] UNKNOWN: the drained-boundary witness could not be read; no cutover" >&2 ;;
+    *) echo "[engine-release-transaction] UNKNOWN: the drained-boundary witness exited $rc; no cutover" >&2; rc=3 ;;
+  esac
+  return "$rc"
+}
+
 prove_rollback_readiness() {
   local rollback_sha rollback_image rollback_legacy rollback_cid rollback_started_at
   local actual_image actual_release state autoheal_label role_label restart_policy autoheal_state
@@ -2459,6 +2538,31 @@ if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1
   die 'this run key already opened the one-shot legacy checkpoint and its durable intent is still on disk; whether that entry acted is UNKNOWN, so it may not be entered again - dispatch a new run key'
 fi
 
+# REFUSED BEFORE ANY NOTICE (owner, 2026-10-31). eed06fe5's checkpoint needs a
+# full-heap native census. When the predecessor's own heap says it cannot fit
+# its allowance (or the heap cannot be read), the census is refused HERE,
+# before request_recovery_window can announce anything, so no break is spent
+# on it and the predecessor's main thread is never blocked by it. The only way
+# this release may then replace eed06fe5 is a drained hand boundary, and its
+# database witness must be readable now, or this refuses before notice too.
+DRAINED_PREDECESSOR_CUTOVER=0
+switch_to_drained_predecessor_cutover() {
+  LEGACY_CHECKPOINT_REQUIRED=0
+  DRAINED_PREDECESSOR_CUTOVER=1
+  echo "[engine-release-transaction] the full-heap legacy census does not fit (or its heap is unreadable); it is refused and $CHECKPOINT_EED_SHA may be replaced only at a drained hand boundary, never by a checkpoint"
+}
+if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA" ]; then
+  if ! legacy_census_fits; then
+    switch_to_drained_predecessor_cutover
+    set +e
+    drained_predecessor_witness
+    DRAINED_WITNESS_RC=$?
+    set -e
+    [ "$DRAINED_WITNESS_RC" = 0 ] || [ "$DRAINED_WITNESS_RC" = 1 ] \
+      || die 'the legacy census cannot fit and the drained-boundary database witness cannot be read; refusing before any notice so no break is spent'
+  fi
+fi
+
 # Commit messages are descriptive source data, never authority to stop games.
 # In particular, an urgent trailer in this target or any ancestor cannot turn
 # routine deployment into off-cycle maintenance. Only current measured engine
@@ -2500,6 +2604,14 @@ while :; do
     source_target_is_current
     NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
   fi
+  # The heap only grows while this run waits; re-read it before any entry.
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA" ] \
+    && ! legacy_census_fits; then
+    switch_to_drained_predecessor_cutover
+  fi
+  # A drained boundary needs Lightning to stop forming hands exactly as the
+  # checkpoint did; the hold is the same one, placed by the same predicate.
+  if [ "${DRAINED_PREDECESSOR_CUTOVER:-0}" = 1 ]; then hold_lightning_when_counting_down; fi
   # The legacy ladder is derived from the strict figure and keeps it. The
   # ordinary one is admitted by the first certificate the engine can actually
   # present, which is never at t=0: see BREAK_CERTIFICATE_LAG_SECONDS.
@@ -2570,6 +2682,29 @@ while :; do
     emit_already_released "$EXACT_INSTANCE"
   fi
   [ -z "${DRILL_MODE:-}" ] || drill_preconditions
+  if [ "${DRAINED_PREDECESSOR_CUTOVER:-0}" = 1 ]; then
+    CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
+      "$RELEASE_SEAL" get desired-sha)" || die 'locked drained-boundary predecessor is unreadable'
+    case "$CHECKPOINT_PREDECESSOR_SHA" in
+      "$CHECKPOINT_EED_SHA")
+        # Under the lock and before the locked certificate, which stays the
+        # last read before the break deadline is fixed.
+        if ! drained_predecessor_witness; then
+          release_engine_lock
+          bounded_sleep 5
+          continue
+        fi
+        ;;
+      "$LEGACY_CHECKPOINT_SHA"|"$CHECKPOINT_758_SHA"|"$CHECKPOINT_A0_SHA"|"$CHECKPOINT_8825_SHA")
+        die 'the sealed predecessor changed to a different legacy profile under the lock; refusing'
+        ;;
+      *)
+        # Another release advanced desired while this run waited; the ordinary
+        # rules own its successor, exactly as for the legacy path below.
+        DRAINED_PREDECESSOR_CUTOVER=0
+        ;;
+    esac
+  fi
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
     CHECKPOINT_PREDECESSOR_SHA="$(legacy_entry_read timeout --signal=TERM --kill-after=1s 10s \
       "$RELEASE_SEAL" get desired-sha)" || die 'locked checkpoint predecessor is unreadable'
@@ -2604,6 +2739,16 @@ while :; do
     fi
     [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 0 ] \
       || die 'legacy checkpoint was already attempted; refusing a retry'
+    # The last heap read before the one-shot intent (only the rollback proof
+    # follows it): a census that no longer fits is never opened. Nothing has
+    # been written, so this break may still be used at a drained boundary.
+    if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA" ] && ! legacy_census_fits; then
+      legacy_entry_trace refused census_does_not_fit
+      LEGACY_ENTRY_DEADLINE_MS=0
+      release_engine_lock
+      switch_to_drained_predecessor_cutover
+      continue
+    fi
     # This provisional deadline bounds predecessor proof only. It is not
     # persisted as a cutover certificate. The checkpoint and its cleanup
     # consume up to LEGACY_CHECKPOINT_BUDGET_SECONDS of the candidate-proof

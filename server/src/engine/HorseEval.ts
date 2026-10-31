@@ -1282,6 +1282,11 @@ export interface OppPostflopRead {
    * hand is drawn from the raise stratum (V66_RAISE_BLUFF_SHARE /
    * V66_RAISE_VALUE_MIX) instead of the any-contact read. */
   raisePolar66?: boolean;
+  /** V67 (Hold'em, attached by HorseLogic on the river only): this opponent
+   * RAISED over the hero's own river wager, so their sampled hand is drawn
+   * from the river raise stratum (V67_RIVER_RAISE_BLUFF_SHARE /
+   * V67_RIVER_RAISE_VALUE_MIX) instead of the any-contact read. */
+  raisePolar67?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1308,6 +1313,26 @@ export const V66_RAISE_VALUE_MIX = [
   [0.55, 0.35, 0.1],
   [0.65, 0.3, 0.05],
 ] as const;
+
+/** V67 (2026-10-31): bluff share of a raise over hero's own RIVER wager.
+ * With no card to come a raise is value or a pure bluff; measured over 7
+ * days of NLH review hands (12% sample, |net| >= 20bb) one-pair calls of it
+ * won 11.9% in cash (n=226) and 19.2% in tournaments (n=125), and 0-5% when
+ * the raise was under 0.7 pot (cash n=90). */
+export const V67_RIVER_RAISE_BLUFF_SHARE = 0.1;
+/** V67: value sub-strata of a river raise: [two pair+, top pair/overpair,
+ * weaker pair]. */
+export const V67_RIVER_RAISE_VALUE_MIX = [0.75, 0.22, 0.03] as const;
+
+/** V67: draw the target stratum for one river raiser sample (0 = bluff,
+ * else the value class 1..3). Exported for the test. */
+export function v67RiverRaiseTargetClass(r1: number, r2: number): 0 | 1 | 2 | 3 {
+  if (r1 < V67_RIVER_RAISE_BLUFF_SHARE) return 0;
+  const mix = V67_RIVER_RAISE_VALUE_MIX;
+  if (r2 < mix[0]) return 3;
+  if (r2 < mix[0] + mix[1]) return 2;
+  return 1;
+}
 
 /** Draw the target stratum for one flop/turn raiser sample: 0 = bluff, else
  * the value class (1..3). `r1`/`r2` are uniform draws. Exported for the test. */
@@ -2707,7 +2732,8 @@ export function simulateEquity(
       if (!read) continue;
       if (
         !(read.riverPolar === true && boardCards.length === 5) &&
-        !(read.raisePolar66 === true && raisePolar66Board)
+        !(read.raisePolar66 === true && raisePolar66Board) &&
+        !(read.raisePolar67 === true && boardCards.length === 5)
       )
         continue;
       if (!v62Indexes) v62Indexes = new Array<V62StratumIndex | null>(numOpponents).fill(null);
@@ -3113,6 +3139,18 @@ export function simulateEquity(
               fastRandom()
             );
             if (placeV62Combo(deck, windowStart, n, index66, target66, vi.isShortDeck)) {
+              oppCards[0] = deck[windowStart];
+              oppCards[1] = deck[windowStart + 1];
+            }
+          }
+        }
+        // V67: a river raiser over the hero's own wager, the same placement
+        // from the river raise stratum.
+        if (read.raisePolar67 === true && boardCards.length === 5 && oppHole === 2) {
+          const index67 = v62Indexes ? v62Indexes[o] : null;
+          if (index67) {
+            const target67 = v67RiverRaiseTargetClass(fastRandom(), fastRandom());
+            if (placeV62Combo(deck, windowStart, n, index67, target67, vi.isShortDeck)) {
               oppCards[0] = deck[windowStart];
               oppCards[1] = deck[windowStart + 1];
             }

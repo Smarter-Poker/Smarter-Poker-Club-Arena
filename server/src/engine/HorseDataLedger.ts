@@ -737,6 +737,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V66'
   ),
   flag(
+    'v67RiverBetRaisedOnePair',
+    '2026-10-31 Hold em river bet-then-raised one pair (or board-paired two pair): the raiser is sampled from a river raise stratum (10% bluff, otherwise 75/22/3 two pair+/top pair/weaker), the call carries the V63 shade plus 0.10 (cap 0.25) even under a V62 polar read, and the class calls or folds at that price without the 0.42 floor or a jam; measured 7-day review calls/jams won 11.9% cash (n=226) and 19.2% MTT (n=125) at an average raise of 0.72 pot; explicit off arm retained',
+    'V67'
+  ),
+  flag(
+    'v67RiverRaiseShadeOverride',
+    'league calibration arm (2026-10-31): overrides the V67 extra river raise shade for a league card; inert unless set; production never sets it',
+    'V67-league'
+  ),
+  flag(
     'v64RiverRaiseNeedsTwoPair',
     '2026-10-31 Hold em river raise discipline: facing a river wager on one board, one pair, high card and board-paired two pair never value-raise or bluff-raise (a measured over-folder read keeps the blocker bluff-raise); they fall through to the V38 call verdict with the V61 shade. Live review: one-pair raises won 34% (-4,184bb cash), air raises 7% (-1,696bb cash), two pair+ raises about +16,000bb; explicit off arm retained',
     'V64'
@@ -2192,6 +2202,22 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V66) via HorseEval',
     'Hold em flop/turn raiser over hero own wager sampled from the raise stratum',
     'V66',
+    'decide',
+    0.001
+  ),
+  receipt(
+    'v67_river_bet_raised_one_pair',
+    'HorseLogic (V67)',
+    'Hold em river one-pair call of a raise over hero own river bet priced with the V63 shade plus the raise shade',
+    'V67',
+    'decide',
+    0.001
+  ),
+  receipt(
+    'v67_river_raise_stratum',
+    'HorseLogic (V67) via HorseEval',
+    'Hold em river raiser over hero own wager sampled from the river raise stratum',
+    'V67',
     'decide',
     0.001
   ),

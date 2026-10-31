@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   ACCESS_CHECK_STATUS_TEXT,
   awaitAccessDecision,
@@ -10,7 +11,10 @@ function pageAnswering(pendingCounts: number[]) {
   const asked: string[] = [];
   let waited = 0;
   const page: AccessCheckPage = {
+    url: () => 'https://smarter.poker/hub/club-arena/wallet',
     getByRole: () => ({
+      isEnabled: async () => true,
+      inputValue: async () => 'newest',
       filter: ({ hasText }) => ({
         count: async () => {
           asked.push(hasText);
@@ -48,6 +52,71 @@ describe('the mobile fit audit measures where an access guard decided the route 
     await expect(
       awaitAccessDecision(page, 'unions/create', { timeoutMs: 0, pollMs: 1 })
     ).rejects.toThrow('unions/create access guard did not decide within 0 ms');
+  });
+});
+
+describe('the fit baseline follows authoritative roster preference hydration', () => {
+  const initial = 'https://smarter.poker/hub/club-arena/clubs/kings-club/members';
+  function roster(states: Array<{ url: string; enabled: boolean; sort: string }>) {
+    let index = 0;
+    const current = () => states[index];
+    const page: AccessCheckPage = {
+      url: () => current().url,
+      getByRole: () => ({
+        isEnabled: async () => current().enabled,
+        inputValue: async () => current().sort,
+        filter: () => ({ count: async () => 0 }),
+      }),
+      waitForTimeout: async () => {
+        index = Math.min(index + 1, states.length - 1);
+      },
+    };
+    return page;
+  }
+
+  it('waits for workspace readiness and its restored canonical sort before baseline capture', async () => {
+    const page = roster([
+      { url: initial, enabled: false, sort: 'newest' },
+      { url: initial, enabled: true, sort: 'name' },
+      { url: initial + '?sort=name', enabled: true, sort: 'name' },
+    ]);
+    await awaitAccessDecision(page, 'player-sessions');
+    expect(page.url()).toBe(initial + '?sort=name');
+  });
+
+  it('refuses a real path navigation while waiting instead of accepting a new baseline', async () => {
+    const page = roster([
+      { url: initial, enabled: false, sort: 'newest' },
+      { url: initial.replace('/members', '/cashier'), enabled: true, sort: 'newest' },
+    ]);
+    await expect(awaitAccessDecision(page, 'player-sessions')).rejects.toThrow(
+      'Roster preference workspace navigated while settling'
+    );
+  });
+
+  it('does not call an enabled control settled while its canonical URL is still pending', async () => {
+    const page = roster([{ url: initial, enabled: true, sort: 'name' }]);
+    await expect(awaitAccessDecision(page, 'player-sessions', { timeoutMs: 0 })).rejects.toThrow(
+      'Roster preference workspace did not settle within 0 ms'
+    );
+  });
+
+  it('retains the serving audit call and refuses query or path changes after baseline capture', () => {
+    const source = readFileSync('tests/e2e/mobile-fit-audit.spec.ts', 'utf8');
+    expect(source.indexOf('await awaitAccessDecision(page, route)')).toBeLessThan(
+      source.indexOf('const destinationUrl = page.url()')
+    );
+    expect(source).toContain('test.setTimeout(30_000)');
+    const guard = source.match(
+      /expect\(page\.url\(\),[\s\S]*?\.toBe\(\s*destinationUrl\s*\);/
+    )?.[0];
+    expect(guard).toBeDefined();
+    const verify = new Function('page', 'expect', 'route', 'viewport', 'destinationUrl', guard!);
+    const baseline = initial + '?sort=name';
+    for (const changed of [initial + '?sort=oldest', initial.replace('/members', '/cashier')])
+      expect(() =>
+        verify({ url: () => changed }, expect, 'player-sessions', { label: 'tablet' }, baseline)
+      ).toThrow('player-sessions navigated while resizing to tablet');
   });
 });
 

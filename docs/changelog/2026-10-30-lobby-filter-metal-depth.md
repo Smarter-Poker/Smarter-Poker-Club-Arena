@@ -7,3 +7,5 @@ Live labels fit the artwork's face independently of its touch target. Preserve t
 This is a client presentation change. It introduces no database, financial, tournament-engine or gameplay changes. Development renders and protected publication/live verification remain distinct evidence.
 
 The owner approved the rendered design and requested the displayed tournament category “MTT'S”. The persisted category remains MTT; preference acknowledgement and live browser selectors use the corrected visible label.
+
+The tablet scroll regression now scrolls beyond the measured control deck rather than a fixed page offset, retaining the strict non-floating and return-position assertions. The existing live mobile case opens, switches and collapses both families, checks MTT'S selection and fitted text, and retains production screenshots through the maintained focused navigation certificate.

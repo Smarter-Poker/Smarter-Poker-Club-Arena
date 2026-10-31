@@ -958,8 +958,9 @@ test.describe('mobile lobby chrome', () => {
         const deck = page.locator('.club-lobby-command-top__controls');
         const home = await deck.evaluate((el) => el.getBoundingClientRect().top);
         await expect(deck).toHaveCSS('position', 'relative');
-        await page.evaluate(() => window.scrollTo(0, 1200));
-        await page.evaluate(() => window.scrollTo(0, 1000));
+        const deckBottom = await deck.evaluate((el) => el.getBoundingClientRect().bottom);
+        await page.evaluate((bottom) => window.scrollTo(0, bottom + 200), deckBottom);
+        await page.evaluate(() => window.scrollBy(0, -64));
         await expect
           .poll(() => deck.evaluate((el) => el.getBoundingClientRect().bottom))
           .toBeLessThan(0);

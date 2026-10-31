@@ -43,10 +43,11 @@ async function readMemberRpc(
   const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
   return runRosterReadWithRetry(
     async (attemptSignal) => {
-      const { data, error } = await supabase
-        .rpc(name, parameters)
-        .setHeader('x-client-info', 'club-arena-member-results/2')
-        .abortSignal(attemptSignal);
+      let request = supabase.rpc(name, parameters);
+      if (name === 'ca_club_member_detail' || name === 'ca_club_member_statistics') {
+        request = request.setHeader('x-client-info', 'club-arena-member-results/2');
+      }
+      const { data, error } = await request.abortSignal(attemptSignal);
       if (error) throw error;
       return data;
     },

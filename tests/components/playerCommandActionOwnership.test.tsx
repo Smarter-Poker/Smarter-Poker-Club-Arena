@@ -88,7 +88,12 @@ vi.mock('../../src/lib/supabase', () => ({
       });
       return chain;
     },
-    rpc: (...args: unknown[]) => ({ abortSignal: () => state.rpc(...args) }),
+    rpc: (...args: unknown[]) => ({
+      setHeader() {
+        return this;
+      },
+      abortSignal: () => state.rpc(...args),
+    }),
   },
 }));
 

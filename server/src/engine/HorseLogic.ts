@@ -2053,6 +2053,11 @@ export interface HorseDecideOpts {
    * points against the price unless the bettor's read says they over-bluff.
    * Default on; explicit false keeps the unshaded V38 verdict. */
   v61RiverOnePairShade?: boolean;
+  /** V63 (2026-10-31): the V61 shade keeps climbing past half the pot and
+   * caps at 20 points from seven tenths of the pot, so a large river wager
+   * demands more from a bluff-catcher. Default on; explicit false keeps
+   * the 12-point V61 cap. Inside V61's gates: off when V61 is off. */
+  v63LargeRiverBetShade?: boolean;
   /** V55: river Omaha sets/trips on a board permitting stronger hands do
    * not turn a qualified call into a raise. Opt-in until the separate
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
@@ -3811,9 +3816,30 @@ function v54OpponentProfile(
  * a quarter to a half they won 21-22% against ~29%, and at a half to a full
  * pot 14% against ~40%. Zero below a fifth, twelve points from half a pot.
  */
-export function v61RiverOnePairShade(toCall: number, pot: number): number {
+/** V61 cap: the shade reaches 12 points at half the pot. */
+export const V61_RIVER_SHADE_CAP = 0.12;
+/** V63 cap: the same slope carries on to 20 points at seven tenths of the
+ * pot. Measured 2026-10-31 over the most recent 19,933 NLH review hands
+ * (`fn_horse_river_one_pair_calls`, 14-day window, |net| >= 20bb): one-pair
+ * calls of a wager at or above 0.7 pot won 119 of 897 (13.3%) against the
+ * 29-41% the price demands, medium (0.4-0.7) won 99 of 479 (20.7%), small
+ * won 64 of 197 (32.5%). Large wagers are the most common class and the
+ * worst priced; the V61 cap left a pot-sized wager demanding 45% from a
+ * hand that wins 13%. */
+export const V63_RIVER_SHADE_CAP = 0.2;
+export function v61RiverOnePairShade(
+  toCall: number,
+  pot: number,
+  cap: number = V61_RIVER_SHADE_CAP
+): number {
   if (!(toCall > 0) || !(pot > 0)) return 0;
-  return Math.min(0.12, Math.max(0, (toCall / pot - 0.2) * 0.4));
+  return Math.min(cap, Math.max(0, (toCall / pot - 0.2) * 0.4));
+}
+/** V63 (2026-10-31): the shade cap the options select. Default on; explicit
+ * false keeps the V61 cap. The slope is unchanged, so prices up to half the
+ * pot are shaded exactly as V61 shaded them. */
+export function riverOnePairShadeCap(opts: HorseDecideOpts): number {
+  return (opts.v63LargeRiverBetShade ?? true) !== false ? V63_RIVER_SHADE_CAP : V61_RIVER_SHADE_CAP;
 }
 
 export class HorseLogic {
@@ -9734,8 +9760,9 @@ export class HorseLogic {
         toCall > 0 &&
         pot > 0
       ) {
-        shade61c = v61RiverOnePairShade(toCall, pot);
+        shade61c = v61RiverOnePairShade(toCall, pot, riverOnePairShadeCap(opts));
         if (shade61c > 0 && tele15) noteFire('v61_river_one_pair_shade');
+        if (shade61c > V61_RIVER_SHADE_CAP && tele15) noteFire('v63_large_river_bet_shade');
       }
       const required =
         potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23 + shade61c;
@@ -10372,8 +10399,9 @@ export class HorseLogic {
           toCall > 0 &&
           pot > 0
         ) {
-          shade61 = v61RiverOnePairShade(toCall, pot);
+          shade61 = v61RiverOnePairShade(toCall, pot, riverOnePairShadeCap(opts));
           if (shade61 > 0 && tele15) noteFire('v61_river_one_pair_shade');
+          if (shade61 > V61_RIVER_SHADE_CAP && tele15) noteFire('v63_large_river_bet_shade');
         }
         const v = riverCallVerdict({
           equity: clamp01(eqRead38 - shade61),

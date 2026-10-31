@@ -732,6 +732,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V61'
   ),
   flag(
+    'v63LargeRiverBetShade',
+    '2026-10-31 the V61 one-pair river shade keeps its slope past half the pot and caps at 20 points from 0.7 pot; measured over the latest 19,933 NLH review hands large-wager one-pair calls won 13.3% (119/897) against a 29-41% price; mirror and human-field leagues inert because league horses never wager 0.7 pot on the river; explicit off arm retained',
+    'V63'
+  ),
+  flag(
     'v62RiverBettorPolarity',
     '2026-10-30 Hold\'em river bettor polarity: a river wager\'s sampled hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum by bet size; OPT-IN since 18:50 UTC after the mirror league resolved it negative against horses (-3.67 +/- 1.02 bb/100 at 200bb) while V61 alone resolved +1.30 +/- 0.41; re-enable only after a recalibrated stratum resolves positive',
     'V62'

@@ -4579,4 +4579,20 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_arena_diamonds() TO service_role;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_trial_balance(timestamptz) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_trial_balance(timestamptz) TO service_role;
 
+-- Retain the rest of the exact installed authority surface as well.
+REVOKE ALL ON FUNCTION public.fn_ca_settle_satellite_cohort(uuid,uuid[]) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_satellite_cohort_receipt(uuid,uuid[]) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_pay_closed_target_ticket_in_cash(uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_pay_closed_target_tickets_in_cash(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_pay_closed_target_tickets_in_cash(uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_satellite_entry_ticket_is_guarded() FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_custody_balance() FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_custody_balance() TO authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_diamond_wallet_summary(uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_diamond_wallet_summary(uuid) TO authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_diamond_arena_reconciliation(uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_diamond_arena_reconciliation(uuid) TO authenticated,service_role;
+
 COMMIT;

@@ -235,6 +235,50 @@ describe('Run It Twice terminal error boundary', () => {
     }
   });
 
+  it.each(['rit', 'insurance'] as const)(
+    'drops a late %s response while stop retains its controller for snapshot',
+    async (kind) => {
+      vi.useFakeTimers();
+      const { engine, controller } = harness();
+      expect(engine.claimProcessOwnership()).toBe(true);
+      const original = controller.serializeRecoveryState();
+      const entered = deferred();
+      const held = deferred();
+      engine.flushSnapshot = vi.fn(async () => {
+        entered.resolve();
+        await held.promise;
+      });
+      const continuation = vi.spyOn(controller, 'continueRunout');
+      // The real wait finish catch owns this synchronous runout fallback.
+      const onComplete = vi.fn(() => {
+        throw new Error('response consumer failed');
+      });
+      const intervals = vi.spyOn(globalThis, 'setInterval');
+      const clearedIntervals = vi.spyOn(globalThis, 'clearInterval');
+      if (kind === 'rit') engine.waitForRITResponse(onComplete);
+      else {
+        vi.spyOn(engine.insuranceEngine, 'allResponded').mockReturnValue(true);
+        engine.waitForInsuranceResponses(onComplete);
+      }
+      const interval = intervals.mock.results.at(-1)!.value;
+      const stopping = engine.stop();
+      try {
+        await entered.promise;
+        expect(engine.handController).toBe(controller);
+        await vi.advanceTimersByTimeAsync(250);
+        expect(onComplete).not.toHaveBeenCalled();
+        expect(continuation).not.toHaveBeenCalled();
+        expect(controller.serializeRecoveryState() === original).toBe(true);
+        expect(clearedIntervals).toHaveBeenCalledWith(interval);
+      } finally {
+        held.resolve();
+        await stopping;
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      }
+    }
+  );
+
   it('disarms the payout fence only after a successful finalization', async () => {
     const { engine, active, events } = harness();
     const restart = vi.fn();

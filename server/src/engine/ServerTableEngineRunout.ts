@@ -1870,6 +1870,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         );
         return;
       }
+      if (!this.lifecycleCanMutate()) return;
       // onComplete drives dealAndResolveRIT / continueRunout / finalizeRunout —
       // the whole settlement cascade — inside a bare timer callback. A throw
       // escaped to the process handler with the interval and timeout ALREADY
@@ -1883,6 +1884,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     };
 
     const checkInterval = setInterval(() => {
+      if (!this.running || !this.isCurrentEngine()) {
+        finish();
+        return;
+      }
       const state = this.runItTwiceEngine.getState(this.tableId);
       // Complete when status is no longer 'offered' (accepted, declined, or resolved)
       if (!state || state.status !== 'offered') {
@@ -3808,6 +3813,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         );
         return;
       }
+      if (!this.lifecycleCanMutate()) return;
       try {
         onComplete();
       } catch (err) {
@@ -3817,6 +3823,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     };
 
     const checkInterval = setInterval(() => {
+      if (!this.running || !this.isCurrentEngine()) {
+        finish();
+        return;
+      }
       if (this.insuranceEngine.allResponded(this.tableId)) {
         finish();
       }

@@ -25,3 +25,10 @@ The lane fixture distinguishes terminal physical drainage from live authority.
 Source qualification is separate from engine activation and live behavior.
 This change does not establish applicability to the historical serving EED
 cutover: that guarded route excludes an active continuation lane.
+
+RIT and insurance response waits now drop their callbacks when their exact
+engine no longer has mutation authority, and clear their polling interval when
+the owner stops or is superseded. Retaining a controller for a pending snapshot
+must not allow a late response or its synchronous error fallback to advance that
+hand. The existing terminal-boundary fixture reproduces both stale callbacks
+before the guard and checks the original controller bytes remain unchanged.

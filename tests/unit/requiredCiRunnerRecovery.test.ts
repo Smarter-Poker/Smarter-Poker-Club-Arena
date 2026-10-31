@@ -62,6 +62,12 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       expect(normalized.jobs[name]['runs-on'], name).toBe(route);
       normalized.jobs[name]['runs-on'] = formerClientRoute;
     }
+    for (const name of ['typecheck_compile', 'unit_shards', 'build']) {
+      expect(normalized.jobs[name]['runs-on']).toBe(formerClientRoute.replace('4core', '8core'));
+      normalized.jobs[name]['runs-on'] = formerClientRoute;
+    }
+    expect(normalized.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(8);
+    normalized.jobs.unit_shards.env.VITEST_MAX_THREADS = 4;
     // Ordered inventories plus all non-job fields and every whole job cover the
     // complete reviewed workflow. Unrelated job edits update only their own pin.
     const fingerprint = (value: unknown) =>

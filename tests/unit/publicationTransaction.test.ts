@@ -140,8 +140,13 @@ describe('one publication transaction follows parallel preparation', () => {
           'publish-to-origin',
         ].includes(key)
       ) {
+        const selectedLabel = ['client-tests', 'build-and-store'].includes(key)
+          ? 'ca-linux-8core'
+          : 'ca-linux-4core';
         expect(body['runs-on']).toBe(
-          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}"
+          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+            selectedLabel +
+            "' || 'ubuntu-latest' }}"
         );
         const label = key === 'publish-needed' ? 'ca-linux-4core' : 'ca-linux-8core';
         body['runs-on'] =
@@ -173,7 +178,7 @@ describe('one publication transaction follows parallel preparation', () => {
                 }
               : step
           );
-          expect(body.env.VITEST_MAX_THREADS).toBe(4);
+          expect(body.env.VITEST_MAX_THREADS).toBe(8);
           body.env = {
             ...body.env,
             VITEST_MAX_THREADS:

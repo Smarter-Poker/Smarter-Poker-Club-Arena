@@ -1,3 +1,4 @@
+import { isReadOnlySpectatorSocketType } from './support/spectatorSocketRead';
 import { openLobbyGameSection } from './support/lobbyGameSections';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type WebSocketRoute } from '@playwright/test';
@@ -13,15 +14,6 @@ const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4
 const ENGINE_HOST = 'engine.smarter.poker';
 const MAIN_NAME = /\bmain(?:\s*\d+)?\b/i;
 const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
-const READ_ONLY_SOCKET_TYPES = new Set([
-  'SUBSCRIBE',
-  'UNSUBSCRIBE',
-  'RESYNC',
-  'PING',
-  'PONG',
-  'HEARTBEAT',
-]);
-
 type CashTable = { id: string; name: string };
 type RefusedWrite = { transport: 'http' | 'websocket'; operation: string; path: string };
 
@@ -194,7 +186,7 @@ test('the published table explains controlled seat moves without moving a player
         } catch {
           /* refused below */
         }
-        if (!READ_ONLY_SOCKET_TYPES.has(type)) {
+        if (!isReadOnlySpectatorSocketType(type)) {
           writes.push({
             transport: 'websocket',
             operation: type || 'unreadable-frame',

@@ -1,3 +1,4 @@
+import { isReadOnlySpectatorSocketType } from './support/spectatorSocketRead';
 import { test, expect, type Page } from '@playwright/test';
 import { openLobbyGameSection } from './support/lobbyGameSections';
 import { CASH_SPECTATOR_ACTION, CASH_TABLE_CARD_SELECTOR } from './support/cashTableCandidates';
@@ -85,7 +86,7 @@ test('both club views keep receiving rows and one survives the other unmounting'
         } catch {
           /* refused below */
         }
-        if (!['SUBSCRIBE', 'UNSUBSCRIBE', 'RESYNC', 'PING', 'PONG', 'HEARTBEAT'].includes(type)) {
+        if (!isReadOnlySpectatorSocketType(type)) {
           participation.push(`websocket:${type || 'unreadable'}`);
           return;
         }

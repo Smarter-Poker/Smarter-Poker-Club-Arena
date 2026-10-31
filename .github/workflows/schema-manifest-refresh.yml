@@ -94,9 +94,9 @@ jobs:
     with:
       source_sha: ${{ github.sha }}
       connected_ui_observations: true
-      web_artifact_run_id: '41223006660'
-      web_artifact_id: '13050920506'
-      engine_source_sha: '1d13af76cbe267aa61b4edad0e10d26331cbf276'
+      web_artifact_run_id: '41244053719'
+      web_artifact_id: '13059295561'
+      engine_source_sha: '9c9779174bd148fc73e2ede985c3b06865cc0cc7'
     secrets:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
 

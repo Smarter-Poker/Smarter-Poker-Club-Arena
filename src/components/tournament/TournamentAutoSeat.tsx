@@ -20,7 +20,7 @@ import { warmTable } from '../../services/tableWarmup';
  * (cheap: one indexed query on table_seats every 12s, only while signed
  * in AND only while the tab is visible),
  * and the first time a seat appears at a table it has not already announced:
- *   • emits TABLE_SEATED, which MultiTablePage turns into an open table tab;
+ *   • emits TABLE_SEATED and navigates to the assigned game, selecting its tab;
  *   • if the player is already at the 4-table cap, MultiTablePage answers with
  *     TABLE_CAP_BLOCKED and this renders the large popup Dan asked for.
  *
@@ -247,12 +247,16 @@ export default function TournamentAutoSeat() {
         // and replies TABLE_CAP_BLOCKED when there is not.
         warmTable(tableId);
         masterBus.emit('TABLE_SEATED', { tableId, seat: 0 });
+        // Registration authorizes entering this game, including a seat that
+        // arrives at tournament start. Opening a background tab leaves the
+        // paid entrant in the lobby until another click.
+        navigate(`/table/${tableId}`);
       }
       if (!visibleSeatAway) setBlindingOff(null);
     } catch (e) {
       reportError(e, 'TournamentAutoSeat.check');
     }
-  }, [user?.id, visibleTableId]);
+  }, [user?.id, visibleTableId, navigate]);
 
   useEffect(() => {
     if (!user?.id) return undefined;

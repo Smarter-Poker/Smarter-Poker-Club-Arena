@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 260024,
-      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+      "bytes": 260841,
+      "sha256": "5903dabba3ef64b2152b41b09590c297914d742de92a2d7891d8ea2355fb1127"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5502,5 +5502,13 @@
     "qualificationStateChanged": false,
     "execution_performed": false,
     "qualification": "Source identity only; exact integrated-head required checks and hosted execution remain necessary. No native, financial or production recertification."
+  },
+  "satelliteValueTicketNativeSourceAudit20261031": {
+    "scope": "source-only additive composition; no financial verdict recertified",
+    "previousWorkflow": {
+      "bytes": 260024,
+      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+    },
+    "change": "Only add shard4 funded Chips/Diamond ticket native qualification and artifact; retain every previous accounting step, gate, permission and budget."
   }
 }

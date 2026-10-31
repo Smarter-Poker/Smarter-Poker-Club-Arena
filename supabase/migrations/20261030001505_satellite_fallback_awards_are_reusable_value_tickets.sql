@@ -4568,4 +4568,15 @@ BEGIN
 END;
 $function$;
 REVOKE ALL ON FUNCTION public.fn_ca_refund_entitlement_commit_valid() FROM PUBLIC,anon,authenticated,service_role;
+-- Explicitly retain the live private/service reader ACLs (read October31).
+REVOKE ALL ON FUNCTION public.fn_ca_find_tournament_entry_ticket_for(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_tournament_entry_ticket_hints(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_horse_tournament_entry_ticket_hints(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_ticket_escrow_float() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_ticket_escrow_float() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_arena_diamonds() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_arena_diamonds() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_diamond_trial_balance(timestamptz) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_trial_balance(timestamptz) TO service_role;
+
 COMMIT;

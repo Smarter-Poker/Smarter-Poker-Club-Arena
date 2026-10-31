@@ -15,3 +15,5 @@ The source contract fails against the former Diamond target and passes against
 the corrected target. Hosted cash-hand/reconnect evidence is still required.
 This verification repair does not establish the cause of Lucky's Android
 missing-paint incident or resolve cheating allegations.
+
+The required PostgreSQL check also exposed a calendar collision on October 31: its Today fixture inserts tomorrow at midnight, exactly the fixed November 1 DST case. The fixed-date cases now use their own participant, preserving all values, date boundaries, access checks and assertions. The original fails locally with `DST inclusion boundary 2026-11-01`; the corrected full native PostgreSQL suite passes, including the private-record WebSocket delivery checks. No production SQL changes.

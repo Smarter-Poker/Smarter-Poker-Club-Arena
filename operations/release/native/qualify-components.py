@@ -22,7 +22,8 @@ import urllib.request
 import zipfile
 from contextlib import contextmanager
 
-REPO = 'Smarter-Poker/Smarter-Poker-Club-Arena'
+REPO = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena'
+REPOSITORY_ID = 1132369872
 FIXTURE_SERVER = '/usr/local/bin/fixture-server'
 CASES = ['exact-schema-catalogue', 'authenticated-web-bundle',
          'engine-browser-causal-hand', 'completed-hand-persisted',
@@ -34,6 +35,15 @@ FINANCIAL_CASES = ['exact-schema-catalogue', 'ordinary-auth-topup-replay',
 def require(value, reason='RELEASE_COMPONENT_SEMANTIC_REFUSED'):
     if not value:
         raise RuntimeError(reason)
+
+
+def validate_repository_identity(request_repository, github_repository, metadata):
+    # The transferred repository keeps its numeric identity. Neither an old
+    # namespace redirect nor a replacement repository at this name qualifies.
+    require(request_repository == REPO and github_repository == REPO and
+            isinstance(metadata, dict) and metadata.get('full_name') == REPO and
+            type(metadata.get('id')) is int and metadata['id'] == REPOSITORY_ID,
+            'RELEASE_SEMANTIC_REPOSITORY_IDENTITY_REQUIRED')
 
 
 def validate_source_contract(contract):
@@ -79,7 +89,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def provider(route, *, archive=None):
-    require(route.startswith('/repos/' + REPO + '/'))
+    require(route == '/repos/' + REPO or route.startswith('/repos/' + REPO + '/'))
     request = urllib.request.Request('https://api.github.com' + route, headers={
         'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28'})
@@ -296,13 +306,39 @@ def validate_tournament_player_ui_native(result, tuple_value, schema, runtime_im
             'RELEASE_TOURNAMENT_PLAYER_UI_EXECUTION_REQUIRED')
 
 
+def validate_rit_player_ui_native(result, tuple_value, schema, runtime_image):
+    readiness = result.get('engine_readiness', {})
+    cases = ['exact-schema-and-stable-component-identities',
+             'actual-three-run-choice-and-acceptance',
+             'three-board-winning-card-timing-and-chip-landings',
+             'settled-choice-clearing-and-cold-reload']
+    require(result.get('version') == 1 and
+            result.get('scope') == 'isolated-rit-player-ui-observations' and
+            result.get('product_certificate') is False and result.get('tuple') == tuple_value and
+            result.get('runtime_image') == runtime_image and
+            result.get('schema_fixture_sha256') == schema['fixture_sha256'] and
+            result.get('schema_catalogue_digest') == schema['catalogue_digest'] and
+            result.get('success') is True and result.get('executed') == len(cases) and
+            result.get('failed') == 0 and result.get('skipped') == 0 and result.get('retries') == 0 and
+            result.get('cases') == [{'name': name, 'passed': True} for name in cases] and
+            readiness.get('timeout_ms') == 90000 and
+            type(readiness.get('elapsed_ms')) is int and 0 <= readiness['elapsed_ms'] <= 90000 and
+            type(readiness.get('observations')) is int and readiness['observations'] > 0 and
+            readiness.get('source_sha') == tuple_value['club-arena-engine']['source_sha'] and
+            readiness.get('running') is True and
+            result.get('cleanup') == {'complete': False, 'owner': 'outer-native-driver'},
+            'RELEASE_RIT_PLAYER_UI_EXECUTION_REQUIRED')
+
+
 def qualify(request, operation, controls, output, *, scenario='product'):
-    require(scenario in ('product', 'financial', 'tournament-player-ui'), 'RELEASE_SEMANTIC_SCENARIO_REFUSED')
+    require(scenario in ('product', 'financial', 'tournament-player-ui', 'rit-player-ui'), 'RELEASE_SEMANTIC_SCENARIO_REFUSED')
     financial_scenario = scenario == 'financial'
     player_ui_scenario = scenario == 'tournament-player-ui'
+    rit_ui_scenario = scenario == 'rit-player-ui'
     require(re.fullmatch(r'[0-9a-f-]{36}', operation))
-    require(request['phase'] == 'COMPATIBILITY' and request['repository'] == REPO and
-            os.environ['GITHUB_REPOSITORY'] == REPO and os.environ['GITHUB_RUN_ATTEMPT'] == '1')
+    require(request['phase'] == 'COMPATIBILITY' and os.environ['GITHUB_RUN_ATTEMPT'] == '1')
+    validate_repository_identity(request['repository'], os.environ['GITHUB_REPOSITORY'],
+                                 provider(f'/repos/{REPO}'))
     runtime_image = request['runtime_image']
     require(re.fullmatch(r'[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}', runtime_image))
     require(command(['git', '-C', str(controls), 'rev-parse', 'HEAD']).stdout.decode().strip() == request['control_sha'])
@@ -385,7 +421,7 @@ def qualify(request, operation, controls, output, *, scenario='product'):
                          '--mount', f'type=bind,source={controls},target=/opt/qualification/controls,readonly',
                          runtime_image, FIXTURE_SERVER, 'start', '--schema=/inputs/schema.zip',
                          f'--web=/inputs/{web_key}.zip', '--engine=http://engine:8080'] +
-                        (['--scenario=financial'] if financial_scenario else
+                        (['--scenario=financial'] if financial_scenario or rit_ui_scenario else
                          ['--scenario=tournament-player-ui'] if player_ui_scenario else []))
                 command(['docker', 'exec', fixture, FIXTURE_SERVER, 'ready'], timeout=120)
                 env = json.loads(command(['docker', 'exec', fixture, FIXTURE_SERVER, 'engine-environment']).stdout)
@@ -410,15 +446,16 @@ def qualify(request, operation, controls, output, *, scenario='product'):
                                   '--env', 'XDG_CACHE_HOME=/tmp/qualification/cache', fixture,
                                   '/opt/qualification/node_modules/.bin/tsx',
                                   '/opt/qualification/controls/operations/release/native/' +
-                                  ('financial-route-suite.mjs' if financial_scenario else
+                                  ('rit-player-ui-suite.mjs' if rit_ui_scenario else
+                                   'financial-route-suite.mjs' if financial_scenario else
                                    'tournament-player-ui-suite.mjs' if player_ui_scenario else 'component-semantic-suite.mjs'),
-                                  str(index), runtime_image], timeout=400 if player_ui_scenario else 240)
+                                  str(index), runtime_image], timeout=400 if player_ui_scenario or rit_ui_scenario else 240)
                 lines = result.stdout.decode().splitlines()
-                marker = 'FINANCIAL_ROUTE_RESULT:' if financial_scenario else 'TOURNAMENT_PLAYER_UI_RESULT:' if player_ui_scenario else 'RELEASE_SEMANTIC_RESULT:'
+                marker = 'RIT_PLAYER_UI_RESULT:' if rit_ui_scenario else 'FINANCIAL_ROUTE_RESULT:' if financial_scenario else 'TOURNAMENT_PLAYER_UI_RESULT:' if player_ui_scenario else 'RELEASE_SEMANTIC_RESULT:'
                 matches = [line.removeprefix(marker) for line in lines if line.startswith(marker)]
                 require(len(matches) == 1)
                 native = json.loads(matches[0])
-                validator = validate_financial_native if financial_scenario else validate_tournament_player_ui_native if player_ui_scenario else validate_native
+                validator = validate_rit_player_ui_native if rit_ui_scenario else validate_financial_native if financial_scenario else validate_tournament_player_ui_native if player_ui_scenario else validate_native
                 validator(native, tuple_value, plan['schema'], runtime_image)
             finally:
                 # Failed, crashed, intermediate and successful cases all close
@@ -442,7 +479,10 @@ def qualify(request, operation, controls, output, *, scenario='product'):
                'control_sha': request['control_sha'], 'runtime_image': runtime_image,
                'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': 1, 'request': plan,
                'request_digest': fact_digest(plan), 'combinations': combinations, 'cleanup': cleanup_report}
-    if player_ui_scenario:
+    if rit_ui_scenario:
+        receipt.update({'scope': 'isolated-rit-player-ui-observations', 'product_certificate': False})
+        (output / 'rit-player-ui-observations.json').write_text(canonical(receipt))
+    elif player_ui_scenario:
         receipt.update({'scope': 'isolated-tournament-player-ui-observations', 'product_certificate': False})
         (output / 'tournament-player-ui-observations.json').write_text(canonical(receipt))
     elif financial_scenario:
@@ -456,11 +496,11 @@ def qualify(request, operation, controls, output, *, scenario='product'):
 
 if __name__ == '__main__':
     try:
-        require(len(sys.argv) in (3, 4) and (len(sys.argv) == 3 or sys.argv[3] in ('--financial-route', '--tournament-player-ui')),
+        require(len(sys.argv) in (3, 4) and (len(sys.argv) == 3 or sys.argv[3] in ('--financial-route', '--tournament-player-ui', '--rit-player-ui')),
                 'RELEASE_SEMANTIC_SCENARIO_REFUSED')
         qualify(json.loads(os.environ['RELEASE_REQUEST']), os.environ['RELEASE_OPERATION_ID'],
                 Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(),
-                scenario=('financial' if sys.argv[3] == '--financial-route' else 'tournament-player-ui') if len(sys.argv) == 4 else 'product')
+                scenario={'--financial-route': 'financial', '--tournament-player-ui': 'tournament-player-ui', '--rit-player-ui': 'rit-player-ui'}[sys.argv[3]] if len(sys.argv) == 4 else 'product')
     except Exception as error:
         # Raw API errors may contain signed URLs; child errors may contain
         # fixture tokens. Keep logs and failure reasons strictly sanitized.

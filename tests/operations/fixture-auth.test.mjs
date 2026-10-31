@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import http from 'node:http';
@@ -329,7 +330,7 @@ test('TOTP matches independently published RFC6238 SHA1 vectors truncated to six
   }
 });
 
-test('browser storage uses the compiled project namespace without adding unrelated origins', () => {
+test('browser storage binds the current client SSO key and project namespace at the sole origin', async () => {
   const session = {
     user: { id: '10000000-0000-4000-8000-000000000001' },
     access_token: 'synthetic-only',
@@ -340,4 +341,9 @@ test('browser storage uses the compiled project namespace without adding unrelat
   assert.equal(state.origins[0].origin, 'https://smarter.poker');
   assert.equal(state.origins[0].localStorage[0].name, 'sb-abcdefghijklmnopqrst-auth-token');
   assert.deepEqual(JSON.parse(state.origins[0].localStorage[0].value), session);
+  const client = await readFile(new URL('../../src/lib/supabase.ts', import.meta.url), 'utf8');
+  const key = client.match(/storageKey:\s*'([^']+)'/)?.[1];
+  assert.equal(key, 'smarter-poker-auth');
+  assert.equal(state.origins[0].localStorage.length, 2);
+  assert.deepEqual(JSON.parse(state.origins[0].localStorage.find((entry) => entry.name === key).value), session);
 });

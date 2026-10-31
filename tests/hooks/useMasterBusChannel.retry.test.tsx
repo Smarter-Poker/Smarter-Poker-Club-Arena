@@ -64,7 +64,7 @@ it('explicit retry replaces a failed row subscription and rejects late old callb
   rerender({ restartKey: 1 });
   expect(f.statuses).toHaveLength(2);
   expect(f.removeRegisteredChannel).toHaveBeenCalledWith(
-    'club-data-tables:test',
+    expect.stringMatching(/^club-data-tables:test:row:/),
     expect.anything()
   );
   onSubscriptionStatus.mockClear();

@@ -4070,7 +4070,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Declared with `let` so the timeout callback can call it (see AUDIT FIX).
         let unsub: () => void = () => {};
         let handWaitReleased = false;
-        const releaseHandWait = (reason: string): void => {
+        const releaseHandWait = (reason: string, preserveController = false): void => {
           if (handWaitReleased) return;
           handWaitReleased = true;
           try {
@@ -4086,7 +4086,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             if (this.activeHandWaitRelease?.controller === controllerForHand) {
               this.activeHandWaitRelease = null;
             }
-            if (this.handController === controllerForHand) this.handController = null;
+            if (!preserveController && this.handController === controllerForHand)
+              this.handController = null;
             this.runoutRevealActive = false;
             resolve();
           }

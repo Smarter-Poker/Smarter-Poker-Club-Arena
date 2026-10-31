@@ -4464,6 +4464,9 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /** Higher layers own the exact controller's local completion wait. */
+  protected releaseStoppedHandWait(): void {}
+
   stop(): Promise<void> {
     if (this.teardownPromise) return this.teardownPromise;
     this.recordLifecycleDiagnostic('stop_initiated', {
@@ -4474,6 +4477,7 @@ export abstract class ServerTableEngineBase {
     // reacts to that fence and may return in the same microtask turn; neither
     // it nor its current settlement may disappear from the ownership proof.
     const dealingLoopAtFence = this.dealingLoopPromise;
+    const continuationAtFence = this.handContinuation;
     const settlementsAtFence = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
     if (this.postHandTasksPromise) settlementsAtFence.push(this.postHandTasksPromise);
     settlementsAtFence.push(...this.tournamentMoveOperations, ...this.readContinuationTasks);
@@ -4491,6 +4495,19 @@ export abstract class ServerTableEngineBase {
     this.waitForPlayersWake?.();
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
+
+    // Stop already fenced all further actions. Resolve only the local hand
+    // wait before its timer is cancelled, retaining the controller for the
+    // recovery snapshot. This does not settle a hand or release its permit.
+    this.releaseStoppedHandWait();
+
+    if (continuationAtFence) {
+      const drain = continuationAtFence.drainOwnedWork();
+      // Its physical write may fail before the dealing-loop join returns.
+      // Observe now, but preserve the same rejection for the teardown proof.
+      void drain.catch(() => undefined);
+      settlementsAtFence.push(drain);
+    }
 
     const teardown = this.performStop(dealingLoopAtFence, settlementsAtFence);
     this.teardownPromise = teardown;

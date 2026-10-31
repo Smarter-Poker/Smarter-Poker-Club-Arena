@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { HandContinuationLane } from './HandContinuationLane.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
@@ -118,6 +119,94 @@ afterEach(() => {
 });
 
 describe('Run It Twice terminal error boundary', () => {
+  it('ordinary stop releases the exact active hand wait without losing its snapshot', async () => {
+    const { engine, controller } = harness();
+    expect(engine.claimProcessOwnership()).toBe(true);
+    const original = controller.serializeRecoveryState();
+    const snapshots: string[] = [];
+    engine.flushSnapshot = vi.fn(async () => {
+      snapshots.push(engine.handController.serializeRecoveryState());
+    });
+    // Exercise the actual producer/release closure, without starting a second
+    // hand or allowing this already-started fixture to emit new poker events.
+    vi.spyOn(controller, 'start').mockImplementation(() => {});
+    engine.discardPreparedHandForPause = () => false;
+    const loop = engine.runOriginalController(engine.seatedPlayers, controller, 91, Date.now(), {
+      started: true,
+      cause: null,
+    });
+    engine.dealingLoopPromise = loop;
+    await Promise.resolve();
+    expect(engine.activeHandWaitRelease?.controller).toBe(controller);
+    const release = vi.spyOn(engine.activeHandWaitRelease, 'release');
+    snapshots.length = 0; // Ignore the existing hand-start anchor snapshot.
+    const stopping = engine.stop();
+    try {
+      expect(await completionOutcome(stopping)).toBe('complete');
+      expect(release).toHaveBeenCalledOnce();
+      expect(release).toHaveBeenCalledWith('engine_stopped', true);
+      expect(snapshots).toEqual([original]);
+      expect(engine.hasReleasedProcessOwnership()).toBe(true);
+    } finally {
+      // A failing pre-fix case must leave no synthetic owned writer behind.
+      engine.activeHandWaitRelease?.release('test_cleanup', true);
+      await stopping;
+    }
+  });
+
+  it('keeps ownership and snapshot custody while an accepted continuation write is pending', async () => {
+    const { engine, controller } = harness();
+    expect(engine.claimProcessOwnership()).toBe(true);
+    const entered = deferred();
+    const held = deferred();
+    const dispatch = vi.fn(async () => {});
+    const lane = new HandContinuationLane(
+      0,
+      () => controller.serializeRecoveryState(),
+      () => ({}),
+      async () => {
+        entered.resolve();
+        await held.promise;
+      },
+      dispatch,
+      () => engine.running,
+      () => {}
+    );
+    engine.handContinuation = lane;
+    lane.enqueue({ type: 'TURN_CHANGE', seat: 1, availableActions: ['fold', 'call'] });
+    await entered.promise;
+    const snapshotEntered = deferred();
+    const snapshotHeld = deferred();
+    engine.flushSnapshot = vi.fn(async () => {
+      expect(engine.handController).toBe(controller);
+      snapshotEntered.resolve();
+      await snapshotHeld.promise;
+    });
+    const stopping = engine.stop();
+    // Observe failure immediately; the original error must remain in stop's
+    // certificate after the accepted physical write has finished.
+    const outcome = stopping.then(
+      () => null,
+      (error: unknown) => error
+    );
+    try {
+      await Promise.resolve();
+      expect(engine.hasReleasedProcessOwnership()).toBe(false);
+      expect(engine.flushSnapshot).not.toHaveBeenCalled();
+      held.resolve();
+      await snapshotEntered.promise;
+      expect(engine.hasReleasedProcessOwnership()).toBe(false);
+      expect(dispatch).not.toHaveBeenCalled();
+      snapshotHeld.resolve();
+      expect(await outcome).toBeInstanceOf(AggregateError);
+      expect(engine.hasReleasedProcessOwnership()).toBe(true);
+    } finally {
+      held.resolve();
+      snapshotHeld.resolve();
+      await outcome;
+    }
+  });
+
   it('disarms the payout fence only after a successful finalization', async () => {
     const { engine, active, events } = harness();
     const restart = vi.fn();

@@ -181,6 +181,12 @@ export class HandContinuationLane {
   }
 
   async join(): Promise<void> {
+    await this.drainOwnedWork();
+    if (this.closed || !this.current()) throw new Error('Hand Continuation Is Fenced');
+  }
+
+  /** A terminal owner must join physical writes without demanding a live lease. */
+  async drainOwnedWork(): Promise<void> {
     // Admit a controller batch still queued by this same synchronous action.
     if (this.scheduled) this.captureBatch();
     for (;;) {
@@ -190,7 +196,6 @@ export class HandContinuationLane {
       if (tail === this.tail) break;
     }
     if (this.failed) throw this.failure;
-    if (this.closed || !this.current()) throw new Error('Hand Continuation Is Fenced');
   }
 
   /** Network acknowledgement waits for bytes, not the next actor's animation beat. */

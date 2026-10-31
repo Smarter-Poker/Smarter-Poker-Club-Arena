@@ -317,8 +317,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   protected activeHandWaitRelease: {
     controller: HandController;
-    release: (reason: string) => void;
+    release: (reason: string, preserveController?: boolean) => void;
   } | null = null;
+
+  protected override releaseStoppedHandWait(): void {
+    const owned = this.activeHandWaitRelease;
+    if (!owned) return;
+    this.activeHandWaitRelease = null;
+    owned.release('engine_stopped', true);
+  }
 
   protected releaseActiveHandWaitForTerminalRecovery(
     controller: HandController,

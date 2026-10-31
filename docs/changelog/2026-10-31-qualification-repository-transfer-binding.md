@@ -13,8 +13,14 @@ It accepts no alias, arbitrary repository or replacement at the same name.
 The existing no-redirect artifact/provenance checks remain enforced.
 
 The focused Python identity guard is exercised through the existing maintained
-representative Node test glob. This changes no fixture runtime, production
+representative Node test glob. The repository-binding correction changes no fixture runtime, production
 feature, grant, journal, publisher or workflow installation. The absent draft
 controller adapter retains its old binding and is still a separate provisioning
 prerequisite; it is neither edited nor installed here. Full-schema connected UI
 qualification remains unexecuted until its actual admitted inputs/executor exist.
+
+- File: `operations/release/native/qualify-components.py`, before lines25,82,304.
+- Before: former namespace and request/context string equality only.
+- After: canonical namespace plus original numeric identity matched to actual provider metadata.
+- Verified: source reread; accepted exact identity and eight negative bindings checked.
+- TypeScript: PASS (`tsc --noEmit`) on the integrated candidate.

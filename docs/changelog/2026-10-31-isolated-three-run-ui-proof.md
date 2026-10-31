@@ -17,3 +17,9 @@ from names only and validates/normalizes the stripped actor JWT envelope; no
 owner session value or service/refresh credential is read. Focused regressions
 cover the current client key and descriptor ingress failures. Connected runtime
 qualification remains NOT_EXECUTED and native admission NOT_SUBMITTED.
+
+- Files: new `native/rit-player-ui-suite.mjs`; existing `native/qualify-components.py` before lines296–466; `fixture/auth-fixture.mjs` before lines309–320.
+- Before: no isolated RIT browser mode; browser storage emitted only the legacy project key; stripped actor descriptor lacked a browser-valid envelope.
+- After: opt-in four-case connected RIT mode, fixed controller result binding, canonical dual-key storage and names-only actor namespace/finite session normalization.
+- Verified: source reread; seven focused RIT cases, current-client storage binding and ten negative native receipt cases passed. Connected qualification remains NOT_EXECUTED.
+- TypeScript: PASS (`tsc --noEmit`) on the integrated candidate.

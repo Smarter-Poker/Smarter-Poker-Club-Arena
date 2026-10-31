@@ -18,8 +18,8 @@
  * 1. The helper exists, is packaged in the control generation and is
  *    syntax-checked before activation (the sibling law derives this too; it
  *    is pinned here by name because it is the file this law is about).
- * 2. The transaction places the hold only once the announced break is durably
- *    counting down, only on the legacy-checkpoint path, never in a drill, and
+ * 2. The transaction prepares an exact owned durable last-hand announcement
+ *    or retains counting-down admission, only on the legacy path, never in a drill, and
  *    a helper that cannot run says NEVER ASKED instead of a verdict.
  * 3. The transaction releases the hold on EVERY exit path (recover_on_exit),
  *    after waiting for the thaw, and engine-release-recover.sh is its second
@@ -57,7 +57,7 @@ describe('Lightning is held for the engine cutover', () => {
     expect(recover).toContain(`LIGHTNING_HOLD="$CONTROL_DIR/${HELPER}"`);
   });
 
-  it('places the hold only once the announced break is durably counting down, on the legacy path, never in a drill', () => {
+  it('prepares the owned durable lead or counting-down break, on the legacy path, never in a drill', () => {
     const fn = transaction.slice(
       transaction.indexOf('hold_lightning_when_counting_down() {'),
       transaction.indexOf('\n}', transaction.indexOf('hold_lightning_when_counting_down() {'))
@@ -194,13 +194,17 @@ describe('Lightning is held for the engine cutover', () => {
     // a refused resume is one attempt per pass; a signalled exit is one
     // attempt inside the stop clock; a retried run inherits the journal; a
     // missing helper is NEVER ASKED.
-    const result = spawnSync('python3', ['-B', join(ROOT, 'tests', 'operations', 'lightning-hold-exit-paths.test.py')], {
-      cwd: ROOT,
-      encoding: 'utf8',
-      timeout: 120_000,
-    });
+    const result = spawnSync(
+      'python3',
+      ['-B', join(ROOT, 'tests', 'operations', 'lightning-hold-exit-paths.test.py')],
+      {
+        cwd: ROOT,
+        encoding: 'utf8',
+        timeout: 120_000,
+      }
+    );
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stderr).toMatch(/Ran 5 tests[\s\S]*\nOK\n?$/);
+    expect(result.stderr).toMatch(/Ran 9 tests[\s\S]*\nOK\n?$/);
   });
 
   it('passes its own unit tests', () => {

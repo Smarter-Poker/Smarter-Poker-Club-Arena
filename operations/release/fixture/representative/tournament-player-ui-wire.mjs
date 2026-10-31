@@ -52,6 +52,8 @@ export function collectPlayerUIWire(page, userId) {
         hand_number: p.hand_number,
         action: p.action,
         amount: p.amount,
+        seat: p.seat,
+        stage: p.stage,
         replayed: p.replayed === true,
       });
     }
@@ -91,6 +93,18 @@ export function collectPlayerUIWire(page, userId) {
     );
   };
   return {
+    readActions({ tableId, handNumber }) {
+      if (failure) throw failure;
+      const table = tables.get(tableId);
+      assert.ok(table?.state, 'PLAYER_UI_NO_CURRENT_WIRE');
+      return events.filter(
+        (e) =>
+          e.kind === undefined &&
+          e.tableId === tableId &&
+          e.hand_number === handNumber &&
+          e.generation === table.generation
+      );
+    },
     readArm: (_journal, key) => {
       const arms = selected(key).filter(
         (e) => e.kind === 'pre_action' && e.action !== null && e.reason !== 'resync'

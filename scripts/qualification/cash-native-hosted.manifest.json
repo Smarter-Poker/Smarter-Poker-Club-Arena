@@ -13,7 +13,7 @@
   },
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -33,9 +33,7 @@
         "current": {
           "bytes": 36549,
           "sha256": "0a3d601b0ad79dbd6340f207ce3b0bdbe234a9c282e7e49e024b0bb89abbadd5"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -79,9 +77,7 @@
         "current": {
           "bytes": 36363,
           "sha256": "1388970807efb122b5ceea2bad565a4694167b851eee5083d45807514542c6e5"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -353,8 +349,8 @@
         "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
@@ -369,8 +365,8 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 47227,
-          "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -388,8 +384,8 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 47227,
-          "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -405,8 +401,8 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 47227,
-          "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -423,8 +419,8 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 47227,
-          "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -438,8 +434,8 @@
     "reason": "Mixed custody qualification is routed through the existing accounting lane; both existing and retained-MTT selectors are preserved. Cash SQL and immutable fixture inputs are unchanged.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
@@ -455,8 +451,8 @@
         "sha256": "c0d3b2129194aabf06b055fab3303ff927f10c156656dffb9447afd3ab3b498b"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 90321,
@@ -540,8 +536,8 @@
     "reason": "Horse prevention regression uses the existing accounting job; adds its module, race, paid-entry fixture and provider directories plus modification/deletion/rename controls. Cash SQL and all historical manifest pins unchanged.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 92029,
@@ -569,8 +565,8 @@
     "reason": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -582,8 +578,8 @@
         "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     },
     "current": {
@@ -592,8 +588,8 @@
         "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -618,9 +614,7 @@
         "to": {
           "bytes": 24115,
           "sha256": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -669,9 +663,7 @@
         "to": {
           "bytes": 24266,
           "sha256": "b6a54fa59e99537bc429179abff1407143939f3fb15ba65f77c8c2c681a9ad36"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -686,9 +678,7 @@
         "to": {
           "bytes": 24407,
           "sha256": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -814,8 +804,8 @@
         "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     },
     "updated": {
@@ -824,8 +814,8 @@
         "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -891,9 +881,7 @@
         "current": {
           "bytes": 25462,
           "sha256": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -916,9 +904,7 @@
         "after": {
           "bytes": 24921,
           "sha256": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "before": {
@@ -1041,8 +1027,8 @@
         "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     },
     "current": {
@@ -1051,8 +1037,8 @@
         "sha256": "f9797380e7c19134282f7f60603f0e754c54aa07d2fba31818a1f8d3bdfc617e"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -1110,9 +1096,7 @@
         "after": {
           "bytes": 25152,
           "sha256": "abaa05478633ba53a270d1055585c003d17e37ff23c92bd4c9001a6d712c97bb"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -1167,9 +1151,7 @@
         "after": {
           "bytes": 28573,
           "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -1202,9 +1184,7 @@
         "after": {
           "bytes": 27841,
           "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -1903,9 +1883,7 @@
         "after": {
           "bytes": 32061,
           "sha256": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -1982,8 +1960,8 @@
         "sha256": "a9422a1122cfd4a39c721d93ba0ff2e9dc3a2615fde2da36aec451be35733914"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 102135,
@@ -2046,9 +2024,7 @@
         "currentPin": {
           "bytes": 33302,
           "sha256": "846747f1e40dcb9c027feb8aadedb1f1d469fcfc91315b4e9ff2e2af77af0f64"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "previousPin": {
@@ -2380,8 +2356,8 @@
         "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 105657,
@@ -2394,8 +2370,8 @@
         "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 105657,
@@ -2804,8 +2780,8 @@
         "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 105731,
@@ -2874,9 +2850,7 @@
         "after": {
           "bytes": 36143,
           "sha256": "79c71f63942c733de548230644dc9202a371b3e4919a06cd9bf2c979c1375a76"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "before": {
@@ -2911,9 +2885,7 @@
         "after": {
           "bytes": 36177,
           "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "before": {
@@ -2948,9 +2920,7 @@
         "after": {
           "bytes": 36177,
           "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "before": {
@@ -3010,9 +2980,7 @@
         "after": {
           "bytes": 36177,
           "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "before": {
@@ -3055,9 +3023,7 @@
         "combined": {
           "bytes": 36177,
           "sha256": "da8c721743b44ef3194da354c587d770f3e1aee171de5c490a6407981f41498d"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "launch": {
@@ -3241,9 +3207,7 @@
         "current": {
           "bytes": 36585,
           "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "previous": {
@@ -3335,8 +3299,8 @@
         "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -3424,9 +3388,7 @@
         "after": {
           "bytes": 36734,
           "sha256": "c4a9e6535e8f0160dfbbf834dd82a4b5fb9b867d28e75bfa9ad900276895ce42"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     },
     "verification": "Native rake report and actual report installation module passed. Cash source pin validation and protected provider qualification remain required; this pin update is not a new cash runtime certification."
@@ -3442,9 +3404,7 @@
         "current": {
           "bytes": 37058,
           "sha256": "3ef4c6362dd8d88361a1040da0af18de85383aa6edda65ff4ad2cca51b1769a9"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -3480,9 +3440,7 @@
         "current": {
           "bytes": 37129,
           "sha256": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -3536,9 +3494,7 @@
         "current": {
           "bytes": 37347,
           "sha256": "79d86ee1493d729919b64dd519cc5c9b67d7047b7f79eb75c7e616d75158332e"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     },
     "connectedBindingChanges": {}
@@ -3794,9 +3750,7 @@
         "current": {
           "bytes": 41844,
           "sha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -3939,9 +3893,7 @@
         "current": {
           "bytes": 41867,
           "sha256": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -4085,7 +4037,7 @@
       "bytes": 239646,
       "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
     },
-    "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
+    "review": "Only accounting job40→50minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
     "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
   },
   "riverPersistenceBudgetIntegration20261027": {
@@ -4230,9 +4182,7 @@
         "current": {
           "bytes": 42262,
           "sha256": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -4381,9 +4331,7 @@
         "current": {
           "bytes": 42122,
           "sha256": "25c29aadd0298f1ad92d44efea6bcb480037fbb1d79aad9eac38680023ad9fff"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "previous": {
@@ -4484,9 +4432,7 @@
         "current": {
           "bytes": 42973,
           "sha256": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     },
     "execution_performed": false
@@ -4502,9 +4448,7 @@
         "current": {
           "bytes": 43059,
           "sha256": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     },
     "execution_performed": false
@@ -4540,9 +4484,7 @@
         "current": {
           "bytes": 43059,
           "sha256": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     },
     "financial_recertification": false,
@@ -4593,9 +4535,7 @@
         "current": {
           "bytes": 43077,
           "sha256": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     },
     "financial_recertification": false,
@@ -4618,9 +4558,7 @@
         "current": {
           "bytes": 43260,
           "sha256": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       },
       ".github/workflows/ci.yml": {
         "recovery_parent": {
@@ -4674,9 +4612,7 @@
         "current": {
           "bytes": 43288,
           "sha256": "b52c34d04cba8dd738f7c5fa1ee0e99ed783c3a49e90be59e06971feaf6caef0"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     },
     "financial_recertification": false,
@@ -4774,9 +4710,7 @@
         "current": {
           "bytes": 43383,
           "sha256": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -4816,9 +4750,7 @@
         "current": {
           "bytes": 44380,
           "sha256": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
-        },
-        "bytes": 47227,
-        "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+        }
       }
     }
   },
@@ -5549,7 +5481,7 @@
     }
   },
   "consolidatedFavoritesJackpotRouting20261031": {
-    "scope": "Reviewed additive merge preserves both player-throwable-favorites and member-jackpot-win-loss selection in the existing database qualification; source identity only, no financial assertion or result changed.",
+    "scope": "Reviewed additive merge preserves both player-throwable-favorites and member-jackpot-win-loss selection in existing database qualification; active source identity only, historical audits and financial assertions/results unchanged.",
     "execution_performed": false,
     "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
   }

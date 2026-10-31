@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 117348,
-      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
+      "bytes": 116628,
+      "sha256": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c"
     }
   },
   "nativePgCron": {
@@ -5563,5 +5563,20 @@
     "qualificationStateChanged": false,
     "execution_performed": false,
     "qualification": "Source binding only; no financial, native, installed or live certification is restamped. Exact-head protected checks and publication remain required."
+  },
+  "standardHostedRunnerFixturePinAudit20261031": {
+    "scope": "Bind the current reviewed fixtureNativeCi source: only four runner-route assertions changed to ubuntu-latest. Preserve all qualification, financial inputs, assertions and historical evidence.",
+    "path": "tests/unit/fixtureNativeCi.test.ts",
+    "previousPin": {
+      "bytes": 117348,
+      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
+    },
+    "currentPin": {
+      "bytes": 116628,
+      "sha256": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c"
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
   }
 }

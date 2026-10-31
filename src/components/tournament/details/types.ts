@@ -1,3 +1,4 @@
+import type { FollowTournamentPlayer } from '../../../utils/followTournamentPlayer';
 import type { SatelliteAwardView } from './useSatelliteAwards';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -212,7 +213,11 @@ export interface TournamentTabProps {
    * and nothing visible happened. One door, owned by the page, which knows
    * where it is mounted. `tableName` labels the new screen's tab.
    */
-  onWatchPlayer?: (tableId: string, tableName?: string) => void;
+  onWatchPlayer?: (
+    tableId: string,
+    tableName?: string,
+    followPlayer?: FollowTournamentPlayer
+  ) => void;
 
   /**
    * The mystery bounty ladder, fetched ONCE by the page from

@@ -266,8 +266,16 @@ function tournamentTransport() {
           relation === 'tournaments' &&
           patch !== null &&
           ((column === 'status' && value === 'RUNNING' && row.status === value) ||
-            (column === 'current_level' && value === row.current_level));
+            (column === 'current_level' && value === row.current_level) ||
+            (column === 'on_break' && value === row.on_break) ||
+            (column === 'break_started_at' && value === row.break_started_at));
         if (!scopedId && !activeClock) throw new Error('Scope escaped');
+        return query;
+      },
+      is(column: string, value: null) {
+        expect(column).toBe('break_ends_at');
+        expect(value).toBeNull();
+        expect(row.break_ends_at).toBeNull();
         return query;
       },
       in() {

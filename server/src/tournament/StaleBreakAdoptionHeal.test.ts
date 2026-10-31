@@ -183,6 +183,10 @@ function staleBreakTransport(opts: { beforeFirstUpdate?: (row: any) => void } = 
   const attempts: Record<string, unknown>[] = [];
   let firstUpdateSeen = false;
   vi.mocked(supabase.from).mockImplementation((relation: string) => {
+    if (relation === 'tournament_stage_plans')
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+      } as never;
     if (!['tournaments', 'tables'].includes(relation))
       throw new Error(`Unexpected relation ${relation}`);
     let patch: Record<string, unknown> | null = null;
@@ -241,6 +245,15 @@ function staleBreakTransport(opts: { beforeFirstUpdate?: (row: any) => void } = 
         throw new Error(`Scope escaped on ${column}`);
       },
       in() {
+        return query;
+      },
+      order(column: string, options: { ascending: boolean }) {
+        expect(column).toBe('id');
+        expect(options).toEqual({ ascending: true });
+        return query;
+      },
+      limit(value: number) {
+        expect(value).toBeGreaterThan(1); // This fixture has one table.
         return query;
       },
       maybeSingle: async () => result(),

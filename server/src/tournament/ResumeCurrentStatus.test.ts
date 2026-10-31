@@ -32,7 +32,17 @@ function fixture(status: unknown = 'RUNNING') {
         select: () => ({
           eq: () => ({
             maybeSingle: read,
-            in: name === 'tables' ? tableRead : entrantRead,
+            in:
+              name === 'tables'
+                ? () => {
+                    const query = {
+                      order: () => query,
+                      limit: () => query,
+                      then: (resolve: (value: unknown) => unknown) => tableRead().then(resolve),
+                    };
+                    return query;
+                  }
+                : entrantRead,
           }),
         }),
       }) as never
@@ -143,9 +153,10 @@ describe('a discovery row is not authority to resume a completed tournament', ()
     'refuses an errored table inventory even with data %j',
     async (data) => {
       const f = fixture();
-      f.tableRead.mockResolvedValueOnce({ data, error: { message: 'inventory unavailable' } });
+      f.tableRead.mockResolvedValue({ data, error: { message: 'inventory unavailable' } });
       await f.state.resumeLifecycle(1);
       expectInventoryRefusal(f);
+      expect(f.tableRead).toHaveBeenCalledTimes(3);
       expect(f.entrantRead).not.toHaveBeenCalled();
     }
   );
@@ -153,9 +164,10 @@ describe('a discovery row is not authority to resume a completed tournament', ()
     'does not treat unreadable table inventory %j as empty',
     async (data) => {
       const f = fixture();
-      f.tableRead.mockResolvedValueOnce({ data, error: null });
+      f.tableRead.mockResolvedValue({ data, error: null });
       await f.state.resumeLifecycle(1);
       expectInventoryRefusal(f);
+      expect(f.tableRead).toHaveBeenCalledTimes(3);
       expect(f.entrantRead).not.toHaveBeenCalled();
     }
   );

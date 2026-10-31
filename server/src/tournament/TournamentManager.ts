@@ -474,6 +474,8 @@ export class TournamentManager extends TournamentManagerEliminations {
   private readonly tournamentMoveBoundaryOwner = randomUUID();
   /** Stable for this manager so a lost final-table claim response can be reconciled. */
   private readonly finalTableTransitionOwner = randomUUID();
+  /** Retain this owner's delivery separately from the committed table state. */
+  private pendingFinalTableAnnouncement: { playerCount: number; delivered: boolean } | null = null;
   /** Ambiguous replies retain the exact UUID and source fence until replay resolves. */
   private readonly pendingTournamentSeatMoveOutcomes = new Map<
     string,
@@ -4007,6 +4009,37 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
   }
 
+  private async continueFinalTableAnnouncement(): Promise<void> {
+    const pending = this.pendingFinalTableAnnouncement;
+    if (!pending || !this.eliminationMutationAllowed()) return;
+    try {
+      if (!pending.delivered) {
+        pending.delivered = await this.broadcast('final_table', {
+          playerCount: pending.playerCount,
+        });
+      }
+      if (!this.eliminationMutationAllowed()) return;
+      if (pending.delivered) {
+        const { data, error } = await supabase.rpc('fn_ack_final_table_announcement', {
+          p_tournament_id: this.tournamentId,
+          p_ownership_token: this.finalTableTransitionOwner,
+        });
+        if (error || data !== true) {
+          throw new Error(
+            error?.message ?? 'final-table announcement receipt was not acknowledged'
+          );
+        }
+        this.pendingFinalTableAnnouncement = null;
+        return;
+      }
+    } catch (error) {
+      reportError(error, 'Tournament.final_table_announcement_receipt_failed');
+    }
+    // Continue the original request in the existing manager scheduler. An
+    // accepted broadcast only owes its idempotent acknowledgement, never a resend.
+    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+  }
+
   private async prepareFreshTableBalance(): Promise<TournamentBalanceProgress | void> {
     if (!this.eliminationMutationAllowed()) return;
     // Final Table is a durable MTT lifecycle transition, never a visual label
@@ -4103,27 +4136,10 @@ export class TournamentManager extends TournamentManagerEliminations {
               console.log(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE reached with ${remainingPlayers} players on one table`
               );
-              const announced = await this.broadcast('final_table', {
+              this.pendingFinalTableAnnouncement = {
                 playerCount: remainingPlayers,
-              });
-              if (announced) {
-                const { data: acknowledged, error: acknowledgementError } = await supabase.rpc(
-                  'fn_ack_final_table_announcement',
-                  {
-                    p_tournament_id: this.tournamentId,
-                    p_ownership_token: this.finalTableTransitionOwner,
-                  }
-                );
-                if (acknowledgementError || acknowledged !== true) {
-                  reportError(
-                    new Error(
-                      acknowledgementError?.message ??
-                        'final-table announcement receipt was not acknowledged'
-                    ),
-                    'Tournament.final_table_announcement_receipt_failed'
-                  );
-                }
-              }
+                delivered: false,
+              };
               if (!this.eliminationMutationAllowed()) return;
             }
           }
@@ -4134,6 +4150,9 @@ export class TournamentManager extends TournamentManagerEliminations {
         }
       }
     }
+
+    await this.continueFinalTableAnnouncement();
+    if (!this.eliminationMutationAllowed()) return;
 
     /* A TABLE WITH ONE PLAYER NEVER GETS AN ENGINE (2026-09-10).
        This read `this.tableEngines`, which holds only tables that are DEALING.

@@ -120,8 +120,8 @@ function playerIdOf(player: unknown): string {
 
 function playerStackOf(player: unknown): number | null {
   if (!player || typeof player !== 'object') return null;
-  const value = Number((player as { stack?: unknown }).stack);
-  return Number.isFinite(value) ? value : null;
+  const value = (player as { stack?: unknown }).stack;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 /** The exact accepted zero-stack settlement identity, independent of memory. */
@@ -136,8 +136,8 @@ export function acceptedZeroStackSettlement(
       ? (settlement.written as Record<string, unknown>)
       : null;
   if (!written || !Object.prototype.hasOwnProperty.call(written, eliminatedUserId)) return null;
-  const acceptedStack = Number(written[eliminatedUserId]);
-  if (!Number.isFinite(acceptedStack) || acceptedStack > 0) return null;
+  const acceptedStack = written[eliminatedUserId];
+  if (acceptedStack !== 0) return null;
 
   const tableId = String(settlement.table_id ?? '').trim();
   const handNumber = Number(settlement.hand_number);
@@ -170,8 +170,8 @@ export function persistedKnockoutEvidence(
   if (!written || !Object.prototype.hasOwnProperty.call(written, eliminatedUserId)) {
     return { ready: false, reason: 'settlement_not_zero' };
   }
-  const acceptedStack = Number(written[eliminatedUserId]);
-  if (!Number.isFinite(acceptedStack) || acceptedStack > 0) {
+  const acceptedStack = written[eliminatedUserId];
+  if (acceptedStack !== 0) {
     return { ready: false, reason: 'settlement_not_zero' };
   }
   const identity = acceptedZeroStackSettlement(settlement, eliminatedUserId);
@@ -191,7 +191,7 @@ export function persistedKnockoutEvidence(
   // The history roster contains final stacks. Requiring the same zero here is
   // an independent guard against a corrupt/mis-associated settlement row.
   const historyStack = playerStackOf(eliminated);
-  if (!eliminated || historyStack === null || historyStack > 0) {
+  if (!eliminated || historyStack !== 0) {
     return { ready: false, reason: 'player_not_in_hand' };
   }
 

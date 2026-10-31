@@ -96,6 +96,12 @@ try:
     schema=(BASE/'schema-tables.sql').read_text().splitlines()
     schema=[line for line in schema if not any(line.startswith('CREATE TABLE public.'+n+'(')or line.startswith('ALTER TABLE public.'+n+' ')or(' ON public.'+n+' ')in line for n in excluded)and not line.startswith('CREATE SEQUENCE IF NOT EXISTS public.hand_id_seq')]
     q('\n'.join(schema))
+    # Synthetic club codes are identifiers, not an exercised business owner.
+    # Keep the real uniqueness constraint while eliminating random collisions.
+    q("CREATE SEQUENCE native_club_codes START 10000 MAXVALUE 99999 NO CYCLE;ALTER TABLE clubs ALTER COLUMN club_id SET DEFAULT nextval('native_club_codes');")
+    # Identical PRNG states must not collide in this isolated fixture. These
+    # rows roll back; later financial cases retain every original assertion.
+    q("BEGIN;SELECT setseed(0.25);INSERT INTO clubs(name)VALUES('Fixture identity A');SELECT setseed(0.25);INSERT INTO clubs(name)VALUES('Fixture identity B');ROLLBACK;")
     platform=(DR/'platform-boundaries.sql').read_text().replace('fn_active_maintenance_release_boundary() RETURNS uuid','fn_active_maintenance_release_boundary() RETURNS timestamptz').replace('SELECT boundary FROM public.dr_controls','SELECT NULL::timestamptz')
     q('SET check_function_bodies=off;'+platform)
     spec=importlib.util.spec_from_file_location('own_actual_documents',document_dir/'document_pipeline.py');document_module=importlib.util.module_from_spec(spec);spec.loader.exec_module(document_module)

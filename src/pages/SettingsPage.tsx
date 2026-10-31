@@ -372,6 +372,20 @@ export default function SettingsPage() {
     };
   }, [authUser?.id]);
 
+  // The table store hydrates independently of profiles.settings. Its first
+  // authoritative snapshot can arrive after the profile effect has already
+  // merged a default table snapshot into the form. Follow later snapshots,
+  // while retaining account-only fields and any in-flight manual form intent.
+  useEffect(() => {
+    if (
+      !authUser?.id ||
+      hasChangesRef.current ||
+      readTableSettingIntent(authUser.id, 'account-form')
+    )
+      return;
+    setSettings((current) => fromTableSettings(tableSettings, current));
+  }, [authUser?.id, tableSettings]);
+
   useEffect(() => {
     if (!authUser?.id) {
       setIsVip(false);

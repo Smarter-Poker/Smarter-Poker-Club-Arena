@@ -207,13 +207,14 @@ describe('the drill-in carries everything the route carried', () => {
     expect(MULTI).not.toContain('clearLobbyTournament(table.id)');
   });
 
-  it('the + button returns to the lobby, not to a stale tournament', () => {
-    // OPEN_LOBBY_TAB used to focus the tab and leave lobbyTournamentId set, so
-    // "+" reopened whatever tournament the tab was parked on — or, if that tab
-    // was already active, did nothing visible at all.
-    expect(MULTI).toMatch(
-      /isLobbyTab\(t\)\s*\? \{ \.\.\.clearLobbyTournaments\(t\), lobbyPageHistory: undefined \}/
+  it('the + button focuses the existing page without clearing its navigation', () => {
+    const open = MULTI.slice(
+      MULTI.indexOf("useMasterBusSubscription('OPEN_LOBBY_TAB'"),
+      MULTI.indexOf("useMasterBusSubscription('OPEN_HUB_TAB'")
     );
+    expect(open).toContain('setActiveIndex(existingLobby)');
+    expect(open).not.toContain('clearLobbyTournaments');
+    expect(open).not.toContain('lobbyPageHistory: undefined');
   });
 
   it('drill-ins use a functional updater, so two in one tick cannot lose one', () => {

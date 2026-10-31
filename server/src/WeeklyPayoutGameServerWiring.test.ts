@@ -84,7 +84,25 @@ function wired() {
 async function retire(server: any, engine: any) {
   server.weeklyPayoutPause.stop();
   setWeeklyPayoutFrozen(token, null);
-  await engine.stop();
+  const original = engine.handController;
+  const permit = engine.f06CurrentPermit;
+  expect(original.getLifecyclePhase()).toEqual({ handStarted: true, handCompleted: false });
+  await expect(engine.stop()).rejects.toMatchObject({
+    message: expect.stringContaining('retains unproven original hand custody'),
+    errors: [expect.objectContaining({ message: 'Stopped Original Hand Custody Is Unproven' })],
+  });
+  expect(engine.handController).toBe(original);
+  expect(engine.f06CurrentPermit).toBe(permit);
+  expect(engine.hasReleasedProcessOwnership()).toBe(false);
+  // Stop joined physical work but correctly retained this synthetic original.
+  // Test-only disposal must not be confused with production retirement.
+  server.releaseWeeklyPayout(engine);
+  engine.clearLooseHandTimers();
+  engine.clearTurnTimer();
+  engine.preciseTimer.dispose();
+  engine.actionValidator.dispose();
+  engine.timeBankEngine.disposeAll();
+  (engine.constructor as any).releaseCurrentEngine(engine.tableId, engine);
 }
 describe('the actual GameServer weekly drain is independent of daily maintenance', () => {
   it('accepts an HTTP action during announcement and ACKs at four with inactive maintenance', async () => {

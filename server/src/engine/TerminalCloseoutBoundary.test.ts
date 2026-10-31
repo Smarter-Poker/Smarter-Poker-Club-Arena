@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sliceMethod } from '../testHelpers/sourceWindow.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
+import { HandController } from './HandController.js';
+import type { HandConfig, SeatPlayer } from '../types.js';
 
 function boundaryHarness(): any {
   const engine = Object.create(ServerTableEngineBase.prototype) as any;
@@ -260,7 +262,7 @@ describe('the terminal tournament boundary owns the next deal', () => {
     expect(method.slice(finalGate, start)).not.toContain('await ');
   });
 
-  it('finishes teardown after a snapshot flush rejects', async () => {
+  it('finishes prepared-controller teardown after a snapshot flush rejects', async () => {
     const engine = Object.create(ServerTableEngineBase.prototype) as any;
     const dispose = vi.fn();
     const failure = new Error('snapshot unavailable');
@@ -284,7 +286,35 @@ describe('the terminal tournament boundary owns the next deal', () => {
     engine.clearTurnTimer = vi.fn();
     engine.flushSnapshot = vi.fn().mockRejectedValue(failure);
     engine.snapshotTimer = null;
-    engine.handController = {};
+    // This unit tests a never-started snapshot writer, not permission to
+    // discard a live original. Real unknown/active refusal cases are separate.
+    engine.handController = new HandController(
+      {
+        tableId: engine.tableId,
+        handNumber: 17,
+        gameVariant: 'nlh',
+        smallBlind: 1,
+        bigBlind: 2,
+        rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+      } as HandConfig,
+      [1, 2].map((seat) => ({
+        seat,
+        user_id: `prepared-${seat}`,
+        username: `P${seat}`,
+        stack: 100,
+        bet: 0,
+        totalInvested: 0,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      })) as SeatPlayer[],
+      1
+    );
+    expect(engine.handController.getLifecyclePhase()).toEqual({
+      handStarted: false,
+      handCompleted: false,
+    });
     engine.preciseTimer = { dispose };
     engine.actionValidator = { dispose };
     engine.stateVerifier = { dispose };

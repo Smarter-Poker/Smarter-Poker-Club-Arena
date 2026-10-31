@@ -54,7 +54,29 @@ beforeEach(() => {
 afterEach(async () => {
   try {
     for (const engine of runoutEngines) {
-      await engine.stop();
+      const fixture = engine as any;
+      const original = fixture.handController;
+      const permit = fixture.f06CurrentPermit;
+      const phase = original?.getLifecyclePhase();
+      if (phase?.handStarted === true && phase.handCompleted === false) {
+        await expect(engine.stop()).rejects.toMatchObject({
+          message: expect.stringContaining('retains unproven original hand custody'),
+          errors: [
+            expect.objectContaining({ message: 'Stopped Original Hand Custody Is Unproven' }),
+          ],
+        });
+        expect(fixture.handController).toBe(original);
+        expect(fixture.f06CurrentPermit).toBe(permit);
+        expect(engine.hasReleasedProcessOwnership()).toBe(false);
+        // Accepted physical work has joined; destroy only this isolated
+        // synthetic fixture, without claiming runtime retirement.
+        fixture.clearLooseHandTimers();
+        fixture.clearTurnTimer();
+        fixture.runItTwiceEngine.disposeAll();
+        fixture.insuranceEngine.disposeAll();
+        fixture.preciseTimer.dispose();
+        (fixture.constructor as any).releaseCurrentEngine(fixture.tableId, fixture);
+      } else await engine.stop();
       expect(engine.isRunning()).toBe(false);
     }
   } finally {
@@ -135,13 +157,13 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
   const engine = new ServerTableEngine(TABLE) as any;
   runoutEngines.add(engine);
   // This harness tests runout dispatch, not database snapshot persistence.
-  // Stop the real engine after every assertion (including failed assertions),
-  // so pending offers and table-keyed deadlines cannot outlive their test.
+  // Assert the real stop outcome after every test, then explicitly dispose
+  // any refused synthetic original so its deadlines cannot outlive the test.
   vi.spyOn(engine, 'flushSnapshot').mockResolvedValue(undefined);
   engine.running = true;
   engine.handCount = 1;
   engine.handController = hc;
-  engine.lifecycleCanMutate = () => true;
+  expect(engine.claimProcessOwnership()).toBe(true);
   /* The table ROW is the source of truth, not the engine's configure() call.
      Since 2026-08-27 handleAllInRunout re-reads it through
      applyRunItTwiceConfig() on every all-in — that is the fix for production

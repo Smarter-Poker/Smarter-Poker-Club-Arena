@@ -377,6 +377,36 @@ def restart_log_signs(raw):
             'absenceMeans': 'unknown; bounded retained logs may omit the failure'}
 
 
+def kernel_restart_signs(data):
+    """Classify native faults without exporting journal text, addresses or paths.
+
+    A host node process is not necessarily this container. Docker's original
+    event window must be correlated independently; never infer attribution.
+    """
+    rows = []
+    for line in data.splitlines():
+        value = json.loads(line)
+        message = value.get('MESSAGE', '')
+        if not isinstance(message, str):
+            continue
+        timestamp = value.get('__REALTIME_TIMESTAMP')
+        row = {'timestampUs': timestamp if isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}', timestamp) else None,
+               'engineAttribution': 'unproven'}
+        if re.search(r'Out of memory: Killed process|oom-kill:|Memory cgroup out of memory', message):
+            rows.append({**row, 'kind': 'host_oom_observed'})
+            continue
+        fault = re.search(r'^(?:traps: )?([^\s\[\]]{1,64})\[[0-9]{1,10}\]:? (segfault at|general protection fault)\b', message)
+        if not fault:
+            continue
+        module = re.search(r'\bin ([^\s\[\]]{1,80})\[', message)
+        module_class = {'node': 'node', 'libc.so.6': 'libc', 'libstdc++.so.6': 'libstdc++',
+                        'libuv.so.1': 'libuv', 'libcrypto.so.3': 'libcrypto'}.get(module[1] if module else '', 'unknown')
+        rows.append({**row, 'kind': 'host_native_fault_observed',
+                     'fault': 'segmentation_fault' if fault[2] == 'segfault at' else 'general_protection_fault',
+                     'processClass': 'node' if fault[1] == 'node' else 'other', 'moduleClass': module_class})
+    return rows
+
+
 def read_restart_incident(window, raw):
     """Read the fixed engine container and original host window; no mutation."""
     result = {'engineLogSigns': restart_log_signs(raw), 'sources': {},
@@ -429,13 +459,7 @@ def read_restart_incident(window, raw):
                     if stamp and re.search(r'(?<![A-Za-z0-9_-])club-arena-engine(?![A-Za-z0-9_-])', line) and re.search(r'(?i)unhealthy|restart', line):
                         rows.append({'timestamp': stamp[1], 'kind': 'autoheal_engine_restart_observed'})
             else:
-                for line in data.splitlines():
-                    value = json.loads(line)
-                    message = value.get('MESSAGE', '')
-                    if isinstance(message, str) and re.search(r'Out of memory: Killed process|oom-kill:|Memory cgroup out of memory', message):
-                        timestamp = value.get('__REALTIME_TIMESTAMP')
-                        rows.append({'timestampUs': timestamp if isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}', timestamp) else None,
-                                     'kind': 'host_oom_observed', 'engineAttribution': 'unproven'})
+                rows = kernel_restart_signs(data)
             result['sources'][source] = {'status': 'observed', 'records': rows[-40:],
                                          'matchingRecords': len(rows), 'inputBytes': len(data)}
         except Exception:

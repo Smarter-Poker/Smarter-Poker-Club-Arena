@@ -1152,7 +1152,11 @@ export default function MemberManagementPage() {
             <StatRow label="Sent Out" value={playerRecordMoney(stats.sent_out)} />
             <StatRow
               label="Total Winnings"
-              value={playerRecordMoney(stats.total_winnings, true)}
+              value={
+                stats.total_winnings === null
+                  ? 'Unavailable'
+                  : playerRecordMoney(stats.total_winnings, true)
+              }
               signed={stats.total_winnings}
             />
             <StatRow
@@ -2193,9 +2197,16 @@ function InfoLine({ label, value }: { label: string; value: string }) {
  * --danger-red; there is no green in this product, so "up" is the primary colour
  * rather than a second hue nobody else uses.
  */
-function StatRow({ label, value, signed }: { label: string; value: string; signed?: number }) {
-  const tone =
-    signed === undefined || signed === 0 ? '' : signed > 0 ? ' mm-stat--up' : ' mm-stat--down';
+function StatRow({
+  label,
+  value,
+  signed,
+}: {
+  label: string;
+  value: string;
+  signed?: number | null;
+}) {
+  const tone = signed == null || signed === 0 ? '' : signed > 0 ? ' mm-stat--up' : ' mm-stat--down';
 
   return (
     <div className={`mm-stat${tone}`}>

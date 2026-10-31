@@ -89,12 +89,14 @@ describe('an interrupted elimination stage retains its continuation', () => {
       await manager.runEliminationSweep(controller.signal);
       expect(manager.checkTableBalance).toHaveBeenCalledOnce();
       expect(manager.checkDynamicTableExpansion).not.toHaveBeenCalled();
-      expect(manager.eliminationSweepCursor.nextStage).toBe(reason === 'frozen' ? 0 : 5);
+      expect(manager.eliminationSweepCursor.nextStage).toBe(
+        reason === 'frozen' ? 0 : reason === 'budget' ? 6 : 5
+      );
       expect(manager.requestEliminationSweep).toHaveBeenCalledTimes(reason === 'budget' ? 1 : 0);
     }
   );
 
-  it('does not mark table balancing complete when its helper yields within the stage', async () => {
+  it('preserves pending balancing while its slow unit yields to the remaining stages', async () => {
     vi.useFakeTimers();
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
     Object.assign(manager, {
@@ -113,12 +115,12 @@ describe('an interrupted elimination stage retains its continuation', () => {
     });
     manager.eliminationSweepCursor.advanceTo(5);
     await manager.runEliminationSweep(new AbortController().signal);
-    expect(manager.eliminationSweepCursor.nextStage).toBe(5);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(6);
     expect(manager.requestEliminationSweep).toHaveBeenCalledOnce();
     expect(manager.checkDynamicTableExpansion).not.toHaveBeenCalled();
     manager.checkTableBalance.mockResolvedValue(undefined);
     await manager.runEliminationSweep(new AbortController().signal);
-    expect(manager.checkTableBalance).toHaveBeenCalledTimes(2);
+    expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
     expect(manager.eliminationSweepCursor.nextStage).toBe(0);
   });
 

@@ -9,6 +9,7 @@ export function registerLobbyGameSectionsCases(lobbyGameSectionsFixture: () => P
       // The component's CSS must precede the page, command top and mobile pass,
       // as it does in the production bundle; loading it last hides overrides.
       const css = [
+        'src/components/lobby/LobbyFilterLabel.css',
         'src/components/lobby/LobbyGameSections.css',
         'src/pages/ClubHomePage.css',
         'src/components/lobby/ClubLobbyCommandTop.css',
@@ -63,9 +64,43 @@ export function registerLobbyGameSectionsCases(lobbyGameSectionsFixture: () => P
       if (width === 393) await page.screenshot({ path: testInfo.outputPath('closed.png') });
       await cash.click();
       await expect(page.getByRole('tab')).toHaveText(['ALL', 'NLH', 'PLO', 'LIMIT']);
+      const expectFittedKeys = async () => {
+        for (const label of await page
+          .locator('#lobby-game-section-controls .lobby-filter-label__text')
+          .all()) {
+          const geometry = await label.evaluate((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const ink = range.getBoundingClientRect();
+            const zone = el.parentElement!.getBoundingClientRect();
+            const face = zone.width ? zone : el.closest('button')!.getBoundingClientRect();
+            return {
+              left: ink.left,
+              right: ink.right,
+              top: ink.top,
+              bottom: ink.bottom,
+              faceLeft: face.left,
+              faceRight: face.right,
+              faceTop: face.top,
+              faceBottom: face.bottom,
+            };
+          });
+          expect(geometry.left).toBeGreaterThanOrEqual(geometry.faceLeft - 1);
+          expect(geometry.right).toBeLessThanOrEqual(geometry.faceRight + 1);
+          expect(geometry.top).toBeGreaterThanOrEqual(geometry.faceTop - 1);
+          expect(geometry.bottom).toBeLessThanOrEqual(geometry.faceBottom + 1);
+        }
+      };
+      await expectFittedKeys();
       if (width === 393) await page.screenshot({ path: testInfo.outputPath('cash.png') });
       await tournaments.click();
-      await expect(page.getByRole('tab')).toHaveText(['MTT', 'SPINS', "SIT N GO'S", 'SATELLITES']);
+      await expect(page.getByRole('tab')).toHaveText([
+        "MTT'S",
+        'SPINS',
+        "SIT N GO'S",
+        'SATELLITES',
+      ]);
+      await expectFittedKeys();
       await expect(cash).toHaveAttribute('aria-expanded', 'false');
       if (width === 393) await page.screenshot({ path: testInfo.outputPath('tournaments.png') });
       await tournaments.click();

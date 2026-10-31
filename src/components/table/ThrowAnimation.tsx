@@ -706,6 +706,9 @@ export function ThrowAnimationContainer({
     [onEventComplete]
   );
 
+  // No owed event means no full-table overlay or retained paint layer.
+  if (events.length === 0) return null;
+
   /* THE MIGRATION SEAM (throwables programme, phase 1, 2026-09-06).
      An item with a rig in src/throwables/registry.ts plays through
      ThrowablePlayer: the reference grammar (spawn on the face, straight

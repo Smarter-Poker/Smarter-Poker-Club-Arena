@@ -92,7 +92,7 @@ function fixture({
           selected = options.name!;
           const value = exchange({
             ownerId: postOwner,
-            tab: selected === 'MTT' ? 'MTT' : 'OMAHA',
+            tab: selected === "MTT'S" ? 'MTT' : 'OMAHA',
             status,
           });
           if (responseMode !== 'normal') {
@@ -262,7 +262,7 @@ describe('cold-return preference proof', () => {
         returningPage: f.page,
         returningReady: true,
         clubId: club,
-        original: 'MTT',
+        original: "MTT'S",
         ownerId: owner,
         proofFor: () => f.proof,
         verify: vi.fn(),
@@ -370,7 +370,7 @@ describe('cold-return preference proof', () => {
         returningPage: returned.page,
         returningReady: ready,
         clubId: club,
-        original: 'MTT',
+        original: "MTT'S",
         ownerId: owner,
         proofFor: (page) => (page === old.page ? old.proof : returned.proof),
         verify,
@@ -391,7 +391,7 @@ describe('cold-return preference proof', () => {
       returningPage: f.page,
       returningReady: true,
       clubId: club,
-      original: 'MTT',
+      original: "MTT'S",
       ownerId: owner,
       proofFor: () => f.proof,
       verify,

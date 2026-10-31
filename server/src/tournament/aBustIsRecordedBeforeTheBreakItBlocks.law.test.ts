@@ -290,15 +290,18 @@ function watchBustReads() {
 }
 
 describe('a bust is not held behind a balance stage that spends every budget', () => {
-  it('without a bust, the balance stage keeps its continuation (unchanged)', async () => {
+  it('without a reported bust, slow balancing still yields to a fresh bust read', async () => {
     vi.useFakeTimers();
     const manager = balanceStageManager();
     const bustRead = watchBustReads();
     await manager.runEliminationSweep(new AbortController().signal);
     await manager.runEliminationSweep(new AbortController().signal);
-    expect(manager.checkTableBalance).toHaveBeenCalledTimes(2);
+    expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
     expect(bustRead).not.toHaveBeenCalled();
-    expect(manager.eliminationSweepCursor.nextStage).toBe(5);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(0);
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(bustRead).toHaveBeenCalledWith('chips', 0);
+    expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
   });
 
   it('a bust observed while balance holds the cursor is read on the very next admission', async () => {

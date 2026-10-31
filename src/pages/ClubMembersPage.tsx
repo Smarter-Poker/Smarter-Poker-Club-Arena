@@ -220,7 +220,7 @@ function walletFigure(value: number | null): string {
 
 /** Win / loss for one row: the figure, "Unavailable" after a failed read, or "...". */
 function winLossText(winLoss: WinLossFigure | undefined, unavailable: boolean): string {
-  if (winLoss) return winLossChips(winLoss.net);
+  if (winLoss) return winLoss.net === null ? 'Unavailable' : winLossChips(winLoss.net);
   return unavailable ? 'Unavailable' : '...';
 }
 
@@ -353,6 +353,9 @@ export default function ClubMembersPage() {
     exportScopeRef.current = { key: exportScopeKey };
   }
   const [workspaceScope, setWorkspaceScope] = useState<string | null>(null);
+  // Initial account/club hydration owns these values until it has settled.
+  // Do not accept edits that the pending workspace read would then replace.
+  const workspaceReady = Boolean(user?.id && resolvedClubId && workspaceScope === exportScopeKey);
   const [loadedQuery, setLoadedQuery] = useState<RosterWorkspace | null>(null);
   const pendingPositionRef = useRef<RosterReturnPosition | null>(null);
   const positionPagesRef = useRef(0);
@@ -1613,11 +1616,17 @@ export default function ClubMembersPage() {
 
         {simpleMode && (
           <div className="members-simple-tabs" role="group" aria-label="Player Views">
-            <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
+            <button
+              type="button"
+              disabled={!workspaceReady}
+              aria-pressed={filter === 'all'}
+              onClick={() => setFilter('all')}
+            >
               All
             </button>
             <button
               type="button"
+              disabled={!workspaceReady}
               aria-pressed={filter === 'agents'}
               onClick={() => setFilter('agents')}
             >
@@ -1629,7 +1638,12 @@ export default function ClubMembersPage() {
           </div>
         )}
         {simpleMode && !['all', 'agents'].includes(filter) && (
-          <button type="button" className="members-active-view" onClick={() => setFilter('all')}>
+          <button
+            type="button"
+            disabled={!workspaceReady}
+            className="members-active-view"
+            onClick={() => setFilter('all')}
+          >
             {FILTER_LABEL[filter]}: Clear Filter
           </button>
         )}
@@ -1639,6 +1653,7 @@ export default function ClubMembersPage() {
             type="search"
             placeholder={titleCase('search name, number, club, or upline')}
             aria-label="Search Club Members"
+            disabled={!workspaceReady}
             value={searchQuery}
             maxLength={120}
             autoComplete="off"
@@ -1656,6 +1671,7 @@ export default function ClubMembersPage() {
               <span>Filter Players</span>
               <select
                 aria-label="Filter Players"
+                disabled={!workspaceReady}
                 value={filter}
                 onChange={(event) => setFilter(event.target.value as RosterFilter)}
               >
@@ -1675,7 +1691,7 @@ export default function ClubMembersPage() {
               type="button"
               className="members-group-role"
               aria-pressed={!searchQuery.trim() && sortKey === 'hierarchy'}
-              disabled={Boolean(searchQuery.trim())}
+              disabled={!workspaceReady || Boolean(searchQuery.trim())}
               onClick={() => setSortKey(sortKey === 'hierarchy' ? 'name' : 'hierarchy')}
             >
               Group By Role
@@ -1701,7 +1717,7 @@ export default function ClubMembersPage() {
             <span className="members-sort__label">Sort By</span>
             <select
               aria-label="Sort Players"
-              disabled={Boolean(searchQuery.trim())}
+              disabled={!workspaceReady || Boolean(searchQuery.trim())}
               value={searchQuery.trim() ? 'search' : sortKey}
               onChange={(event) => setSortKey(event.target.value as RosterSort)}
             >
@@ -1723,6 +1739,7 @@ export default function ClubMembersPage() {
                     <label key={column}>
                       <input
                         type="checkbox"
+                        disabled={!workspaceReady}
                         checked={columns.has(column)}
                         onChange={() => toggleColumn(column)}
                       />
@@ -2025,7 +2042,7 @@ export const MemberRow = memo(function MemberRow({
   columns: Set<OptionalColumn>;
 }) {
   const winLossTone =
-    !winLoss || winLoss.net === 0
+    !winLoss || winLoss.net === null || winLoss.net === 0
       ? ''
       : winLoss.net > 0
         ? ' member-winloss--up'

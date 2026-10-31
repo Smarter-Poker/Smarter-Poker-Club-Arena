@@ -204,7 +204,7 @@ export function assertPrivateRecordClientProof(
         'readerReadback',
         'visibleAvatarReadback',
         'engineReadyAfterRestore',
-        'engineRecordChangedAfterRestore',
+        'gatewayRecordChangedAfterRestore',
         'secondVisibleAvatarReadback',
         'faultRestored',
       ].every((key) => proof[key] === true) &&
@@ -214,9 +214,12 @@ export function assertPrivateRecordClientProof(
       proof.paidIsolation?.matchingChangedFrames === 0 &&
       Number.isInteger(proof.paidIsolation?.observedFrames) &&
       proof.paidIsolation.observedFrames >= 0 &&
-      proof.gatewayRetirement?.openSocketsBeforeSecondWrite === 0 &&
-      proof.gatewayRetirement?.openSocketsAfterSecondWrite === 0 &&
-      proof.gatewayRetirement?.matchingSignalsAfterRetirement === 0 &&
+      Number.isInteger(proof.gatewayRetention?.openSocketsBeforeSecondWrite) &&
+      proof.gatewayRetention.openSocketsBeforeSecondWrite > 0 &&
+      Number.isInteger(proof.gatewayRetention?.openSocketsAfterSecondWrite) &&
+      proof.gatewayRetention.openSocketsAfterSecondWrite > 0 &&
+      Number.isInteger(proof.gatewayRetention?.matchingChangesAfterRecovery) &&
+      proof.gatewayRetention.matchingChangesAfterRecovery > 0 &&
       proof.observationsOverflow === false &&
       proof.cosmeticWrites === 2 &&
       proof.syntheticFrames === 0 &&

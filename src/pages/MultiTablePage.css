@@ -1504,3 +1504,32 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     --ca-pinned-bar-offset: calc(44px + var(--mtt-ticker-h, 0px));
   }
 }
+
+/* Player watch stays on the existing black ground; the action is a lit word. */
+.mtp-player-follow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px;
+  color: #e4e7ec;
+  font-size: 12px;
+}
+.mtp-player-follow span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mtp-player-follow button {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  color: #45adff;
+  font: inherit;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.mtp-player-follow button:focus-visible {
+  outline: 1px solid #45adff;
+}

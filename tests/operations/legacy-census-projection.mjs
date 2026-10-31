@@ -10,13 +10,26 @@ for (const name of [
   'legacyCensusMemoryAdmission',
   'legacyCensusRoot',
   'projectLegacyCensus',
+  'bindLegacyCensusModules',
+  'collectMarkedLegacyCensus',
 ])
   assert.equal(typeof source[name], 'function', `maintained export missing: ${name}`);
 assert.match(process.version, /^v(?:20|22|24|26)\./);
 const originalPid = process.pid;
 const session = new Session();
 const post = promisify(session.post.bind(session));
-const classes = Array.from({ length: 5 }, () => class Concrete {});
+class SharedAncestor {
+  inherited() {
+    return 19;
+  }
+}
+const classes = [
+  class C0 {},
+  class C1 extends SharedAncestor {},
+  class C2 extends SharedAncestor {},
+  class C3 {},
+  class C4 {},
+];
 const modules = {
   gameServer: { GameServer: classes[0] },
   engine: { ServerTableEngine: classes[1] },
@@ -67,6 +80,7 @@ for (let index = 0; index < classes.length; index++) {
     `${index}:side-effect-proxy`
   );
 }
+add(new SharedAncestor(), 'unrelated-shared-ancestor');
 add(Object.create(null), 'null-root');
 // Even unrelated accessors must remain unread by the broad projection.
 add(
@@ -116,14 +130,32 @@ try {
     });
     nativeSets.push(identities.result.value);
   }
-  const broad = await post('Runtime.queryObjects', {
-    prototypeObjectId: rootResponse.result.objectId,
-    objectGroup: 'projection-broad',
-  });
   const modulesResponse = await post('Runtime.evaluate', {
     expression: `globalThis.${globalKey}.modules`,
     objectGroup: 'projection-exact',
   });
+  const holderKey = '__legacyEngineCensus_11111111111111111111111111111111';
+  const deadline = Date.now() + 5000;
+  const binding = await post('Runtime.callFunctionOn', {
+    objectId: modulesResponse.result.objectId,
+    functionDeclaration: source.bindLegacyCensusModules.toString(),
+    arguments: [{ value: holderKey }, { value: deadline }],
+    returnByValue: true,
+  });
+  assert.equal(binding.exceptionDetails, undefined);
+  assert.equal(binding.result.value, true);
+  const union = await post('Runtime.evaluate', {
+    expression: `(${source.collectMarkedLegacyCensus.toString()})(${JSON.stringify(holderKey)}, ${deadline})`,
+    disableBreaks: true,
+    awaitPromise: false,
+    objectGroup: 'projection-broad',
+  });
+  assert.equal(union.exceptionDetails, undefined, JSON.stringify(union.exceptionDetails));
+  const broad = { objects: union.result };
+  assert.equal(Object.hasOwn(globalThis, holderKey), false);
+  assert.equal(Object.getPrototypeOf(classes[1].prototype), SharedAncestor.prototype);
+  assert.equal(Object.getPrototypeOf(SharedAncestor.prototype), Object.prototype);
+  assert.equal(new classes[1]().inherited(), 19);
   const projected = await post('Runtime.callFunctionOn', {
     objectId: broad.objects.objectId,
     functionDeclaration: source.projectLegacyCensus.toString(),
@@ -201,7 +233,9 @@ try {
     JSON.stringify({
       ok: true,
       nativeBaselineScans: 5,
-      broadScans: 1,
+      markedUnionScans: 1,
+      bindingRemoved: true,
+      inheritedBehaviorPreserved: true,
       exactSets: nativeSets,
       exactIdentityEquality: identities.result.value.exact,
       nativeCounts: identities.result.value.counts,

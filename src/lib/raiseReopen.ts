@@ -19,6 +19,8 @@
  *     has not acted yet - the big blind's option included - may always raise;
  *   - `raiseIncrement` is the engine's published minimum raise, which is the
  *     last FULL raise (a short all-in never changes it) or the big blind;
+ *     it already includes the dealt hand's blind. Table metadata can announce
+ *     the next level mid-hand and must not raise that hand's reopen threshold;
  *   - fixed limit reopens on half the street's bet, as the engine does.
  */
 const ANSWERED_THIS_STREET = new Set(['check', 'call', 'bet', 'raise']);
@@ -37,6 +39,8 @@ export function heroMayReopenBetting(input: ReopenInput): boolean {
   if (!input.heroLastAction || !ANSWERED_THIS_STREET.has(input.heroLastAction)) return true;
   const increment = input.isFixedLimit
     ? Math.max(0, Number(input.fixedBetSize) || input.bigBlind) / 2
-    : Math.max(input.bigBlind, input.raiseIncrement);
+    : Number.isFinite(input.raiseIncrement) && input.raiseIncrement > 0
+      ? input.raiseIncrement
+      : input.bigBlind;
   return input.currentBet - input.heroBet >= increment - 0.005;
 }

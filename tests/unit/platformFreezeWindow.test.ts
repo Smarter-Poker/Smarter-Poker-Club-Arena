@@ -109,6 +109,20 @@ describe('the platform freeze is waited out, not counted down', () => {
     expect(describeThaw(result)).toContain('UNKNOWN, not a thaw');
   });
 
+  it('lets the preference account fixture finish its existing guarded cleanup wait', () => {
+    const spec = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
+    const fixture = spec.split('preferenceAccount: [')[1].split('\n  page: [')[0];
+    const expression = fixture.match(/\{ timeout: ([^}]+) \}/)?.[1];
+    expect(expression).toBeDefined();
+    const timeout = new Function('CLEANUP_FREEZE_ALLOWANCE_MS', `return (${expression});`)(
+      PLATFORM_FREEZE_WORST_CASE_MS
+    );
+    // Keep the original fixture work budget after the longest supported thaw.
+    expect(timeout - PLATFORM_FREEZE_WORST_CASE_MS).toBe(120_000);
+    expect(fixture).toContain('await cleanupTemporaryCustomizationAccount(environment, {');
+    expect(fixture).toContain('cleanupVerified: true');
+  });
+
   it('leaves no blind tick budget in either cleanup path', () => {
     const helper = source('tests/e2e/support/temporaryCustomizationAccount.ts');
     const script = source('scripts/ci/production-e2e-account.mjs');

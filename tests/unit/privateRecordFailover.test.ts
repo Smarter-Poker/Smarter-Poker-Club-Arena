@@ -27,7 +27,7 @@ const status = (ready: boolean): PrivateRecordMessage => ({
 });
 const changed: PrivateRecordMessage = { type: 'PRIVATE_RECORD_CHANGED', topic };
 describe('private record failover', () => {
-  it('uses standby until primary READY then retires its delivery authority synchronously', () => {
+  it('retires an unready standby when primary acknowledges first', () => {
     const primary = transport();
     const standby = transport();
     const frames: PrivateRecordMessage[] = [];
@@ -35,9 +35,6 @@ describe('private record failover', () => {
       frames.push(m)
     );
     expect(standby.active).toBe(true);
-    standby.emit(status(true));
-    standby.emit(changed);
-    expect(frames.at(-1)).toEqual(changed);
     primary.emit(status(true));
     expect(standby.active).toBe(false);
     const count = frames.length;
@@ -48,6 +45,41 @@ describe('private record failover', () => {
     expect(frames).toHaveLength(count + 1);
     stop();
     expect(primary.active).toBe(false);
+  });
+  it('retains a healthy standby through primary READY/eviction cycles without duplicate delivery', () => {
+    const primary = transport();
+    const standby = transport();
+    const frames: PrivateRecordMessage[] = [];
+    const stop = new PrivateRecordFailover(primary, standby).onPrivateRecord(topic, (m) =>
+      frames.push(m)
+    );
+    standby.emit(status(true));
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const beforeRecovery = frames.length;
+      primary.emit(status(true));
+      expect(standby.active).toBe(true);
+      expect(frames).toHaveLength(beforeRecovery);
+      const count = frames.length;
+      primary.emit(changed);
+      expect(frames).toHaveLength(count);
+      primary.emit(status(false));
+      expect(frames).toHaveLength(count);
+      expect(frames.filter((frame) => frame.type === 'PRIVATE_RECORD_STATUS')).toEqual([
+        status(true),
+      ]);
+      standby.emit(changed);
+      expect(frames.at(-1)).toEqual(changed);
+    }
+    primary.emit(status(true));
+    standby.emit(status(false));
+    expect(standby.active).toBe(false);
+    expect(frames.at(-1)?.ready).toBe(true);
+    const count = frames.length;
+    standby.emit(changed);
+    expect(frames).toHaveLength(count);
+    primary.emit(changed);
+    expect(frames).toHaveLength(count + 1);
+    stop();
   });
   it('activates an independent standby on primary loss and owes a recovery refresh', () => {
     const primary = transport();

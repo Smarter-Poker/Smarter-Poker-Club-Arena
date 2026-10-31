@@ -1,0 +1,9 @@
+# Cash table idle rendering
+
+Cash tables kept full-table chip and throw overlays mounted when their event lists were empty. Android Chromium 155 layer inspection identified both empty overlays as composited content. The chip overlay also retained its ResizeObserver and window resize listener. They now mount only for owed work. Overlapping flights keep the same active manager, and its layout measurement runs before paint when the next animation begins. The first flight waits for that measurement before mounting, so its initial position uses the scaled table coordinates. Permanent transform/opacity hints on resting seats and chip stacks are removed; their transitions and animation declarations remain intact. The artwork, animation duration, sounds and completion callbacks are unchanged.
+
+A table mounted while the document was already hidden also missed the background animation-pause class until another visibility event. The environment hook now applies the current visibility state on mount to each table's own root and retains its existing event/cleanup path.
+
+Three real-component regressions fail against the preimage and pass after the changes. Throwable lifecycle coverage additionally exercises empty-to-active-to-empty-to-active playback without restarting an owed animation. Existing chip flight, animation-law, keyboard and stable viewport tests pass. The regressions are included by the existing client Vitest CI/publisher inventory.
+
+This removes demonstrated idle rendering work. It does not establish the cause of Lucky's missing table sections or claim that incident is resolved. Lucky used standalone Chrome on Android; Messenger transported the screenshot. A separately recorded Facebook WebView session cannot establish the host of that screenshot. Native Android Chrome return-to-game verification and protected publication are recorded separately in the task evidence.

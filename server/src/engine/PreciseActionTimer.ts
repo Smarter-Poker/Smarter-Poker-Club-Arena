@@ -70,6 +70,10 @@ export class PreciseActionTimer {
   >();
 
   pauseForWeeklyPayout(tableId: string, owner: string): void {
+    this.holdDecisionClocks(tableId, owner);
+  }
+
+  holdDecisionClocks(tableId: string, owner: string): void {
     if (!owner) throw new Error('Weekly payout pause requires an owner');
     let pause = this.weeklyPauses.get(tableId);
     if (!pause) {
@@ -85,6 +89,10 @@ export class PreciseActionTimer {
   }
 
   resumeFromWeeklyPayout(tableId: string, owner: string): void {
+    this.releaseDecisionClocks(tableId, owner);
+  }
+
+  releaseDecisionClocks(tableId: string, owner: string): void {
     const pause = this.weeklyPauses.get(tableId);
     if (!pause || !pause.owners.delete(owner) || pause.owners.size) return;
     this.weeklyPauses.delete(tableId);

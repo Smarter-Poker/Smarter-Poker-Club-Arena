@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/weekly-payout-money-window-fit-20261031",
+  "_comment": "Migration 20261031214453: a scope too large for the 240-second owned money statement is never bundled with the others. Declaration only; installation remains a separate protected-main operation.",
+  "tables": ["smarter_private.weekly_payout_money_window_exclusions"],
+  "functions": ["smarter_private.weekly_payout_money_window_fits", "smarter_private.weekly_payout_prepare_due"]
+}

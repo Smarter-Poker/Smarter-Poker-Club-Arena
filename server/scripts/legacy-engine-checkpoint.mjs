@@ -547,6 +547,169 @@ export function legacyCensusRoot() {
   return Object.prototype;
 }
 
+// Bind only cached modules before the synchronous census. No application
+// prototype changes cross an Inspector request or an async boundary.
+export function bindLegacyCensusModules(holderKey, workDeadlineMs) {
+  if (
+    typeof holderKey !== 'string' ||
+    !/^__legacyEngineCensus_[0-9a-f]{32}$/.test(holderKey) ||
+    !Number.isSafeInteger(workDeadlineMs) ||
+    workDeadlineMs <= Date.now() ||
+    workDeadlineMs > Date.now() + 40000 ||
+    Object.getOwnPropertyDescriptor(globalThis, holderKey)
+  )
+    throw new Error('native census binding refused');
+  const holder = Object.create(null);
+  Object.defineProperties(holder, {
+    modules: { value: this },
+    deadline: { value: workDeadlineMs },
+    schema: { value: 'legacy-marked-census/v1' },
+  });
+  Object.defineProperty(globalThis, holderKey, { value: holder, configurable: true });
+  return true;
+}
+
+// Only an unentered, exact owned module binding may be retired separately.
+// An active/unknown marked census must restore and remove its own holder.
+export function retireLegacyCensusBinding(holderKey, workDeadlineMs) {
+  if (typeof holderKey !== 'string' || !/^__legacyEngineCensus_[0-9a-f]{32}$/.test(holderKey))
+    throw new Error('native census binding refused');
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, holderKey);
+  if (!descriptor) return true;
+  const holder = descriptor.value;
+  if (
+    !holder ||
+    process.getBuiltinModule('node:util').types.isProxy(holder) ||
+    Object.getPrototypeOf(holder) !== null ||
+    Object.getOwnPropertyDescriptor(holder, 'schema')?.value !== 'legacy-marked-census/v1' ||
+    Object.getOwnPropertyDescriptor(holder, 'deadline')?.value !== workDeadlineMs ||
+    Object.getOwnPropertyDescriptor(holder, 'marker')
+  )
+    throw new Error('native census binding is not unentered');
+  if (!delete globalThis[holderKey]) throw new Error('native census binding cleanup refused');
+  return true;
+}
+
+export function collectMarkedLegacyCensus(holderKey, workDeadlineMs) {
+  const getPrototypeOf = Object.getPrototypeOf;
+  const setPrototypeOf = Object.setPrototypeOf;
+  const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+  const defineProperty = Object.defineProperty;
+  const isExtensible = Object.isExtensible;
+  const root = Object.prototype;
+  const isProxy = process.getBuiltinModule('node:util').types.isProxy;
+  if (typeof holderKey !== 'string' || !/^__legacyEngineCensus_[0-9a-f]{32}$/.test(holderKey))
+    throw new Error('native census binding refused');
+  const holder = getOwnPropertyDescriptor(globalThis, holderKey)?.value;
+  if (
+    !holder ||
+    isProxy(holder) ||
+    getPrototypeOf(holder) !== null ||
+    getOwnPropertyDescriptor(holder, 'schema')?.value !== 'legacy-marked-census/v1' ||
+    getOwnPropertyDescriptor(holder, 'deadline')?.value !== workDeadlineMs ||
+    !Number.isSafeInteger(workDeadlineMs)
+  )
+    throw new Error('native census binding refused');
+  let session;
+  try {
+    if (workDeadlineMs <= Date.now() || workDeadlineMs > Date.now() + 40000)
+      throw new Error('native census deadline exhausted');
+    const modules = getOwnPropertyDescriptor(holder, 'modules')?.value;
+    const roots = [
+      modules.gameServer.GameServer.prototype,
+      modules.engine.ServerTableEngine.prototype,
+      modules.manager.TournamentManager.prototype,
+      modules.lightningWorker.LightningClusterWorker.prototype,
+      modules.lightningHost.LightningHandHost.prototype,
+    ];
+    const tops = [];
+    for (let index = 0; index < roots.length; index++) {
+      let cursor = roots[index];
+      for (let depth = 0; ; depth++) {
+        if (depth >= 256 || cursor === null || isProxy(cursor))
+          throw new Error('native census root refused');
+        for (let other = 0; other < roots.length; other++)
+          if (other !== index && cursor === roots[other])
+            throw new Error('native census root refused');
+        const parent = getPrototypeOf(cursor);
+        if (parent === root) {
+          if (!isExtensible(cursor)) throw new Error('native census root not extensible');
+          if (!tops.includes(cursor)) tops.push(cursor);
+          break;
+        }
+        cursor = parent;
+      }
+    }
+    const marker = Object.create(root);
+    defineProperty(holder, 'marker', { value: marker });
+    const { Session } = process.getBuiltinModule('node:inspector');
+    session = new Session();
+    session.connect();
+    const post = (method, params) => {
+      let called = false,
+        result,
+        error;
+      session.post(method, params, (failure, response) => {
+        called = true;
+        error = failure;
+        result = response;
+      });
+      if (!called) throw new Error('native census synchronous response refused');
+      if (error || result?.exceptionDetails) throw new Error('native census protocol refused');
+      return result;
+    };
+    const markerHandle = post('Runtime.evaluate', {
+      expression: `globalThis[${JSON.stringify(holderKey)}].marker`,
+      disableBreaks: true,
+      objectGroup: 'legacy-marked-native-census',
+    });
+    if (!markerHandle?.result?.objectId) throw new Error('native census marker unavailable');
+    if (Date.now() >= workDeadlineMs) throw new Error('native census deadline exhausted');
+    const changed = [];
+    let census;
+    try {
+      for (const top of tops) {
+        setPrototypeOf(top, marker);
+        changed.push(top);
+      }
+      // The outer Runtime.evaluate has disableBreaks:true. The same native
+      // dispatch owns insertion, this synchronous query and exact restoration;
+      // queued remote cleanup and application callbacks cannot observe a marker.
+      census = post('Runtime.queryObjects', {
+        prototypeObjectId: markerHandle.result.objectId,
+        objectGroup: 'legacy-marked-native-census',
+      });
+    } finally {
+      let failed = false;
+      for (let index = changed.length - 1; index >= 0; index--) {
+        try {
+          setPrototypeOf(changed[index], root);
+        } catch {
+          failed = true;
+        }
+      }
+      for (const top of tops) if (getPrototypeOf(top) !== root) failed = true;
+      if (failed) throw new Error('native census prototype restoration refused');
+    }
+    if (Date.now() >= workDeadlineMs) throw new Error('native census deadline exhausted');
+    if (!census?.objects?.objectId) throw new Error('native census unavailable');
+    post('Runtime.callFunctionOn', {
+      objectId: census.objects.objectId,
+      functionDeclaration: `function() { Object.defineProperty(globalThis[${JSON.stringify(holderKey)}], 'objects', { value: this }); return true; }`,
+      returnByValue: true,
+    });
+    return getOwnPropertyDescriptor(holder, 'objects')?.value;
+  } finally {
+    try {
+      session?.disconnect();
+    } finally {
+      if (getOwnPropertyDescriptor(globalThis, holderKey)?.value !== holder)
+        throw new Error('native census binding ownership changed');
+      if (!delete globalThis[holderKey]) throw new Error('native census binding cleanup refused');
+    }
+  }
+}
+
 export function projectLegacyCensus(modules, workDeadlineMs) {
   const startedAt = Date.now();
   if (
@@ -685,6 +848,7 @@ export async function runLegacyEngineCheckpoint({
     connection,
     result,
     failure;
+  let censusBinding = null;
   let checkpointInvoked = false,
     inspectorClosed = false,
     cleanupConnections = 0,
@@ -786,17 +950,39 @@ export async function runLegacyEngineCheckpoint({
         )
       );
       if (!prototype?.objectId) throw refused('native census root unavailable');
-      operation = 'queryObjects';
-      const broad = await connection.request(
-        'Runtime.queryObjects',
-        {
-          prototypeObjectId: prototype.objectId,
-          objectGroup: 'legacy-broad-census',
-        },
-        deadline,
-        operation
+      const holderKey = `__legacyEngineCensus_${process.getBuiltinModule('node:crypto').randomUUID().replaceAll('-', '')}`;
+      censusBinding = { holderKey, deadline };
+      operation = 'bindNativeCensusModules';
+      const binding = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration: bindLegacyCensusModules.toString(),
+            arguments: [{ value: holderKey }, { value: deadline }],
+            returnByValue: true,
+          },
+          deadline,
+          operation
+        )
       );
-      if (!broad?.objects?.objectId) throw refused('native census unavailable');
+      if (binding?.value !== true) throw refused('native census binding unavailable');
+      operation = 'queryObjects';
+      const broadValue = remoteValue(
+        await connection.request(
+          'Runtime.evaluate',
+          {
+            expression: `(${collectMarkedLegacyCensus.toString()})(${JSON.stringify(holderKey)}, ${deadline})`,
+            disableBreaks: true,
+            awaitPromise: false,
+            objectGroup: 'legacy-broad-census',
+          },
+          deadline,
+          operation
+        )
+      );
+      const broad = { objects: broadValue };
+      if (!broad.objects?.objectId) throw refused('native census unavailable');
       operation = 'projectNativePrototypes';
       const projected = remoteValue(
         await connection.request(
@@ -1037,6 +1223,21 @@ export async function runLegacyEngineCheckpoint({
             } catch {
               // The record is a courtesy to the reader, never a condition.
             }
+          }
+          if (censusBinding) {
+            const retired = remoteValue(
+              await connection.request(
+                'Runtime.evaluate',
+                {
+                  expression: `(${retireLegacyCensusBinding.toString()})(${JSON.stringify(censusBinding.holderKey)}, ${censusBinding.deadline})`,
+                  disableBreaks: true,
+                  returnByValue: true,
+                },
+                cleanupDeadline,
+                'inspectorCleanupCensusBinding'
+              )
+            );
+            if (retired?.value !== true) throw refused('native census binding cleanup refused');
           }
           if (discoverEngines)
             await connection.request(

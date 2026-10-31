@@ -416,7 +416,11 @@ try {
           );
           if (group) groupReplyIndices.set(message.id, Number(group[1]));
         }
-        if (message.method === 'Runtime.queryObjects') {
+        if (
+          message.method === 'Runtime.queryObjects' ||
+          (message.method === 'Runtime.evaluate' &&
+            message.params.expression.includes('function collectMarkedLegacyCensus('))
+        ) {
           nativeCensusRequests++;
           nativeOrder.push('census');
           if (firstCensusId === null) firstCensusId = message.id;

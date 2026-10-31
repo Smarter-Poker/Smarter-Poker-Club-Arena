@@ -879,6 +879,29 @@ function cellDepthIsPrimary(cell: string, stackBB: number, certifiedDepth?: numb
   return d === snapDepthBucket(stackBB);
 }
 
+/** The last opponent wager that increased this street's price. Controller
+ * all-in calls have no raise marker; false and true mark short/full raises.
+ * Keep its index so tempo reads the actual wager, not an earlier bet by the
+ * same actor or a subsequent caller. */
+function currentOpponentWager(
+  history: readonly ActionRecord[] | undefined,
+  heroUserId: string,
+  stage: HandStage
+): { record: ActionRecord; index: number } | null {
+  if (!history) return null;
+  for (let index = history.length - 1; index >= 0; index--) {
+    const record = history[index];
+    if (record.stage !== stage || record.userId === heroUserId) continue;
+    if (
+      record.action === 'bet' ||
+      record.action === 'raise' ||
+      (record.action === 'all_in' && typeof record.isFullRaise === 'boolean')
+    )
+      return { record, index };
+  }
+  return null;
+}
+
 function readInitiative(
   history: ActionRecord[] | undefined,
   heroUserId: string,
@@ -7302,12 +7325,8 @@ export class HorseLogic {
     // have it" signal in pot-limit Omaha, and it needs its own count.
     let barrels40 = 0;
     if (useV40 && facingBet && gs.actionHistory) {
-      let bettor40: string | null = null;
-      for (const a of gs.actionHistory) {
-        if (a.stage !== street || a.userId === player.user_id) continue;
-        if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-          bettor40 = a.userId;
-      }
+      const bettor40 = currentOpponentWager(gs.actionHistory, player.user_id, street)?.record
+        .userId;
       if (bettor40) {
         const seen40 = new Set<string>();
         for (const a of gs.actionHistory) {
@@ -10125,17 +10144,9 @@ export class HorseLogic {
     if (useMind && opts.v12 !== false) {
       try {
         const hist = gs.actionHistory || [];
-        let bettorId: string | null = null;
-        for (const a of hist) {
-          if (a.stage !== street) continue;
-          if (
-            a.userId !== player.user_id &&
-            (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-          ) {
-            bettorId = a.userId;
-          }
-        }
-        if (bettorId) {
+        const currentWager = currentOpponentWager(hist, player.user_id, street);
+        if (currentWager?.record.userId) {
+          const bettorId = currentWager.record.userId;
           const hunted = HorseMind.targetingOf(player.user_id, bettorId);
           if (hunted > 0) respect -= 0.25 * hunted;
           // 2026-10-16 OPPONENT EXPLOIT: the CURRENT bettor's read decides
@@ -10168,21 +10179,15 @@ export class HorseLogic {
           // randomised (V14), so the read learns nothing from the fleet and
           // everything from a person.
           if ((opts.v43Tempo ?? true) !== false && isRiver && potFrac >= 0.75) {
-            let betTs: number | null = null;
-            let prevTs: number | null = null;
-            for (const a of hist) {
-              const ts =
-                typeof a.timestamp === 'number' && isFinite(a.timestamp) ? a.timestamp : null;
-              if (
-                a.stage === street &&
-                a.userId === bettorId &&
-                (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-              ) {
-                betTs = ts;
-                break;
-              }
-              if (ts !== null) prevTs = ts;
-            }
+            const wagerTs = currentWager.record.timestamp;
+            const betTs = typeof wagerTs === 'number' && isFinite(wagerTs) ? wagerTs : null;
+            // Tempo is measured from the immediately preceding action. An
+            // unknown adjacent clock cannot borrow an older known timestamp.
+            const previousTimestamp = hist[currentWager.index - 1]?.timestamp;
+            const prevTs =
+              typeof previousTimestamp === 'number' && isFinite(previousTimestamp)
+                ? previousTimestamp
+                : null;
             const gap = betTs !== null && prevTs !== null ? betTs - prevTs : null;
             if (gap !== null && gap >= 0) {
               const tendency =

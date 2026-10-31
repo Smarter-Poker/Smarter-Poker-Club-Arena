@@ -918,26 +918,36 @@ it('binds a distinct qualified next-break carrier and preserves Diamond operator
   expect(entry.notAfter).toBe('2026-10-31T05:10:00Z');
   expect(entry.announceAtChicagoMinutes).toEqual([53]);
   expect(entry.migrations).toEqual([]);
-  const floorRaw = readFileSync(join(root, 'server/release/activation-floor.json'));
-  const currentFloor = JSON.parse(floorRaw.toString());
-  // This immutable MTT order remains historical when a later independent
-  // owner selects a new floor; its record and original witness stay pinned.
-  if (currentFloor.ownerWindowId === id) {
-    expect(currentFloor).toEqual({
-      schema: 'engine-release-activation-floor/v2-owner-window',
-      preparationAt: entry.notBefore,
-      activationAt: entry.notBefore,
-      expiresAt: entry.notAfter,
-      timeZone: 'America/Chicago',
-      ownerWindowId: id,
-      clientPublicationAt: entry.notBefore,
-    });
-    expect(createHash('sha256').update(floorRaw).digest('hex')).toBe(entry.releaseWitness.sha256);
-  }
+  // Historical carrier bytes remain pinned after the next distinct carrier.
+  const floorRaw = Buffer.from(
+    JSON.stringify(
+      {
+        schema: 'engine-release-activation-floor/v2-owner-window',
+        preparationAt: entry.notBefore,
+        activationAt: entry.notBefore,
+        expiresAt: entry.notAfter,
+        timeZone: 'America/Chicago',
+        ownerWindowId: id,
+        clientPublicationAt: entry.notBefore,
+      },
+      null,
+      2
+    ) + '\n'
+  );
+  expect(JSON.parse(floorRaw.toString())).toEqual({
+    schema: 'engine-release-activation-floor/v2-owner-window',
+    preparationAt: entry.notBefore,
+    activationAt: entry.notBefore,
+    expiresAt: entry.notAfter,
+    timeZone: 'America/Chicago',
+    ownerWindowId: id,
+    clientPublicationAt: entry.notBefore,
+  });
   expect(entry.releaseWitness).toEqual({
     path: 'server/release/activation-floor.json',
     sha256: 'c3ffe90a717270b0af30a7b306e72877bb48b338b3b16fa612d1d68126da15ed',
   });
+  expect(createHash('sha256').update(floorRaw).digest('hex')).toBe(entry.releaseWitness.sha256);
   for (const safeguard of [
     'current-head checks',
     'EED33',
@@ -953,10 +963,10 @@ it('binds a distinct qualified next-break carrier and preserves Diamond operator
     expect(entry.ownerOrder).toContain(safeguard);
 });
 
-it('binds the independent Horse input correction to one new qualified tournament-aligned activation', () => {
+it('binds the bounded-census correction without extending or retrying its failed predecessor', () => {
   const raw = readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8');
   const doc = JSON.parse(raw);
-  const id = '2026-10-31-horse-input-attribution-qualified-next-55';
+  const id = '2026-10-31-mtt-bounded-census-recovery-next-break';
   const marker = ',\n    {\n      "id": "' + id + '"';
   expect(raw.split(marker)).toHaveLength(2);
   expect(doc.windows.findIndex((w: { id: string }) => w.id === id)).toBe(61);
@@ -971,6 +981,68 @@ it('binds the independent Horse input correction to one new qualified tournament
       .digest('hex')
   ).toBe('b42eb3dd7b76725a8fb83d8282cfd599a7edc2c3b5a6d3ddb6a70f075fd18ca1');
   const entry = doc.windows[61];
+  expect(entry.contains).toBe('976850bec328ac8b80d47603f18fcba81e05534f');
+  expect(entry.notBefore).toBe('2026-10-31T05:04:00Z');
+  expect(entry.notAfter).toBe('2026-10-31T06:10:00Z');
+  expect(entry.announceAtChicagoMinutes).toEqual([53]);
+  expect(entry.migrations).toEqual([]);
+  const floorRaw = readFileSync(join(root, 'server/release/activation-floor.json'));
+  const currentFloor = JSON.parse(floorRaw.toString());
+  // The distinct MTT record and native/budget prerequisites stay immutable
+  // when an independently authorized containing Horse release selects its floor.
+  if (currentFloor.ownerWindowId === id) {
+    expect(currentFloor).toEqual({
+      schema: 'engine-release-activation-floor/v2-owner-window',
+      preparationAt: entry.notBefore,
+      activationAt: entry.notBefore,
+      expiresAt: entry.notAfter,
+      timeZone: 'America/Chicago',
+      ownerWindowId: id,
+      clientPublicationAt: entry.notBefore,
+    });
+    expect(createHash('sha256').update(floorRaw).digest('hex')).toBe(entry.releaseWitness.sha256);
+  }
+  expect(entry.releaseWitness).toEqual({
+    path: 'server/release/activation-floor.json',
+    sha256: '2d48ff686d45588a0b3ccea58eab630f87962da1d58fd8a2c4714e9bc327737b',
+  });
+  for (const safeguard of [
+    'current-head checks',
+    'EED33',
+    '29 runtime pins',
+    'full285s reserve',
+    'OWN healthy v3 thaw',
+    'one actual activation maximum',
+    'retryAllowedfalse',
+    'loaded Linux Node22.23.2',
+    'all-parent restoration',
+    'disableBreaks',
+    'KEEP DIAMOND CLOSED',
+    '01a18fed-2211-7a62-9416-611dd6e4d96d',
+    'not Diamond resumed play',
+    'automatic extension',
+  ])
+    expect(entry.ownerOrder).toContain(safeguard);
+});
+
+it('binds the independent Horse input correction to one new qualified tournament-aligned activation', () => {
+  const raw = readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8');
+  const doc = JSON.parse(raw);
+  const id = '2026-10-31-horse-input-attribution-qualified-next-55';
+  const marker = ',\n    {\n      "id": "' + id + '"';
+  expect(raw.split(marker)).toHaveLength(2);
+  expect(doc.windows.findIndex((w: { id: string }) => w.id === id)).toBe(62);
+  expect(
+    createHash('sha256')
+      .update(raw.slice(0, raw.indexOf(marker)))
+      .digest('hex')
+  ).toBe('a285959ae407886721edc1bbef1137ea7a48a121aa862088b6f52cc1f39fa2b2');
+  expect(
+    createHash('sha256')
+      .update(raw.slice(raw.indexOf('  "databaseWindows"')))
+      .digest('hex')
+  ).toBe('b42eb3dd7b76725a8fb83d8282cfd599a7edc2c3b5a6d3ddb6a70f075fd18ca1');
+  const entry = doc.windows[62];
   expect(entry.contains).toBe('2f9ca8db67acdcdeb02e0da8c261570d2d87e2e9');
   expect(entry.notBefore).toBe('2026-10-31T05:10:00Z');
   expect(entry.notAfter).toBe('2026-10-31T07:10:00Z');

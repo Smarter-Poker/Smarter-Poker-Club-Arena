@@ -416,4 +416,7 @@ begin
 end
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_run_horse_daily_audit(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_run_horse_daily_audit(date) TO service_role;
+
 COMMIT;

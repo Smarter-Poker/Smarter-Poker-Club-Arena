@@ -14,6 +14,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { serverNow } from '../../utils/serverClock';
 import { supabase } from '../../lib/supabase';
+import { tournamentChipRanks } from '../../utils/tournamentChipRanks';
+import { readTournamentStandings } from '../../services/readTournamentStandings';
+import { subscribeTournamentStandings } from '../../services/tournamentStandingsUpdates';
 import { reportError } from '../../utils/errorReporter';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { compactChips } from '../../utils/format';
@@ -85,7 +88,7 @@ export interface TournamentBreakScreenProps {
    * prize pool of 0, an empty leader board and no hero line - on every
    * tournament, all the way to the final table. Given the tournament id the
    * screen reads the level, the pool, the field and the top stacks from the
-   * same rows the HUD and the info panel read, once when it opens. Every prop
+   * same complete field and committed-event updates as the HUD. Every prop
    * below stays as an override for a caller that already knows better.
    */
   tournamentId?: string | null;
@@ -177,8 +180,9 @@ export function TournamentBreakScreen({
 
   const [factsFailed, setFactsFailed] = useState(false);
 
-  /* What the rows say, read when the screen opens for a tournament. */
+  /* One owned read at a time; events during a read require a fresh trailing read. */
   const [facts, setFacts] = useState<{
+    scope: string;
     currentLevel: number;
     prizePool: number;
     playersRemaining: number;
@@ -187,12 +191,22 @@ export function TournamentBreakScreen({
     topPlayers: TournamentPlayer[];
     myPlayer?: TournamentPlayer;
   } | null>(null);
+  const factsScope = JSON.stringify([tournamentId, heroUserId, isVisible, phase]);
   useEffect(() => {
     if (!isVisible || !tournamentId) return;
     let mounted = true;
     setFacts(null);
     setFactsFailed(false);
-    (async () => {
+    let inFlight = false;
+    let pending = false;
+    const load = async () => {
+      if (!mounted) return;
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      inFlight = true;
+      pending = false;
       try {
         const [tRes, pRes] = await Promise.all([
           supabase
@@ -200,17 +214,17 @@ export function TournamentBreakScreen({
             .select('current_level, prize_pool, current_players, max_players')
             .eq('id', tournamentId)
             .maybeSingle(),
-          supabase
-            .from('tournament_players')
-            .select('user_id, username, chips, status')
-            .eq('tournament_id', tournamentId)
-            .in('status', ['playing', 'registered'])
-            .limit(500),
+          readTournamentStandings(tournamentId, 'id, user_id, username, chips, status', true),
         ]);
-        if (!mounted) return;
-        if (tRes.error || pRes.error) {
+        if (!mounted || pending) return;
+        if (tRes.error || pRes.error || !tRes.data || !pRes.data) {
+          setFacts(null);
           setFactsFailed(true);
-          reportError(tRes.error ?? pRes.error, 'TournamentBreakScreen.load', { tournamentId });
+          reportError(
+            tRes.error ?? pRes.error ?? new Error('Tournament Standings Unavailable'),
+            'TournamentBreakScreen.load',
+            { tournamentId }
+          );
           return;
         }
         const t = (tRes.data ?? {}) as {
@@ -233,13 +247,18 @@ export function TournamentBreakScreen({
         const sorted = [...active].sort((a, b) => b.stack - a.stack);
         /* Rank = 1 + players with strictly more chips; ties share the better
            rank, as every tournament lobby counts it. */
+        const ranks = tournamentChipRanks(
+          active.map((r) => ({ user_id: r.playerId, chips: r.stack }))
+        );
         const ranked: TournamentPlayer[] = sorted.map((r) => ({
           ...r,
-          rank: 1 + sorted.filter((o) => o.stack > r.stack).length,
+          rank: ranks.get(r.playerId)!,
           isCurrentUser: !!heroUserId && r.playerId === heroUserId,
         }));
         const totalChips = active.reduce((sum, r) => sum + r.stack, 0);
+        setFactsFailed(false);
         setFacts({
+          scope: factsScope,
           currentLevel: Math.max(0, Number(t.current_level) || 0),
           prizePool: Number(t.prize_pool) || 0,
           playersRemaining: active.length,
@@ -249,25 +268,33 @@ export function TournamentBreakScreen({
           myPlayer: ranked.find((r) => r.isCurrentUser),
         });
       } catch (err) {
-        if (mounted) {
+        if (mounted && !pending) {
+          setFacts(null);
           setFactsFailed(true);
           reportError(err, 'TournamentBreakScreen.load', { tournamentId });
         }
+      } finally {
+        inFlight = false;
+        if (mounted && pending) void load();
       }
-    })();
+    };
+    const stop = subscribeTournamentStandings(tournamentId, () => void load());
+    void load();
     return () => {
       mounted = false;
+      stop();
     };
-  }, [isVisible, tournamentId, heroUserId]);
+  }, [isVisible, tournamentId, heroUserId, phase, factsScope]);
 
-  const currentLevel = currentLevelProp ?? facts?.currentLevel ?? 0;
-  const playersRemaining = playersRemainingProp ?? facts?.playersRemaining ?? 0;
-  const totalPlayers = totalPlayersProp ?? facts?.totalPlayers ?? playersRemaining;
-  const averageStack = averageStackProp ?? facts?.averageStack ?? 0;
-  const topPlayers = topPlayersProp ?? facts?.topPlayers ?? [];
-  const myPlayer = myPlayerProp ?? facts?.myPlayer;
-  const prizePool = prizePoolProp ?? facts?.prizePool ?? 0;
-  const factsPending = Boolean(tournamentId) && facts === null;
+  const currentFacts = facts?.scope === factsScope ? facts : null;
+  const currentLevel = currentLevelProp ?? currentFacts?.currentLevel ?? 0;
+  const playersRemaining = playersRemainingProp ?? currentFacts?.playersRemaining ?? 0;
+  const totalPlayers = totalPlayersProp ?? currentFacts?.totalPlayers ?? playersRemaining;
+  const averageStack = averageStackProp ?? currentFacts?.averageStack ?? 0;
+  const topPlayers = topPlayersProp ?? currentFacts?.topPlayers ?? [];
+  const myPlayer = myPlayerProp ?? currentFacts?.myPlayer;
+  const prizePool = prizePoolProp ?? currentFacts?.prizePool ?? 0;
+  const factsPending = Boolean(tournamentId) && currentFacts === null;
   const unknownValue = factsFailed ? 'N/A' : '...';
   const countingDown = phase === 'counting_down';
   const [displayTime, setDisplayTime] = useState(() =>

@@ -1,9 +1,9 @@
 {
   "schema": "engine-release-activation-floor/v2-owner-window",
-  "preparationAt": "2026-10-31T12:20:00Z",
-  "activationAt": "2026-10-31T12:20:00Z",
-  "expiresAt": "2026-10-31T15:20:00Z",
+  "preparationAt": "2026-10-31T21:45:00Z",
+  "activationAt": "2026-10-31T21:45:00Z",
+  "expiresAt": "2026-10-31T23:15:00Z",
   "timeZone": "America/Chicago",
-  "ownerWindowId": "2026-10-31-mtt-manual-noon-safe-drain-continuation",
-  "clientPublicationAt": "2026-10-31T12:20:00Z"
+  "ownerWindowId": "2026-10-31-mtt-main-renewed-next-55",
+  "clientPublicationAt": "2026-10-31T21:45:00Z"
 }

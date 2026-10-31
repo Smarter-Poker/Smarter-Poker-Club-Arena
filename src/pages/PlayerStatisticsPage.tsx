@@ -638,7 +638,11 @@ export default function PlayerStatisticsPage() {
 
           <section className="ps-card">
             <h2 className="ps-card__title">Club Result</h2>
-            <StatRow label="Net" value={winLossChips(stats.net)} signed={stats.net} />
+            <StatRow
+              label="Net"
+              value={stats.net === null ? 'Unavailable' : winLossChips(stats.net)}
+              signed={stats.net}
+            />
             <StatRow label="Fees" value={feeFigure(stats.fees)} />
           </section>
         </div>
@@ -656,9 +660,16 @@ export default function PlayerStatisticsPage() {
  * legitimately go below zero. Positive is arena cyan, negative is --danger-red.
  * There is no green in this product.
  */
-function StatRow({ label, value, signed }: { label: string; value: string; signed?: number }) {
-  const tone =
-    signed === undefined || signed === 0 ? '' : signed > 0 ? ' ps-stat--up' : ' ps-stat--down';
+function StatRow({
+  label,
+  value,
+  signed,
+}: {
+  label: string;
+  value: string;
+  signed?: number | null;
+}) {
+  const tone = signed == null || signed === 0 ? '' : signed > 0 ? ' ps-stat--up' : ' ps-stat--down';
 
   return (
     <div className={`ps-stat${tone}`}>

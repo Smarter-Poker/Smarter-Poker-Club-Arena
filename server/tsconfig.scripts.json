@@ -1,0 +1,11 @@
+{
+  "// why": "server/scripts/*.ts are operator CLIs outside tsconfig.json's rootDir (src), so no CI job compiled them until 2026-10-31. This config type-checks every script. scripts/qualification/** is excluded: those are vitest files that import test-only globals and carried 36 pre-existing errors when this was added; they are run, not compiled, by their own harness.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "scripts/qualification/**"]
+}

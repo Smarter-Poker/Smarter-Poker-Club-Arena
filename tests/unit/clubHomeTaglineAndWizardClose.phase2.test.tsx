@@ -290,7 +290,7 @@ describe('the tournament row reviews every lobby-admitted status', () => {
       ];
       await mountLobby();
       fireEvent.click(screen.getByRole('button', { name: 'Tournaments', exact: true }));
-      fireEvent.click(screen.getByRole('tab', { name: 'MTT', exact: true }));
+      fireEvent.click(screen.getByRole('tab', { name: "MTT'S", exact: true }));
       await flush();
       const row = document.querySelector('.lt-row[data-kind="mtt"][data-id="event-a"]');
       expect(row, 'the actual lobby did not render the synthetic admitted event').not.toBeNull();
@@ -382,12 +382,12 @@ describe('Find Your Game starts with two separate sections', () => {
       within(filterTabs)
         .getAllByRole('button')
         .map((t) => t.textContent)
-    ).not.toContain('MTT');
+    ).not.toContain("MTT'S");
     fireEvent.click(screen.getByRole('button', { name: 'Close Game Filters' }));
     await flush();
     fireEvent.click(tournaments);
     await flush();
-    expect(names()).toEqual(['MTT', 'SPINS', "SIT N GO'S", 'SATELLITES']);
+    expect(names()).toEqual(["MTT'S", 'SPINS', "SIT N GO'S", 'SATELLITES']);
     expect(document.querySelector('.lt-row[data-id="event-a"]')).not.toBeNull();
     expect(document.querySelector('.lt-row[data-id="cash-a"]')).toBeNull();
     expect(cash.getAttribute('aria-expanded')).toBe('false');
@@ -400,16 +400,17 @@ describe('Find Your Game starts with two separate sections', () => {
   });
 });
 
-it('keeps the saved cash tab behind the closed section until it is opened', async () => {
+it('opens the saved cash section and tab immediately on return', async () => {
   h.setupReads = [DONE];
   localStorage.setItem(
     'ca_lobby_view_viewer:club-a',
     JSON.stringify({ tab: 'OMAHA', sortByTab: {}, favoritesOnly: false })
   );
   await mountLobby();
-  expect(screen.queryByRole('tablist', { name: 'Game Type' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
-  await flush();
+  expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
   expect(screen.getByRole('tab', { name: 'PLO', exact: true }).getAttribute('aria-selected')).toBe(
     'true'
   );

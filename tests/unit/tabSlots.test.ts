@@ -50,8 +50,8 @@ describe('isLobbyLike / isFreeSlot', () => {
     expect(isLobbyLike(rebuiltTab('T1'))).toBe(false);
   });
 
-  it('counts a lobby tab and an unseated observer as free, a seat never', () => {
-    expect(isFreeSlot(lobbyTab)).toBe(true);
+  it('keeps lobby pages reserved and only reuses unseated observers', () => {
+    expect(isFreeSlot(lobbyTab)).toBe(false);
     expect(isFreeSlot(observerTab('T1'))).toBe(true);
     expect(isFreeSlot({ id: 'T1', kind: 'table', seated: false })).toBe(true);
     expect(isFreeSlot(seatedTab('T1'))).toBe(false);
@@ -90,12 +90,12 @@ describe('isTournamentRow — the flag every tab factory must carry', () => {
 });
 
 describe('changing tables from the lobby changes the screen you are on', () => {
-  it('replaces the ACTIVE lobby tab in place, not another slot (Dan 2026-08-30)', () => {
+  it('keeps the active lobby open and appends the requested game (owner October 30)', () => {
     // The exact reported layout: a live MTT in slot 0, the lobby in slot 1,
     // and the player standing in the lobby asking for a different table.
     const tabs = [seatedTab('MTT'), lobbyTab];
     const slot = pickObserveSlot(tabs, 1, 'NEW', MAX);
-    expect(slot).toEqual({ action: 'active', index: 1 });
+    expect(slot).toEqual({ action: 'append', index: 2 });
     // The bug: it landed in slot 0 and left the lobby where it was.
     expect(slot.index).not.toBe(0);
   });
@@ -109,7 +109,7 @@ describe('changing tables from the lobby changes the screen you are on', () => {
     const tabs = [seatedTab('MTT'), lobbyTab];
     // Standing on the seated table: it must survive, and the free lobby tab
     // takes the new table instead.
-    expect(pickObserveSlot(tabs, 0, 'NEW', MAX)).toEqual({ action: 'lobby', index: 1 });
+    expect(pickObserveSlot(tabs, 0, 'NEW', MAX)).toEqual({ action: 'append', index: 2 });
   });
 
   it('focuses a table that is already open rather than duplicating it', () => {

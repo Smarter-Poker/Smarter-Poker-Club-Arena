@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "336b49a88ace6ca18d8e1b8c3b7dadf95bd562d3dbb7028cf30aacac3144a54b",
+    "scripts/ci/classify-ci-changes.mjs": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -529,13 +529,6 @@
       "from": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417",
       "to": "79d86ee1493d729919b64dd519cc5c9b67d7047b7f79eb75c7e616d75158332e",
       "why": "Add exact native on-time maintenance qualifier input routing to required accounting; preserve all existing financial routes, assertions, financial SQL and historical qualification states. Current source identity only, no financial certificate restamp."
-    },
-    {
-      "on": "2026-10-30",
-      "file": "scripts/ci/classify-ci-changes.mjs",
-      "from": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c",
-      "to": "336b49a88ace6ca18d8e1b8c3b7dadf95bd562d3dbb7028cf30aacac3144a54b",
-      "why": "Reviewed one additive classifier alternative for tests/fixtures/player-throwable-favorites so fixture-only edits execute the existing required PostgreSQL qualification. All existing routes, financial fixtures, assertions and historical qualification states are unchanged. Source identity refresh only; not financial or production certification."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
@@ -1296,5 +1289,14 @@
         "current": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
       }
     ]
+  },
+  "memberJackpotQualificationInputs20261031": {
+    "reason": "Route the new jackpot native runner and fixture inputs to the existing required server accounting verdict. Additive matcher only; existing routing, historical financial sources, assertions and qualification states are unchanged. Current input identity update, not a financial certificate.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c",
+        "current": "48c0f13534ac5861d72ef9f26ee7c5d0c8c59d36a0eb15619fb00f418db40310"
+      }
+    }
   }
 }

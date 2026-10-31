@@ -1,0 +1,21 @@
+.lobby-filter-label {
+  position: absolute;
+  inset: 24% 12%;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.lobby-filter-label__text {
+  display: block;
+  max-width: 100%;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-size: calc(var(--lobby-key-font, 18px) * var(--fit, 1));
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lobby-filter-label__text[data-fit-wrap='true'] {
+  white-space: normal;
+}

@@ -202,7 +202,7 @@ test.describe('Club lobby', () => {
     // includes registering/late entries; use the actual MTT category instead
     // of silently skipping when that subset is temporarily empty.
     await openLobbyGameSection(page, 'MTT');
-    await page.getByRole('tab', { name: 'MTT', exact: true }).click();
+    await page.getByRole('tab', { name: "MTT'S", exact: true }).click();
     await expect(page.locator('.club-home__games .lt-row[data-kind="mtt"]').first()).toBeVisible({
       timeout: 45_000,
     });

@@ -216,7 +216,7 @@ function SearchProbe() {
   return <output data-testid="search">{useLocation().search}</output>;
 }
 
-async function mountLobby(deepLink: boolean | string = true) {
+async function mountLobby(deepLink: boolean | string = true, openCash = true) {
   const read = h.clubReads.length;
   const game = deepLink === true ? 'anchor' : deepLink || null;
   render(
@@ -238,7 +238,7 @@ async function mountLobby(deepLink: boolean | string = true) {
   await flush();
   await act(async () => h.clubReads[read].resolve({ data: newClub(), error: null }));
   await settle();
-  if (!deepLink) {
+  if (!deepLink && openCash) {
     fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
     await settle();
   }
@@ -344,7 +344,11 @@ it('applies saved view held for an open card when it closes, and a later tap sav
   ];
   const late = deferred<any>();
   h.remoteView.mockReturnValue(late.promise);
-  await mountLobby(false);
+  localStorage.setItem(
+    'ca_lobby_view_viewer:club-a',
+    JSON.stringify({ tab: 'HOLDEM', sortByTab: {}, favoritesOnly: false })
+  );
+  await mountLobby(false, false);
   fireEvent.click(document.querySelector('.lt-row[data-id="anchor"]')!);
   await flush();
   expect(screen.getByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeTruthy();
@@ -454,7 +458,7 @@ describe('a shared game link', () => {
     expect(search().has('game')).toBe(false);
     expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
       'aria-expanded',
-      'false'
+      'true'
     );
     expect(h.pushView).not.toHaveBeenCalled();
     expect(h.pushFilters).not.toHaveBeenCalled();
@@ -471,7 +475,6 @@ describe('a shared game link', () => {
     await act(async () => h.clubReads[reads].resolve({ data: newClub(), error: null }));
     await settle();
     expect(document.querySelector('.lt-row[data-id="gone"]')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
     fireEvent.click(tab('PLO'));
     await settle();
     expect(document.querySelector('.lt-row[data-id="gone"]')).toBeTruthy();
@@ -519,7 +522,33 @@ it('keeps an explicitly opened cash section when a late preference names a tourn
     'aria-selected',
     'true'
   );
-  expect(screen.queryByRole('tab', { name: 'MTT', exact: true })).toBeNull();
+  expect(screen.queryByRole('tab', { name: "MTT'S", exact: true })).toBeNull();
   expect(document.querySelector('.lt-row[data-id="anchor"]')).not.toBeNull();
+  expect(h.pushView).not.toHaveBeenCalled();
+});
+
+it('restores the remote tournament family over an older cached cash preference before interaction', async () => {
+  h.setupReads = [DONE];
+  localStorage.setItem(
+    'ca_lobby_view_viewer:club-a',
+    JSON.stringify({ tab: 'HOLDEM', sortByTab: {}, favoritesOnly: false })
+  );
+  const late = deferred<any>();
+  h.remoteView.mockReturnValue(late.promise);
+  await mountLobby(false, false);
+  expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  await act(async () => late.resolve({ tab: 'MTT', sortByTab: {}, favoritesOnly: false }));
+  await settle();
+  expect(screen.getByRole('button', { name: 'Tournaments', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  expect(screen.getByRole('tab', { name: "MTT'S", exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
   expect(h.pushView).not.toHaveBeenCalled();
 });

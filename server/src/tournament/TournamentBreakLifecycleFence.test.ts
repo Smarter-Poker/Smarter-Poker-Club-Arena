@@ -53,6 +53,7 @@ class BreakHarness extends TournamentManagerBase {
 
   forceBreakState(): void {
     this.onBreak = true;
+    (this as any).breakCountdownAnchor = { generation: 0, startedAt: '2026-10-31T03:00:00.000Z' };
   }
 
   breakIsActive(): boolean {
@@ -86,8 +87,37 @@ class BreakHarness extends TournamentManagerBase {
 
 function stubBreakPersistence(result: Promise<unknown> = Promise.resolve({ error: null })) {
   const eq = vi.fn(() => result);
-  const update = vi.fn(() => ({ eq }));
-  const from = vi.spyOn(supabase, 'from').mockReturnValue({ update } as never);
+  let row: Record<string, unknown> = {
+    id: TOURNAMENT_ID,
+    on_break: true,
+    break_started_at: '2026-10-31T03:00:00.000Z',
+    break_ends_at: null,
+  };
+  const update = vi.fn((patch: Record<string, unknown>) => ({
+    eq: (...args: unknown[]) => {
+      const pending = (eq as (...args: unknown[]) => Promise<any>)(...args);
+      const receipt = () =>
+        pending.then((response) => {
+          if (!response.error) row = { ...row, ...patch };
+          return { ...response, data: response.error ? null : { ...row } };
+        });
+      const chain: any = {
+        eq: () => chain,
+        is: () => chain,
+        select: () => chain,
+        maybeSingle: () => receipt(),
+      };
+      return Object.assign(chain, {
+        then: (resolve: any, reject: any) => receipt().then(resolve, reject),
+      });
+    },
+  }));
+  const from = vi.spyOn(supabase, 'from').mockReturnValue({
+    update,
+    select: () => ({
+      eq: () => ({ maybeSingle: async () => ({ data: { ...row }, error: null }) }),
+    }),
+  } as never);
   return { from, update, eq };
 }
 
@@ -315,6 +345,7 @@ describe('tournament break lifecycle fence', () => {
       const persist = stubBreakPersistence();
       persist.eq.mockImplementationOnce(() => persistence.promise);
       const countingDown = manager.beginBreakCountdown(300_000);
+      await vi.waitFor(() => expect(persist.eq).toHaveBeenCalledOnce());
       await manager.resumeFromBreak();
       expect(manager.breakIsActive()).toBe(false);
       if (newBreak) await manager.pauseForBreak(300_000);
@@ -362,7 +393,10 @@ describe('a break start refreshes the Horse tournament context after its write',
     const pausing = manager.pauseForBreak(300_000);
     await vi.waitFor(() => expect(persist.eq).toHaveBeenCalledOnce());
     expect(persist.update).toHaveBeenCalledWith(
-      expect.objectContaining({ on_break: true, break_ends_at: null })
+      expect.objectContaining({
+        on_break: true,
+        break_ends_at: null,
+      })
     );
     // The write is still in flight: the row has not paused the clock yet.
     expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();

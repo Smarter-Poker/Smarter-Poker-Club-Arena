@@ -17,6 +17,7 @@ import {
 } from './HorsePhase14Acceptance.js';
 import { buildAllInGestureInput, gestureBeforeAllIn } from '../services/HorseTableGestures.js';
 import { HandController } from './HandController.js';
+import { playerActionContext } from './PlayerActionContext.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
 import {
   horsePlanAcceptanceFromController,
@@ -883,6 +884,90 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     return false;
   }
 
+  private bankArmRetentionHold: {
+    count: number;
+    startedAt: number;
+    weeklyAt: number;
+    controller: HandController;
+    decision: string;
+    clockStamp: number;
+    clockStartedAt: number;
+    clockWeeklyAt: number;
+    clockWeeklyAppliedAt: number;
+  } | null = null;
+  private bankArmRetainedClockShiftMs = 0;
+
+  private bankArmPauseMilliseconds(): number {
+    const hold = this.bankArmRetentionHold;
+    return (
+      this.bankArmRetainedClockShiftMs +
+      (hold
+        ? Math.max(
+            0,
+            Date.now() - hold.startedAt - (this.weeklyPayoutPausedMilliseconds() - hold.weeklyAt)
+          )
+        : 0)
+    );
+  }
+
+  private holdBankArmClock(): (retained: boolean) => boolean {
+    const owner = 'bank-arm-retention';
+    if (!this.bankArmRetentionHold) {
+      this.bankArmRetentionHold = {
+        count: 0,
+        startedAt: Date.now(),
+        weeklyAt: this.weeklyPayoutPausedMilliseconds(),
+        controller: this.handController!,
+        decision: playerActionContext(this.handController!)!,
+        clockStamp: this.playerTurnStartTime,
+        clockStartedAt: Date.now(),
+        clockWeeklyAt: this.weeklyPayoutPausedMilliseconds(),
+        clockWeeklyAppliedAt: this.weeklyPayoutAppliedPauseMilliseconds(),
+      };
+      this.preciseTimer.holdDecisionClocks(this.tableId, owner);
+      deadlineScheduler.holdDecisionClocks(this.tableId, owner, 'timer_countdown:');
+    }
+    const hold = this.bankArmRetentionHold;
+    hold.count++;
+    return (retained) => {
+      if (this.bankArmRetentionHold !== hold || --hold.count > 0) return false;
+      const elapsed = Math.max(
+        0,
+        Date.now() - hold.startedAt - (this.weeklyPayoutPausedMilliseconds() - hold.weeklyAt)
+      );
+      this.bankArmRetainedClockShiftMs += elapsed;
+      this.bankArmRetentionHold = null;
+      const current =
+        retained &&
+        !this.handContinuation?.isUnretained() &&
+        this.running &&
+        this.isCurrentEngine() &&
+        this.lifecycleCanMutate() &&
+        this.handController === hold.controller &&
+        playerActionContext(hold.controller) === hold.decision;
+      const expectedStamp =
+        hold.clockStamp + (this.weeklyPayoutAppliedPauseMilliseconds() - hold.clockWeeklyAppliedAt);
+      if (current && this.playerTurnStartTime === expectedStamp) {
+        this.playerTurnStartTime += Math.max(
+          0,
+          Date.now() -
+            hold.clockStartedAt -
+            (this.weeklyPayoutPausedMilliseconds() - hold.clockWeeklyAt)
+        );
+      }
+      if (
+        (!current && this.playerTurnStartTime === expectedStamp) ||
+        !this.running ||
+        !this.isCurrentEngine() ||
+        !this.lifecycleCanMutate()
+      )
+        this.clearTurnTimer();
+      this.preciseTimer.releaseDecisionClocks(this.tableId, owner);
+      deadlineScheduler.releaseDecisionClocks(this.tableId, owner, 'timer_countdown:');
+      return current;
+    };
+  }
+
   protected startTurnTimer(
     userId: string,
     seat: number,
@@ -912,6 +997,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     this.playerTurnStartTime = Date.now();
     this.playerTurnDuration = Math.max(0, durationSeconds);
+    const retainedClock = this.bankArmRetentionHold;
+    if (
+      retainedClock &&
+      this.handController === retainedClock.controller &&
+      playerActionContext(retainedClock.controller) === retainedClock.decision
+    ) {
+      retainedClock.clockStamp = this.playerTurnStartTime;
+      retainedClock.clockStartedAt = Date.now();
+      retainedClock.clockWeeklyAt = this.weeklyPayoutPausedMilliseconds();
+      retainedClock.clockWeeklyAppliedAt = this.weeklyPayoutAppliedPauseMilliseconds();
+    }
 
     // Bible V8 §2.15: Log timer start
     this.currentHandTimerLog.push({
@@ -945,8 +1041,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // emitting, and a stale fire is a silent no-op.
     const displayDeadlineMs = this.playerTurnStartTime + safeDurationSeconds * 1000;
     const countdownStartStamp = this.playerTurnStartTime;
-    const countdownPauseStamp = this.weeklyPayoutPausedMilliseconds();
-    const countdownShift = () => this.weeklyPayoutPausedMilliseconds() - countdownPauseStamp;
+    const countdownPauseStamp =
+      this.weeklyPayoutPausedMilliseconds() + this.bankArmPauseMilliseconds();
+    const countdownShift = () =>
+      this.weeklyPayoutPausedMilliseconds() + this.bankArmPauseMilliseconds() - countdownPauseStamp;
     const COUNTDOWN_THRESHOLDS_MS = [10_000, 5_000, 3_000, 2_000, 1_000];
     for (const thresholdMs of COUNTDOWN_THRESHOLDS_MS) {
       const eventId = `timer_countdown:${thresholdMs}`;
@@ -1366,17 +1464,63 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     //
     // Captured BEFORE the engine call so the check and the timer armed further
     // down are derived from the same instant.
+    const armHold = this.bankArmRetentionHold;
+    const heldPrimaryMs =
+      armHold &&
+      this.handController === armHold.controller &&
+      playerActionContext(armHold.controller) === armHold.decision
+        ? Math.max(
+            0,
+            Date.now() -
+              armHold.clockStartedAt -
+              (this.weeklyPayoutPausedMilliseconds() - armHold.clockWeeklyAt)
+          )
+        : 0;
     const remainingBeforeBank = Math.max(
       0,
-      this.playerTurnDuration - (Date.now() - this.playerTurnStartTime) / 1000
+      this.playerTurnDuration - (Date.now() - this.playerTurnStartTime - heldPrimaryMs) / 1000
     );
 
     if (remainingBeforeBank > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
       if (!this.timeBankEngine.arm(this.tableId, userId)) {
         return { success: false, error: 'No Time Bank Uses Remaining' };
       }
-      this.handContinuation?.checkpoint();
-      await this.awaitActionPersistence();
+      const releaseClock = this.handContinuation ? this.holdBankArmClock() : null;
+      let retained = false;
+      let clockReleased = false;
+      try {
+        this.handContinuation?.checkpoint();
+        await this.awaitActionPersistence();
+        retained = true;
+      } finally {
+        clockReleased = releaseClock?.(retained) ?? false;
+      }
+      if (clockReleased) {
+        try {
+          if (!this.weeklyHandPause.held())
+            this.hub?.emitEvent(this.tableId, {
+              type: 'timer_countdown',
+              table_id: this.tableId,
+              player_id: userId,
+              seat: player.seat,
+              remaining_ms: Math.max(
+                0,
+                this.playerTurnStartTime + this.playerTurnDuration * 1000 - Date.now()
+              ),
+              timestamp: Date.now(),
+            });
+        } catch (error) {
+          reportError(
+            error,
+            `ServerTableEngine.${this.tableId}.bank_arm_countdown_publication_failed`
+          );
+        }
+        try {
+          await this.broadcastCurrentState();
+        } catch (error) {
+          reportError(error, `ServerTableEngine.${this.tableId}.bank_arm_clock_publication_failed`);
+        }
+      }
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} armed a time bank with ${Math.round(remainingBeforeBank)}s still on the clock. Nothing spent yet.`
       );

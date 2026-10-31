@@ -12,7 +12,7 @@ import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
 import { playPremiumSfx } from '../../utils/playPremiumSfx';
 import { STORAGE_KEYS } from '../../lib/storage';
-import { SHARK_CLUB_ID } from '../../lib/constants';
+import { DIAMOND_ARENA_CLUB_ID, SHARK_CLUB_ID } from '../../lib/constants';
 import { initialArenaIndex, orderArenaCards } from './arenaSelection';
 import styles from '../../pages/HomePage.module.css';
 import { PageErrorBoundary } from '../common/PageErrorBoundary';
@@ -122,15 +122,19 @@ export default function CarouselSection({
      state that can only ever hold one value is worse than no state, because it
      reads as a live feature. */
   const orderedClubs = useMemo(() => {
+    // Also reject stale callers and saved carousel entries during the owner closure.
+    const visibleClubs = displayClubs.filter(
+      (club) => club.id !== DIAMOND_ARENA_CLUB_ID && club.slug !== 'diamond-arena'
+    );
     try {
       return orderArenaCards(
-        displayClubs,
+        visibleClubs,
         pinnedClubIds,
         JSON.parse(localStorage.getItem(STORAGE_KEYS.CLUB_ORDER) || '[]')
       );
     } catch (error) {
       reportError(error, 'CarouselSection.sort');
-      return orderArenaCards(displayClubs, pinnedClubIds, []);
+      return orderArenaCards(visibleClubs, pinnedClubIds, []);
     }
   }, [displayClubs, pinnedClubIds]);
 

@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 259122,
-      "sha256": "37001f2b3cb5709174cb66bb876b055de4f76550b61e777b7ff8ce7ca59a9fae"
+      "bytes": 260023,
+      "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -586,7 +586,7 @@
       "bytes": 239646,
       "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
     },
-    "review": "Only accounting job40→50minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
+    "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
     "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
   },
   "riverPersistenceBudgetIntegration20261027": {
@@ -1552,5 +1552,31 @@
     },
     "execution_performed": false,
     "qualification": "Source identity only, not historical or production recertification. Required final-head checks remain enforced."
+  },
+  "serverScriptsTypecheckSourceAudit20261031": {
+    "scope": "Source identity only: the Server Engine job gains one step, `npx tsc -p tsconfig.scripts.json --noEmit`, type-checking the operator CLIs under server/scripts that no job compiled before. No financial/native profile, assertion, deadline, dependency, runner route, worker count, production artifact or publish transaction changes.",
+    "execution_performed": false,
+    "qualification": "Current source binding only; no historical financial/native/live receipt is restamped. Required final-head checks remain necessary.",
+    "previousCiPin": {
+      "bytes": 259122,
+      "sha256": "37001f2b3cb5709174cb66bb876b055de4f76550b61e777b7ff8ce7ca59a9fae"
+    },
+    "currentCiPin": {
+      "bytes": 259539,
+      "sha256": "44fda252fa7886c40d2fae757946cb998b8c1760dcbd688b933abfa4ea794a75"
+    }
+  },
+  "riverOnePairParitySourceAudit20261031": {
+    "scope": "Source identity only: accounting shard 2 gains one step, `bash scripts/dev/test-horse-river-one-pair-calls.sh`, proving fn_horse_river_one_pair_calls agrees with the TypeScript live-measure reader on shared fixture hands in a throwaway PostgreSQL. No financial assertion, deadline, dependency, runner route, worker count, production artifact or publish transaction changes.",
+    "execution_performed": false,
+    "qualification": "Current source binding only; no historical financial/native/live receipt is restamped. Required final-head checks remain necessary.",
+    "previousCiPin": {
+      "bytes": 259539,
+      "sha256": "44fda252fa7886c40d2fae757946cb998b8c1760dcbd688b933abfa4ea794a75"
+    },
+    "currentCiPin": {
+      "bytes": 260023,
+      "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
+    }
   }
 }

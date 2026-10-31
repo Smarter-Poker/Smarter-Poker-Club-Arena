@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { rawProfileHeading } from '../e2e/support/rawProfileHeading';
 import { readProfileInterfaceMode } from '../e2e/support/profileInterfaceMode';
 
 vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: vi.fn() } }));
@@ -89,5 +90,37 @@ describe('the other account baseline waits for its actual interface mode', () =>
     expect(spec).toContain("toHaveAttribute('data-theme', otherMode)");
     expect(spec).not.toContain('otherMode!');
     expect(spec.indexOf('const otherMode =')).toBeLessThan(spec.indexOf('const accountEdit ='));
+  });
+});
+
+describe('profile identity proof excludes independent streak badges', () => {
+  const identityPage = {
+    locator: (selector: string) => ({
+      textContent: async () => document.querySelector(selector)!.textContent,
+      evaluate: async (read: (element: Element) => string) =>
+        read(document.querySelector(selector)!),
+    }),
+  } as unknown as Page;
+
+  it('reads the exact changed alias while preserving rendered badge text', async () => {
+    render(
+      <h1 id="profile-heading">
+        Signal80c0a2c0<span>1</span>
+        <span>▲×1</span>
+      </h1>
+    );
+    expect(document.querySelector('#profile-heading')!.textContent).toBe('Signal80c0a2c01▲×1');
+    expect(await rawProfileHeading(identityPage)).toBe('Signal80c0a2c0');
+  });
+
+  it('refuses badges without an identity instead of accepting their text', async () => {
+    render(
+      <h1 id="profile-heading">
+        <span>1▲×1</span>
+      </h1>
+    );
+    await expect(rawProfileHeading(identityPage)).rejects.toThrow(
+      'Profile heading has no identity'
+    );
   });
 });

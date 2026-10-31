@@ -29,6 +29,9 @@ function manager(id: string) {
     currentLevel: 0,
     onBreak: true,
     breakCountdownStarted: false,
+    synchronizedBreakStartGeneration: 0,
+    synchronizedBreakEndsAtMs: 0,
+    breakCountdownAnchor: { generation: 0, startedAt: '2026-09-10T12:55:00.000Z' },
     captureLifecycleToken: () => 1,
     lifecycleIsCurrent: () => true,
     isRunning: () => true,
@@ -72,15 +75,45 @@ async function settle(turns = 10) {
 
 function persistence(delayMs = 0) {
   const writes: { id: string; deadline: string }[] = [];
-  vi.spyOn(supabase, 'from').mockReturnValue({
-    update: (patch: { break_ends_at: string }) => ({
-      eq: async (_column: string, id: string) => {
-        writes.push({ id, deadline: patch.break_ends_at });
-        vi.setSystemTime(Date.now() + delayMs);
-        return { error: null };
+  const rows = new Map<string, Record<string, unknown>>();
+  vi.spyOn(supabase, 'from').mockImplementation(() => {
+    let patch: { break_ends_at: string } | undefined;
+    const predicates = new Map<string, unknown>();
+    const query = {
+      select: () => query,
+      update: (value: { break_ends_at: string }) => {
+        patch = value;
+        return query;
       },
-    }),
-  } as never);
+      eq: (column: string, value: unknown) => {
+        predicates.set(column, value);
+        return query;
+      },
+      is: (column: string, value: unknown) => {
+        predicates.set(column, value);
+        return query;
+      },
+      maybeSingle: async () => {
+        const id = predicates.get('id') as string;
+        const row = rows.get(id) ?? {
+          id,
+          on_break: true,
+          break_started_at: '2026-09-10T12:55:00.000Z',
+          break_ends_at: null,
+        };
+        if ([...predicates].some(([key, value]) => row[key] !== value))
+          return { data: null, error: null };
+        if (patch) {
+          writes.push({ id, deadline: patch.break_ends_at });
+          Object.assign(row, patch);
+          rows.set(id, row);
+          vi.setSystemTime(Date.now() + delayMs);
+        }
+        return { data: { ...row }, error: null };
+      },
+    };
+    return query as never;
+  });
   return writes;
 }
 

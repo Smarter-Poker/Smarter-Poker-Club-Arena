@@ -386,12 +386,15 @@ PENDING_RECOVERY_CATEGORIES = {
     'recovery_newer_owner', 'recovery_inspector_unproved',
     'recovery_reservation_unestablished', 'recovery_rate_limited',
 } | {'recovery_announcement_' + status for status in PENDING_RECOVERY_STATUSES}
+PENDING_ENTRY_CATEGORIES = {'lightning_hold_recorded', 'lightning_hold_released', 'lightning_hold_unknown', 'lightning_hold_timeout', 'lightning_hold_helper_unavailable',
+    'legacy_entry_admitted', 'legacy_entry_locked', 'legacy_entry_checkpoint',
+    'legacy_entry_completed', 'legacy_entry_countdown_refused', 'legacy_entry_checkpoint_refused'}
 PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
                       'locked_budget_missed', 'legacy_entry_deferred',
                       'certificate_also_shut', 'rollback_readiness_completed',
                       'rollback_certificate_lost', 'weekly_owner_active',
                       'inflight_evidence_unavailable', 'mutation_lock_unavailable',
-                      'mutation_lock_deadline', 'hands_in_air'} | PENDING_RECOVERY_CATEGORIES
+                      'mutation_lock_deadline', 'hands_in_air'} | PENDING_RECOVERY_CATEGORIES | PENDING_ENTRY_CATEGORIES
 # Compact, closed v3 certificate tuple: [remainingMs, unparkedTables,
 # handsInFlightTotal, reasonCounts]. reasonCounts follows this order, with
 # one final count of UNRECOGNIZED KEYS; private/future names never leave host.
@@ -473,6 +476,31 @@ def pending_recovery_category(message):
         except ValueError:
             return None
         return 'recovery_announcement_' + match.group(2)
+    return None
+
+
+def pending_entry_category(message):
+    # Existing producers only. Numeric values and transport errors stay private;
+    # the exact invocation-bound journal timestamp is the ordering witness.
+    if re.fullmatch(r'\[engine-release-lightning-hold\] Lightning hold recorded: [0-9]+ owned, [0-9]+ foreign, [0-9]+ refused', message):
+        return 'lightning_hold_recorded'
+    if re.fullmatch(r'\[engine-release-lightning-hold\] Lightning hold released: [0-9]+ owned Cluster\(s\)', message):
+        return 'lightning_hold_released'
+    if message.startswith('[engine-release-lightning-hold] UNKNOWN: '):
+        return 'lightning_hold_unknown'
+    if re.fullmatch(r'\[engine-release-transaction\] WARN: the Lightning hold answered UNKNOWN \(exit (124|137)\); it is retried on the next pass', message):
+        return 'lightning_hold_timeout'
+    if re.fullmatch(r'\[engine-release-transaction\] WARN: the Lightning hold answered UNKNOWN \(exit [0-9]+\); it is retried on the next pass', message):
+        return 'lightning_hold_unknown'
+    if re.fullmatch(r'\[engine-release-transaction\] WARN: the Lightning hold helper could not run \(exit (126|127)\); Lightning was NEVER ASKED to pause this pass and the census guard decides on its own', message):
+        return 'lightning_hold_helper_unavailable'
+    match = re.fullmatch(r'\[engine-release-transaction\] legacy entry phase=(admitted|locked|checkpoint|completed|refused) reason=(verified|countdown_refused|checkpoint_refused) elapsedEntryMs=[0-9]+ remainingEntryMs=-?[0-9]+ remainingWindowMs=-?[0-9]+', message)
+    if match:
+        phase, reason = match.groups()
+        if phase == 'refused' and reason in {'countdown_refused', 'checkpoint_refused'}:
+            return 'legacy_entry_' + reason
+        if phase != 'refused' and reason == 'verified':
+            return 'legacy_entry_' + phase
     return None
 
 
@@ -582,7 +610,7 @@ def pending_journal(request, unit):
         '--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID,_SYSTEMD_UNIT,__REALTIME_TIMESTAMP',
         # Below-budget "also shut" chatter must not evict the early causal
         # refusal from the existing twelve-row selection. Absence stays unknown.
-        '--grep=^(\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|newer release [0-9a-f]{40} \\(run [1-9][0-9]*(-[1-9][0-9]*)?\\) is in flight and owns any off-cycle window; |legacy inspector absence is not proved; |recovery announcement reservation could not be established; |off-cycle window wanted \\(|fixed recovery announcement [1-9][0-9]{12}: |prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
+        '--grep=^(\\[engine-release-lightning-hold\\] (Lightning hold recorded: |Lightning hold released: |UNKNOWN: )|\\[engine-release-transaction\\] (WARN: the Lightning hold |legacy entry phase=|the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|newer release [0-9a-f]{40} \\(run [1-9][0-9]*(-[1-9][0-9]*)?\\) is in flight and owns any off-cycle window; |legacy inspector absence is not proved; |recovery announcement reservation could not be established; |off-cycle window wanted \\(|fixed recovery announcement [1-9][0-9]{12}: |prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
         '_SYSTEMD_INVOCATION_ID=' + invocation, '_SYSTEMD_UNIT=' + name])
     if reply.returncode:
         raise ValueError('Pending journal unavailable')
@@ -597,7 +625,7 @@ def pending_journal(request, unit):
         if (not isinstance(stamp, str) or not re.fullmatch(r'[0-9]{16}', stamp)
                 or not isinstance(message, str) or len(message) > 2048):
             raise ValueError('Pending journal shape refused')
-        category = pending_recovery_category(message)
+        category = pending_recovery_category(message) or pending_entry_category(message)
         details = None
         # Literal producer prefixes in engine-release-transaction.sh. Unknown
         # messages remain unknown; their text never leaves the host.

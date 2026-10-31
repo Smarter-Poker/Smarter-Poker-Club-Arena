@@ -333,29 +333,8 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
       .flatMap((source) => [...source.matchAll(/^\s+runs-on:\s*(.+)$/gm)])
       .map((match) => match[1].trim());
     expect(runners.length).toBeGreaterThanOrEqual(4);
-    expect(new Set(runners)).toEqual(
-      new Set([
-        ...['ca-linux-4core', 'ca-linux-8core'].map(
-          (label) =>
-            "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
-            label +
-            "' || 'ubuntu-latest' }}"
-        ),
-      ])
-    );
-    const paidClientSelector =
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}";
-    expect(runners).toContain(paidClientSelector);
-    // Evaluate the exact guarded selector: other owners or repository IDs must
-    // retain the standard hosted fallback, never inherit our paid pool.
-    const selectClientRunner = (owner: string, repositoryId: string) =>
-      Function(
-        'github',
-        `return (${paidClientSelector.slice(3, -2)})`
-      )({ repository_owner: owner, repository_id: repositoryId });
-    expect(selectClientRunner('Smarter-Software-PIQ', '1132369872')).toBe('ca-linux-4core');
-    expect(selectClientRunner('another-owner', '1132369872')).toBe('ubuntu-latest');
-    expect(selectClientRunner('Smarter-Software-PIQ', '42')).toBe('ubuntu-latest');
+    expect(new Set(runners)).toEqual(new Set(['ubuntu-latest']));
+    expect(runners.join('\n')).not.toContain('ca-linux');
     expect(publish).not.toContain('vars.CI_RUNNER');
     // Attestation verification explicitly denies self-hosted provenance.
     // Runner selection itself remains strictly hosted.

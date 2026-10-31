@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 260283,
-      "sha256": "ee357f77ae898d976025839707e3ff7e530b56ae41b5c2be0d59a03fb72d9b02"
+      "bytes": 258607,
+      "sha256": "6b0dffe8d3d0d8a05530a57f41f8219107bfa8cb856a9a7b9f95cc487826d749"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -1673,5 +1673,20 @@
       "sha256": "ee357f77ae898d976025839707e3ff7e530b56ae41b5c2be0d59a03fb72d9b02"
     },
     "execution_performed": false
+  },
+  "standardHostedRunnerCostSourceAudit20261031": {
+    "scope": "Current CI source identity only: route the existing jobs to standard GitHub-hosted Ubuntu runners in this public repository. Preserve all tests, financial/native qualification commands, shard matrices, worker CPU clamps, deadlines, permissions, dependencies, required verdicts and historical evidence.",
+    "previousCiPin": {
+      "bytes": 260283,
+      "sha256": "ee357f77ae898d976025839707e3ff7e530b56ae41b5c2be0d59a03fb72d9b02"
+    },
+    "currentCiPin": {
+      "bytes": 258607,
+      "sha256": "6b0dffe8d3d0d8a05530a57f41f8219107bfa8cb856a9a7b9f95cc487826d749"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false,
+    "qualification": "Source binding only; no financial, native, installed or live certification is restamped. Exact-head protected checks and publication remain required."
   }
 }

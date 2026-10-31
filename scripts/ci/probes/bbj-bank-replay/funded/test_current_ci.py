@@ -646,9 +646,9 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             event['pull_request'][role]['repo']['full_name'] = ci.TRANSFERRED_REPOSITORY
         current = self.identity(env, event)
         body = self.job_response()
-        # Both fixed accounting_postgres routes in ci.yml are approved; retain
+        # Only the standard accounting_postgres route is approved; retain
         # the provider's exact selected singleton in the timing receipt.
-        for labels in (['ca-linux-8core'], ['ubuntu-latest']):
+        for labels in (['ubuntu-latest'],):
             body['jobs'][0]['labels'] = labels
             selected, timing = ci.timing_observation(current, body, 1000)
             self.assertEqual(selected['labels'], labels)
@@ -660,7 +660,7 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
                 with self.subTest(labels=labels, mutation=mutation), self.assertRaises(ci.TimingRequestRefused):
                     ci.timing_observation(current, changed, 1000)
         self.assertIn('/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/', ci.timing_url(current))
-        for labels in (None, [], 'ubuntu-latest', ['ca-linux-4core'], ['ubuntu-24.04'],
+        for labels in (None, [], 'ubuntu-latest', ['ca-linux-8core'], ['ca-linux-4core'], ['ubuntu-24.04'],
                        ['self-hosted'], ['ca-linux-8core', 'self-hosted'],
                        ['ubuntu-latest', 'self-hosted'], ['self-hosted', 'ubuntu-latest'],
                        ['ca-linux-8core', 'ubuntu-latest'], ['ubuntu-latest', 'ca-linux-8core'],

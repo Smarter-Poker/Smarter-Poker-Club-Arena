@@ -1503,4 +1503,42 @@ END $function$;
 REVOKE ALL ON FUNCTION public.ca_refresh_stat_distribution(integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.ca_refresh_stat_distribution(integer) TO service_role;
 
+
+-- The public credential exposes the same five nonfinancial play fields as the
+-- existing arena record, with an explicit mode and denomination receipt.
+CREATE OR REPLACE FUNCTION public.ca_public_arena_record_separated(
+ p_target_user uuid, p_game_mode text DEFAULT 'cash', p_asset text DEFAULT 'chips'
+) RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=public,pg_temp
+AS $function$
+BEGIN
+ IF auth.uid() IS NULL THEN RAISE EXCEPTION 'arena record requires authentication' USING ERRCODE='42501'; END IF;
+ IF p_target_user IS NULL OR p_game_mode IS NULL OR p_game_mode NOT IN ('cash','tournament')
+ OR p_asset IS NULL OR p_asset NOT IN ('chips','diamonds')
+ THEN RAISE EXCEPTION 'invalid arena record scope' USING ERRCODE='22023'; END IF;
+ RETURN (WITH hands AS (
+  SELECT f.club_id,count(*)::numeric hands_played,
+   count(*) FILTER(WHERE f.vpip)::numeric/count(*)*100 vpip,
+   count(*) FILTER(WHERE f.pfr)::numeric/count(*)*100 pfr
+  FROM public.ca_hand_facts f JOIN public.clubs c ON c.id=f.club_id
+  WHERE f.user_id=p_target_user AND coalesce(c.asset,'chips')=p_asset
+   AND (f.tournament_id IS NULL)=(p_game_mode='cash') GROUP BY f.club_id
+ ), events AS (
+  SELECT coalesce(tp.club_id,t.club_id) club_id,count(*)::numeric tournaments_played,
+   count(*) FILTER(WHERE tp.position=1 OR tp.status='winner')::numeric tournaments_won
+  FROM public.tournament_players tp JOIN public.tournaments t ON t.id=tp.tournament_id
+  JOIN public.clubs c ON c.id=coalesce(tp.club_id,t.club_id)
+  WHERE p_game_mode='tournament' AND tp.user_id=p_target_user
+   AND coalesce(c.asset,'chips')=p_asset AND upper(coalesce(t.status,''))='COMPLETED'
+   AND t.ended_at IS NOT NULL GROUP BY coalesce(tp.club_id,t.club_id)
+ ), records AS (
+  SELECT coalesce(h.hands_played,0) hands_played,coalesce(h.vpip,0) vpip,coalesce(h.pfr,0) pfr,
+   coalesce(e.tournaments_played,0) tournaments_played,coalesce(e.tournaments_won,0) tournaments_won
+  FROM hands h FULL JOIN events e USING(club_id)
+ ) SELECT jsonb_build_object('contract_version',2,'scope',jsonb_build_object(
+   'target_user_id',p_target_user,'game_mode',p_game_mode,'asset',p_asset,'visibility','public'),
+   'rows',coalesce((SELECT jsonb_agg(to_jsonb(r) ORDER BY hands_played DESC) FROM records r),'[]'::jsonb),
+   'coverage',jsonb_build_object('source','ca_hand_facts','unclassified_history_included',false)));
+END;$function$;
+REVOKE ALL ON FUNCTION public.ca_public_arena_record_separated(uuid,text,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.ca_public_arena_record_separated(uuid,text,text) TO authenticated,service_role;
 COMMIT;

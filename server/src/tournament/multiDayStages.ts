@@ -26,6 +26,7 @@
  * entitlement together.
  */
 import { supabase } from '../services/supabase.js';
+import { isRolledBackStatementError } from './settlementRefusal.js';
 import { fetchAllRows } from '../services/supabase/pagination.js';
 import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 
@@ -205,8 +206,7 @@ export function resumeTargetStage(stages: readonly MultiDayStageRow[]): MultiDay
  * Four outcomes, each with its own name (CLAUDE.md 10.86 rule 1):
  *   ok       - the RPC answered ok:true (a replay included);
  *   refused  - the RPC answered ok:false with a reason; nothing was written;
- *   failed   - the database raised (it carries a SQLSTATE): rolled back, and
- *              the same call will raise again until its cause is fixed;
+ *   failed   - a statement error proves rollback; its cause needs correction;
  *   unknown  - no readable answer (transport failure, malformed body): the
  *              call may have committed. Only the durable record can say.
  */
@@ -220,8 +220,10 @@ async function callStageRpc(name: string, args: Record<string, unknown>): Promis
   try {
     const { data, error } = await supabase.rpc(name, args);
     if (error) {
-      const code = (error as { code?: unknown }).code;
-      return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) && !code.startsWith('PGRST')
+      // Connection loss and server intervention can race COMMIT. Preserve the
+      // original stage's unknown-outcome recovery instead of holding it as a
+      // known rollback merely because the reply carries five characters.
+      return isRolledBackStatementError(error)
         ? { kind: 'failed', error }
         : { kind: 'unknown', error };
     }

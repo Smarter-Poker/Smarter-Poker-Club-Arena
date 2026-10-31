@@ -85,8 +85,8 @@ def run_refusal(name, sql, expected_error):
 def run_lock_race(name, holder_sql, contender_sql, minimum_wait=1.0):
     # A full reset returns more than a pipe buffer on some hosts. Retain all
     # output without blocking its COMMIT/ROLLBACK behind the waiting contender.
-    holder_output = tempfile.TemporaryFile(mode='w+t')
-    holder_errors = tempfile.TemporaryFile(mode='w+t')
+    holder_output = tempfile.TemporaryFile(mode='w+t', dir=out)
+    holder_errors = tempfile.TemporaryFile(mode='w+t', dir=out)
     holder = subprocess.Popen(
         [str(x) for x in psql], stdin=subprocess.PIPE, stdout=holder_output,
         stderr=holder_errors, text=True, env=env

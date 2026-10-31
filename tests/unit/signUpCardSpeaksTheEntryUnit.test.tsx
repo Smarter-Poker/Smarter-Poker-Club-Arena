@@ -42,7 +42,10 @@ vi.mock('../../src/services/TournamentService', () => ({
     registerPlayer: mocks.registerPlayer,
   },
 }));
-vi.mock('../../src/context/InTabLobbyContext', () => ({ useAppNavigate: () => mocks.navigate }));
+vi.mock('../../src/context/InTabLobbyContext', () => ({
+  useInTabLobby: () => null,
+  useAppNavigate: () => mocks.navigate,
+}));
 vi.mock('../../src/stores/useUserStore', () => ({
   useUserStore: (selector: (state: unknown) => unknown) =>
     selector({ user: { id: 'user-1', username: 'Player' } }),

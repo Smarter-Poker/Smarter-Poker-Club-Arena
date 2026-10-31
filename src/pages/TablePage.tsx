@@ -1,4 +1,5 @@
 import { tournamentAddOnEntryBoundaryPassed } from '../utils/tournamentAddOnBoundary';
+import { earlyHeroCardsReady, type EarlyHeroCards } from '../utils/earlyHeroCards';
 import { useTopUpAccounting } from '../hooks/useTopUpAccounting';
 import { autoTopUpRequest, type AutoTopUpRequest } from '../utils/autoTopUpRequest';
 import { tournamentTableLabel } from '../utils/tournamentTableLabel';
@@ -451,12 +452,10 @@ import {
   type LightningSnapshotFields,
 } from '../lightning/lightningHand';
 import {
-  lightningEarlyHeroCardsReady,
   lightningExitHoldMs,
   lightningHeroSeatFromRoster,
   lightningHoldsHeroDealSound,
   lightningParkedDealerSeat,
-  type LightningEarlyHeroCards,
 } from '../lightning/lightningTransitionMotion';
 import {
   detectLightningPlatform,
@@ -12120,7 +12119,10 @@ function LiveTablePage({
   // Subscribes directly to Postgres RLS-protected table to bypass public WebSocket leak
 
   // Callback for handling new hole cards
-  const lightningEarlyHeroCardsRef = useRef<LightningEarlyHeroCards | null>(null);
+  const earlyHeroCardsRef = useRef<EarlyHeroCards | null>(null);
+  useEffect(() => {
+    earlyHeroCardsRef.current = null;
+  }, [tableId, userId]);
   const handleHoleCardPayload = useCallback(
     (payload: any) => {
       if (isLightningObserverSnapshot(engineSnapshotRef.current)) return;
@@ -12132,6 +12134,17 @@ function LiveTablePage({
          next one is dealt. Do not "fix" this into a clear. */
       const row = payload.new;
       if (row && row.user_id === userId && row.cards) {
+        // A private frame may lead HAND_STARTED. Do not paint it onto the old
+        // board or lose it when that event clears the prior holding.
+        if (
+          row.table_id === tableId &&
+          Number(row.hand_number) > heroHandRef.current &&
+          heroHandRef.current > 0
+        ) {
+          earlyHeroCardsRef.current = { hand: Number(row.hand_number), row };
+          return;
+        }
+
         /* ═══ THE DOOR THAT HAD NO LOCK (Dan 2026-09-01) ═══════════════════
            Dan, on the screenshot: "I NEED YOU TO TELL ME HOW IT WAS EVEN
            POSSIBLE FOR TWO 9 OF HEARTS TO APPEAR AT THE SAME TIME."
@@ -12258,13 +12271,11 @@ function LiveTablePage({
             };
             // Hero was dealt into this hand → counts toward hands-played achievements.
             if (formattedCards.length >= 2) heroHandOutcomeRef.current.dealtIn = true;
-          } else if (lightningRoomRef.current) {
-            /* LIGHTNING TRANSITION, PHASE 3: cards that reach a Lightning room a
-               moment before the hero's roster row were dropped here, and the
-               recovery poll is off in Lightning, so nothing fetched them
-               again. They are kept and applied, through this same handler and
-               every guard on it, when the row arrives. */
-            lightningEarlyHeroCardsRef.current = { hand: dealtHandNumber, row };
+          } else {
+            // Keep the player's own delivery until the public roster catches
+            // up. Replaying through this handler retains every identity,
+            // hand and board guard without waiting on a recovery poll.
+            earlyHeroCardsRef.current = { hand: dealtHandNumber, row };
           }
           return { ...prev, players: updatedPlayers };
         });
@@ -12273,15 +12284,15 @@ function LiveTablePage({
     [userId, tableId, ambientSoundsAllowed]
   );
   useEffect(() => {
-    const decision = lightningEarlyHeroCardsReady({
-      early: lightningEarlyHeroCardsRef.current,
+    const decision = earlyHeroCardsReady({
+      early: earlyHeroCardsRef.current,
       handNumber: tableState.handNumber ?? 0,
       heroInRoster: tableState.players.some((p) => !!p && p.id === userId),
     });
     if (decision === 'wait') return;
-    const early = lightningEarlyHeroCardsRef.current;
-    lightningEarlyHeroCardsRef.current = null;
-    if (decision === 'apply' && early && lightningRoomRef.current) {
+    const early = earlyHeroCardsRef.current;
+    earlyHeroCardsRef.current = null;
+    if (decision === 'apply' && early) {
       handleHoleCardPayload({ new: early.row });
     }
   }, [tableState.players, tableState.handNumber, userId, handleHoleCardPayload]);
@@ -23290,7 +23301,9 @@ function LiveTablePage({
       try {
         const { data, error } = await supabase
           .from('table_seats')
-          .select('user_id, occupancy_id, is_sitting_out, sit_out_at, leave_pending, stack')
+          .select(
+            'user_id, seat_number, occupancy_id, is_sitting_out, sit_out_at, leave_pending, stack'
+          )
           .eq('table_id', tableId)
           .is('left_at', null);
         if (cancelled) return;
@@ -23299,6 +23312,7 @@ function LiveTablePage({
         const rows = data as Array<{
           user_id: string;
           occupancy_id?: string;
+          seat_number?: number;
           is_sitting_out: boolean | null;
           sit_out_at: string | null;
           leave_pending: boolean | null;
@@ -23314,6 +23328,29 @@ function LiveTablePage({
         const heroRow = userId ? rows.find((r) => String(r.user_id) === String(userId)) : undefined;
         if (heroRow?.occupancy_id && userId) {
           setOwnSeatIdentity({ tableId, userId, occupancyId: heroRow.occupancy_id });
+        }
+        // The hand roster can omit a late entrant until the next deal. The
+        // committed physical seat still belongs to them now, so paint its
+        // existing waiting-seat presentation without claiming cards or a turn.
+        const physicalSeat = Number(heroRow?.seat_number);
+        if (
+          heroRow &&
+          !heroRow.leave_pending &&
+          !leftSeatPendingRef.current &&
+          Number.isInteger(physicalSeat) &&
+          physicalSeat > 0 &&
+          physicalSeat <= MAX_SUPPORTED_SEATS
+        ) {
+          heroSeatRef.current = physicalSeat;
+          setTableState((prev) =>
+            prev.heroSeat === physicalSeat
+              ? prev
+              : {
+                  ...prev,
+                  heroSeat: physicalSeat,
+                  maxPlayers: Math.max(prev.maxPlayers, physicalSeat),
+                }
+          );
         }
         if (heroRow?.leave_pending) {
           presentRemoteSeatExitRef.current();
@@ -28069,7 +28106,11 @@ function LiveTablePage({
                 stackPending: lightningWaitingSeat?.stack === null,
                 /* A Lightning player between hands is in the pool, not sitting
                    out, unless they asked to be (Dan 2026-10-24). */
-                status: lightningWaitingSeat ? lightningWaitingSeat.status : 'sitting_out',
+                status: lightningWaitingSeat
+                  ? lightningWaitingSeat.status
+                  : heroRowStack !== null && !heroSitsOutPerRow
+                    ? 'active'
+                    : 'sitting_out',
                 isHero: true,
                 showCards: false,
               } as any;

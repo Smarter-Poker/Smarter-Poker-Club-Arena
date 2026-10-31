@@ -180,10 +180,10 @@ try {
   const result = JSON.parse(output.slice(start));
   need(
     result.success === true &&
-      result.numTotalTests === 29 &&
-      result.numPassedTests === 29 &&
+      result.numTotalTests === 33 &&
+      result.numPassedTests === 33 &&
       result.numFailedTests === 0,
-    'all twenty-nine exact EED fixture cases must actually pass'
+    'all thirty-three exact EED fixture cases must actually pass'
   );
   need(
     hash(readFileSync(guardPath)) === hash(guardBytes),

@@ -251,9 +251,9 @@ describe('daily routine admission uses the existing protected receiver only', ()
     const path = 'server/scripts/retained-original-checkpoint-guard.mjs';
     expect(recovery.releaseWitness).toEqual({
       path,
-      sha256: createHash('sha256')
-        .update(readFileSync(join(root, path)))
-        .digest('hex'),
+      // Expired authority retains its original immutable witness. A later
+      // safety correction cannot retarget that historical authorization.
+      sha256: '7acf0cb7778fcbbcf382f55a6a5ebd2ae90068af3497c199c1c711db50fa5c32',
     });
     expect(recovery.contains).toBe('aca3bb78ee4821ec425b5acaf303869106b4a21a');
     expect(recovery.notBefore).toBe('2026-10-29T15:20:00Z');
@@ -275,9 +275,8 @@ describe('daily routine admission uses the existing protected receiver only', ()
     expect(recovery.migrations).toEqual([]);
     expect(recovery.releaseWitness).toEqual({
       path: 'server/scripts/retained-original-checkpoint-guard.mjs',
-      sha256: createHash('sha256')
-        .update(readFileSync(join(root, 'server/scripts/retained-original-checkpoint-guard.mjs')))
-        .digest('hex'),
+      // This expired record also owns the historical guard, not current bytes.
+      sha256: '7acf0cb7778fcbbcf382f55a6a5ebd2ae90068af3497c199c1c711db50fa5c32',
     });
     expect(recovery.ownerOrder).toContain('five seconds reserved for cleanup');
     expect(recovery.ownerOrder).toContain('Do not attach to or close a foreign inspector');

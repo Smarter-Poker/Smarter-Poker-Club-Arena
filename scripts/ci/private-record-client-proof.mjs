@@ -207,6 +207,13 @@ export function assertPrivateRecordClientProof(
         'gatewayRecordChangedAfterRestore',
         'secondVisibleAvatarReadback',
         'faultRestored',
+        'rosterGatewayVerified',
+        'rosterPaidVerified',
+        'memberPaidVerified',
+        'bothPreferredPathsInterrupted',
+        'allFaultsRestored',
+        'preferredReadyAfterPaid',
+        'cosmeticRestoreVerified',
       ].every((key) => proof[key] === true) &&
       proof.paidIsolation?.activeAtStart === 0 &&
       proof.paidIsolation?.activeAtEnd === 0 &&
@@ -220,8 +227,15 @@ export function assertPrivateRecordClientProof(
       proof.gatewayRetention.openSocketsAfterSecondWrite > 0 &&
       Number.isInteger(proof.gatewayRetention?.matchingChangesAfterRecovery) &&
       proof.gatewayRetention.matchingChangesAfterRecovery > 0 &&
+      ['member', 'roster'].every(
+        (topic) =>
+          Number.isInteger(proof.paidFallback?.[topic]?.confirmedJoins) &&
+          proof.paidFallback[topic].confirmedJoins > 0 &&
+          Number.isInteger(proof.paidFallback?.[topic]?.receivedChanges) &&
+          proof.paidFallback[topic].receivedChanges > 0
+      ) &&
       proof.observationsOverflow === false &&
-      proof.cosmeticWrites === 2 &&
+      proof.cosmeticWrites === 5 &&
       proof.syntheticFrames === 0 &&
       proof.paidRetirementQualified === false,
     'Published SDK outage, genuine event, reader/UI or recovery evidence is incomplete'

@@ -608,11 +608,18 @@ it.each(['record_changed', 'SUBSCRIBED'])(
 );
 
 it('applies an authoritative avatar removal without retaining the old image', async () => {
-  state.getMemberDetail.mockResolvedValue({
-    ...memberDetail,
-    identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
-  });
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   const view = render(<MemberManagementPage />);
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+  // Settle bootstrap and its effect-owned refresh handler before delivering
+  // the record event exposed during render by the subscription mock.
+  await act(async () =>
+    initial.resolve({
+      ...memberDetail,
+      identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
+    })
+  );
   await screen.findByText('River Shark');
   expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
     'src',

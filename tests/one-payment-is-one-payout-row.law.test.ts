@@ -256,7 +256,10 @@ describe('one payment is one payout row', () => {
   });
 
   const valueMigration = readFileSync(
-    join(MIGRATIONS, '20261030001505_satellite_fallback_awards_are_reusable_value_tickets.sql'),
+    join(
+      MIGRATIONS,
+      files.find((f) => f.endsWith('_satellite_fallback_awards_are_reusable_value_tickets.sql'))!
+    ),
     'utf8'
   );
   const valueStart = valueMigration.indexOf(

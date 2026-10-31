@@ -6,16 +6,29 @@
 -- admit only explicitly described whole-Diamond ticket issue/admission legs.
 -- Cross-row backing and one-time consumption remain the ordinary candidate's
 -- immutable receipt and deferred custody guards, never a CHECK helper call.
--- @install-window: daily-maintenance
--- Writer-blocking CHECK replacement runs once in the certified daily freeze.
+-- Install only while both Diamond play switches are closed; no engine or Chip table is locked.
 -- NOT VALID avoids scanning hot history; every new row is still checked.
 -- The validated prior constraints prove old rows satisfy the retained branches.
 -- Ordinary value-ticket helpers require these exact postimages before install.
+-- Source classification: both play switches closed, zero recent Diamond hands,
+-- unchanged write counters and no relation locks observed before submission.
+-- A reopened switch, busy settings row/relation or changed catalog refuses; no retry loop.
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='5s';
+SET LOCAL transaction_timeout='8s';
+DO $closed_diamond_play$
+DECLARE v_cash boolean; v_tournaments boolean;
+BEGIN
+ SELECT cash_games_enabled,tournaments_enabled INTO v_cash,v_tournaments
+  FROM public.ca_arena_settings WHERE id=1 FOR SHARE NOWAIT;
+ IF NOT FOUND OR v_cash IS DISTINCT FROM false OR v_tournaments IS DISTINCT FROM false THEN
+  RAISE EXCEPTION 'VALUE_TICKET_DDL_REQUIRES_CLOSED_DIAMOND_PLAY';
+ END IF;
+END;
+$closed_diamond_play$;
 -- One short, ordered acquisition anchors both catalog preimages until commit.
-LOCK TABLE public.poker_diamond_movements,public.poker_diamond_tournament_ledger IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.poker_diamond_movements,public.poker_diamond_tournament_ledger IN ACCESS EXCLUSIVE MODE NOWAIT;
 
 DO $ticket_constraint_preimage$
 BEGIN
@@ -70,4 +83,9 @@ ALTER TABLE public.poker_diamond_tournament_ledger ADD CONSTRAINT poker_diamond_
  AND (request->>'fee')::numeric=fee_part
  AND bounty_part=0 AND prize_part+fee_part=amount) IS TRUE)) NOT VALID;
 
+DO $ticket_ddl_budget$ BEGIN
+ IF clock_timestamp()-transaction_timestamp()>interval '8 seconds' THEN
+  RAISE EXCEPTION 'VALUE_TICKET_CUSTODY_DDL_BUDGET_EXCEEDED';
+ END IF;
+END $ticket_ddl_budget$;
 COMMIT;

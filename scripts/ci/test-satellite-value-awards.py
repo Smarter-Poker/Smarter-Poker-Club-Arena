@@ -75,16 +75,27 @@ def main():
   constraints=json.loads((fixture/'custody-constraints.json').read_text())
   current_checks='\n'.join('ALTER TABLE public.'+r['relation']+' DROP CONSTRAINT '+r['conname']+'; ALTER TABLE public.'+r['relation']+' ADD CONSTRAINT '+r['conname']+' '+r['definition']+';' for r in constraints)
   e.sql(db,current_checks,label='actual-current-custody-checks',seconds=30)
+  # Installation is guarded by actual closed play, not a generic financial
+  # component label. This isolated setting is changed only by later funded cases.
+  e.sql(db,"INSERT INTO public.ca_arena_settings(id,club_id,settlement_window_days,note,cash_games_enabled,tournaments_enabled) SELECT 1,id,0,'isolated closed-play installation',false,false FROM public.clubs WHERE is_platform AND asset='diamonds' ON CONFLICT(id) DO UPDATE SET cash_games_enabled=false,tournaments_enabled=false;",label='closed-play-installation-configuration')
   # CHECK grammar boundaries in a separate disposable catalog, never by
   # dropping or bypassing a constraint in the actual funded-owner scene.
   check_db=e.database()
-  minimal="CREATE TABLE public.poker_diamond_movements(request_id uuid,custody_id uuid,user_id uuid,action text,amount bigint,source_account text,destination_account text,wallet_journal_id uuid,request jsonb,receipt jsonb); CREATE TABLE public.poker_diamond_tournament_ledger(kind text,user_id uuid,custody_id uuid,wallet_journal_id uuid,registration_id uuid,idempotency_key text,amount bigint,prize_part bigint,bounty_part bigint,fee_part bigint,request jsonb);"
+  minimal="CREATE TABLE public.ca_arena_settings(id integer,cash_games_enabled boolean,tournaments_enabled boolean); INSERT INTO public.ca_arena_settings VALUES(1,false,false); CREATE TABLE public.poker_diamond_movements(request_id uuid,custody_id uuid,user_id uuid,action text,amount bigint,source_account text,destination_account text,wallet_journal_id uuid,request jsonb,receipt jsonb); CREATE TABLE public.poker_diamond_tournament_ledger(kind text,user_id uuid,custody_id uuid,wallet_journal_id uuid,registration_id uuid,idempotency_key text,amount bigint,prize_part bigint,bounty_part bigint,fee_part bigint,request jsonb);"
   minimal+=''.join('ALTER TABLE public.'+r['relation']+' ADD CONSTRAINT '+r['conname']+' '+r['definition']+';' for r in constraints)
   e.sql(check_db,minimal,label='custody-check-only-catalog')
   e.sql(check_db,file=prerequisite,label='custody-check-only-exact-DDL')
   e.sql(check_db,file=fixture/'custody-check-cases.sql',label='custody-check-45-boundaries')
   code,_,error=e.sql(check_db,file=prerequisite,label='custody-check-refuses-DDL-replay',check=False)
   if code==0 or 'VALUE_TICKET_CONSTRAINT_PREIMAGE_CHANGED' not in error:raise ValueError('exact custody CHECK DDL replay was not refused')
+  for column in ['cash_games_enabled','tournaments_enabled']:
+   e.sql(check_db,'UPDATE public.ca_arena_settings SET '+column+'=true;',label='open-play-installation-'+column)
+   code,_,error=e.sql(check_db,file=prerequisite,label='open-play-DDL-refused-'+column,check=False)
+   if code==0 or 'VALUE_TICKET_DDL_REQUIRES_CLOSED_DIAMOND_PLAY' not in error:raise ValueError('open Diamond play was not refused before DDL')
+   e.sql(check_db,'UPDATE public.ca_arena_settings SET '+column+'=false;',label='restore-isolated-closed-'+column)
+  e.sql(check_db,'DELETE FROM public.ca_arena_settings;',label='missing-play-configuration')
+  code,_,error=e.sql(check_db,file=prerequisite,label='missing-play-DDL-refused',check=False)
+  if code==0 or 'VALUE_TICKET_DDL_REQUIRES_CLOSED_DIAMOND_PLAY' not in error:raise ValueError('missing play configuration was not refused')
   e.discard(check_db)
   e.sql(db,file=prerequisite,label='exact-custody-check-prerequisite',seconds=30)
   # The native route records exact prerequisite installation, like the real

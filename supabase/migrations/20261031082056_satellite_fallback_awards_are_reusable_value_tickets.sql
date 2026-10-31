@@ -3,7 +3,7 @@
 -- Cash is paid only to the bubble. Historical settled receipts are retained and replayable.
 -- New tickets keep their original target as provenance, not an admission binding.
 -- Chips and Diamonds retain separate native backing; no wallet prize conversion.
--- Requires the separately reserved daily-window custody CHECK prerequisite first.
+-- Requires the separately reserved closed-Diamond custody CHECK prerequisite first.
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_settle_satellite_cohort')='821694e700215e473c9690640e0b9d08'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_satellite_cohort_receipt')='63e6d7cc589cf7b4858bd2e6e38479fa'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_register_for_tournament_with_ticket_for')='150a54216455d6751fb6e1567519de89'
@@ -4768,5 +4768,5 @@ GRANT EXECUTE ON FUNCTION public.fn_diamond_arena_reconciliation(uuid) TO authen
 ALTER FUNCTION public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid) TO service_role;
-SELECT public.fn_ca_declare_guard_redefinition('fn_poker_diamond_tournament_drain','20261030001505_satellite_fallback_awards_are_reusable_value_tickets');
+SELECT public.fn_ca_declare_guard_redefinition('fn_poker_diamond_tournament_drain','20261031082056_satellite_fallback_awards_are_reusable_value_tickets');
 COMMIT;

@@ -119,6 +119,7 @@ type PreparedHandNumberOutcome =
   | null;
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
+  protected abstract activateRetainedTurn(): Promise<void>;
   /** Measure before the original continuation queues this street behind retention. */
   protected captureStreetIntegrityEvent(event: HandEvent, controller: HandController): HandEvent {
     if (event.type !== 'COMMUNITY_CARDS') return event;
@@ -4250,7 +4251,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                       controllerForHand.resumeRecoveredHand();
                   })
               : undefined,
-            () => this.publishRetainedInputReadiness()
+            async () => {
+              await this.activateRetainedTurn();
+              await this.publishRetainedInputReadiness();
+            }
           );
         }
         unsub = controllerForHand.onEvent((event: HandEvent) => {

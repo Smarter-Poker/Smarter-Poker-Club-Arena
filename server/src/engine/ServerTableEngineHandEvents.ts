@@ -120,10 +120,20 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       return [];
     }
   }
+  private retainedTurnActivation: (() => Promise<void>) | null = null;
+
+  protected async activateRetainedTurn(): Promise<void> {
+    if (this.handContinuation?.isUnretained() || this.isOriginalInputPending()) return;
+    const activate = this.retainedTurnActivation;
+    this.retainedTurnActivation = null;
+    await activate?.();
+  }
+
   protected async handleHandEvent(
     event: HandEvent,
     players: SeatedPlayer[],
-    persistenceGeneration?: number
+    persistenceGeneration?: number,
+    turnAlreadySettled = false
   ): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
@@ -426,7 +436,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // before the turn moves on.
         //
         // This costs hands/hour. That is the intended trade.
-        if (this.running && this.handController) {
+        if (!turnAlreadySettled && this.running && this.handController) {
           const handAtAction = this.handCount;
           const controllerAtAction = this.handController;
           // A street was just dealt -> the board reveal owns this beat, and it
@@ -498,6 +508,27 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           playerActionContext(this.handController) !== decisionContext
         )
           break;
+
+        if (this.getActionContext() !== decisionContext) {
+          const controller = this.handController;
+          const handNumber = this.handCount;
+          // The queued capsule is behind this dispatcher. Awaiting it here
+          // deadlocks the lane; its retained-ready boundary owns activation.
+          this.retainedTurnActivation = async () => {
+            if (
+              !this.running ||
+              !this.isCurrentEngine() ||
+              !this.lifecycleCanMutate() ||
+              this.handController !== controller ||
+              this.handCount !== handNumber ||
+              this.getActionContext() !== decisionContext
+            )
+              return;
+            await this.handleHandEvent(event, players, persistenceGeneration, true);
+          };
+          return;
+        }
+        this.retainedTurnActivation = null;
 
         const tcSeatedPlayer = players.find((p) => p.seat_number === event.seat);
 

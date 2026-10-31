@@ -21,6 +21,8 @@ vi.mock('../http/auth.js', () => ({
 vi.mock('../http/body.js', () => ({
   readBody: vi.fn(async (req: { __body?: string }) => req.__body ?? '{}'),
 }));
+import { DeadlineScheduler } from './DeadlineScheduler.js';
+import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
@@ -1587,112 +1589,163 @@ it.each([
   }
 });
 
-it.each(['unchanged', 'changed', 'stopped'] as const)(
-  'preserves turn ownership across a control checkpoint: %s',
-  async (mode) => {
-    const { e, roster } = fixture();
-    e.tableInfo = { game_variant: 'nlh', big_blind: 20, small_blind: 10, max_players: 2 };
-    e.hub = { publish: vi.fn(), emitEvent: vi.fn() };
-    e.retainOriginalBatch = async (_o: unknown, _s: unknown, batch: any) => {
-      e.retainedPublicHandState = JSON.parse(batch.controller).state;
-    };
-    const controller = e.handController;
-    const started = e.runOriginalController(roster, controller, 42, Date.now(), {
-      started: false,
-      cause: null,
-    });
-    try {
-      await vi.waitFor(() => expect(e.handContinuation).toBeTruthy());
-      await e.handContinuation.join();
-      const decision = e.getActionContext();
-      expect(decision).toBeTruthy();
-      const actualHandler = (ServerTableEngine.prototype as any).handleHandEvent;
-      let dispatched = false;
-      e.handleHandEvent = async (...args: any[]) => {
-        if (dispatched) return;
-        dispatched = true;
-        await actualHandler.apply(e, args);
-      };
-      let release!: () => void;
-      let settling = false;
-      e.sleep = async () => {
-        settling = true;
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
-      };
-      const timer = vi.spyOn(e, 'startTurnTimer');
-      e.handContinuation.enqueue({
-        type: 'TURN_CHANGE',
-        seat: controller.getState().currentPlayerSeat,
-        availableActions: [],
+it.each([
+  'unchanged',
+  'changed',
+  'stopped',
+  'delayed_fold',
+  'delayed_call',
+  'delayed_raise',
+  'delayed_changed',
+  'delayed_stopped',
+] as const)('preserves turn ownership across a control checkpoint: %s', async (mode) => {
+  const { e, roster } = fixture();
+  e.tableInfo = { game_variant: 'nlh', big_blind: 20, small_blind: 10, max_players: 2 };
+  e.hub = { publish: vi.fn(), emitEvent: vi.fn() };
+  let now = Date.now();
+  const scheduler = new DeadlineScheduler({ now: () => now });
+  e.preciseTimer.dispose();
+  e.preciseTimer = new PreciseActionTimer(undefined, scheduler, () => now);
+  scheduler.stop();
+  let delayRetention = false;
+  let releaseRetention: (() => void) | undefined;
+  e.retainOriginalBatch = async (_o: unknown, _s: unknown, batch: any) => {
+    if (delayRetention)
+      await new Promise<void>((resolve) => {
+        releaseRetention = resolve;
       });
-      await vi.waitFor(() => expect(settling).toBe(true));
-      expect(e.getActionContext()).toBe(decision);
-      e.handContinuation.checkpoint();
-      expect(e.getTableState('u1').action_context).toBeNull();
-      if (mode === 'changed') {
+    e.retainedPublicHandState = JSON.parse(batch.controller).state;
+  };
+  const controller = e.handController;
+  const started = e.runOriginalController(roster, controller, 42, Date.now(), {
+    started: false,
+    cause: null,
+  });
+  try {
+    await vi.waitFor(() => expect(e.handContinuation).toBeTruthy());
+    await e.handContinuation.join();
+    const decision = e.getActionContext();
+    expect(decision).toBeTruthy();
+    const actualHandler = (ServerTableEngine.prototype as any).handleHandEvent;
+    let dispatched = false;
+    e.handleHandEvent = async (...args: any[]) => {
+      if (dispatched && args[3] !== true) return;
+      dispatched = true;
+      await actualHandler.apply(e, args);
+    };
+    let release!: () => void;
+    let settling = false;
+    e.sleep = async () => {
+      settling = true;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    };
+    const timer = vi.spyOn(e, 'startTurnTimer');
+    e.handContinuation.enqueue({
+      type: 'TURN_CHANGE',
+      seat: controller.getState().currentPlayerSeat,
+      availableActions: [],
+    });
+    await vi.waitFor(() => expect(settling).toBe(true));
+    expect(e.getActionContext()).toBe(decision);
+    delayRetention = mode.startsWith('delayed');
+    e.handContinuation.checkpoint();
+    expect(e.getTableState('u1').action_context).toBeNull();
+    if (mode === 'changed') {
+      expect(controller.performAction(controller.getState().currentPlayerSeat, 'call')).toBe(true);
+      expect(playerActionContext(controller)).not.toBe(decision);
+    }
+    if (mode === 'stopped') e.running = false;
+    release();
+    if (mode.startsWith('delayed')) {
+      await vi.waitFor(() => expect(releaseRetention).toBeTypeOf('function'));
+      expect(e.getActionContext()).toBeNull();
+      expect(timer).not.toHaveBeenCalled();
+      now += 60_000;
+      scheduler.tickNow();
+      expect(
+        controller
+          .getState()
+          .actionHistory.filter((entry: any) => !['sb', 'bb', 'ante'].includes(entry.action))
+      ).toEqual([]);
+      if (mode === 'delayed_changed')
         expect(controller.performAction(controller.getState().currentPlayerSeat, 'call')).toBe(
           true
         );
-        expect(playerActionContext(controller)).not.toBe(decision);
-      }
-      if (mode === 'stopped') e.running = false;
-      release();
-      if (mode === 'stopped') await expect(e.handContinuation.join()).rejects.toThrow();
-      else await e.handContinuation.join();
-      if (mode !== 'unchanged') {
-        expect(timer).not.toHaveBeenCalled();
-        return;
-      }
-      expect(e.getActionContext()).toBe(decision);
-      expect(timer).toHaveBeenCalledTimes(1);
-      expect(
-        e.preciseTimer.hasTimer(e.tableId, 'u' + controller.getState().currentPlayerSeat)
-      ).toBe(true);
-      expect(
-        e.currentHandTimerLog.filter((entry: any) => entry.event === 'timer_start')
-      ).toHaveLength(1);
-      const turnFrames = e.hub.emitEvent.mock.calls
-        .map((call: any[]) => call[1])
-        .filter((frame: any) => frame.type === 'turn_change');
-      expect(turnFrames).toHaveLength(1);
-      expect(turnFrames[0].action_context).toBeNull();
-      originalAuth.userId = 'u' + controller.getState().currentPlayerSeat;
-      let status = 0;
-      let body = '';
-      const res = {
-        writeHead: (code: number) => {
-          status = code;
-          return res;
-        },
-        end: (value?: string) => {
-          body = value ?? '';
-        },
-      };
-      __resetRateLimiterForTests();
-      await handleAction(
-        {
-          __body: JSON.stringify({
-            tableId: config.tableId,
-            action: 'call',
-            actionContext: decision,
-            idempotencyKey: 'settle-retained-call',
-          }),
-        } as never,
-        res as never,
-        { gameServer: { getTableEngine: () => e } }
-      );
-      expect(status).toBe(200);
-      expect(JSON.parse(body).success).toBe(true);
-      await e.handContinuation.join();
-      expect(
-        controller.getState().actionHistory.filter((entry: any) => entry.action === 'call')
-      ).toHaveLength(1);
-    } finally {
-      e.running = false;
-      e.activeHandWaitRelease?.release('test_cleanup');
-      await started;
+      if (mode === 'delayed_stopped') e.running = false;
+      delayRetention = false;
+      releaseRetention!();
     }
+    if (mode === 'stopped' || mode === 'delayed_stopped')
+      await expect(e.handContinuation.join()).rejects.toThrow();
+    else await e.handContinuation.join();
+    if (
+      mode === 'changed' ||
+      mode === 'stopped' ||
+      mode === 'delayed_changed' ||
+      mode === 'delayed_stopped'
+    ) {
+      expect(timer).not.toHaveBeenCalled();
+      return;
+    }
+    expect(e.getActionContext()).toBe(decision);
+    expect(timer).toHaveBeenCalledTimes(1);
+    expect(e.preciseTimer.hasTimer(e.tableId, 'u' + controller.getState().currentPlayerSeat)).toBe(
+      true
+    );
+    expect(
+      e.currentHandTimerLog.filter((entry: any) => entry.event === 'timer_start')
+    ).toHaveLength(1);
+    const turnFrames = e.hub.emitEvent.mock.calls
+      .map((call: any[]) => call[1])
+      .filter((frame: any) => frame.type === 'turn_change');
+    expect(turnFrames).toHaveLength(1);
+    expect(turnFrames[0].action_context).toBe(decision);
+    const action = mode === 'delayed_fold' ? 'fold' : mode === 'delayed_raise' ? 'raise' : 'call';
+    originalAuth.userId = 'u' + controller.getState().currentPlayerSeat;
+    expect(e.preciseTimer.getRemainingMs(e.tableId, originalAuth.userId)).toBeGreaterThanOrEqual(
+      e.playerTurnDuration * 1000
+    );
+    let status = 0;
+    let body = '';
+    const res = {
+      writeHead: (code: number) => {
+        status = code;
+        return res;
+      },
+      end: (value?: string) => {
+        body = value ?? '';
+      },
+    };
+    __resetRateLimiterForTests();
+    await handleAction(
+      {
+        __body: JSON.stringify({
+          tableId: config.tableId,
+          action,
+          ...(action === 'raise' ? { amount: 40 } : {}),
+          actionContext: decision,
+          idempotencyKey: `settle-retained-${mode}`,
+        }),
+      } as never,
+      res as never,
+      { gameServer: { getTableEngine: () => e } }
+    );
+    expect({ status, body: JSON.parse(body) }).toMatchObject({
+      status: 200,
+      body: { success: true },
+    });
+    await e.handContinuation.join();
+    expect(
+      controller.getState().actionHistory.filter((entry: any) => entry.action === action)
+    ).toHaveLength(1);
+  } finally {
+    delayRetention = false;
+    releaseRetention?.();
+    scheduler.stop();
+    e.running = false;
+    e.activeHandWaitRelease?.release('test_cleanup');
+    await started;
   }
-);
+});

@@ -483,6 +483,10 @@ describe('daily routine admission uses the existing protected receiver only', ()
     for (const mode of ['served', 'deleted', 'unknown-serving', 'shallow', 'missing', 'mismatch'])
       expect(check(fixture, mode), mode).toBe(false);
     expect(check({ ...fixture, id: 'foreign-owner' })).toBe(false);
+    for (const mutation of [{ schema: 'invalid' }, { ownerWindowId: '?' }])
+      expect(
+        check(fixture, 'unserved', JSON.stringify({ ...JSON.parse(floor), ...mutation }))
+      ).toBe(false);
     expect(
       check({ ...fixture, releaseWitness: { ...fixture.releaseWitness, sha256: 'f'.repeat(64) } })
     ).toBe(false);
@@ -775,4 +779,60 @@ it('every declared source witness is supported by the installed stage and host a
     );
     expect(window.releaseWitness.sha256, window.id).toMatch(/^[0-9a-f]{64}$/);
   }
+});
+
+it('binds the new frozen-recovery hold-ownership carrier without rewriting prior authority', () => {
+  const raw = readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8');
+  const doc = JSON.parse(raw);
+  const id = '2026-10-31-cashier-frozen-recovery-hold-ownership-next-55';
+  const entry = doc.windows.find((w: { id: string }) => w.id === id);
+  expect(doc.windows.length).toBeGreaterThanOrEqual(59);
+  expect(doc.windows.filter((w: { id: string }) => w.id === id)).toHaveLength(1);
+  expect(entry.id).toBe(id);
+  const marker = ',\n    {\n      "id": "' + id + '"';
+  expect(raw.split(marker)).toHaveLength(2);
+  expect(
+    createHash('sha256')
+      .update(raw.slice(0, raw.indexOf(marker)))
+      .digest('hex')
+  ).toBe('8bf3242602ca15642cdde1d3400cdc002aa6366efd70526495744065deea2c8e');
+  expect(doc.databaseWindows.length).toBeGreaterThanOrEqual(3);
+  expect(
+    createHash('sha256')
+      .update(JSON.stringify(doc.databaseWindows.slice(0, 3)))
+      .digest('hex')
+  ).toBe('c1aabc10442b0299731ea9d1fae5bd8e4c94b42cb21bde52fb03271ae5b81bb9');
+  const floorRaw = readFileSync(join(root, 'server/release/activation-floor.json'));
+  const currentFloor = JSON.parse(floorRaw.toString());
+  if (currentFloor.ownerWindowId === id)
+    expect(currentFloor).toEqual({
+      schema: 'engine-release-activation-floor/v2-owner-window',
+      preparationAt: '2026-10-31T00:20:00Z',
+      activationAt: '2026-10-31T00:20:00Z',
+      expiresAt: '2026-10-31T03:10:00Z',
+      timeZone: 'America/Chicago',
+      ownerWindowId: id,
+      clientPublicationAt: '2026-10-31T00:20:00Z',
+    });
+  expect(entry.notBefore).toBe('2026-10-31T00:20:00Z');
+  expect(entry.notAfter).toBe('2026-10-31T03:10:00Z');
+  expect(entry.announceAtChicagoMinutes).toEqual([53]);
+  expect(entry.contains).toBe('671f7741c4302f92c3487a8cccf32a9ef17c3140');
+  expect(entry.migrations).toEqual([]);
+  expect(entry.releaseWitness).toEqual({
+    path: 'server/release/activation-floor.json',
+    sha256: '626eabb5a81a572158beef4982a82cf8d0e9a9815d48d587701cf250c53a9fab',
+  });
+  if (currentFloor.ownerWindowId === id)
+    expect(entry.releaseWitness.sha256).toBe(createHash('sha256').update(floorRaw).digest('hex'));
+  for (const proof of [
+    'b8e43e73864d46db088096474d0334f22076e83c1ce70b8a50c382a3a2cae312',
+    '4ab54bdd41159f69d4eef5f5b9f7d3f03bb64bafde6d95b3be470a969509fb4d',
+    '8ee8d46e5e8045ca727ea7684a3474c3',
+    'current-head checks',
+    'EED33',
+    'OWN healthy v3 thaw',
+    'no future automatic extension',
+  ])
+    expect(entry.ownerOrder).toContain(proof);
 });

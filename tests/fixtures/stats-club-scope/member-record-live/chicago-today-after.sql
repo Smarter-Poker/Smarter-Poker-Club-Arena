@@ -2,7 +2,7 @@ DO $$
 DECLARE
  c uuid := '83000000-0000-0000-0000-000000000001';
  u uuid := '83000000-0000-0000-0000-000000000002';
- dst_u uuid := '83000000-0000-0000-0000-000000000032';
+ boundary_user uuid := '83000000-0000-0000-0000-000000000013';
  d jsonb; b jsonb; r record; day date; start_at timestamptz; end_at timestamptz;
  label text; expected_hours int;
 BEGIN
@@ -32,22 +32,22 @@ BEGIN
  IF ca_club_member_chicago_today_cash(c,'83000000-0000-0000-0000-000000000012') <> 20 THEN RAISE EXCEPTION 'Accounting cutoff lost'; END IF;
  PERFORM set_config('test.cutoff','',true);
 
+ -- Keep fixed calendar cases separate from the now()-relative Today rows.
+ -- Otherwise October 31 inserts tomorrow at the November 1 DST boundary.
  -- Winter/summer offsets, 23-hour spring day, 25-hour fall day, year rollover.
- -- Keep fixed-date cases separate from Today's facts, which can land on any
- -- of these boundaries as the real calendar advances.
  FOREACH day IN ARRAY ARRAY[date '2026-01-15',date '2026-07-15',date '2026-03-08',date '2026-11-01',date '2026-12-31'] LOOP
    start_at := day::timestamp AT TIME ZONE 'America/Chicago';
    end_at := (day+1)::timestamp AT TIME ZONE 'America/Chicago';
    expected_hours := CASE day WHEN date '2026-03-08' THEN 23 WHEN date '2026-11-01' THEN 25 ELSE 24 END;
    IF extract(epoch FROM end_at-start_at)/3600 <> expected_hours THEN RAISE EXCEPTION 'DST day length'; END IF;
    INSERT INTO ca_hand_facts(hand_id,user_id,club_id,played_at,game_variant,net)
-   VALUES(gen_random_uuid(),dst_u,c,start_at-interval '1 microsecond','nlh',100),
-         (gen_random_uuid(),dst_u,c,start_at,'nlh',11),
-         (gen_random_uuid(),dst_u,c,end_at-interval '1 microsecond','nlh',22),
-         (gen_random_uuid(),dst_u,c,end_at,'nlh',1000);
-   IF ca_club_member_chicago_today_cash(c,dst_u,start_at) <> 33
-      OR ca_club_member_chicago_today_cash(c,dst_u,end_at-interval '1 microsecond') <> 33
-      OR ca_club_member_chicago_today_cash(c,dst_u,end_at) <> 1000 THEN
+   VALUES(gen_random_uuid(),boundary_user,c,start_at-interval '1 microsecond','nlh',100),
+         (gen_random_uuid(),boundary_user,c,start_at,'nlh',11),
+         (gen_random_uuid(),boundary_user,c,end_at-interval '1 microsecond','nlh',22),
+         (gen_random_uuid(),boundary_user,c,end_at,'nlh',1000);
+   IF ca_club_member_chicago_today_cash(c,boundary_user,start_at) <> 33
+      OR ca_club_member_chicago_today_cash(c,boundary_user,end_at-interval '1 microsecond') <> 33
+      OR ca_club_member_chicago_today_cash(c,boundary_user,end_at) <> 1000 THEN
      RAISE EXCEPTION 'DST inclusion boundary %',day;
    END IF;
  END LOOP;

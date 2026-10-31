@@ -14,3 +14,6 @@ on October 31, the Today fixture's next-midnight row lands on the fixed
 November 1 DST case for the same user. Give fixed-date DST cases their own
 fixture user. Preserve every boundary, expected amount, and production reader.
 The native PostgreSQL suite reproduced the failure before this isolation.
+The same isolation landed concurrently in #8850. Integration preserves that
+protected-main fixture byte-for-byte; this PR's final diff changes only proof
+admission and its regression, plus this record.

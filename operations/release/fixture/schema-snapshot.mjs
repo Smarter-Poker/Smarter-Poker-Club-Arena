@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { mkdir, writeFile, rm, realpath, lstat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { schemaCataloguePayload } from '../native/component-semantic-observations.mjs';
@@ -13,6 +14,15 @@ const requireCapture = (value) => { if (!value) throw new Error('ISOLATED_SCHEMA
 const MAX_SCHEMA_BYTES = 128 * 1024 * 1024;
 const MAX_METADATA_BYTES = 32 * 1024 * 1024;
 const DEADLINE_MS = 45000;
+// Reuse the maintained official public trust root from the existing migration
+// provider. Neither the connection URL nor an environment value selects a CA.
+const PROVIDER_CA_PATH = fileURLToPath(new URL('../../../scripts/ci/certificates/supabase-prod-ca-2021.crt', import.meta.url));
+const PROVIDER_CA_SHA256 = '700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7';
+function providerCA() {
+  const pem = readFileSync(PROVIDER_CA_PATH, 'utf8');
+  requireCapture(schemaHash(pem) === PROVIDER_CA_SHA256);
+  return pem;
+}
 const safeFailures = new Set(['ISOLATED_SCHEMA_CAPTURE_REFUSED', 'ISOLATED_SCHEMA_DUMP_FAILED',
   'SCHEMA_COMPOSITION_PREIMAGE_REQUIRED', 'SCHEMA_CATALOGUE_BYTES_REQUIRED']);
 const connectionFailures = new Set(['ENETUNREACH', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN',
@@ -62,7 +72,7 @@ export function databaseConfiguration(value) {
   for (const [key, setting] of url.searchParams)
     requireCapture(key === 'sslmode' && ['require', 'verify-full'].includes(setting));
   return { host: url.hostname, port: 5432, database: 'postgres', user, password,
-    ssl: { rejectUnauthorized: true }, connectionTimeoutMillis: 5000,
+    ssl: { rejectUnauthorized: true, ca: providerCA() }, connectionTimeoutMillis: 5000,
     query_timeout: 5000, statement_timeout: 5000,
     application_name: 'isolated-schema-readonly-capture',
     options: '-c default_transaction_read_only=on -c lock_timeout=1000 -c idle_in_transaction_session_timeout=45000' };
@@ -132,7 +142,7 @@ export async function dumpSnapshot(config, snapshot, { spawnProcess = spawn, dea
   // PGOPTIONS or inherited DATABASE_URL enters argv or the child environment.
   const env = { PATH: process.env.PATH, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8',
     PGHOST: config.host, PGPORT: '5432', PGDATABASE: 'postgres', PGUSER: config.user,
-    PGPASSWORD: config.password, PGSSLMODE: 'verify-full', PGSSLROOTCERT: 'system', PGCONNECT_TIMEOUT: '5',
+    PGPASSWORD: config.password, PGSSLMODE: 'verify-full', PGSSLROOTCERT: PROVIDER_CA_PATH, PGCONNECT_TIMEOUT: '5',
     PGAPPNAME: 'isolated-schema-readonly-dump',
     PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=1000' };
   const child = spawnProcess('pg_dump', ['--no-password','--schema-only','--format=plain',

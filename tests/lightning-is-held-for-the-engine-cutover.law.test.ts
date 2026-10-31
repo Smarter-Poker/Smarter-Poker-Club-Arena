@@ -74,9 +74,9 @@ describe('Lightning is held for the engine cutover', () => {
     expect(fn).toContain('if os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW"):\n    # An owner-window release is admitted only on its Deployment Recovery break.\n    ok = emergency');
     expect(fn).toContain('ok = daily and m.get("reason") == "Scheduled Engine Maintenance" and floor_end - 300 <= time.time() < floor_end');
     expect(fn).toContain('ok = daily or emergency or transition');
-    // A partly released hold may be re-asked; a whole one is never re-sent.
-    expect(fn).toContain('raise SystemExit(0 if d.get("resume_refused") else 1)');
-    expect(fn).toContain('"$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"');
+    // A placed hold is never re-sent within its generation.
+    expect(fn).toContain('[ "$LIGHTNING_HOLD_PLACED" = 0 ] || return 0');
+    expect(fn).toContain('"$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --generation "$LIGHTNING_HOLD_GENERATION"');
     // Three outcomes stay distinct: placed (0/1), could-not-run (126/127), UNKNOWN (retry).
     expect(fn).toMatch(/0\|1\) LIGHTNING_HOLD_PLACED=1/);
     // Could-not-run is never folded into placed (10.86 rule 1); the next pass asks again.
@@ -84,7 +84,7 @@ describe('Lightning is held for the engine cutover', () => {
     expect(fn).not.toMatch(/126\|127\)[^\n]*LIGHTNING_HOLD_PLACED=1/);
     expect(fn).toMatch(/\*\)[^\n]*UNKNOWN/);
     // Safe under set -e in the main loop: the helper's exit is caught, never fatal.
-    expect(fn).toContain('--timeout-seconds 5 || rc=$?');
+    expect(fn).toContain('--generation "$LIGHTNING_HOLD_GENERATION" --timeout-seconds 5 || rc=$?');
     expect(fn).toContain('[ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1');
     // No flag may turn the hold into an admission or a refusal of the checkpoint.
     expect(fn).not.toMatch(/SKIP|FORCE|OVERRIDE|ALLOW_/);
@@ -96,7 +96,7 @@ describe('Lightning is held for the engine cutover', () => {
       '  release_lightning_hold_if_break_over\n  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then\n    hold_lightning_when_counting_down\n    ENTRY_STARTED_MS="$(date +%s%3N)"'
     );
     // A retried transaction inherits its predecessor's hold.
-    expect(transaction).toContain('[ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1\n');
+    expect(transaction).toContain('[ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1\nLIGHTNING_HOLD_REFUSED_LOGGED=0');
     // A qualifying break that passed without a cutover gives Lightning back and
     // lets the next one hold again (a new generation of request ids).
     const over = transaction.slice(
@@ -106,8 +106,12 @@ describe('Lightning is held for the engine cutover', () => {
     expect(over).toContain('m.get("active") is not True');
     // Only a released (absent) hold clears the flag; a retained one is retried next pass.
     expect(over).toContain('release_lightning_hold 0 0 1\n');
-    expect(over).toContain('[ -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=0');
-    expect(helper).toContain('generation = int(previous.get("generation", 1)) + 1');
+    // Released: a new generation (new journal, new request ids) for the next break.
+    expect(over).toContain('LIGHTNING_HOLD_GENERATION="$(lightning_hold_generation)"');
+    expect(over).toContain('LIGHTNING_HOLD_FILE="$(lightning_hold_file_for "$LIGHTNING_HOLD_GENERATION")"');
+    expect(transaction).toContain('else printf \'%s\\n\' "$REQUEST_ROOT/$RUN_ID.lightning-hold.g$1.json"; fi');
+    expect(helper).toContain('suffix = "" if generation == 1 else f":g{generation}"');
+    expect(helper).toContain('parser.add_argument("--generation", type=int, default=1,');
   });
 
   it('releases the hold on every exit path after the thaw, and the fence is the second reader', () => {
@@ -117,12 +121,12 @@ describe('Lightning is held for the engine cutover', () => {
     );
     expect(fn).toContain('[ -e "$LIGHTNING_HOLD_FILE" ] || return 0');
     expect(fn).toContain('m.get("active") is not True');
-    expect(fn).toContain('"$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"');
+    expect(fn).toContain('"$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --generation "$LIGHTNING_HOLD_GENERATION"');
     expect(fn).toMatch(/for attempt in \$\(seq 1 "\$attempts"\); do/);
-    expect(fn).toContain('--hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5 || rc=$?');
-    expect(recover).toContain('--hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5; then');
-    // A refused resume is asked again under a new attempt id, never replayed.
-    expect(helper).toContain('attempt = int(record.get("resume_attempts", 0)) + 1');
+    expect(fn).toContain('--hold-file "$LIGHTNING_HOLD_FILE" --generation "$LIGHTNING_HOLD_GENERATION" --timeout-seconds 5 || rc=$?');
+    expect(recover).toContain('--hold-file "$LIGHTNING_HOLD_FILE" --generation "$LIGHTNING_HOLD_GENERATION" --timeout-seconds 5; then');
+    // The fence walks every generation's journal.
+    expect(recover).toContain('for LIGHTNING_HOLD_FILE in "$REQUEST_ROOT/$RUN_ID.lightning-hold.json" "$REQUEST_ROOT/$RUN_ID.lightning-hold.g"*".json"; do');
     // Bounded: never past ten minutes from now.
     expect(fn).toContain('+ 600 ))');
     const onExit = transaction.slice(
@@ -138,11 +142,14 @@ describe('Lightning is held for the engine cutover', () => {
     expect(fn).toContain('attempts=1');
     expect(onExit).toContain('exit_started="$(date +%s)"');
     expect(onExit).toContain('release_lightning_hold "$rc" $(( exit_started + 300 ))');
-    expect(helper).toContain('"cluster_mode": "in.(lightning,paused)"');
-    expect(helper).toContain('record["complete"] = True');
-    expect(transaction).toContain('LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');
-    expect(recover).toContain('LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');
-    expect(recover).toMatch(/"\$LIGHTNING_HOLD" resume \\\n\s+--env-file "\$ENV_FILE" --run-id "\$RUN_ID" --hold-file "\$LIGHTNING_HOLD_FILE" --timeout-seconds 5/);
+    // The v2 journal (#8816) persists each pending request before sending and
+    // resolves its exact original outcome, so a kill between Clusters strands
+    // nothing without widening the census.
+    expect(helper).toContain('HOLD_SCHEMA = "engine-release-lightning-hold/v2"');
+    expect(helper).toContain('"p_action": "resolve_release_hold"');
+    expect(transaction).toContain('if [ "$1" -le 1 ]; then printf \'%s\\n\' "$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');
+    expect(recover).toContain('"$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');
+    expect(recover).toContain('"$LIGHTNING_HOLD" resume \\\n    --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --generation "$LIGHTNING_HOLD_GENERATION" --timeout-seconds 5; then');
     // The fence is loud but never blocks terminal retirement on a refused resume.
     expect(recover).toContain('is still not released');
     expect(recover.slice(recover.indexOf('is still not released'))).not.toMatch(/^\s*exit 1/m);
@@ -151,8 +158,9 @@ describe('Lightning is held for the engine cutover', () => {
   it('uses the Phase 13 operator door with the run key as operator and reason, and never a horse flag', () => {
     expect(helper).toContain('PROJECT_HOST = "kuklfnapbkmacvwxktbh.supabase.co"');
     expect(helper).toContain('/rest/v1/rpc/fn_lightning_operator_control');
-    expect(helper).toContain('"p_args": {"request_id": request_id(run_id, action, cluster_id, generation, attempt)}');
-    expect(helper).toContain('"cluster_mode": "in.(lightning,paused)"');
+    expect(helper).toContain('"p_args": {"request_id": request_id(run_id, action, cluster_id)}');
+    expect(helper).toContain('payload["p_args"]["expected_pause_request_id"] = request_id(run_id, "pause", cluster_id)');
+    expect(helper).toContain('"cluster_mode": "eq.lightning"');
     expect(helper).toContain('class RefuseRedirects');
     expect(helper).not.toMatch(/is_horse|horse_id/);
     expect(helper).not.toMatch(/print\([^)]*service_key/);

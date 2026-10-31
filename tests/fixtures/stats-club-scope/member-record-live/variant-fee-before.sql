@@ -35,5 +35,19 @@ INSERT INTO accounting_tournament_fee_sources VALUES
  ('60000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000002','60000000-0000-0000-0000-0000000000a1','2026-10-25 23:59:59.999999Z',100),
  ('60000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000002','60000000-0000-0000-0000-0000000000a1','2026-10-30 00:00Z',100),
  ('60000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000002','60000000-0000-0000-0000-0000000000a1','2025-12-31 12:00Z',100);
+-- The receipt cases below use fixed UTC dates. Their six predecessor cash
+-- facts used current_date-1, so they left this range at 2026-10-31 UTC midnight.
+-- Anchor only those exact cash facts before capturing the non-fee baseline.
+DO $$ DECLARE changed integer;
+BEGIN
+ UPDATE ca_hand_facts SET played_at='2026-10-28 03:00Z'::timestamptz
+ WHERE club_id='60000000-0000-0000-0000-000000000001'
+   AND user_id='60000000-0000-0000-0000-000000000002'
+   AND table_id='60000000-0000-0000-0000-000000000005'
+   AND tournament_id IS NULL
+   AND hand_id IN (SELECT ('60000000-0000-0000-0002-'||lpad(n::text,12,'0'))::uuid FROM generate_series(1,6) n);
+ GET DIAGNOSTICS changed=ROW_COUNT;
+ IF changed<>6 THEN RAISE EXCEPTION 'Variant fee fixture expected six exact cash facts, got %',changed; END IF;
+END $$;
 CREATE TABLE variant_fee_baseline AS SELECT ca_club_member_statistics('60000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000002','NLH','2026-10-26','2026-10-29') variant,
  ca_club_member_statistics('60000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000002',NULL,NULL,NULL) all_games;

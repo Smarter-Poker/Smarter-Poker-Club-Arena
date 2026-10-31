@@ -76,12 +76,16 @@ release's own run key as the operator and the reason.
   released is retried on every later pass while the file exists - the
   break-over check runs on every pass, not only the legacy one. A retried
   transaction (systemd restart after a signalled exit) inherits its
-  predecessor's hold from the file. A refused resume (`CLUSTER_FROZEN`, say)
-  is asked again under a new attempt number: the door replays a repeated
-  request id with its first answer, refusals included, so a retry under the
-  same id could never succeed. A partly released hold is re-held under a new
-  generation at the next qualifying break, and that generation asks again
-  about Clusters another operator had paused last time. A hold that still cannot be released stays on disk and says so.
+  predecessor's hold from the file. The helper is the v2 journal of #8816
+  (candidates and pending requests persisted before sending, each outcome
+  resolved by its exact original request id through `resolve_release_hold`);
+  reconciled on top of it: `--generation N`, because the door replays a
+  repeated request id with its first answer and does nothing again, so a
+  release that holds again at a later qualifying break uses a per-generation
+  journal (`<run>.lightning-hold.gN.json`) and ids carrying `:gN`. A refused
+  resume keeps the door's first answer by the journal's design: the
+  transaction says so once, retries at exit and through the fence, and an
+  operator resumes the Cluster through the Phase 13 door. A hold that still cannot be released stays on disk and says so.
 - `engine-release-recover.sh --mode terminal` is the second reader: it resumes
   a hold file left behind, loudly, without blocking terminal retirement.
 - `install-engine-supervisor.sh`: the helper is in `REQUIRED_FILES` and the
@@ -101,7 +105,7 @@ already runs for that transaction.
 
 ## Tests
 
-- `tests/operations/engine-release-lightning-hold.test.py` - 18 unit tests
+- `tests/operations/engine-release-lightning-hold.test.py` - 29 unit tests (the v2 journal's 28 plus the generation case)
   over the helper with a scripted operator door.
 - `tests/lightning-is-held-for-the-engine-cutover.law.test.ts` - packaging,
   the placement gate, the release-on-every-exit wiring, the second reader,

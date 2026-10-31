@@ -556,6 +556,19 @@
         "path": "server/scripts/retained-original-checkpoint-guard.mjs",
         "sha256": "7acf0cb7778fcbbcf382f55a6a5ebd2ae90068af3497c199c1c711db50fa5c32"
       }
+    },
+    {
+      "id": "2026-10-31-cashier-frozen-recovery-hold-ownership-next-55",
+      "ownerOrder": "Dan directly in this continuing Cashier and frozen-tournament recovery chat01a18a0c ordered: \"Finish the remaining checks and migration installation, deploy through the next safe hand-drain window\" and \"verify every frozen tournament is playing again\" without interrupting live hands. This NEW fixed single-activation carrier delivers the demonstrated held-next-permit custody correction and durable Lightning hold outcome/ownership correction, not an extension or reuse of the old host20s receipt carrier. The old guard could accept completed handN while a stopped shadow retained unresolved permitN+1; the former helper could omit a committed pause after a lost response, and unscoped resume could release a later foreign hold. Before admission require protected inclusion of PR8809 guard SHA256b8e43e73864d46db088096474d0334f22076e83c1ce70b8a50c382a3a2cae312, PR8816 helper SHA2564ab54bdd41159f69d4eef5f5b9f7d3f03bb64bafde6d95b3be470a969509fb4d, and INSTALLED migration20261030235825 operator definition MD58ee8d46e5e8045ca727ea7684a3474c3 with exact history/security/ACL/RLS/registry readback. Protected minimum671f7741c4302f92c3487a8cccf32a9ef17c3140 retains the prior MAIN fixture correction; ancestry alone does not prove these newer repairs. Require current-head checks, composed real MAIN Docker Node22.23.2 qualification, exact EED33 cases and29 runtime pins. Preparation/admission00:20UTC through03:10UTC October31 only; announce at Chicago minute53 and activate at55 after all existing guards pass. Preserve all58 old entries' raw bytes, relative order, expiry and witnesses, and all databaseWindows. Never extend, retarget or resume old671/816/a18 or expired authority. Original c05 guard/cleanup/effects remainUNKNOWN, never replayed or cleared by a later closed listener. Use only the existing stage/receiver and original locked release transaction, fresh exact runtime/image/process/PID/start/netns/socket/endpoint/exclusive-client qualification, O_EXCL/fsynced claim before one ACK. Preserve20s MAIN total/full5s remote close,40s checkpoint/5s cleanup,245s proof/135s rollback/full285s cutover reserve;120s last-hand notice, actual hand-boundary drain,300s durable database freeze/reservation certificate, rolling one-window-per-hour seal, rollback and completed OWN healthy v3 thaw. Resolve pending Lightning original requests without recreating pauses after thaw; expected-pause CAS must never resume a foreign replacement hold. No forced hand/action, discarded original, invented winner, chip/seat/balance write, payout/migration replay, foreign Inspector close, MAIN signal/kill, direct restart, new phase, second publisher, watcher, timer or recurring repair. This NEW floor witness is consumed once served; no future automatic extension. Actual original15/128/110, complete physical/Lightning cohort progression and fifteen ACTIVE minutes after adoption remain required; source authority proves none. Non-engine delivery remains immediate.",
+      "contains": "671f7741c4302f92c3487a8cccf32a9ef17c3140",
+      "notBefore": "2026-10-31T00:20:00Z",
+      "notAfter": "2026-10-31T03:10:00Z",
+      "announceAtChicagoMinutes": [53],
+      "migrations": [],
+      "releaseWitness": {
+        "path": "server/release/activation-floor.json",
+        "sha256": "626eabb5a81a572158beef4982a82cf8d0e9a9815d48d587701cf250c53a9fab"
+      }
     }
   ],
   "databaseWindows": [

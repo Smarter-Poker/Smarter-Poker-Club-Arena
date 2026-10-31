@@ -172,15 +172,19 @@ bounded_recovery_command 15 "$CONTROL_DIR/engine-release-seal.py" attest-termina
 # (engine-release-transaction.sh release_lightning_hold) is this fence's second
 # reader. Resume is idempotent through its own request ids; a refusal is loud
 # and leaves the hold file on disk, it never blocks terminal retirement.
-LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
-if [ -e "$LIGHTNING_HOLD_FILE" ]; then
+# Every generation's journal: generation 1 is `<run>.lightning-hold.json`,
+# later ones `<run>.lightning-hold.gN.json` (engine-release-transaction.sh).
+for LIGHTNING_HOLD_FILE in "$REQUEST_ROOT/$RUN_ID.lightning-hold.json" "$REQUEST_ROOT/$RUN_ID.lightning-hold.g"*".json"; do
+  [ -e "$LIGHTNING_HOLD_FILE" ] || continue
+  LIGHTNING_HOLD_GENERATION=1
+  case "$LIGHTNING_HOLD_FILE" in *.lightning-hold.g*.json) LIGHTNING_HOLD_GENERATION="${LIGHTNING_HOLD_FILE##*.lightning-hold.g}"; LIGHTNING_HOLD_GENERATION="${LIGHTNING_HOLD_GENERATION%.json}" ;; esac
   if bounded_recovery_command 60 "$LIGHTNING_HOLD" resume \
-    --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5; then
-    echo '[engine-release-recover] released the Lightning hold the transaction left behind'
+    --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --generation "$LIGHTNING_HOLD_GENERATION" --timeout-seconds 5; then
+    echo "[engine-release-recover] released the Lightning hold the transaction left behind ($LIGHTNING_HOLD_FILE)"
   else
     echo "[engine-release-recover] FATAL: the Lightning hold for run $RUN_ID is still not released; $LIGHTNING_HOLD_FILE retained for an operator" >&2
   fi
-fi
+done
 
 # Remove the generation pin first while intent, request, and the enabled boot
 # edge still exist. A crash here simply replays the request and recreates the

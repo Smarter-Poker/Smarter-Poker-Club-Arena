@@ -417,11 +417,30 @@ AWAITING_CERTIFICATE_FILE="$REQUEST_ROOT/$RUN_ID.awaiting-certificate"
 # The hold is a durable file beside the request so a resume survives this
 # process: recover_on_exit releases it on every exit path, and
 # engine-release-recover.sh --mode terminal is its second reader.
-LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
+# One journal per hold GENERATION: the door answers a repeated request id with
+# its first answer, so a release that holds again at a later qualifying break
+# needs new ids and a new journal (generation 2 is `<run>.lightning-hold.g2.json`
+# and its ids carry `:g2`). The generation is one more than the released
+# journals already on disk for this run.
+lightning_hold_generation() {
+  local n=0 f
+  for f in "$REQUEST_ROOT/$RUN_ID.lightning-hold.json.released" "$REQUEST_ROOT/$RUN_ID.lightning-hold.g"*".json.released"; do
+    [ -e "$f" ] && n=$((n + 1))
+  done
+  printf '%s\n' $((n + 1))
+}
+lightning_hold_file_for() {
+  if [ "$1" -le 1 ]; then printf '%s\n' "$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
+  else printf '%s\n' "$REQUEST_ROOT/$RUN_ID.lightning-hold.g$1.json"; fi
+}
+LIGHTNING_HOLD_GENERATION="$(lightning_hold_generation)"
+LIGHTNING_HOLD_FILE="$(lightning_hold_file_for "$LIGHTNING_HOLD_GENERATION")"
 # A retried transaction (systemd Restart after a signalled exit) inherits the
 # hold its predecessor could not release: seed from the file, never from 0.
 LIGHTNING_HOLD_PLACED=0
 [ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1
+LIGHTNING_HOLD_REFUSED_LOGGED=0
+LIGHTNING_HOLD_LAST_RC=0
 [[ "$AWAITING_CERTIFICATE_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.awaiting-certificate$ ]] \
   || die 'unsafe awaiting-certificate marker path'
 rm -f -- "$AWAITING_CERTIFICATE_FILE"
@@ -446,16 +465,7 @@ fi
 # admits or refuses the checkpoint by itself (the census guard still decides).
 hold_lightning_when_counting_down() {
   local response http_code body rc
-  if [ "$LIGHTNING_HOLD_PLACED" = 1 ]; then
-    # A placed hold is not re-asked - unless it is a partly released one, whose
-    # resumed Clusters are dealing again and must be re-held (new generation).
-    [ -e "$LIGHTNING_HOLD_FILE" ] && python3 -c '
-import json, sys
-try: d = json.load(open(sys.argv[1]))
-except Exception: raise SystemExit(1)
-raise SystemExit(0 if d.get("resume_refused") else 1)
-' "$LIGHTNING_HOLD_FILE" 2>/dev/null || return 0
-  fi
+  [ "$LIGHTNING_HOLD_PLACED" = 0 ] || return 0
   [ -z "${DRILL_MODE:-}" ] || return 0
   response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 0
@@ -497,7 +507,7 @@ raise SystemExit(0 if ok else 1)
   # 5 s per call keeps twelve round trips inside the outer budget.
   rc=0
   timeout --signal=TERM --kill-after=2s 90s \
-    "$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5 || rc=$?
+    "$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --generation "$LIGHTNING_HOLD_GENERATION" --timeout-seconds 5 || rc=$?
   case "$rc" in
     0|1) LIGHTNING_HOLD_PLACED=1 ;;
     126|127) echo "[engine-release-transaction] WARN: the Lightning hold helper could not run (exit $rc); Lightning was NEVER ASKED to pause this pass and the census guard decides on its own" >&2 ;;
@@ -513,6 +523,7 @@ raise SystemExit(0 if ok else 1)
 release_lightning_hold_if_break_over() {
   local response http_code body
   [ "$LIGHTNING_HOLD_PLACED" = 1 ] || return 0
+  [ "${LIGHTNING_HOLD_LAST_RC:-0}" != 1 ] || [ "$LIGHTNING_HOLD_REFUSED_LOGGED" = 0 ] || return 0
   response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 0
   http_code="${response##*$'\n'}"
@@ -526,9 +537,21 @@ m = d.get("maintenance") if isinstance(d, dict) else None
 raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get("active") is not True else 1)
 ' 2>/dev/null || return 0
   release_lightning_hold 0 0 1
-  # Released means the file is gone. A hold that could not be released keeps
-  # LIGHTNING_HOLD_PLACED=1 so this pass runs again and again until it is.
-  [ -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=0
+  if [ ! -e "$LIGHTNING_HOLD_FILE" ]; then
+    # Released: the next qualifying break holds again under a new generation.
+    LIGHTNING_HOLD_PLACED=0
+    LIGHTNING_HOLD_REFUSED_LOGGED=0
+    LIGHTNING_HOLD_GENERATION="$(lightning_hold_generation)"
+    LIGHTNING_HOLD_FILE="$(lightning_hold_file_for "$LIGHTNING_HOLD_GENERATION")"
+    return 0
+  fi
+  # Not released: an UNKNOWN outcome is retried every pass; a named refusal
+  # (the journal keeps the door's first answer by design) is said once and
+  # left to the exit path and the fence, not asked again every five seconds.
+  if [ "${LIGHTNING_HOLD_LAST_RC:-0}" = 1 ] && [ "$LIGHTNING_HOLD_REFUSED_LOGGED" = 0 ]; then
+    echo "[engine-release-transaction] WARN: the Lightning hold journal holds a refused resume; it is retried at exit and by engine-release-recover.sh, and an operator may resume the Cluster through the Phase 13 door" >&2
+    LIGHTNING_HOLD_REFUSED_LOGGED=1
+  fi
   return 0
 }
 
@@ -582,10 +605,11 @@ raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get
   for attempt in $(seq 1 "$attempts"); do
     rc=0
     timeout --signal=TERM --kill-after=2s "${budget}s" \
-      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5 || rc=$?
-    [ "$rc" -ne 0 ] || return 0
+      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --generation "$LIGHTNING_HOLD_GENERATION" --timeout-seconds 5 || rc=$?
+    [ "$rc" -ne 0 ] || { LIGHTNING_HOLD_LAST_RC=0; return 0; }
     [ "$attempt" -lt "$attempts" ] && sleep 15
   done
+  LIGHTNING_HOLD_LAST_RC="$rc"
   echo "[engine-release-transaction] FATAL: the Lightning hold for run $RUN_ID could not be released (exit $rc); $LIGHTNING_HOLD_FILE stays on disk and is retried on the next pass or by engine-release-recover.sh" >&2
   return 0
 }
@@ -2238,14 +2262,7 @@ if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announce
   ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" admit \
     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
     --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
-  # An announced owner whose window has since expired reads 'legacy' from a
-  # fresh admit (an expired floor is no floor, 2026-10-30). Its announcement
-  # was made under that window, so it ends here by name rather than carrying
-  # on as a routine release that never announced.
-  if [ "$FLOOR_DISPOSITION" = announced ] && [ "$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("schema",""))')" = legacy-no-activation-floor ]; then
-    die 'this run announced inside an owner window that has since expired; its runtime entry is refused'
-  fi
-  ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("expiresEpoch", 0))')"
+  ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expiresEpoch"])')"
   ACTIVATION_FLOOR_OWNER_WINDOW="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerWindowId") or "")')"
 fi
 

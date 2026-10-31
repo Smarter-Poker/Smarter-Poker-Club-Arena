@@ -400,16 +400,17 @@ describe('Find Your Game starts with two separate sections', () => {
   });
 });
 
-it('keeps the saved cash tab behind the closed section until it is opened', async () => {
+it('opens the saved cash section and tab immediately on return', async () => {
   h.setupReads = [DONE];
   localStorage.setItem(
     'ca_lobby_view_viewer:club-a',
     JSON.stringify({ tab: 'OMAHA', sortByTab: {}, favoritesOnly: false })
   );
   await mountLobby();
-  expect(screen.queryByRole('tablist', { name: 'Game Type' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
-  await flush();
+  expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
   expect(screen.getByRole('tab', { name: 'PLO', exact: true }).getAttribute('aria-selected')).toBe(
     'true'
   );

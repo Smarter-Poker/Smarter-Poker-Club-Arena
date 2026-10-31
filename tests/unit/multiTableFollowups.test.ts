@@ -105,7 +105,7 @@ describe('Browse Full Lobby lands on its list once per request', () => {
 
   it('every request stamps the list AND a fresh nonce, the same list included', () => {
     expect(open).toContain('lobbyLandingNonceRef.current += 1;');
-    expect(open).toContain('lobbyGameType: list, lobbyLandingNonce: nonce');
+    expect(open).toMatch(/lobbyGameType: list,\s*lobbyLandingNonce: nonce/);
     // The old guard made a repeat request for the same list a no-op.
     expect(open).not.toContain('t.lobbyGameType !== list');
     expect(open).toContain('cur.some(isLobbyTab)');

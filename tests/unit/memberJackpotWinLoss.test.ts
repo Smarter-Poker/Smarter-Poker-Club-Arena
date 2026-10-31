@@ -19,6 +19,10 @@ describe('paid jackpot member reporting qualification', () => {
     expect(runner).toContain(migration);
     expect(runner).toContain('"$fixture/regression.sql"');
     expect(runner).toContain('"$fixture/assertions.sql"');
+    expect(runner).toContain('"$fixture/everyone-assertions.sql"');
+    expect(runner).toContain(
+      '20261031044413_preserve_every_paid_jackpot_reporting_owner_and_wallet_recei.sql'
+    );
     expect(runner).toContain('Paid jackpot missing from Win/Loss');
     expect(runner).toContain('Asynchronous notification.*jackpot_fixture_committed');
   });

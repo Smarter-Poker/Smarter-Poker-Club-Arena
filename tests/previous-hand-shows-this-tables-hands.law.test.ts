@@ -71,10 +71,10 @@ describe('the correct hands', () => {
     expect(svc).not.toContain(".order('created_at', { ascending: false })\n      .limit(limit)");
     const page = read('src/pages/TablePage.tsx');
     expect(page).toMatch(
-      /handHistoryService\.getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,?\s*\}\)/
+      /handHistoryService\.getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*gameMode: tableHistoryGameMode,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,?\s*\}\)/
     );
     expect(page).toMatch(
-      /handHistoryService\.getPlayerHands\(userId, 1, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,?\s*\}\)/
+      /handHistoryService\.getPlayerHands\(userId, 1, \{\s*tableId,\s*gameMode: tableHistoryGameMode,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,?\s*\}\)/
     );
     // A Lightning room is a session rather than a physical table. Its existing
     // self-only RPC resolves exact canonical rows through the same RLS reader.
@@ -106,7 +106,7 @@ describe('the correct hands', () => {
     expect(page).not.toContain('if (!cancelled && hands && hands.length > 0) {');
     // and the table id is a dependency of the fetch
     expect(page).toMatch(
-      /\}, \[showHandHistory, showHandDetail, userId, tableId, lightningRoom\?\.poolSessionId, lastHandId\]\);/
+      /\}, \[\s*showHandHistory,\s*showHandDetail,\s*userId,\s*tableId,\s*lightningRoom\?\.poolSessionId,\s*lastHandId,\s*tableHistoryGameMode,?\s*\]\);/
     );
   });
 

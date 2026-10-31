@@ -108,6 +108,7 @@ const AGENT_ROLE = {
 };
 
 let rpcPayload: Record<string, unknown> = {};
+let pageSearch = '';
 let rakeMode: 'ok' | 'error' | 'throw' = 'ok';
 let rolesMode: 'none' | 'agent' | 'error' | 'throw' = 'none';
 
@@ -162,7 +163,7 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
 vi.mock('react-router-dom', () => ({
   useParams: () => ({}),
   useNavigate: () => vi.fn(),
-  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  useSearchParams: () => [new URLSearchParams(pageSearch), vi.fn()],
   useLocation: () => ({ pathname: '/stats', search: '', hash: '', state: null, key: 'test' }),
   Link: ({ to, children }: { to: string; children?: unknown }) => <a href={to}>{children}</a>,
 }));
@@ -251,6 +252,7 @@ function payload(overall: Record<string, unknown>, lifetimeHands: number) {
       target_user_id: 'user-1',
       club_id: null,
       asset: 'chips',
+      game_mode: 'cash',
       range_days: null,
       range_tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
       visibility: 'owner',
@@ -292,6 +294,7 @@ function payload(overall: Record<string, unknown>, lifetimeHands: number) {
 }
 
 beforeEach(() => {
+  pageSearch = '';
   localStorage.clear();
   clearStatsRangeMemo();
   reportErrorMock.mockReset();
@@ -300,7 +303,7 @@ beforeEach(() => {
   rpcPayload = payload(PLAYED_OVERALL, 2_000);
   rpcMock.mockReset();
   rpcMock.mockImplementation(async (fn: string) => {
-    if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
+    if (fn === 'ca_player_stats_overview_separated') return { data: rpcPayload, error: null };
     return { data: null, error: null };
   });
   getRakeStats.mockReset();
@@ -445,23 +448,23 @@ async function hero() {
 }
 
 describe('the hero hand count says when it is lifetime (defect 5)', () => {
-  it('labels the all-time count Lifetime Hands when it is the larger figure', async () => {
+  it('labels the larger known-mode count Recorded Cash Hands', async () => {
     rpcPayload = payload(PLAYED_OVERALL, 50_000);
     render(<PlayerStatsPage />);
     const h = await hero();
     expect(await within(h).findByText('50,000')).toBeInTheDocument();
-    expect(within(h).getByText('Lifetime Hands')).toBeInTheDocument();
+    expect(within(h).getByText('Recorded Cash Hands')).toBeInTheDocument();
     expect(within(h).getByText('2,000 Analysed')).toBeInTheDocument();
-    expect(within(h).queryByText('Total Hands')).not.toBeInTheDocument();
+    expect(within(h).queryByText('Cash Hands')).not.toBeInTheDocument();
     expect(within(h).queryByText('Hands Played')).not.toBeInTheDocument();
   }, 12_000);
 
-  it('says Total Hands when the lifetime and analysed counts agree', async () => {
+  it('says Cash Hands when the recorded and analysed counts agree', async () => {
     render(<PlayerStatsPage />);
     const h = await hero();
     expect(await within(h).findByText('2,000')).toBeInTheDocument();
-    expect(within(h).getByText('Total Hands')).toBeInTheDocument();
-    expect(within(h).queryByText('Lifetime Hands')).not.toBeInTheDocument();
+    expect(within(h).getByText('Cash Hands')).toBeInTheDocument();
+    expect(within(h).queryByText('Recorded Cash Hands')).not.toBeInTheDocument();
   }, 12_000);
 
   it('never calls the analysed count lifetime while the lifetime index is catching up', async () => {
@@ -469,8 +472,8 @@ describe('the hero hand count says when it is lifetime (defect 5)', () => {
     render(<PlayerStatsPage />);
     const h = await hero();
     expect(await within(h).findByText('2,000')).toBeInTheDocument();
-    expect(within(h).getByText('Total Hands')).toBeInTheDocument();
-    expect(within(h).queryByText('Lifetime Hands')).not.toBeInTheDocument();
+    expect(within(h).getByText('Cash Hands')).toBeInTheDocument();
+    expect(within(h).queryByText('Recorded Cash Hands')).not.toBeInTheDocument();
   }, 12_000);
 });
 
@@ -523,17 +526,19 @@ describe('the hero does not rate an empty sample (defect 3, hero)', () => {
     expect(value.className).not.toMatch(/\b(positive|negative)\b/);
   }, 12_000);
 
-  it('tournament-only hands: hands won is measured, BB/100 is not', async () => {
-    rpcPayload = payload(
+  it('tournament-only hands show measured wins in their own view without a cash hero or BB/100', async () => {
+    pageSearch = '?gameMode=tournament';
+    const data = payload(
       { ...PLAYED_OVERALL, cash_hands: 0, tourney_hands: 2_000, bb_per_100: 0 },
       2_000
     );
+    rpcPayload = { ...data, scope: { ...data.scope, game_mode: 'tournament' } };
     render(<PlayerStatsPage />);
-    const h = await hero();
-    await waitFor(() => expect(within(h).getAllByText(NOT_YET_MEASURED)).toHaveLength(1));
-    expect(h.querySelector('.gauge-center .gauge-value')).not.toBeNull();
-    const bb = within(h).getByText('BB/100').parentElement as HTMLElement;
-    expect(bb.querySelector('.hero-stat-value')).toHaveTextContent(NOT_YET_MEASURED);
+    const playing = await screen.findByRole('region', { name: 'Tournament Playing Statistics' });
+    expect(within(playing).getByText('400')).toBeInTheDocument();
+    expect(within(playing).getByText('2,000')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Headline Performance' })).not.toBeInTheDocument();
+    expect(screen.queryByText('BB/100')).not.toBeInTheDocument();
   }, 12_000);
 
   it('a measured cash win rate still prints its number and its colour', async () => {

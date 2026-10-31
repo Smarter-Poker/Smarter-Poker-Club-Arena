@@ -45,7 +45,7 @@ parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/club-welcom
 args = parser.parse_args()
 out = args.output.resolve(); out.mkdir(parents=True, exist_ok=False)
 pg = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
-local_scratch = Path('/Volumes/SmarterWork/agent-work')
+local_scratch = Path(os.environ.get('WELCOME_FIXTURE_PARENT', '/Volumes/SmarterWork/agent-work'))
 cluster = Path(tempfile.mkdtemp(prefix='wpg-', dir=local_scratch if local_scratch.is_dir() else None))
 socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
@@ -83,9 +83,13 @@ def run_refusal(name, sql, expected_error):
     if not ok: raise RuntimeError(name+': '+r.stderr[-2000:]+r.stdout[-1000:])
 
 def run_lock_race(name, holder_sql, contender_sql, minimum_wait=1.0):
+    # A full reset returns more than a pipe buffer on some hosts. Retain all
+    # output without blocking its COMMIT/ROLLBACK behind the waiting contender.
+    holder_output = tempfile.TemporaryFile(mode='w+t')
+    holder_errors = tempfile.TemporaryFile(mode='w+t')
     holder = subprocess.Popen(
-        [str(x) for x in psql], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, text=True, env=env
+        [str(x) for x in psql], stdin=subprocess.PIPE, stdout=holder_output,
+        stderr=holder_errors, text=True, env=env
     )
     assert holder.stdin is not None
     holder.stdin.write(holder_sql)
@@ -95,8 +99,9 @@ def run_lock_race(name, holder_sql, contender_sql, minimum_wait=1.0):
     contender = command(psql, contender_sql)
     elapsed = time.monotonic() - started
     holder.wait(timeout=120)
-    holder_stdout = holder.stdout.read() if holder.stdout else ''
-    holder_stderr = holder.stderr.read() if holder.stderr else ''
+    holder_output.seek(0); holder_errors.seek(0)
+    holder_stdout = holder_output.read(); holder_stderr = holder_errors.read()
+    holder_output.close(); holder_errors.close()
     ok = holder.returncode == 0 and contender.returncode == 0 and elapsed >= minimum_wait
     (out/f'{name}.log').write_text(
         '-- HOLDER SQL\n'+holder_sql+'\n-- HOLDER OUT\n'+holder_stdout+'\n-- HOLDER ERR\n'+holder_stderr+
@@ -1637,6 +1642,9 @@ SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{c25}'),
   FROM club_welcome_package_items WHERE club_id='{c25}';
 """,'10|12|21|100000|0')
     run('acl',"SELECT has_function_privilege('anon','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE'),has_function_privilege('authenticated','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE');",'f|t')
+    if args.certification_club_scope:
+        from welcome_parent_lock_order import qualify
+        qualify(globals())
     results['passed']=all(c['passed'] for c in results['cases'])
 finally:
     command([pg/'pg_ctl','-D',cluster/'data','-m','immediate','stop'])

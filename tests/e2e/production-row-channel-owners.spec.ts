@@ -138,6 +138,8 @@ test('both club views keep receiving rows and one survives the other unmounting'
     `${CASH_TABLE_CARD_SELECTOR}[data-id="${subject.tableId}"]:visible`
   );
   await selected.getByRole('button', { name: /^Details:/ }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get('game')).toBe(subject.tableId);
+  const returnToLobby = page.url();
   await page
     .getByRole('dialog')
     .filter({ has: page.locator('.arena-game-card') })
@@ -155,7 +157,7 @@ test('both club views keep receiving rows and one survives the other unmounting'
   await expect.poll(() => [...owners.values()].filter((owner) => owner.joined).length).toBe(1);
   const retainedTopic = [...owners.keys()][0];
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/clubs/${CLUB_ID}(?:[?#]|$)`));
+  await expect(page).toHaveURL(returnToLobby);
   await expect.poll(() => [...owners.values()].filter((owner) => owner.joined).length).toBe(2);
   await expect
     .poll(() => [...owners.values()].every((owner) => owner.updates > 0), { timeout: 30_000 })

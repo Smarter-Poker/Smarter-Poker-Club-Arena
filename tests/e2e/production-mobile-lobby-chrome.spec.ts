@@ -492,8 +492,10 @@ test.describe('the mobile lobby chrome on production', () => {
       // through the real tab menu so this case exercises that exact branch.
       const lobbyId = await lobbyTab.getAttribute('data-tabid');
       const observerId = new URL(tableUrl).pathname.split('/').pop()!;
-      await lobbyTab.click({ button: 'right' });
-      await page.getByRole('button', { name: 'Move Left', exact: true }).click();
+      await lobbyTab.click({ button: 'right', noWaitAfter: true });
+      await page
+        .getByRole('button', { name: 'Move Left', exact: true })
+        .click({ noWaitAfter: true });
       await expect(actionBar.locator('[data-tabid]').nth(0)).toHaveAttribute(
         'data-tabid',
         lobbyId!
@@ -535,13 +537,20 @@ test.describe('the mobile lobby chrome on production', () => {
         'Details left the running table route'
       ).toBe(true);
       // Only the player's explicit Close Lobby gesture removes this page.
-      await lobbyTab.click({ button: 'right' });
-      await page.getByRole('button', { name: 'Close Lobby', exact: true }).click();
+      await lobbyTab.click({ button: 'right', noWaitAfter: true });
+      await page
+        .getByRole('button', { name: 'Close Lobby', exact: true })
+        .click({ noWaitAfter: true });
       await expect(actionBar.locator('[data-tabid^="lobby:"]')).toHaveCount(0);
       await expect(actionBar.locator(`[data-tabid="${observerId}"]`)).toHaveAttribute(
         'aria-current',
         'true'
       );
+      expect(page.url()).toBe(tableUrl);
+      expect(
+        routeTrace.every((url) => url === tableUrl),
+        'Closing The Lobby Left The Running Table Route'
+      ).toBe(true);
       expect(participation, 'spectator navigation attempted participation').toEqual([]);
     } finally {
       page.off('framenavigated', observeRoute);

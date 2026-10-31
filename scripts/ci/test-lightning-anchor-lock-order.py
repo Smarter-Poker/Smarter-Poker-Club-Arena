@@ -106,6 +106,7 @@ BEGIN
   IF cycle IS NOT TRUE THEN RAISE EXCEPTION 'baseline did not reproduce cycle: settle%, form%, error%',r,m,err;END IF;
  ELSE
   IF cycle IS TRUE OR r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'candidate cycle/settlement failure: settle%,form%,error%',r,m,err;END IF;
+  IF m IS NULL OR (coalesce((m->>'formed')::boolean,false) IS NOT TRUE AND m->>'reason' IS DISTINCT FROM 'insufficient_legal_candidates') THEN RAISE EXCEPTION 'candidate formation did not finish its real boundary: %',m;END IF;
   IF (SELECT count(*) FROM hand_atomic_commits WHERE hand_id=(r->>'hand_history_id')::uuid)<>1 THEN RAISE EXCEPTION 'not one physical commit';END IF;
   r:=harness.settle(c.hand_id,c.request_id,c.results,0,0);
   IF r->>'replay' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'duplicate request not original receipt';END IF;

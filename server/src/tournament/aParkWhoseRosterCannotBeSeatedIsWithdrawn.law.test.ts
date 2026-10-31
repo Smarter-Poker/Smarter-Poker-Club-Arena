@@ -54,7 +54,8 @@ function fullField(freeAt: number[] = []) {
 
 function fixture(
   withdrawAnswer: 'withdrawn' | 'roster_fits' = 'withdrawn',
-  parkGeneration: string = lease
+  parkGeneration: string = lease,
+  sourcePlayers = 9
 ) {
   const calls: { name: string; params: any }[] = [];
   const park = {
@@ -99,7 +100,7 @@ function fixture(
   });
   vi.spyOn(engine, 'hasReleasedProcessOwnership').mockImplementation(() => !engine.running);
 
-  const seats = Array.from({ length: 9 }, (_, n) => ({
+  const seats = Array.from({ length: sourcePlayers }, (_, n) => ({
     id: id(200 + n),
     user_id: player(n + 1),
     seat_number: n + 1,
@@ -248,4 +249,25 @@ it('a park an earlier generation left is claimed by the live one before it is wi
   });
   expect(f.park.custody_id).not.toBe(custody);
   expect(f.manager.readmitContinuedNoStartTable).toHaveBeenCalledWith(source, f.engine);
+});
+
+// Friday Feature: five source players cannot fit beside six players at nine max.
+it('claims a null-custody park before withdrawing an unplaceable five-player source', async () => {
+  const f = fixture('withdrawn', lease, 5);
+  Object.assign(f.park, { custody_id: null, custody_generation: null, revision: '0' });
+  f.manager.eligibleBreakDestinations = vi.fn(async () => fullField([3]).slice(0, 1));
+  let now = 1_000_000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  await f.manager.recoverTournamentBreak({ ...f.park });
+  expect(f.manager.lastBreakPreparationRefusal(breakId)).toMatch(/^destinations_full:3_of_5/);
+  expect(f.stop).not.toHaveBeenCalled();
+  now += TournamentManager.UNPLACEABLE_PARK_GRACE_MS;
+  await f.manager.recoverTournamentBreak({ ...f.park });
+  expect(names(f.calls).filter((n) => n !== 'fn_f06_break_state')).toEqual([
+    'fn_f06_claim_custody',
+    'fn_f06_withdraw_unplaceable_park',
+  ]);
+  expect(f.stop).toHaveBeenCalledTimes(1);
+  expect(f.manager.readmitContinuedNoStartTable).toHaveBeenCalledWith(source, f.engine);
+  expect(f.manager.durableTournamentBreaks.has(breakId)).toBe(false);
 });

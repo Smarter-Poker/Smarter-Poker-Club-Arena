@@ -31,6 +31,9 @@ INSERT INTO public.hand_history(id,created_at,started_at,ended_at,table_id,tourn
 SELECT hand_id,played_at,played_at-interval '1minute',played_at,table_id,tournament_id,CASE WHEN tournament_id IS NULL THEN 990001 ELSE 990002 END,game_variant,
  jsonb_build_array(jsonb_build_object('userId',user_id)), '[]'::jsonb,returned,big_blind
 FROM public.ca_hand_facts WHERE hand_id::text LIKE '99000000%';
+INSERT INTO public.ca_hand_player_stat(user_id,hand_id,created_at,is_cash,tournament_id,game_variant,big_blind,seat_position,my_blind,won_amt,is_winner,invested_actions,vpip,pfr,profit,asset,n_players)
+SELECT user_id,hand_id,played_at,tournament_id IS NULL,tournament_id,game_variant,big_blind,position,0,returned,returned>0,invested,vpip,pfr,net,'chips',players_dealt
+FROM public.ca_hand_facts WHERE hand_id::text LIKE '99000000%';
 CREATE TEMP TABLE separated_expected AS
 SELECT cash,count(*) hands,count(*) FILTER(WHERE vpip) vpip_hands,sum(net) net FROM (
  SELECT coalesce(s.is_cash,f.tournament_id IS NULL) cash,coalesce(f.vpip,s.vpip) vpip,coalesce(f.net,s.profit) net

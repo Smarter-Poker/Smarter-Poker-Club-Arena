@@ -12,6 +12,10 @@ DO $$ DECLARE m text; v jsonb; c jsonb; e record; h record; BEGIN
   OR m='tournament' AND ((v#>>'{overall,cash_hands}')::int<>0 OR (v#>>'{overall,total_profit}')::numeric<>0 OR jsonb_array_length(v->'daily')<>0)
   THEN RAISE EXCEPTION 'Cash and tournament money/population leaked: %',v; END IF;
   IF (v#>>'{lifetime,hands}')::int<e.hands THEN RAISE EXCEPTION 'Known mode lifetime lost'; END IF;
+  v:=public.ca_player_hands_separated('20000000-0000-0000-0000-000000000001','biggest_won',1,'chips',m);
+  IF jsonb_array_length(v->'hands')<>1 OR (v#>>'{hands,0,is_tournament}')::boolean<>(m='tournament')
+  THEN RAISE EXCEPTION 'Mode ranking returned the other sample or an empty page: %',v; END IF;
+
   FOR h IN SELECT * FROM public.ca_own_hand_history_separated_by_club('10000000-0000-0000-0000-000000000001',NULL,1,0,m) LOOP
    IF (h.hand->>'tournament_id' IS NULL)<>(m='cash') THEN RAISE EXCEPTION 'Archive mode applied after page'; END IF;
   END LOOP;

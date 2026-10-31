@@ -210,6 +210,7 @@ BEGIN
     'variants',v_analysis->'variants','stakes',v_analysis->'stakes','sessions',v_analysis->'sessions',
     'tournaments',v_tournaments,'recent_tournaments',v_recent,
     'coverage',coalesce(v_base->'coverage','{}'::jsonb)||jsonb_build_object(
+      'lifetime_index_complete',false,
       'analysis_hand_cap',750,'analysis_sample_hands',least(v_total,750),
       'analysis_hands_capped',v_total>750),
     'quality',coalesce(v_base->'quality','{}'::jsonb)||jsonb_build_object(
@@ -567,7 +568,7 @@ WITH mine AS (
     -- The "biggest" modes rank chips, and tournament chips are not money: a
     -- -71,330 in a freeroll outranked every cash hand the player ever lost.
     -- Cash only for those; "recent" shows everything.
-    AND (v_mode = 'recent' OR s.is_cash)
+    -- Mode was selected before sampling; ranking is within that mode only.
   ORDER BY s.created_at DESC
   LIMIT CASE WHEN v_mode = 'recent' THEN v_limit ELSE c_window END
 ),

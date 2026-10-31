@@ -33,3 +33,5 @@ Access: CLI's environment token cannot read secret metadata; configured keyring 
 Current state: database source qualified locally; no PR/merge/install/publication yet. Client source retained privately for follow-up.
 
 Before database final validation: canonical policies fully re-read at 2026-10-31T16:24:55.232Z; version and all hashes unchanged from the receipt above. Database-only candidate restored in the owned checkout; client changes retained in this task's stash `cash-tournament-client-01a192bb` for the follow-up after installation. Final native mode+benchmark qualification passed after the benchmark producer change. New benchmark reads use `field:cash:<asset>`; no old mixed snapshot is renamed by the client.
+
+Database submission: commit `222866db235b7395686137e6f282f8b0ce2a250e` passed its normal pre-push hook and was pushed. Review added mode-consistent notable-hand ranking and aligned incomplete lifetime coverage metadata; native regression now exercises biggest-hand ranking in both modes. Client stash exact object: `ac92c23d892fc315fa0058619eaf0d805f49346f`. This is this task's source, not another writer's stash.

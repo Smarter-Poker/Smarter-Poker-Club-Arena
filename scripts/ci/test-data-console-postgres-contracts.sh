@@ -7,6 +7,7 @@ export DATA_CONSOLE_PG_SCRATCH_PARENT="${DATA_CONSOLE_PG_SCRATCH_PARENT:-$STATS_
 export UNION_OPS_PG_SCRATCH_PARENT="${UNION_OPS_PG_SCRATCH_PARENT:-$DATA_CONSOLE_PG_SCRATCH_PARENT}"
 
 scripts=(
+  scripts/dev/test-daily-revision-noop-postgres.sh
   scripts/dev/test-stats-cash-opportunities-postgres.sh
   scripts/dev/test-stats-club-scope-postgres.sh
   scripts/dev/test-stats-evidence-session-postgres.sh

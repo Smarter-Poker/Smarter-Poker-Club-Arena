@@ -79,6 +79,24 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
+    // Review the added tournament gate exactly, then retain every existing job pin.
+    const tournamentStep = {
+      name: 'Add-ons wait for the last late-entry level at transition and purchase',
+      if: 'matrix.shard == 4',
+      env: { PG_BIN: '/usr/lib/postgresql/17/bin' },
+      run: 'python3 -B scripts/ci/test-addon-after-entry-levels.py',
+    };
+    const tournamentSteps = normalized.jobs.accounting_postgres.steps;
+    const tournamentIndex = tournamentSteps.findIndex(
+      (entry: Record<string, unknown>) => entry.name === tournamentStep.name
+    );
+    expect(tournamentIndex).toBeGreaterThanOrEqual(0);
+    expect(
+      tournamentSteps.filter((entry: Record<string, unknown>) => entry.name === tournamentStep.name)
+    ).toHaveLength(1);
+    expect(tournamentSteps[tournamentIndex]).toStrictEqual(tournamentStep);
+    tournamentSteps.splice(tournamentIndex, 1);
+
     // Normalize only reviewed routing changes; the existing whole-job hashes
     // still enforce every command, assertion, timeout, artifact and ordering.
     const remappedSteps = [

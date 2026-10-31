@@ -1,3 +1,4 @@
+-- @live-proof: strpos(pg_get_functiondef('public.fn_close_tournament_entry_window(uuid,text)'::regprocedure),'addon_waiting_for_late_entry_levels')>0 AND strpos(pg_get_functiondef('public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure),'no early add-ons')>0 AND strpos(pg_get_functiondef('public.fn_close_tournament_addon_period(uuid,text)'::regprocedure),'addon_waiting_for_late_entry_levels')>0
 -- Owner 2026-10-31: add-ons start only after the final late-entry level.
 -- Afternoon Deep Stack 8b33a780 opened after elapsed minute 80 before level 8
 -- finished; 50 immutable purchases committed. Preserve receipts/finalized pools.

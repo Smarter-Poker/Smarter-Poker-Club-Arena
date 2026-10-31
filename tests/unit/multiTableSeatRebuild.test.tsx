@@ -193,7 +193,7 @@ vi.mock('../../src/services/SoundService', () => ({
   haptic: new Proxy({}, { get: () => vi.fn() }),
 }));
 vi.mock('../../src/hooks/useServerCashSessionProfit', () => ({
-  useServerCashSessionProfit: () => null,
+  useServerCashSessionProfit: () => ({}),
 }));
 vi.mock('../../src/services/SessionStatsService', () => ({
   sessionStatsService: { getStats: () => null, moveSession: state.moveSession },

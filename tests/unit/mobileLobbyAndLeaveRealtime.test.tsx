@@ -193,7 +193,7 @@ describe('a seat this device has left is never re-adopted', () => {
       /seat_number, user_id, occupancy_id, stack, status, is_sitting_out, leave_pending/
     );
     expect(PAGE).toMatch(
-      /'user_id, occupancy_id, is_sitting_out, sit_out_at, leave_pending, stack'/
+      /'user_id, seat_number, occupancy_id, is_sitting_out, sit_out_at, leave_pending, stack'/
     );
   });
 

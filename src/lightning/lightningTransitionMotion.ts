@@ -113,24 +113,7 @@ export function lightningHoldsHeroDealSound(input: {
   return input.presentedHand === input.hand && input.settledHand !== input.hand;
 }
 
-/** A hole-card row kept until the hero's roster row arrives. */
-export interface LightningEarlyHeroCards {
-  hand: number;
-  row: Record<string, unknown>;
-}
-
-/**
- * The kept row, when the roster now holds the hero for the same hand. A row
- * for another hand is never applied (it would be refused as stale and reported
- * as an error); the caller drops it.
- */
-export function lightningEarlyHeroCardsReady(input: {
-  early: LightningEarlyHeroCards | null;
-  handNumber: number;
-  heroInRoster: boolean;
-}): 'apply' | 'drop' | 'wait' {
-  const early = input.early;
-  if (!early) return 'wait';
-  if (input.handNumber > 0 && early.hand > 0 && early.hand !== input.handNumber) return 'drop';
-  return input.heroInRoster ? 'apply' : 'wait';
-}
+// Compatibility for existing Lightning callers; the delivery buffer is shared
+// table presentation, independent of Lightning movement or session rules.
+export { earlyHeroCardsReady as lightningEarlyHeroCardsReady } from '../utils/earlyHeroCards';
+export type { EarlyHeroCards as LightningEarlyHeroCards } from '../utils/earlyHeroCards';

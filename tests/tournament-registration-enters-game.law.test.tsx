@@ -50,7 +50,11 @@ afterEach(cleanup);
 it('opens and enters the fresh assigned tournament once, including after a remount', async () => {
   m.rows = [seat('assigned')];
   const view = render(<TournamentAutoSeat />);
-  await waitFor(() => expect(m.navigate).toHaveBeenCalledWith('/table/assigned'));
+  await waitFor(() =>
+    expect(m.navigate).toHaveBeenCalledWith('/table/assigned', {
+      state: { tournamentSeat: { tournamentId: 'event', lobbyTabId: null } },
+    })
+  );
   expect(m.emit).toHaveBeenCalledWith('TABLE_SEATED', { tableId: 'assigned', seat: 0 });
   view.unmount();
   render(<TournamentAutoSeat />);

@@ -1283,6 +1283,8 @@ export interface ClubEventPayload {
 
 export interface TableEventPayload {
   tableId: string;
+  /** Only an explicit tournament admission may consume its initiating lobby. */
+  registrationLobbyTabId?: string;
   seat?: number;
   tableName?: string;
   userId?: string;

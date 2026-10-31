@@ -145,7 +145,12 @@ test('both club views keep receiving rows and one survives the other unmounting'
     .filter({ has: page.locator('.arena-game-card') })
     .getByRole('button', { name: CASH_SPECTATOR_ACTION })
     .click();
-  await expect(page).toHaveURL(new RegExp(`/table/${subject.tableId}(?:[?#]|$)`));
+  // View awaits token preparation (up to 15s), then the mux initial-state
+  // gate (up to 15s). The roster's 5s read starts concurrently; it is not
+  // another sequential allowance. A refusal still leaves this assertion red.
+  await expect(page).toHaveURL(new RegExp(`/table/${subject.tableId}(?:[?#]|$)`), {
+    timeout: 30_000,
+  });
   await expect(page.getByTestId('spectator-footer-bar')).toBeVisible();
   const bar = page.locator('.table-tab-bar:visible').first();
   await bar.getByRole('button', { name: 'Open Another Table', exact: true }).click();

@@ -152,7 +152,9 @@ describe('the client sends a paid entrant to his own seat, or to his own tournam
   });
 
   it('with a seat he lands on it', () => {
-    expect(HOOK).toMatch(/navigate\(`\/table\/\$\{seatTableId\}`\)/);
+    expect(HOOK).toMatch(
+      /navigate\(`\/table\/\$\{seatTableId\}`, tournamentSeatNavigationOptions\(currentUserId, t\.id\)\)/
+    );
   });
 });
 

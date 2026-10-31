@@ -1,0 +1,3 @@
+# tests/river-one-pair-calls-are-computed-where-the-rows-are.law.test.ts
+
+The Hold'em live measure's river one-pair cells are computed by `fn_horse_river_one_pair_calls` (20261031024652): one STABLE, SECURITY DEFINER, service-only, bounded (14 days, 20,000 rows) read over NLH `horse_hand_reviews`, the same arithmetic as `HoldemLiveMeasure.riverOnePairCalls`, with no horse flag. `scripts/dev/test-horse-river-one-pair-calls.sh` proves SQL and TypeScript agree on shared fixture hands in the accounting shard, and the CLI asks the function first, falling back to fetched rows only when the function is absent.

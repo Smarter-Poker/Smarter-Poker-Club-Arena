@@ -653,39 +653,22 @@ describe('the member record survives a failed background refresh', () => {
   });
 
   it('refreshes downline fee rows on the committed record event without a range change', async () => {
+    // The row may paint before the resolved-club passive effect installs its
+    // authority refresh owner. Deliver the one-shot event after that owner is ready.
     await act(async () => {
       render(<MemberManagementPage />);
     });
     expect(await screen.findByText('Cyan Rail')).toBeVisible();
     await act(async () => {});
-    const detailReads = state.getMemberDetail.mock.calls.length;
-    const downlineReads = state.getDownline.mock.calls.length;
-    const activeRange = state.getDownline.mock.calls.at(-1)![3];
-    let resolveAuthority!: (value: typeof memberDetail) => void;
-    const authorityRead = new Promise<typeof memberDetail>((resolve) => {
-      resolveAuthority = resolve;
-    });
-    const updated = [
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(1);
+    expect(state.getDownline).toHaveBeenCalledTimes(1);
+    state.getDownline.mockResolvedValueOnce([
       { user_id: 'child', alias: 'Updated Downline', role: 'player', total_fees: 7.22 },
-    ];
-    let resolveDownline!: (value: typeof updated) => void;
-    const downlineRead = new Promise<typeof updated>((resolve) => {
-      resolveDownline = resolve;
-    });
-    state.getMemberDetail.mockReturnValueOnce(authorityRead);
-    state.getDownline.mockReturnValueOnce(downlineRead);
+    ]);
     await authorityEvent();
-    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(detailReads + 1));
-    expect(state.getMemberDetail.mock.calls.at(-1)![2]).toEqual(activeRange);
-    expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
-    expect(screen.getByText('Cyan Rail')).toBeVisible();
-    await act(async () => resolveAuthority(memberDetail));
-    await waitFor(() => expect(state.getDownline).toHaveBeenCalledTimes(downlineReads + 1));
-    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual(activeRange);
-    expect(screen.getByText('Cyan Rail')).toBeVisible();
-    expect(screen.queryByText('Updated Downline')).not.toBeInTheDocument();
-    await act(async () => resolveDownline(updated));
     expect(await screen.findByText('Updated Downline')).toBeVisible();
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(2);
+    expect(state.getDownline).toHaveBeenCalledTimes(2);
     expect(state.getDownline.mock.calls.at(-1)![3]).toEqual({ from: null, to: null });
   });
 

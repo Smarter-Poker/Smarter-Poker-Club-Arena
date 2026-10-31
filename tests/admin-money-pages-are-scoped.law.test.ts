@@ -217,6 +217,9 @@ describe('LAW: an admin money page names its club before it reads a number', () 
     const union = read('src/components/auth/UnionOverseerGuard.tsx');
     expect(union).toContain("supabase.rpc('ca_can_oversee_union'");
     expect(union).toMatch(/allowed: data === true/);
-    expect(union).toMatch(/if \(!cancelled\) setVerdict\(\{ unionId, allowed: false \}\)/);
+    expect(union).toMatch(
+      /if \(!cancelled\) setVerdict\(\{ unionId, userId: user.id, allowed: false \}\)/
+    );
+    expect(union).toContain('verdict.userId !== user.id');
   });
 });

@@ -422,7 +422,7 @@ describe('late-registration capacity authority', () => {
     // stay in the expansion stage after balancing (theFreezeIsTotal law).
     expect(wakeBranch).not.toContain('checkDynamicTableExpansion()');
     const admit = MANAGER.slice(
-      MANAGER.indexOf('protected async admitCommittedCapacityTables(): Promise<void>'),
+      MANAGER.indexOf('protected async admitCommittedCapacityTables('),
       MANAGER.indexOf('protected async checkDynamicTableExpansion(): Promise<boolean>')
     );
     // Fenced by stop, abort and the freeze only - never by the work budget.
@@ -431,7 +431,8 @@ describe('late-registration capacity authority', () => {
     expect(admit).not.toMatch(/if \(!this\.eliminationMutationAllowed\(\)\) return;/);
     expect(admit).not.toContain('|| !this.eliminationMutationAllowed()) return;');
     // A finished event never starts a dealer for a leftover receipt.
-    expect(admit).toContain('if (this.tournamentFinished || this.finalTableDealHandled) return;');
+    expect(admit).toContain('!this.tournamentFinished &&');
+    expect(admit).toContain('!this.finalTableDealHandled &&');
     expect(admit).toContain(".from('tournament_capacity_table_receipts')");
     expect(admit).toContain(".is('manager_admitted_at', null)");
     expect(admit).toContain("'fn_ack_tournament_capacity_tables'");
@@ -486,7 +487,7 @@ describe('late-registration capacity authority', () => {
       BASE.indexOf('protected async triggerAddOnPeriod')
     );
     expect(offer).toMatch(
-      /\.select\('user_id, add_on'\)[\s\S]{0,200}\.eq\('status', 'playing'\)[\s\S]{0,300}\.gt\('chips', 0\)/
+      /\.select\('id, user_id, add_on'\)[\s\S]{0,200}\.eq\('status', 'playing'\)[\s\S]{0,300}\.gt\('chips', 0\)/
     );
   });
 });

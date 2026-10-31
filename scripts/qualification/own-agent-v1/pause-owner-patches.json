@@ -1,0 +1,118 @@
+[
+  {
+    "signature": "public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)",
+    "preimage": "46cc46eac314417706523cc9bd273405",
+    "postimage": "c69a291c3347a6b27fbc62016411d7b2",
+    "replacements": [
+      {
+        "old": "prior_saved_context:=current_setting('app.accounting_routing_context',true);",
+        "new": "PERFORM smarter_private.weekly_payout_require_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,2);\n  prior_saved_context:=current_setting('app.accounting_routing_context',true);"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_settle_accounting_commission_stage",
+      "prorows": 0,
+      "pronargs": 4,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_scope_kind", "p_scope_id", "p_period_start", "p_period_end"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  },
+  {
+    "signature": "public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)",
+    "preimage": "efff450311e1c001d8873b29e080e551",
+    "postimage": "5b50ed269444dfe82b2bb15782ad50c0",
+    "replacements": [
+      {
+        "old": "prior_saved_context:=current_setting('app.accounting_routing_context',true);",
+        "new": "PERFORM smarter_private.weekly_payout_require_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,2);\n  prior_saved_context:=current_setting('app.accounting_routing_context',true);"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_settle_accounting_commission_stage_v3",
+      "prorows": 0,
+      "pronargs": 4,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_scope_kind", "p_scope_id", "p_period_start", "p_period_end"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  },
+  {
+    "signature": "public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)",
+    "preimage": "60570d34b4704fe81ff2de7fc43ad770",
+    "postimage": "236228d068e90194a306b81d0f6c88fd",
+    "replacements": [
+      {
+        "old": " v_batched:=COALESCE(current_setting('app.weekly_accounting_chunked',true),'')='on'",
+        "new": "  PERFORM smarter_private.weekly_payout_require_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,3);\n v_batched:=COALESCE(current_setting('app.weekly_accounting_chunked',true),'')='on'"
+      },
+      {
+        "old": "  amount:=r.owed;\n  INSERT INTO public.rakeback_period_payouts",
+        "new": "   PERFORM smarter_private.weekly_payout_require_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,3);\n   amount:=r.owed;\n   INSERT INTO public.rakeback_period_payouts"
+      },
+      {
+        "old": "  IF v_batched AND clock_timestamp()>v_stop THEN EXIT; END IF;",
+        "new": "  IF v_batched AND clock_timestamp()>v_stop\n    AND NOT smarter_private.weekly_payout_owns_round(p_scope_kind,p_scope_id,p_period_start,p_period_end,3) THEN EXIT; END IF;"
+      }
+    ],
+    "metadata": {
+      "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "probin": null,
+      "procost": 100,
+      "prokind": "f",
+      "proname": "fn_settle_accounting_rakeback_stage",
+      "prorows": 0,
+      "pronargs": 4,
+      "proconfig": ["search_path=public"],
+      "proretset": false,
+      "prosecdef": true,
+      "prosqlbody": null,
+      "prosupport": "-",
+      "proargmodes": null,
+      "proargnames": ["p_scope_kind", "p_scope_id", "p_period_start", "p_period_end"],
+      "proisstrict": false,
+      "proparallel": "u",
+      "protrftypes": null,
+      "provariadic": "0",
+      "provolatile": "v",
+      "proleakproof": false,
+      "proallargtypes": null,
+      "proargdefaults": null,
+      "pronargdefaults": 0
+    }
+  }
+]

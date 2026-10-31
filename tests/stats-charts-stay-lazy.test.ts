@@ -73,6 +73,18 @@ describe('PlayerStatsPage does not import recharts', () => {
   });
 });
 
+describe('shared profiles stay off the owner overview download', () => {
+  it('loads the separate shared profile only in its own Suspense boundary', () => {
+    expect(PAGE_CODE).toContain(
+      "const SharedClubStatsView = lazy(() => import('./stats/SharedClubStatsView'))"
+    );
+    expect(PAGE_CODE).not.toMatch(/^import\s+SharedClubStatsView\s+from/m);
+    expect(PAGE_CODE).toMatch(
+      /if \(!isOwnProfile\) \{[\s\S]*?<Suspense[\s\S]*?<SharedClubStatsView[\s\S]*?<\/Suspense>/
+    );
+  });
+});
+
 describe('every tab is its own lazy chunk', () => {
   it.each(TAB_NAMES.map((t) => [t]))(
     '%s is loaded with lazy(() => import(...)) by the page',

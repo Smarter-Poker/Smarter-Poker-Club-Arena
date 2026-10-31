@@ -68,6 +68,87 @@ function harness(ids: string[], answer: () => Answer) {
 }
 
 describe('a refused horse entry is not asked every pass', () => {
+  it('a refused candidate does not consume the successful entry quota', async () => {
+    let calls = 0;
+    const { svc, entries } = harness(['h1', 'h2', 'h3'], () => ({
+      data:
+        ++calls === 1
+          ? { ok: false, reason: 'horse_tournament_reservation_budget' }
+          : { ok: true, registration_id: 'paid-entry' },
+      error: null,
+    }));
+    expect(await svc.registerHorses(T, 1)).toBe(1);
+    expect(entries()).toBe(2);
+  });
+
+  it('retains the original cap-refused request identity without retrying or altering entry', async () => {
+    const id = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { svc, entries } = harness([id], () => ({
+      data: null,
+      error: {
+        code: '23514',
+        message: `FOUR TABLE LIMIT: user ${id} is already committed to 4 games and may not enter another`,
+      },
+    }));
+    const before = Date.now();
+    expect(await svc.topUpWithHorses(T, 0, { redeemTickets: true })).toBe(0);
+    const prefix = '[TournamentRecurring] horse_entry_cap_refused ';
+    const line = warn.mock.calls
+      .map(([message]) => String(message))
+      .find((s) => s.startsWith(prefix));
+    expect(
+      line,
+      'the aggregate warning loses the original tournament and attempt identity'
+    ).toBeDefined();
+    const record = JSON.parse(line!.slice(prefix.length));
+    expect(record).toEqual({
+      version: 1,
+      tournamentId: T,
+      horseId: id,
+      sqlstate: '23514',
+      load: 4,
+      attemptedAt: expect.any(String),
+    });
+    expect(Date.parse(record.attemptedAt)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(record.attemptedAt)).toBeLessThanOrEqual(Date.now());
+    expect(entries()).toBe(1);
+    await svc.topUpWithHorses(T, 0, { redeemTickets: true });
+    expect(entries()).toBe(1);
+    expect(warn.mock.calls.filter(([message]) => String(message).startsWith(prefix))).toHaveLength(
+      1
+    );
+  });
+
+  it.each(['wrong_actor', 'wrong_sqlstate', 'other_constraint', 'extra_payload'])(
+    'does not label %s as an attributable booking-cap refusal',
+    async (kind) => {
+      const id = 'aaaaaaaa-1111-4111-8111-111111111111';
+      const other = 'cccccccc-3333-4333-8333-333333333333';
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const message = `FOUR TABLE LIMIT: user ${kind === 'wrong_actor' ? other : id} is already committed to 4 games and may not enter another`;
+      const { svc, entries } = harness([id], () => ({
+        data: null,
+        error: {
+          code: kind === 'wrong_sqlstate' ? '55000' : '23514',
+          message:
+            kind === 'other_constraint'
+              ? 'unrelated check constraint'
+              : kind === 'extra_payload'
+                ? message + ' private-token'
+                : message,
+        },
+      }));
+      expect(await svc.topUpWithHorses(T, 0, { redeemTickets: true })).toBe(0);
+      expect(entries()).toBe(1);
+      expect(
+        warn.mock.calls.some(([m]) =>
+          String(m).startsWith('[TournamentRecurring] horse_entry_cap_refused ')
+        )
+      ).toBe(false);
+    }
+  );
+
   it('defers a horse whose entry came back as an error, then asks again after the backoff', async () => {
     const { svc, entries, advance } = harness(['h1', 'h2'], () => ({
       data: null,

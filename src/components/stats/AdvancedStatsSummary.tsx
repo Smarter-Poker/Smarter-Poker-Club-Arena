@@ -14,6 +14,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { compactChips } from '../../utils/format';
 import './AdvancedStatsSummary.css';
+import type { StatsMetricAvailabilityContract } from '../../services/statsContract';
+import { NOT_YET_MEASURED } from '../../pages/stats/format';
 
 interface AdvancedStat {
   id: string;
@@ -22,12 +24,16 @@ interface AdvancedStat {
   format: (val: number) => string;
   unit?: string;
   description: string;
+  measured?: boolean;
 }
 
 export interface AdvancedStatsInput {
+  cash_hands?: number;
+  metric_availability?: Partial<StatsMetricAvailabilityContract>;
   total_hands?: number;
   total_profit?: number;
   hours_played?: number;
+  cash_hours_played?: number;
   showdowns_won?: number;
   showdowns_total?: number;
   aggression_factor?: number;
@@ -79,7 +85,7 @@ const AnimatedNumber: React.FC<{
 
 function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
   const totalHands = n(d.total_hands);
-  const hoursPlayed = n(d.hours_played);
+  const hoursPlayed = n(d.cash_hours_played);
   const totalProfit = n(d.total_profit);
   const showdownsWon = n(d.showdowns_won);
   const showdownsTotal = n(d.showdowns_total);
@@ -89,11 +95,13 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
   return [
     {
       id: 'hourly',
+      measured: d.metric_availability?.cash_hours_played === true && hoursPlayed > 0,
       label: 'Hourly Rate',
       value: hourlyRate,
       format: (val) => `${val >= 0 ? '+' : ''}${compactChips(val)}`,
       unit: '/hr',
-      description: 'Cash Profit Per Hour Played In This Window',
+      description:
+        'Cash Profit Per Recorded Cash Hand Hour In This Window. Overlapping Tables Count Once.',
     },
     {
       id: 'totalHands',
@@ -104,6 +112,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
     },
     {
       id: 'showdownWin',
+      measured: showdownsTotal > 0,
       label: 'Showdown Win %',
       value: showdownWinPct,
       format: (val) => `${val.toFixed(1)}%`,
@@ -111,6 +120,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
     },
     {
       id: 'aggression',
+      measured: d.metric_availability?.aggression_factor === true,
       label: 'Aggression Factor',
       value: n(d.aggression_factor),
       format: (val) => val.toFixed(1),
@@ -118,6 +128,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
     },
     {
       id: 'threeBet',
+      measured: d.metric_availability?.three_bet_percent === true,
       label: '3-Bet %',
       value: n(d.three_bet_percent) * 100,
       format: (val) => `${val.toFixed(1)}%`,
@@ -125,6 +136,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
     },
     {
       id: 'foldTo3Bet',
+      measured: d.metric_availability?.fold_to_three_bet === true,
       label: 'Fold To 3-Bet %',
       value: n(d.fold_to_three_bet) * 100,
       format: (val) => `${val.toFixed(1)}%`,
@@ -132,6 +144,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
     },
     {
       id: 'cbetFreq',
+      measured: d.metric_availability?.cbet_flop === true,
       label: 'C-Bet Frequency',
       value: n(d.cbet_flop) * 100,
       format: (val) => `${val.toFixed(1)}%`,
@@ -139,6 +152,7 @@ function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
     },
     {
       id: 'bbPer100',
+      measured: n(d.cash_hands) > 0,
       label: 'BB/100',
       value: n(d.bb_per_100),
       format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(1)}`,
@@ -216,9 +230,15 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
 
               <div className="card-value">
                 <span className="value-main" style={{ color: getTrendColor(stat.value) }}>
-                  <AnimatedNumber target={stat.value} format={stat.format} />
+                  {stat.measured === false ? (
+                    NOT_YET_MEASURED
+                  ) : (
+                    <AnimatedNumber target={stat.value} format={stat.format} />
+                  )}
                 </span>
-                {stat.unit && <span className="value-unit">{stat.unit}</span>}
+                {stat.unit && stat.measured !== false && (
+                  <span className="value-unit">{stat.unit}</span>
+                )}
               </div>
 
               {isSelected && (

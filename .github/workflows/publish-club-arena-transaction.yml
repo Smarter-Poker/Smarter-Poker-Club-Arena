@@ -1,0 +1,1013 @@
+# Called only by the protected publisher. This is its serialized transaction,
+# not another event entry point. The caller owns the ONE global production lock;
+# this workflow must never reacquire that same key or release it between jobs.
+name: Club Arena publication transaction
+on:
+  workflow_call:
+    inputs:
+      target_sha:
+        required: true
+        type: string
+      component:
+        required: true
+        type: string
+      publish:
+        required: true
+        type: string
+      tests_proven:
+        required: true
+        type: string
+      client_result:
+        required: true
+        type: string
+      build_result:
+        required: true
+        type: string
+      gateway_build_result:
+        required: true
+        type: string
+
+jobs:
+  # Retention qualifies the CURRENT source tests and preserves the already
+  # published immutable bytes. It never writes the origin or fabricates dist.
+  retain-runtime:
+    if: >-
+      github.repository_id == '1132369872' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/publish-club-arena.yml@refs/heads/main', github.repository) && (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      always() &&
+      inputs.component == 'client' &&
+      inputs.publish == 'false' &&
+      (inputs.client_result == 'success' ||
+       (inputs.client_result == 'skipped' &&
+        inputs.tests_proven == 'true'))
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout qualified current protected verification source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Download this run's immutable admission evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: club-arena-runtime-admission
+          path: .
+      - name: Verify both origins still serve the qualified immutable runtime
+        id: retained_verified
+        run: node scripts/ci/client-runtime-retention.mjs finalize retained-runtime.json
+      - name: Record qualified retained runtime
+        id: retained_recorded
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-retained-runtime
+          path: retained-runtime.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve original retained runtime verdict evidence
+        env:
+          RECEIPT_SELECTED_SHA: ${{ inputs.target_sha }}
+          RECEIPT_VERIFIED_SHA: ''
+          RECEIPT_OUTCOMES: ${{ format('["{0}","{1}"]', steps.retained_verified.outcome, steps.retained_recorded.outcome) }}
+          RECEIPT_VERDICT: retained
+          RECEIPT_CONCLUSIONS: ${{ format('["{0}","{1}"]', steps.retained_verified.conclusion, steps.retained_recorded.conclusion) }}
+        run: |
+          RECEIPT_RUNTIME_SHA=$(node -e "console.log(JSON.parse(require('fs').readFileSync('retained-runtime.json','utf8')).runtimeSha)")
+          export RECEIPT_RUNTIME_SHA
+          node scripts/ci/publisher-verdict-receipt.mjs write publisher-verdict.json
+      - name: Upload immutable original retained verdict
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-publisher-verdict-retain-runtime-attempt-${{ github.run_attempt }}
+          path: publisher-verdict.json
+          if-no-files-found: error
+          retention-days: 7
+
+  #
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  THE APP (store readiness, phase 6): the same merge reaches installed
+  #  phones over the air.
+  # ═══════════════════════════════════════════════════════════════════════════
+  # A web change that just went live on smarter.poker is also the app's web
+  # bundle. Capgo (`@capgo/capacitor-updater`, capacitor.config.ts) downloads
+  # a new bundle on the next launch and swaps it in - no store review for CSS,
+  # copy and fixes (Apple 3.3.2: a plugin, a permission or a change of purpose
+  # is a new binary, never an OTA). The native shell calls notifyAppReady() on
+  # every launch, which is what lets Capgo roll a broken bundle back.
+  #
+  # This is NOT a second publisher - it is a job in the one publisher, gated
+  # on the same build and the same test shards, and it ships only after the
+  # origin was verified serving the same commit (`needs: publish-to-origin`;
+  # it sits above that job only to keep the build jobs grouped together).
+  # `tests/no-commit-left-behind` counts workflows with a publish-to-origin
+  # job, and there is still one.
+  #
+  # The bundle version is `<native.version>.<run number>`: the binary's
+  # marketing version (iOS MARKETING_VERSION, Android versionName, pinned to
+  # native.version by tests/unit/nativeAssetsAndOta.test.ts) followed by a
+  # monotonic patch, so every upload is unique, ordered, and never below the
+  # binary that will install it (Capgo refuses a bundle older than the app).
+  #
+  # CAPGO_TOKEN is Dan's to create (CLAUDE.md 10.84). The job is switched on
+  # by the repository variable CAPGO_OTA_ENABLED='true' (set it together with
+  # the secret); until then the job is skipped and the web publish is never
+  # held hostage to a store account that does not exist yet.
+  publish-to-app:
+    name: Publish the app bundle (Capgo OTA)
+    needs: publish-to-origin
+    # The repository VARIABLE `CAPGO_OTA_ENABLED` is the switch (secrets are
+    # not readable in a job-level `if`; variables are). Off, or absent, the job
+    # is skipped and the web publish is untouched. On, the job must have the
+    # CAPGO_TOKEN secret too, and fails loudly if it does not - an enabled
+    # switch with no token is a misconfiguration, not a quiet no-op.
+    if: >-
+      github.repository_id == '1132369872' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/publish-club-arena.yml@refs/heads/main', github.repository) && (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      always() &&
+      vars.CAPGO_OTA_ENABLED == 'true' &&
+      inputs.build_result == 'success' &&
+      needs.publish-to-origin.result == 'success' &&
+      needs.publish-to-origin.outputs.verified_sha != '' &&
+      needs.publish-to-origin.outputs.verified_sha == inputs.target_sha &&
+      (inputs.client_result == 'success' ||
+       (inputs.client_result == 'skipped' &&
+        inputs.tests_proven == 'true'))
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      HUSKY: '0'
+      CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
+
+    steps:
+      - name: The switch is on, so the token must exist
+        run: |
+          if [ -z "${CAPGO_TOKEN:-}" ]; then
+            echo "::error::CAPGO_OTA_ENABLED is 'true' but the CAPGO_TOKEN secret is not set (docs/APP-STORE-RUNBOOK.md)."
+            exit 1
+          fi
+
+      - name: Checkout Club Arena at the publish target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          # Strict provenance requires complete ancestry for this exact target.
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # The native bundle: base '/', no source maps, dist-native/. Same tree,
+      # same env as the web build above; the native flag build:native sets in
+      # package.json is the only difference (the web job never sets it).
+      - name: Build the app bundle
+        env:
+          CA_BUILD_PURPOSE: production-publish
+          CA_PUBLISH_TARGET_SHA: ${{ inputs.target_sha }}
+          NODE_ENV: production
+          VITE_ANTIGRAVITY_ENABLED: 'true'
+          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          VITE_ENGINE_URL: 'https://engine.smarter.poker'
+          # Qualified by gateway publisher 40977779005; paid Realtime stays enabled.
+          VITE_PRIVATE_RECORD_FALLBACK_URL: 'https://ca-static.smarter.poker/private-record'
+          VITE_APP_ENV: production
+          VITE_APP_VERSION: ${{ inputs.target_sha }}
+          VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
+          VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
+        run: npm run build:native
+
+      - name: Upload to Capgo
+        env:
+          SHA: ${{ inputs.target_sha }}
+          CHANNEL: ${{ vars.CAPGO_CHANNEL || 'production' }}
+        run: |
+          set -euo pipefail
+          test -f dist-native/index.html \
+            || { echo '::error::dist-native/index.html is missing; the native bundle did not build.'; exit 1; }
+          NATIVE=$(tr -d '[:space:]' < native.version)
+          VERSION="${NATIVE}.${{ github.run_number }}"
+          echo "uploading bundle ${VERSION} (${SHA:0:7}) to channel ${CHANNEL}"
+          # --delta: phones download only the files that changed. The app
+          # bundle is ~172 MB (1,951 files, mostly art that rarely changes)
+          # and this job runs on every merge to main, so a full zip would be
+          # 172 MB per release per phone, over cellular. Delta caps at 10,000
+          # files and refuses paths with spaces; dist-native has neither.
+          # The CLI is pinned to its major so a breaking release cannot turn
+          # every publish red overnight.
+          npx --yes @capgo/cli@8 bundle upload \
+            --apikey "$CAPGO_TOKEN" \
+            --path dist-native \
+            --channel "$CHANNEL" \
+            --bundle "$VERSION" \
+            --delta \
+            --no-key
+          echo "- OTA: bundle \`${VERSION}\` (\`${SHA:0:7}\`) uploaded to channel \`${CHANNEL}\`" >> $GITHUB_STEP_SUMMARY
+
+  publish-to-origin:
+    # The Club Arena repository owns this one Hetzner publisher. The release is
+    # transferred into a run-unique incoming directory, verified byte-for-byte,
+    # and activated under one host lock only if `current` still names the SHA
+    # observed by the ancestry check. The final symlink rename is the last
+    # mutation, so a crash cannot expose a partial release.
+    # MUST be always() with explicit results.
+    #
+    # `client-tests` is now skipped when the target TREE already passed the same
+    # suite on the pull request head. GitHub skips the DEPENDENTS of a skipped
+    # job by default, so without this the publisher would quietly publish
+    # NOTHING on exactly the fast path this change exists to create - the same
+    # shape as the 2026-08-23 incident where a skipped `changes` job took every
+    # required check down with it.
+    #
+    # Run when the build succeeded AND the tests either passed or were provably
+    # unnecessary. A client-tests FAILURE still stops the publish.
+    if: >-
+      github.repository_id == '1132369872' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/publish-club-arena.yml@refs/heads/main', github.repository) && (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      always() &&
+      inputs.publish != 'false' &&
+      inputs.build_result == 'success' &&
+      (inputs.client_result == 'success' ||
+       (inputs.client_result == 'skipped' &&
+        inputs.tests_proven == 'true'))
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      verdict: ${{ steps.verdict.outputs.verdict }}
+      verified_sha: ${{ steps.verified.outputs.sha }}
+    env:
+      ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
+      ORIGIN_USER: ci
+      ORIGIN_ROOT: /srv/club-arena
+      ORIGIN_URL: https://ca-static.smarter.poker
+      PUBLIC_URL: https://smarter.poker/hub/club-arena
+      KEEP_RELEASES: '10'
+
+    steps:
+      - name: Checkout the exact protected-main publish control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Use the production Node major for payout admission
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install locked payout publication driver
+        run: npm ci --prefix server --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Verify installed MTT payout policy before origin publication
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: timeout 30s node scripts/ci/check-mtt-payout-publication.mjs
+
+      - name: Download the dist built by the previous job
+        uses: actions/download-artifact@v4
+        with:
+          name: club-arena-dist-${{ inputs.target_sha }}
+          path: dist
+
+      - name: Install the origin key and pin the host key
+        env:
+          KEY: ${{ secrets.CA_ORIGIN_SSH_KEY }}
+          HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] \
+            || { echo '::error::CA_ORIGIN_HOST is absent or malformed.'; exit 1; }
+          [ -n "$KEY" ] && [ -n "$HOST_KEY" ] \
+            || { echo '::error::Club Arena origin credentials are incomplete.'; exit 1; }
+          umask 077
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/ca_origin && chmod 600 ~/.ssh/ca_origin
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/ca_origin_known_hosts && chmod 600 ~/.ssh/ca_origin_known_hosts
+          timeout 5s ssh-keygen -y -f ~/.ssh/ca_origin >/dev/null
+          ssh-keygen -l -f ~/.ssh/ca_origin_known_hosts >/dev/null
+
+      - name: Stand down if the origin already serves a newer bundle
+        id: verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SSH_OPTIONS=(
+            -i "$HOME/.ssh/ca_origin"
+            -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts"
+            -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=25
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+          )
+          EXPECTED_SHA="${{ inputs.target_sha }}"
+          node - "$EXPECTED_SHA" "${{ github.repository }}" "${{ github.run_id }}" <<'NODE'
+          const fs = require('node:fs');
+          const [expectedSha, repository, runId] = process.argv.slice(2);
+          let provenance;
+          try {
+            provenance = JSON.parse(fs.readFileSync('dist/ca-provenance.json', 'utf8'));
+          } catch (error) {
+            console.error(`::error::Build provenance is absent or malformed: ${error.message}`);
+            process.exit(1);
+          }
+          const expectedRun = `https://github.com/${repository}/actions/runs/${runId}`;
+          const valid =
+            provenance &&
+            !Array.isArray(provenance) &&
+            provenance.schema === 1 &&
+            (repository === 'Smarter-Poker/Smarter-Poker-Club-Arena'
+              ? (provenance.repositoryId == null || provenance.repositoryId === '1132369872')
+              : repository === 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' && provenance.repositoryId === '1132369872') &&
+            (!Object.prototype.hasOwnProperty.call(provenance, 'validationOnly') || provenance.validationOnly === false) &&
+            provenance.commit === expectedSha &&
+            provenance.builtBy === 'github-actions' &&
+            provenance.dirty === false &&
+            provenance.historyComplete === true &&
+            Number.isSafeInteger(provenance.behindMain) && provenance.behindMain >= 0 &&
+            ((repository === 'Smarter-Poker/Smarter-Poker-Club-Arena' && provenance.behindMain === 0 && provenance.publication == null) ||
+             (provenance.publication && typeof provenance.publication === 'object' && !Array.isArray(provenance.publication) &&
+              provenance.publication.admittedMain === expectedSha &&
+              typeof provenance.publication.observedMain === 'string' && /^[0-9a-f]{40}$/.test(provenance.publication.observedMain) &&
+              (provenance.behindMain === 0 ? provenance.publication.observedMain === expectedSha : provenance.publication.observedMain !== expectedSha) &&
+              provenance.publication.workflowRef === `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main` &&
+              typeof provenance.publication.workflowSha === 'string' && /^[0-9a-f]{40}$/.test(provenance.publication.workflowSha) &&
+              provenance.publication.triggerSha === provenance.publication.workflowSha &&
+              ['push','repository_dispatch'].includes(provenance.publication.eventName))) &&
+            provenance.aheadMain === 0 &&
+            provenance.ciRun === expectedRun;
+          if (!valid) {
+            console.error('::error::Build provenance does not prove this exact clean protected-main CI build.');
+            process.exit(1);
+          }
+          NODE
+          OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info < dist/build-info.json)
+          [[ "$OURS_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::Built artifact has no valid full ca_sha.'; exit 1; }
+          [ "$OURS_SHA" = "$EXPECTED_SHA" ] \
+            || { echo '::error::Artifact provenance does not equal the protected-main publish target.'; exit 1; }
+          test -f dist/index.html \
+            || { echo '::error::The downloaded release carries no dist/index.html; refusing to publish an incomplete bundle.'; exit 1; }
+          test -s dist/.release-manifest.sha256 \
+            || { echo '::error::The downloaded release carries no non-empty dist/.release-manifest.sha256; refusing to publish unsealed bytes.'; exit 1; }
+          if find dist -type l -print -quit | grep -q .; then
+            echo '::error::Downloaded release contains a symlink.'
+            exit 1
+          fi
+          (cd dist && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
+
+          THEIRS_JSON=$(timeout 35s ssh "${SSH_OPTIONS[@]}" "$ORIGIN_USER@$ORIGIN_HOST" \
+            "cat $ORIGIN_ROOT/current/build-info.json 2>/dev/null" || true)
+          if ! THEIRS_SHA=$(printf '%s' "$THEIRS_JSON" \
+            | node scripts/ci/production-e2e-provenance.mjs build-info); then
+            echo '::error::Origin provenance is not one valid build-info JSON object.'
+            exit 1
+          fi
+          [[ "$THEIRS_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::Origin provenance is unreadable; refusing an unorderable publish.'; exit 1; }
+          # The bundle already served may be newer than ours when two publishes
+          # raced, and newer wins. Unknown or diverged ancestry fails closed.
+          VERDICT=publish
+          if [ "$THEIRS_SHA" != "$OURS_SHA" ]; then
+            STATUS=$(timeout 30s gh api "repos/${{ github.repository }}/compare/${THEIRS_SHA}...${OURS_SHA}" --jq .status 2>/dev/null || echo "")
+            echo "origin serves ${THEIRS_SHA:0:7}; ours ${OURS_SHA:0:7} is: ${STATUS:-unknown}"
+            case "$STATUS" in
+              ahead) VERDICT=publish ;;
+              behind) VERDICT=standdown ;;
+              *) echo "::error::Cannot prove the candidate is a forward Club Arena release (status=${STATUS:-unknown})."; exit 1 ;;
+            esac
+          fi
+          {
+            echo "verdict=$VERDICT"
+            echo "ours=$OURS_SHA"
+            echo "theirs=$THEIRS_SHA"
+          } >> "$GITHUB_OUTPUT"
+          [ "$VERDICT" = "standdown" ] && echo "::notice::origin already serves a newer bundle (${THEIRS_SHA:0:7}); standing down." || true
+
+      - name: Publish through the host-owned immutable transaction
+        id: immutable_publish
+        if: steps.verdict.outputs.verdict == 'publish'
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.verdict.outputs.ours }}"
+          EXPECTED_SHA="${{ steps.verdict.outputs.theirs }}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The publish candidate is not one full lowercase SHA: '$SHA'."; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The release the origin serves is not one full lowercase SHA: '$EXPECTED_SHA'."; exit 1; }
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ID is not a run number: '$GITHUB_RUN_ID'; it names this run's staging path."; exit 1; }
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ATTEMPT is not an attempt number: '$GITHUB_RUN_ATTEMPT'; it names this run's staging path."; exit 1; }
+          STAGE_NAME="${SHA}.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+
+          mkdir -p /tmp/cacm
+          SSH_OPTIONS=(
+            -i "$HOME/.ssh/ca_origin"
+            -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts"
+            -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=25
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+            -o ControlMaster=auto
+            -o ControlPath=/tmp/cacm/%C
+            -o ControlPersist=60
+          )
+          RSYNC_RSH="ssh -i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=25 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o ControlMaster=auto -o ControlPath=/tmp/cacm/%C -o ControlPersist=60"
+
+          # A run owns one fresh incoming directory. A pre-existing directory
+          # for the same run/attempt is evidence of an incomplete invocation,
+          # not something whose unknown bytes may be reused.
+          timeout 45s ssh "${SSH_OPTIONS[@]}" "$ORIGIN_USER@$ORIGIN_HOST" bash -s -- \
+            "$ORIGIN_ROOT" "$STAGE_NAME" <<'REMOTE_STAGE'
+          set -euo pipefail
+          ROOT="$1"
+          STAGE_NAME="$2"
+          [ "$ROOT" = /srv/club-arena ] \
+            || { echo "the origin root this transaction was handed is '$ROOT', not /srv/club-arena; refusing to touch it" >&2; exit 1; }
+          [[ "$STAGE_NAME" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "the staging name '$STAGE_NAME' is not <sha>.<run>.<attempt>; refusing to create it" >&2; exit 1; }
+          install -d -m 0755 "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool/assets" "$ROOT/pool/fonts"
+          for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool" "$ROOT/pool/assets" "$ROOT/pool/fonts"; do
+            [ -d "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is not a directory; found: $(ls -ld -- "$DIRECTORY" 2>&1 || true)" >&2; exit 1; }
+            [ ! -L "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is a symlink to $(readlink "$DIRECTORY"); refusing a root that can escape itself" >&2; exit 1; }
+          done
+          [ ! -e "$ROOT/incoming/$STAGE_NAME" ] && [ ! -L "$ROOT/incoming/$STAGE_NAME" ] \
+            || { echo "this run already owns $ROOT/incoming/$STAGE_NAME; its bytes are from an incomplete invocation and are never reused. Found: $(ls -ld -- "$ROOT/incoming/$STAGE_NAME" 2>&1 || true)" >&2; exit 1; }
+          install -d -m 0755 "$ROOT/incoming/$STAGE_NAME"
+          REMOTE_STAGE
+
+          # --fsync makes each receiver-side file durable before the host can
+          # activate the release. The host populates the additive runtime pool
+          # from these verified bytes while it holds the same activation lock.
+          timeout 240s rsync -az --delete --fsync --link-dest="$ORIGIN_ROOT/current/" \
+            -e "$RSYNC_RSH" dist/ \
+            "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/incoming/$STAGE_NAME/"
+
+          timeout 180s ssh "${SSH_OPTIONS[@]}" "$ORIGIN_USER@$ORIGIN_HOST" bash -s -- \
+            "$ORIGIN_ROOT" "$SHA" "$EXPECTED_SHA" "$STAGE_NAME" "$KEEP_RELEASES" \
+            "${{ github.repository }}" < .github/scripts/publish-origin-activate.sh
+
+      - name: Remove this invocation's remote staging path
+        if: always() && steps.verdict.outputs.verdict == 'publish'
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.verdict.outputs.ours }}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The publish candidate is not one full lowercase SHA: '$SHA'."; exit 1; }
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ID is not a run number: '$GITHUB_RUN_ID'; it names this run's staging path."; exit 1; }
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ATTEMPT is not an attempt number: '$GITHUB_RUN_ATTEMPT'; it names this run's staging path."; exit 1; }
+          STAGE_NAME="${SHA}.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          timeout 35s ssh \
+            -i "$HOME/.ssh/ca_origin" \
+            -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null \
+            -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o ConnectTimeout=25 \
+            "$ORIGIN_USER@$ORIGIN_HOST" bash -s -- "$ORIGIN_ROOT" "$STAGE_NAME" <<'REMOTE_CLEANUP'
+          set -euo pipefail
+          ROOT="$1"
+          STAGE_NAME="$2"
+          [ "$ROOT" = /srv/club-arena ] \
+            || { echo "the origin root this transaction was handed is '$ROOT', not /srv/club-arena; refusing to touch it" >&2; exit 1; }
+          [[ "$STAGE_NAME" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "the staging name '$STAGE_NAME' is not <sha>.<run>.<attempt>; refusing to remove a path named by it" >&2; exit 1; }
+          [ -d "$ROOT/incoming" ] && [ ! -L "$ROOT/incoming" ] \
+            || { echo "origin layout: $ROOT/incoming is not a plain directory; found: $(ls -ld -- "$ROOT/incoming" 2>&1 || true)" >&2; exit 1; }
+          [ -d "$ROOT/pool/fonts" ] && [ ! -L "$ROOT/pool/fonts" ] \
+            || { echo "origin layout: $ROOT/pool/fonts is not a plain directory; found: $(ls -ld -- "$ROOT/pool/fonts" 2>&1 || true)" >&2; exit 1; }
+          rm -rf -- "$ROOT/incoming/$STAGE_NAME"
+          rm -f -- "$ROOT/.current.$STAGE_NAME"
+          rm -f -- "$ROOT/incoming/.manifest-check.$STAGE_NAME"
+          rm -f -- "$ROOT/incoming/.legacy-release-manifest.$STAGE_NAME"
+          rm -f -- "$ROOT/pool/fonts/.fonts.css.$STAGE_NAME"
+          sync -f "$ROOT"
+          REMOTE_CLEANUP
+
+      - name: Verify the origin serves this bundle
+        if: steps.verdict.outputs.verdict == 'publish'
+        id: verified
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.verdict.outputs.ours }}"
+          LIVE_ORIGIN=''
+          LIVE_PUBLIC=''
+          for _ in $(seq 1 12); do
+            LIVE_ORIGIN=''
+            LIVE_PUBLIC=''
+            ORIGIN_BODY=''
+            PUBLIC_BODY=''
+            if ORIGIN_BODY=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+              "$ORIGIN_URL/build-info.json?cb=$RANDOM" 2>/dev/null); then
+              LIVE_ORIGIN=$(printf '%s' "$ORIGIN_BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs unchanged "$SHA" 2>/dev/null || true)
+            fi
+            if PUBLIC_BODY=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+              "$PUBLIC_URL/build-info.json?cb=$RANDOM" 2>/dev/null); then
+              LIVE_PUBLIC=$(printf '%s' "$PUBLIC_BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs unchanged "$SHA" 2>/dev/null || true)
+            fi
+            if [ "$LIVE_ORIGIN" = "$SHA" ] && [ "$LIVE_PUBLIC" = "$SHA" ]; then
+              echo "origin and player route serve ${SHA:0:7}"
+              echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+              echo "### Published" >> "$GITHUB_STEP_SUMMARY"
+              echo "\`${SHA:0:7}\` is live through the Club Arena origin and the player route." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::origin serves '$LIVE_ORIGIN' and player route serves '$LIVE_PUBLIC'; wanted $SHA"
+          exit 1
+
+      - name: Restore the previously verified release after any publish failure
+        if: failure() && steps.verdict.outputs.verdict == 'publish'
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.verdict.outputs.ours }}"
+          EXPECTED_SHA="${{ steps.verdict.outputs.theirs }}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The publish candidate is not one full lowercase SHA: '$SHA'."; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::The release the origin serves is not one full lowercase SHA: '$EXPECTED_SHA'."; exit 1; }
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ID is not a run number: '$GITHUB_RUN_ID'; it names this run's staging path."; exit 1; }
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GITHUB_RUN_ATTEMPT is not an attempt number: '$GITHUB_RUN_ATTEMPT'; it names this run's staging path."; exit 1; }
+          if [ "$SHA" = "$EXPECTED_SHA" ]; then
+            echo '::notice::The failed publish targeted the already-current release; no distinct pointer exists to restore.'
+            exit 0
+          fi
+          STAGE_NAME="${SHA}.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          SSH_OPTIONS=(
+            -i "$HOME/.ssh/ca_origin"
+            -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts"
+            -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=25
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+          )
+
+          ROLLBACK_RESULT=$(timeout 90s ssh "${SSH_OPTIONS[@]}" "$ORIGIN_USER@$ORIGIN_HOST" bash -s -- \
+            "$ORIGIN_ROOT" "$SHA" "$EXPECTED_SHA" "$STAGE_NAME" <<'REMOTE_ROLLBACK'
+          set -euo pipefail
+          ROOT="$1"
+          SHA="$2"
+          EXPECTED_SHA="$3"
+          STAGE_NAME="$4"
+          [ "$ROOT" = /srv/club-arena ] \
+            || { echo "the origin root this transaction was handed is '$ROOT', not /srv/club-arena; refusing to touch it" >&2; exit 1; }
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "the failed candidate handed to the rollback is not one full lowercase SHA: '$SHA'" >&2; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "the release to restore is not one full lowercase SHA: '$EXPECTED_SHA'" >&2; exit 1; }
+          [[ "$STAGE_NAME" =~ ^${SHA}\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "the staging name '$STAGE_NAME' does not belong to candidate $SHA; refusing to roll back on another invocation's behalf" >&2; exit 1; }
+          for REQUIRED_TOOL in flock python3 sha256sum sync; do
+            command -v "$REQUIRED_TOOL" >/dev/null \
+              || { echo "the origin host has no $REQUIRED_TOOL on PATH; this rollback needs it" >&2; exit 1; }
+          done
+
+          CANDIDATE="$ROOT/releases/$SHA"
+          PREVIOUS="$ROOT/releases/$EXPECTED_SHA"
+          NEXT="$ROOT/.rollback.$STAGE_NAME"
+          CHECK="$ROOT/incoming/.rollback-manifest-check.$STAGE_NAME"
+          for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases"; do
+            [ -d "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is not a directory; found: $(ls -ld -- "$DIRECTORY" 2>&1 || true)" >&2; exit 1; }
+            [ ! -L "$DIRECTORY" ] \
+              || { echo "origin layout: $DIRECTORY is a symlink to $(readlink "$DIRECTORY"); refusing a root that can escape itself" >&2; exit 1; }
+          done
+          [ ! -L "$ROOT/.publish.lock" ] \
+            || { echo "the publish lock $ROOT/.publish.lock is a symlink to $(readlink "$ROOT/.publish.lock"); refusing to serialize against a file somebody else chose" >&2; exit 1; }
+          for TEMPORARY in "$NEXT" "$CHECK"; do
+            [ ! -e "$TEMPORARY" ] && [ ! -L "$TEMPORARY" ] \
+              || { echo "this transaction's scratch path $TEMPORARY already exists; found: $(ls -ld -- "$TEMPORARY" 2>&1 || true)" >&2; exit 1; }
+          done
+          trap 'rm -f -- "$NEXT" "$CHECK"' EXIT
+          exec 9>"$ROOT/.publish.lock"
+          flock -w 45 9 \
+            || { echo "another publish held $ROOT/.publish.lock for the whole 45s activation window; this candidate was not activated and nothing was changed" >&2; exit 1; }
+
+          [ -L "$ROOT/current" ] \
+            || { echo "$ROOT/current is not a symlink, so there is no pointer to restore; found: $(ls -ld -- "$ROOT/current" 2>&1 || true)" >&2; exit 1; }
+          CURRENT_LINK="$(readlink "$ROOT/current")"
+          if [ "$CURRENT_LINK" = "$PREVIOUS" ]; then
+            printf '%s\n' already-restored
+            exit 0
+          fi
+          if [ "$CURRENT_LINK" != "$CANDIDATE" ]; then
+            echo "current is $CURRENT_LINK, not the failed candidate; refusing to overwrite it" >&2
+            exit 75
+          fi
+
+          [ -d "$PREVIOUS" ] && [ ! -L "$PREVIOUS" ] \
+            || { echo "the release to restore, $PREVIOUS, is not a plain directory; found: $(ls -ld -- "$PREVIOUS" 2>&1 || true)" >&2; exit 1; }
+          test -s "$PREVIOUS/.release-manifest.sha256" \
+            || { echo "the release to restore, $PREVIOUS, carries no non-empty .release-manifest.sha256, so its bytes cannot be proved before it is served again" >&2; exit 1; }
+          if find "$PREVIOUS" -type l -print -quit | grep -q .; then
+            echo 'previous release contains a symlink' >&2
+            exit 1
+          fi
+          if find "$PREVIOUS" ! -type d ! -type f -print -quit | grep -q .; then
+            echo 'previous release contains a special file' >&2
+            exit 1
+          fi
+          (cd "$PREVIOUS" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
+          (
+            cd "$PREVIOUS"
+            find . -type f ! -path './.release-manifest.sha256' -print0 \
+              | LC_ALL=C sort -z \
+              | xargs -0 sha256sum > "$CHECK"
+          )
+          cmp -s "$CHECK" "$PREVIOUS/.release-manifest.sha256" \
+            || { echo "the files under $PREVIOUS are not the files its .release-manifest.sha256 records; refusing to restore a release that cannot be proved" >&2; exit 1; }
+          rm -f -- "$CHECK"
+          python3 - "$PREVIOUS/build-info.json" "$EXPECTED_SHA" <<'PYTHON_ROLLBACK_BUILD_INFO'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding='utf-8') as handle:
+                  build_info = json.load(handle)
+          except (OSError, UnicodeError, json.JSONDecodeError) as error:
+              raise SystemExit(f'previous build-info is absent or malformed: {error}')
+          if type(build_info) is not dict or build_info.get('ca_sha') != sys.argv[2]:
+              raise SystemExit('previous build-info does not prove the exact rollback SHA')
+          PYTHON_ROLLBACK_BUILD_INFO
+
+          sync -f "$ROOT"
+          [ "$(readlink "$ROOT/current")" = "$CANDIDATE" ] \
+            || { echo "$ROOT/current moved to $(readlink "$ROOT/current") while the previous release was being proved; refusing to overwrite a pointer this rollback no longer owns" >&2; exit 1; }
+          ln -s "$PREVIOUS" "$NEXT"
+          mv -Tf "$NEXT" "$ROOT/current"
+          sync -f "$ROOT"
+          [ "$(readlink "$ROOT/current")" = "$PREVIOUS" ] \
+            || { echo "the rollback swap left $ROOT/current pointing at $(readlink "$ROOT/current"), not $PREVIOUS" >&2; exit 1; }
+          printf '%s\n' restored
+          REMOTE_ROLLBACK
+          )
+          case "$ROLLBACK_RESULT" in
+            restored|already-restored) ;;
+            *) echo "::error::Unexpected rollback result: $ROLLBACK_RESULT"; exit 1 ;;
+          esac
+
+          LIVE_ORIGIN=''
+          LIVE_PUBLIC=''
+          for _ in $(seq 1 12); do
+            LIVE_ORIGIN=''
+            LIVE_PUBLIC=''
+            ORIGIN_BODY=''
+            PUBLIC_BODY=''
+            if ORIGIN_BODY=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+              "$ORIGIN_URL/build-info.json?rollback=$RANDOM" 2>/dev/null); then
+              LIVE_ORIGIN=$(printf '%s' "$ORIGIN_BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs unchanged "$EXPECTED_SHA" 2>/dev/null || true)
+            fi
+            if PUBLIC_BODY=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+              "$PUBLIC_URL/build-info.json?rollback=$RANDOM" 2>/dev/null); then
+              LIVE_PUBLIC=$(printf '%s' "$PUBLIC_BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs unchanged "$EXPECTED_SHA" 2>/dev/null || true)
+            fi
+            if [ "$LIVE_ORIGIN" = "$EXPECTED_SHA" ] && [ "$LIVE_PUBLIC" = "$EXPECTED_SHA" ]; then
+              echo "::notice::Restored and verified ${EXPECTED_SHA:0:7} after candidate ${SHA:0:7} failed publication proof."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Rollback pointer changed, but origin serves '$LIVE_ORIGIN' and player route serves '$LIVE_PUBLIC'; wanted $EXPECTED_SHA"
+          exit 1
+
+      - name: Remove origin credentials and control sockets
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f -- "$HOME/.ssh/ca_origin" "$HOME/.ssh/ca_origin_known_hosts"
+          rm -rf -- /tmp/cacm
+
+      - name: Preserve original publisher verdict evidence
+        env:
+          RECEIPT_SELECTED_SHA: ${{ inputs.target_sha }}
+          RECEIPT_RUNTIME_SHA: ${{ steps.verdict.outputs.verdict == 'publish' && steps.verified.outputs.sha || steps.verdict.outputs.theirs }}
+          RECEIPT_VERIFIED_SHA: ${{ steps.verified.outputs.sha }}
+          RECEIPT_OUTCOMES: ${{ format('["{0}","{1}","{2}"]', steps.verdict.outcome, steps.immutable_publish.outcome, steps.verified.outcome) }}
+          RECEIPT_VERDICT: ${{ steps.verdict.outputs.verdict }}
+          RECEIPT_CONCLUSIONS: ${{ format('["{0}","{1}","{2}"]', steps.verdict.conclusion, steps.immutable_publish.conclusion, steps.verified.conclusion) }}
+        run: node scripts/ci/publisher-verdict-receipt.mjs write publisher-verdict.json
+      - name: Upload immutable original publisher verdict
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-arena-publisher-verdict-publish-to-origin-attempt-${{ github.run_attempt }}
+          path: publisher-verdict.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-record-gateway:
+    if: >-
+      github.repository_id == '1132369872' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/publish-club-arena.yml@refs/heads/main', github.repository) && (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      (inputs.component == 'private-record-gateway' && inputs.gateway_build_result == 'success')
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
+      REVISION: ${{ inputs.target_sha }}
+    steps:
+      - name: Checkout the admitted publication controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked live gateway verification dependencies
+        working-directory: server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Qualify bounded gateway canary and cleanup behavior
+        run: node --test scripts/ci/private-record-gateway-live.test.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: private-record-gateway-${{ inputs.target_sha }}
+          path: gateway-artifact
+      - name: Configure the dedicated gateway publisher identity
+        env:
+          KEY: ${{ secrets.CA_RECORD_GATEWAY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [ -n "$KEY" ] && [ -n "$HOST_KEY" ] || { echo "::error::Dedicated gateway host, key or pinned host key is missing or invalid"; exit 1; }
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/ca_origin"
+          printf '%s\n' "$HOST_KEY" > "$HOME/.ssh/ca_origin_known_hosts"
+          ssh-keygen -y -f "$HOME/.ssh/ca_origin" >/dev/null
+      - name: Activate only the prepared independent service
+        run: |
+          set -euo pipefail
+          SSH=(timeout 180s ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -i "$HOME/.ssh/ca_origin" -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts" -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20)
+          gh attestation verify gateway-artifact/runtime.tar.gz --bundle gateway-artifact/attestation.jsonl --repo Smarter-Software-PIQ/Smarter-Poker-Club-Arena --signer-workflow Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml --source-ref refs/heads/main --deny-self-hosted-runners
+          STAGE="$REVISION.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
+          "${SSH[@]}" "ca-record-publisher@$ORIGIN_HOST" bash -s -- "$STAGE" <<'REMOTE'
+          set -euo pipefail
+          [[ "$1" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid gateway staging identity" >&2; exit 1; }
+          test -x /usr/local/libexec/ca-private-record-gateway-activate || { echo "Root-owned gateway activation helper is absent or not executable" >&2; exit 1; }
+          sudo -n -l /usr/local/libexec/ca-private-record-gateway-activate >/dev/null
+          mkdir "/srv/ca-private-record-gateway/incoming/$1"
+          REMOTE
+          RSYNC_RSH="ssh -i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes"
+          timeout 240s rsync -a --fsync -e "$RSYNC_RSH" gateway-artifact/ "ca-record-publisher@$ORIGIN_HOST:/srv/ca-private-record-gateway/incoming/$STAGE/"
+          "${SSH[@]}" "ca-record-publisher@$ORIGIN_HOST" bash -s -- "$STAGE" "$REVISION" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          OLD=none
+          if [ -L /run/ca-private-record-gateway/active.sock ]; then
+            TARGET=$(readlink /run/ca-private-record-gateway/active.sock)
+            [[ "$TARGET" =~ ^[0-9a-f]{40}/listener\.sock$ ]] || { echo "Current gateway socket target is not a sealed generation" >&2; exit 1; }
+            OLD="${TARGET%%/*}"
+          fi
+          sudo -n /usr/local/libexec/ca-private-record-gateway-activate "$1" "$2" "$OLD" "$3"
+          REMOTE
+      - name: Verify authenticated gateway record delivery
+        id: gateway_live
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          EXPECTED_GATEWAY_REVISION: ${{ inputs.target_sha }}
+          PRIVATE_RECORD_GATEWAY_LIVE_CHECK: '1'
+        run: node scripts/ci/private-record-gateway-live.mjs
+      - name: Ensure the reserved gateway canary account is retired
+        if: always() && steps.gateway_live.outcome != 'skipped' && steps.gateway_live.outcome != ''
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs cleanup
+      - name: Retain token-free authenticated gateway evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-record-gateway-live-${{ github.run_id }}
+          path: ${{ runner.temp }}/private-record-gateway-live.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove ephemeral origin credentials
+        if: always()
+        run: rm -f "$HOME/.ssh/ca_origin" "$HOME/.ssh/ca_origin_known_hosts"
+
+  bootstrap-record-gateway:
+    if: >-
+      github.repository_id == '1132369872' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/publish-club-arena.yml@refs/heads/main', github.repository) && (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      (inputs.component == 'private-record-bootstrap')
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
+      ENGINE_HOST: ${{ secrets.HETZNER_HOST }}
+      REVISION: ${{ inputs.target_sha }}
+    steps:
+      - name: Checkout exact protected infrastructure controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked bootstrap verification driver
+        working-directory: server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Qualify bootstrap admission and rollback controls
+        run: node --test scripts/ci/private-record-gateway-bootstrap.test.mjs
+      - name: Verify dedicated session before any origin mutation
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PRIVATE_RECORD_GATEWAY_DB_PASSWORD: ${{ secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD }}
+        run: node scripts/ci/private-record-gateway-credentials.mjs verify
+      - name: Admit dedicated canonical credentials before any host mutation
+        env:
+          ADMIN_KEY: ${{ secrets.CA_ORIGIN_SSH_KEY }}
+          ADMIN_HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
+          ENGINE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          ENGINE_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+          GATEWAY_KEY: ${{ secrets.CA_RECORD_GATEWAY_SSH_KEY }}
+          CANONICAL_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PRIVATE_RECORD_GATEWAY_DB_PASSWORD: ${{ secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD }}
+          API_URL: ${{ secrets.SUPABASE_URL }}
+          API_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: |
+          set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [[ "$ENGINE_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::Canonical gateway origin or engine host is absent or invalid"; exit 1; }
+          for name in ADMIN_KEY ADMIN_HOST_KEY ENGINE_KEY ENGINE_HOST_KEY GATEWAY_KEY CANONICAL_DATABASE_URL PRIVATE_RECORD_GATEWAY_DB_PASSWORD API_URL API_KEY; do
+            [ -n "${!name}" ] || { echo "::error::Required canonical configuration $name is absent; no host operation admitted."; exit 1; }
+          done
+          umask 077
+          mkdir -p "$RUNNER_TEMP/gateway-bootstrap"
+          printf '%s\n' "$ADMIN_KEY" > "$RUNNER_TEMP/gateway-bootstrap/admin-key"
+          printf '%s\n' "$ADMIN_HOST_KEY" > "$RUNNER_TEMP/gateway-bootstrap/admin-host"
+          printf '%s\n' "$ENGINE_KEY" > "$RUNNER_TEMP/gateway-bootstrap/engine-key"
+          printf '%s\n' "$ENGINE_HOST_KEY" > "$RUNNER_TEMP/gateway-bootstrap/engine-host"
+          printf '%s\n' "$GATEWAY_KEY" > "$RUNNER_TEMP/gateway-bootstrap/gateway-key"
+          ssh-keygen -y -f "$RUNNER_TEMP/gateway-bootstrap/gateway-key" > "$RUNNER_TEMP/gateway-bootstrap/publisher.pub"
+          timeout 35s ssh -i "$RUNNER_TEMP/gateway-bootstrap/engine-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/gateway-bootstrap/engine-host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 "root@$ENGINE_HOST" 'cat /etc/machine-id' > "$RUNNER_TEMP/gateway-bootstrap/engine-machine-id"
+          gh attestation trusted-root > "$RUNNER_TEMP/gateway-bootstrap/trusted-root.jsonl"
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { deriveGatewayConnection } from './scripts/ci/private-record-gateway-credentials.mjs';
+          import { gatewayMachineIdSha256 } from './scripts/ci/private-record-gateway-host-identity.mjs';
+          const root = process.env.RUNNER_TEMP + '/gateway-bootstrap/';
+          const config = { revision: process.env.REVISION, runId: process.env.GITHUB_RUN_ID, engineMachineIdSha256: gatewayMachineIdSha256(readFileSync(root+'engine-machine-id')), publisherPublicKey: readFileSync(root+'publisher.pub','utf8').trim(), trustedRoot: readFileSync(root+'trusted-root.jsonl','utf8'), environment: { PRIVATE_RECORD_GATEWAY_DATABASE_URL: deriveGatewayConnection(process.env.CANONICAL_DATABASE_URL,process.env.PRIVATE_RECORD_GATEWAY_DB_PASSWORD), SUPABASE_URL: process.env.API_URL, SUPABASE_PUBLISHABLE_KEY: process.env.API_KEY } };
+          writeFileSync(root+'input.json', JSON.stringify(config), {mode:0o600});
+          NODE
+      - name: Install inert prerequisites through the existing protected provider
+        run: |
+          set -euo pipefail
+          PRIVATE="$RUNNER_TEMP/gateway-bootstrap"
+          SSH=(timeout 180s ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -i "$PRIVATE/admin-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$PRIVATE/admin-host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20)
+          REMOTE="/var/lib/ca-private-record-bootstrap-$GITHUB_RUN_ID"
+          "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n mkdir -m 0700 "$REMOTE"
+          tar -czf "$PRIVATE/source.tar.gz" infra/ca-origin scripts/ci/private-record-gateway-activate.mjs scripts/ci/private-record-gateway-artifact.mjs scripts/ci/private-record-gateway-boot.mjs scripts/ci/private-record-gateway-bootstrap.mjs scripts/ci/private-record-gateway-host-identity.mjs
+          "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n tar --no-same-owner -xzf - -C "$REMOTE" < "$PRIVATE/source.tar.gz"
+          "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n /usr/bin/node "$REMOTE/scripts/ci/private-record-gateway-bootstrap.mjs" "$REMOTE" < "$PRIVATE/input.json"
+          "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n rm -rf -- "$REMOTE"
+      - name: Remove only this runner's bootstrap credentials
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/gateway-bootstrap"
+
+  install-record-gateway-credentials:
+    if: >-
+      github.repository_id == '1132369872' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/publish-club-arena.yml@refs/heads/main', github.repository) && (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      (inputs.component == 'private-record-credentials')
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact protected credential controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked database driver
+        working-directory: server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Qualify credential admission and no-rotation behavior
+        run: node --test scripts/ci/private-record-gateway-credentials.test.mjs
+      - name: Install only the dedicated listener credential
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PRIVATE_RECORD_GATEWAY_DB_PASSWORD: ${{ secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD }}
+        run: node scripts/ci/private-record-gateway-credentials.mjs
+
+  inspect-record-gateway-host:
+    if: >-
+      github.repository_id == '1132369872' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/publish-club-arena.yml@refs/heads/main', github.repository) && (github.event_name == 'push' || github.event_name == 'repository_dispatch') &&
+      (inputs.component == 'private-record-inspect')
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
+    steps:
+      - name: Checkout exact protected read-only controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Qualify the fixed metadata inspector
+        run: node --test scripts/ci/private-record-gateway-inspect.test.mjs
+      - name: Read fixed gateway host metadata without changing host state
+        env:
+          KEY: ${{ secrets.CA_ORIGIN_SSH_KEY }}
+          HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [ -n "$KEY" ] && [ -n "$HOST_KEY" ] || { echo '::error::Canonical origin host, key or pinned host key unavailable'; exit 1; }
+          umask 077
+          WORK="$RUNNER_TEMP/private-record-inspect"
+          mkdir "$WORK"
+          printf '%s\n' "$KEY" > "$WORK/key"
+          printf '%s\n' "$HOST_KEY" > "$WORK/host"
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const path=process.env.RUNNER_TEMP+'/private-record-inspect/';
+          const identity=readFileSync('scripts/ci/private-record-gateway-host-identity.mjs').toString('base64');
+          const needle="'./private-record-gateway-host-identity.mjs'";
+          const source=readFileSync('scripts/ci/private-record-gateway-inspect.mjs','utf8');
+          if(source.split(needle).length!==2) throw Error('Reviewed inspector import binding changed');
+          writeFileSync(path+'transport.mjs',source.replace(needle,JSON.stringify('data:text/javascript;base64,'+identity))+'\nrunInspectionCli(process.argv.slice(2));\n');
+          writeFileSync(path+'preimage',readFileSync('infra/ca-origin/private-record-gateway.caddy-preimage').toString('base64'));
+          NODE
+          PREIMAGE=$(cat "$WORK/preimage")
+          timeout 45s ssh -i "$WORK/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$WORK/host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 "ci@$ORIGIN_HOST" sudo -n /usr/bin/node --input-type=module - "$PREIMAGE" < "$WORK/transport.mjs" > "$WORK/metadata.json"
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const text=readFileSync(process.env.RUNNER_TEMP+'/private-record-inspect/metadata.json','utf8');
+          if(text.length>16384) throw Error('Inspector output bound exceeded');
+          const result=JSON.parse(text);
+          if(result.schema!==1 || result.component!=='private-record-host-inspection' || result.status!=='observed') throw Error('Host metadata is incomplete');
+          console.log(JSON.stringify(result));
+          NODE
+      - name: Retain nonsecret host metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-record-host-inspection-${{ github.run_id }}
+          path: ${{ runner.temp }}/private-record-inspect/metadata.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove only this runner's inspection inputs
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/private-record-inspect"

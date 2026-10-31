@@ -1,3 +1,13 @@
+import { registerLobbyGameSectionsCases } from './support/lobbyGameSectionsCases';
+import { lobbyGameSectionsFixture } from './helpers/lobby-game-sections-fixture.mjs';
+registerLobbyGameSectionsCases(lobbyGameSectionsFixture);
+import { registerCssPreloadRetryCase } from './css/vite-css-preload-retry.fixture';
+import { tournamentScrollFeedbackFixture } from './helpers/tournament-scroll-feedback.mjs';
+import { registerInitialTableReadinessCases } from './support/initialTableReadinessCases';
+registerInitialTableReadinessCases();
+
+import { registerMobileAvatarPaintCases } from './support/mobileAvatarPaintCases';
+registerMobileAvatarPaintCases();
 import { registerPlayerActionAudioCases } from './audio/playerActionAudioCases';
 import { registerLeaderboardLoadingLayoutCases } from './css/leaderboardLoadingLayoutCases';
 
@@ -55,6 +65,47 @@ test.describe('tournament scroll gestures', () => {
   // input in both engines at the same narrow/wide responsive viewport sizes.
   // This override is scoped here; existing iPhone chrome tests keep touch mode.
   test.use({ isMobile: false, hasTouch: false });
+  test('a continued bottom-edge flick cannot cycle the tournament footer', async ({ page }) => {
+    await page.setViewportSize({ width: 393, height: 760 });
+    const fixture = await tournamentScrollFeedbackFixture();
+    await page.setContent(`<style>html,body{margin:0}${fixture.css}</style><div id="root"></div>`);
+    await page.addScriptTag({ content: fixture.javascript });
+    const panel = page.locator('.details-content');
+    const nav = page.getByRole('navigation', { name: 'Global Footer' });
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'false');
+    const box = await panel.boundingBox();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.wheel(0, 130);
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'true');
+    // One sustained downward gesture, including events after the end reveals
+    // the footer and reduces the panel. Before the fix this flips 20+ times.
+    for (let i = 0; i < 20; i++) {
+      await page.mouse.wheel(0, 40);
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          )
+      );
+    }
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'false');
+    const flips = () =>
+      page.evaluate(() => (window as unknown as { footerFlips: boolean[] }).footerFlips);
+    expect(await flips()).toEqual([false, true, false]);
+    await expect
+      .poll(() =>
+        panel.evaluate((el) => Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop))
+      )
+      .toBeLessThanOrEqual(1);
+    const footer = await page.locator('.details-footer').boundingBox();
+    const globalFooter = await nav.boundingBox();
+    expect(Math.abs(footer!.y + footer!.height - globalFooter!.y)).toBeLessThanOrEqual(1);
+    // Moving away from the end restores ordinary direction detection.
+    await page.mouse.wheel(0, -180);
+    await expect.poll(() => panel.evaluate((el) => el.scrollTop)).toBeLessThan(200);
+    await page.mouse.wheel(0, 50);
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'true');
+  });
   for (const width of [375, 1518]) {
     test(`tournament tabs scroll from centre and sides at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 812 });
@@ -589,6 +640,7 @@ test('cash navigation retires its handler and still refuses a missing View actio
 });
 
 const SHEETS = [
+  'src/components/lobby/LobbyFilterLabel.css',
   'src/styles/globals.css',
   'src/pages/ClubHomePage.css',
   'src/components/lobby/ClubLobbyCommandTop.css',
@@ -596,6 +648,7 @@ const SHEETS = [
   'src/components/lobby/LobbySortBar.css',
   'src/components/lobby/CompactLobbyRows.css',
   'src/pages/ClubHomeMobilePremium.css',
+  'src/components/wallet/CashierMyWallets.css',
   'src/components/club/ClubBottomNav.module.css',
 ]
   .map(css)
@@ -626,7 +679,7 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?
         <div class="lobby-top__main">
           <div class="fx-plaque"></div>
           <div class="fx-plaque"></div>
-          <div class="lobby-top__wallet">
+          <div class="cashier-my-wallets">
             <button type="button" class="lobby-wallets-trigger" aria-expanded="false">
               <span class="lobby-wallets-trigger__icon" aria-hidden="true"></span>
               <span class="lobby-wallets-trigger__copy">
@@ -805,31 +858,87 @@ for (const width of [320, 393]) {
     await page.setViewportSize({ width, height: 852 });
     await page.setContent(lobby({ countText: '5 Balances', publishControlsHeight: true }));
     await settle(page);
+    // This historical chrome fixture also serves scroll/nav tests with all
+    // game types. This case represents the opened tournament family: four
+    // types, and the five supported tournament statuses.
+    await page.locator('.game-bar__types').evaluate((types) => {
+      types.innerHTML = ["MTT'S", 'Spins', "Sit N Go's", 'Satellites']
+        .map((label) => `<button type="button" role="tab" class="game-bar__type">${label}</button>`)
+        .join('');
+    });
+    await page.locator('.quickprefs__row--status').evaluate((status) => {
+      status.innerHTML = ['All', 'Running', 'Open Registration', 'Late Reg', 'Starting Soon']
+        .map((label) => `<button type="button" class="quickprefs__chip">${label}</button>`)
+        .join('');
+    });
     const metrics = await page.locator('.lobby-controls').evaluate((controls) => {
-      const types = controls.querySelector<HTMLElement>('.game-bar__types')!;
-      const status = controls.querySelector<HTMLElement>('.quickprefs__row--status')!;
-      const filter = controls.querySelector<HTMLElement>('.game-bar__filter-btn')!;
-      const box = filter.getBoundingClientRect();
-      const tops = [...types.children].map((el) => el.getBoundingClientRect().top);
-      types.scrollLeft = types.scrollWidth;
-      const lastType = types.lastElementChild!.getBoundingClientRect();
-      status.scrollLeft = status.scrollWidth;
-      const lastStatus = status.lastElementChild!.getBoundingClientRect();
+      const rects = (selector: string) =>
+        [...controls.querySelectorAll<HTMLElement>(selector)].map((el) => {
+          const r = el.getBoundingClientRect();
+          return {
+            left: r.left,
+            right: r.right,
+            top: r.top,
+            bottom: r.bottom,
+            height: r.height,
+            label: el.textContent,
+            textFits: el.scrollWidth <= el.clientWidth + 1,
+          };
+        });
       return {
-        oneTypeRow: Math.max(...tops) - Math.min(...tops),
-        filter: { left: box.left, right: box.right, height: box.height },
-        typeReachable: lastType.left >= 0 && lastType.right <= innerWidth,
-        statusReachable: lastStatus.left >= 0 && lastStatus.right <= box.left,
+        types: rects('.game-bar__type'),
+        statuses: rects('.quickprefs__chip'),
+        filter: rects('.game-bar__filter-btn')[0],
         pageOverflow: document.documentElement.scrollWidth - innerWidth,
       };
     });
-    expect(metrics.oneTypeRow).toBeLessThanOrEqual(1);
-    expect(metrics.filter.left).toBeGreaterThanOrEqual(0);
-    expect(metrics.filter.right).toBeLessThanOrEqual(width);
-    expect(metrics.filter.height).toBeGreaterThanOrEqual(44);
-    expect(metrics.typeReachable).toBe(true);
-    expect(metrics.statusReachable).toBe(true);
+    expect(metrics.types).toHaveLength(4);
+    // Two equally aligned columns in two distinct rows, with no overlap.
+    expect(Math.abs(metrics.types[0].top - metrics.types[1].top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.types[2].top - metrics.types[3].top)).toBeLessThanOrEqual(1);
+    expect(metrics.types[2].top).toBeGreaterThanOrEqual(metrics.types[0].bottom);
+    expect(Math.abs(metrics.types[0].left - metrics.types[2].left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.types[1].left - metrics.types[3].left)).toBeLessThanOrEqual(1);
+    expect(metrics.types[0].right).toBeLessThanOrEqual(metrics.types[1].left);
+    expect(metrics.statuses).toHaveLength(5);
+    const footer = [...metrics.statuses, metrics.filter];
+    for (let i = 0; i < footer.length; i++) {
+      for (const other of footer.slice(i + 1)) {
+        const current = footer[i];
+        expect(
+          current.right <= other.left ||
+            other.right <= current.left ||
+            current.bottom <= other.top ||
+            other.bottom <= current.top
+        ).toBe(true);
+      }
+    }
+    for (const control of [...metrics.types, ...metrics.statuses, metrics.filter]) {
+      expect(control.left).toBeGreaterThanOrEqual(0);
+      expect(control.right).toBeLessThanOrEqual(width);
+      expect(control.height).toBeGreaterThanOrEqual(44);
+      expect(control.textFits, `${control.label} must fit its touch target`).toBe(true);
+    }
+    expect(metrics.filter.top).toBeGreaterThanOrEqual(
+      Math.max(...metrics.types.map((r) => r.bottom))
+    );
+    const startingSoon = metrics.statuses[4];
+    expect(Math.abs(metrics.filter.top - startingSoon.top)).toBeLessThanOrEqual(1);
+    expect(metrics.filter.left).toBeGreaterThanOrEqual(startingSoon.right);
     expect(metrics.pageOverflow).toBeLessThanOrEqual(1);
+    // Every control remains an actual hit target after scrolling into view,
+    // including the final status and Filters below the wrapped type grid.
+    for (const control of await page
+      .locator('.game-bar__type, .quickprefs__chip, .game-bar__filter-btn')
+      .all()) {
+      await control.scrollIntoViewIfNeeded();
+      expect(
+        await control.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+        })
+      ).toBe(true);
+    }
   });
 }
 
@@ -849,8 +958,9 @@ test.describe('mobile lobby chrome', () => {
         const deck = page.locator('.club-lobby-command-top__controls');
         const home = await deck.evaluate((el) => el.getBoundingClientRect().top);
         await expect(deck).toHaveCSS('position', 'relative');
-        await page.evaluate(() => window.scrollTo(0, 1200));
-        await page.evaluate(() => window.scrollTo(0, 1000));
+        const deckBottom = await deck.evaluate((el) => el.getBoundingClientRect().bottom);
+        await page.evaluate((bottom) => window.scrollTo(0, bottom + 200), deckBottom);
+        await page.evaluate(() => window.scrollBy(0, -64));
         await expect
           .poll(() => deck.evaluate((el) => el.getBoundingClientRect().bottom))
           .toBeLessThan(0);
@@ -986,3 +1096,8 @@ test.describe('notification reflow above Messenger and navigation', () => {
 async function documentFontsReady(page: Page) {
   await page.evaluate(() => document.fonts.ready);
 }
+
+import { registerMobileActionStripCases } from './support/mobileActionStripCases';
+registerMobileActionStripCases();
+
+registerCssPreloadRetryCase();

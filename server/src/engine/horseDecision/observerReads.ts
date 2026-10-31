@@ -1,3 +1,6 @@
+import { riverPublicNode } from '../HorseMultiwayRiverRead.js';
+import { PooledPublicProfiles, type PooledPublicProfileReceipt } from './pooledPublicProfiles.js';
+import { opponentMemoryKey } from '../HorseOpponentMemory.js';
 import { observerParticipantsBind } from './observerParticipants.js';
 import { ownPublicHistoryIsValid, type HorseOwnPublicHistoryPacket } from './ownPublicHistory.js';
 import { completedHandActionsForMind } from './completedHandActions.js';
@@ -16,9 +19,12 @@ import { observeHandResults } from '../HorseWinnerRead.js';
 import type { FastHorseDecisionRequest, ObserveCompletedHandRequest } from './protocol.js';
 
 export interface HorseObserverReadReceipt {
-  readonly version: 1 | 2;
+  readonly version: 1 | 2 | 3;
+  readonly individualVersion?: 1 | 2;
+  readonly pooledPublicProfiles?: PooledPublicProfileReceipt;
   readonly disposition:
     | 'independent'
+    | 'pooled_public'
     | 'unknown_context'
     | 'unknown_hand'
     | 'cutoff_unavailable'
@@ -43,10 +49,13 @@ type Entry = {
   historyAckDigest?: string;
   completedHandIds?: Set<string>;
   pendingCompletions?: ObserveCompletedHandRequest[];
+  historyTailCapped?: boolean;
 };
-/** Volatile individual memory. No global/durable donor fallback. A missing
+/** Individual memory with owner-authorized public aggregate notes.
+ * Pooled notes carry separate provenance and are never labelled independent. A missing
  * original participation coordinate is an empty read, never another observer. */
 export class HorseObserverReads {
+  private readonly publicProfiles: PooledPublicProfiles;
   private readonly entries = new Map<string, Entry>();
   private readonly completed = new Set<string>();
   private readonly hands = new Map<
@@ -74,6 +83,13 @@ export class HorseObserverReads {
       maxHands < 1
     )
       throw Error('Invalid observer memory bounds');
+    this.publicProfiles = new PooledPublicProfiles(now);
+  }
+  bootstrapPublicProfiles(snapshot: {
+    availableAtMs: number;
+    profiles: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
+  }): boolean {
+    return this.publicProfiles.bootstrap(snapshot);
   }
   private scope(context: HorseObserverReadContext): import('../HorseMind.js').ReadScope {
     const size = context.dealtCount <= 2 ? 'hu' : context.dealtCount <= 5 ? 'short' : 'full';
@@ -94,11 +110,16 @@ export class HorseObserverReads {
       const actions = completedHandActionsForMind(hand.actions, scope);
       const parts = hand.handKey.split(':');
       if (actions)
-        HorseMind.observe(actions.actions, [], {
-          version: 1,
-          tableId: parts[0]!,
-          handNumber: Number(parts[1]),
-        });
+        HorseMind.observe(
+          actions.actions,
+          [],
+          {
+            version: 1,
+            tableId: parts[0]!,
+            handNumber: Number(parts[1]),
+          },
+          entry.context.dealtCount
+        );
       HorseMind.observeHandComplete(
         hand.handKey,
         hand.actions,
@@ -113,8 +134,10 @@ export class HorseObserverReads {
     });
   }
   /** Keep only public learning fields. No accepted roster, donor packet,
-   * private cards, public-node capsule or policy/financial authority is copied. */
+   * private cards or policy/financial authority is copied. Only the first four
+   * explicitly projected public river structural snapshots may accompany actions. */
   private publicCopy(hand: ObserveCompletedHandRequest): ObserveCompletedHandRequest {
+    let riverCount = 0;
     return {
       type: 'OBSERVE_COMPLETED_HAND',
       requestId: hand.requestId,
@@ -126,15 +149,20 @@ export class HorseObserverReads {
       riverCallContext: hand.riverCallContext ? { ...hand.riverCallContext } : undefined,
       retainedRiverCalls: hand.retainedRiverCalls?.map((s) => ({ ...s })),
       scope: hand.scope,
-      actions: hand.actions?.map((a) => ({
-        seat: a.seat,
-        userId: a.userId,
-        action: a.action,
-        amount: a.amount,
-        stage: a.stage,
-        timestamp: a.timestamp,
-        ...(a.isFullRaise === undefined ? {} : { isFullRaise: a.isFullRaise }),
-      })),
+      actions: hand.actions?.map((a) => {
+        const publicNode =
+          a.stage === 'river' && riverCount++ < 4 ? riverPublicNode(a.publicNode, true) : null;
+        return {
+          seat: a.seat,
+          userId: a.userId,
+          action: a.action,
+          amount: a.amount,
+          stage: a.stage,
+          timestamp: a.timestamp,
+          ...(a.isFullRaise === undefined ? {} : { isFullRaise: a.isFullRaise }),
+          ...(publicNode ? { publicNode } : {}),
+        };
+      }),
       results: hand.results?.map((r) => ({ user_id: r.user_id, net: r.net })),
       showdown:
         hand.showdown?.map((r) => ({
@@ -166,46 +194,69 @@ export class HorseObserverReads {
     } catch {
       entry.historyError = true;
     }
-    entry.pendingCompletions = [];
   }
   private hydrate(entry: Entry, packet: HorseOwnPublicHistoryPacket): void {
     entry.historyAckDigest = packet.digest; // acknowledgement is not a loaded-history claim
     if (
-      entry.historyPhase !== 'pending' ||
+      entry.historyPhase === 'loaded' ||
       !ownPublicHistoryIsValid(packet, entry.context, packet.availableAtMs)
     )
       return;
     // Pending turns retain plans in the real entry, but observe into temporary
     // views. Historical observations therefore precede live tails, and no
     // already-counted recent hand is reclassified as older data arriving last.
-    const staged = structuredClone(entry.state);
+    // Rebuild observations in chronological order after a failed initial load.
+    // Plans remain on the original state; only public observation fields merge.
+    const staged = HorseMind.createSandbox();
     const ids = new Set<string>();
+    const observations: Array<{ at: number; hand: ObserveCompletedHandRequest }> = [];
+    const pending = new Map(
+      (entry.pendingCompletions ?? []).map((hand) => [hand.committedHandId!.toLowerCase(), hand])
+    );
     for (const h of packet.hands) {
       ids.add(h.handId);
-      this.learnPublic(entry, staged, {
-        type: 'OBSERVE_COMPLETED_HAND',
-        requestId: 0,
-        generation: h.handNumber,
-        // Historical learning has no current lease or plan authority.
-        fence: '',
-        handKey: `${h.tableId}:${h.handNumber}`,
-        committedHandId: h.handId,
-        bigBlind: h.bigBlind,
-        actions: h.actions,
-        results: h.results ?? undefined,
-        showdown: null,
-        ...(h.riverCalls === undefined
-          ? {}
-          : {
-              riverCallContext: { variant: h.variant, boardCount: 1 },
-              retainedRiverCalls: h.riverCalls,
-            }),
+      const live = pending.get(h.handId);
+      // Preserve the original bound live showdown evidence at its historical
+      // position; optional history categories can contain less information.
+      if (live?.handKey === `${h.tableId}:${h.handNumber}`) {
+        observations.push({ at: h.playedAtMs, hand: live });
+        continue;
+      }
+      observations.push({
+        at: h.playedAtMs,
+        hand: {
+          type: 'OBSERVE_COMPLETED_HAND',
+          requestId: 0,
+          generation: h.handNumber,
+          // Historical learning has no current lease or plan authority.
+          fence: '',
+          handKey: `${h.tableId}:${h.handNumber}`,
+          committedHandId: h.handId,
+          bigBlind: h.bigBlind,
+          actions: h.actions,
+          results: h.results ?? undefined,
+          showdown: null,
+          ...(h.riverCalls === undefined
+            ? {}
+            : {
+                riverCallContext: { variant: h.variant, boardCount: 1 },
+                retainedRiverCalls: h.riverCalls,
+              }),
+        },
       });
     }
     for (const hand of entry.pendingCompletions ?? []) {
-      if (!ids.has(hand.committedHandId!)) this.learnPublic(entry, staged, hand);
+      if (!ids.has(hand.committedHandId!))
+        observations.push({
+          at: Math.max(0, ...(hand.actions ?? []).map((a) => a.timestamp ?? 0)),
+          hand,
+        });
       ids.add(hand.committedHandId!);
     }
+    observations.sort(
+      (a, b) => a.at - b.at || a.hand.committedHandId!.localeCompare(b.hand.committedHandId!)
+    );
+    for (const { hand } of observations) this.learnPublic(entry, staged, hand);
     if (
       staged.stats.size > 512 ||
       staged.seenActions.size > 8192 ||
@@ -216,7 +267,7 @@ export class HorseObserverReads {
       (staged.winnerReads?.rows.size ?? 0) > 512 ||
       (staged.winnerReads?.seen.size ?? 0) > 8192
     ) {
-      this.flushPending(entry);
+      if (entry.historyPhase === 'pending') this.flushPending(entry);
       entry.historyPhase = 'unavailable';
       return;
     }
@@ -225,11 +276,12 @@ export class HorseObserverReads {
     entry.completedHandIds = ids;
     entry.pendingCompletions = [];
     entry.historyPhase = 'loaded';
+    entry.historyError = false;
     entry.history = {
       digest: packet.digest,
       availableAtMs: packet.availableAtMs,
       hands: packet.hands.length,
-      capped: packet.capped,
+      capped: packet.capped || entry.historyTailCapped === true,
     };
     entry.observedAt = Math.max(entry.observedAt, packet.availableAtMs);
   }
@@ -288,6 +340,7 @@ export class HorseObserverReads {
         historyEntry.historyPhase = undefined;
         historyEntry.historyAckDigest = undefined;
         historyEntry.historyError = false;
+        historyEntry.historyTailCapped = false;
         historyEntry.completedHandIds = new Set();
         historyEntry.pendingCompletions = [];
       }
@@ -320,7 +373,7 @@ export class HorseObserverReads {
         try {
           this.hydrate(historyEntry, request.ownPublicHistory);
         } catch {
-          this.flushPending(historyEntry);
+          if (historyEntry.historyPhase === 'pending') this.flushPending(historyEntry);
           historyEntry.historyError = true;
           historyEntry.historyPhase = 'unavailable';
         }
@@ -328,12 +381,30 @@ export class HorseObserverReads {
       if (historyEntry.historyError) disposition = 'history_unavailable';
     }
     const history = historyEntry?.history;
+    const pooled = entry.context ? this.publicProfiles.read(request) : null;
+    // Public counters use a detached map. Individual observations, dedupe
+    // and private plans retain this horse's original ownership.
+    const executionState = pooled
+      ? { ...entry.state, exploit: new Map(entry.state.exploit) }
+      : entry.state;
+    if (pooled)
+      for (const row of pooled.rows)
+        executionState.exploit!.set(
+          opponentMemoryKey(row.user_id, row.variant, row.mode, row.size),
+          { ...row.counters }
+        );
     this.requests.set(request, {
-      state: entry.state,
+      state: executionState,
       boundary: entry,
       receipt: Object.freeze({
-        version: history ? 2 : 1,
-        disposition,
+        version: pooled ? 3 : history ? 2 : 1,
+        ...(pooled
+          ? {
+              individualVersion: history ? (2 as const) : (1 as const),
+              pooledPublicProfiles: pooled.receipt,
+            }
+          : {}),
+        disposition: pooled && disposition === 'independent' ? 'pooled_public' : disposition,
         context: entry.context,
         cutoffMs: request.decisionTimeMs,
         learnedThroughMs: entry.observedAt,
@@ -369,12 +440,12 @@ export class HorseObserverReads {
     }
     try {
       if (historyEntry?.historyPhase === 'pending') {
-        const temporary = structuredClone(entry.state);
+        const temporary = structuredClone(executionState);
         for (const hand of historyEntry.pendingCompletions ?? [])
           this.learnPublic(historyEntry, temporary, hand);
         return HorseMind.runInSandbox(temporary, fn);
       }
-      return HorseMind.runInSandbox(entry.state, fn);
+      return HorseMind.runInSandbox(executionState, fn);
     } finally {
       entry.observedAt = Math.max(entry.observedAt, request.decisionTimeMs);
     }
@@ -419,6 +490,7 @@ export class HorseObserverReads {
     if (this.completed.has(key)) return 0;
     const entries = this.hands.get(key);
     if (entries?.conflict) return 0;
+    const pooledLearned = this.publicProfiles.observe(request);
     const targets = new Set<Entry>();
     if (request.observerParticipants !== undefined) {
       if (
@@ -431,7 +503,7 @@ export class HorseObserverReads {
         if (entry) targets.add(entry); // no creation of floor-wide observer banks
       }
     } else if (entries) for (const entry of entries.entries) targets.add(entry);
-    if (!targets.size) return 0;
+    if (!targets.size) return pooledLearned;
     this.hands.delete(key);
     if (this.completed.size >= this.maxHands)
       this.completed.delete(this.completed.values().next().value!);
@@ -441,19 +513,28 @@ export class HorseObserverReads {
       const id = request.committedHandId.toLowerCase();
       if (entry.completedHandIds?.has(id)) continue;
       (entry.completedHandIds ??= new Set()).add(id);
-      if (entry.historyPhase === 'pending') {
+      if (entry.historyPhase !== 'loaded') {
         const tail = this.publicCopy(request);
         (entry.pendingCompletions ??= []).push(tail);
+        const wasPending = entry.historyPhase === 'pending';
         if (
           entry.pendingCompletions.length > 64 ||
           Buffer.byteLength(JSON.stringify(entry.pendingCompletions)) > 256 * 1024
         ) {
-          this.flushPending(entry);
+          if (entry.historyPhase === 'pending') this.flushPending(entry);
           entry.historyPhase = 'unavailable';
+          while (
+            entry.pendingCompletions.length > 64 ||
+            Buffer.byteLength(JSON.stringify(entry.pendingCompletions)) > 256 * 1024
+          )
+            entry.pendingCompletions.shift();
+          entry.historyTailCapped = true;
         }
-        entry.observedAt = Math.max(entry.observedAt, this.now());
-        learned++;
-        continue;
+        if (wasPending) {
+          entry.observedAt = Math.max(entry.observedAt, this.now());
+          learned++;
+          continue;
+        }
       }
       HorseMind.runInSandbox(entry.state, () => {
         const mode = entry.context.format === 'cash' ? 'cash' : 'tournament';
@@ -472,9 +553,10 @@ export class HorseObserverReads {
         learned++;
       });
     }
-    return learned;
+    return learned + pooledLearned;
   }
   clear(): void {
+    this.publicProfiles.clear();
     this.entries.clear();
     this.hands.clear();
     this.completed.clear();

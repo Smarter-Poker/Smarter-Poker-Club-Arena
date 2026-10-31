@@ -23,9 +23,9 @@
  *   6. One key with two different actions is refused, never replayed.
  *   7. No key at all is legal and behaves exactly as before, because bundles
  *      from before this shipped are still being served.
- *   8. There is no await between the lookup and the remember. That absence is
- *      what makes two simultaneous posts of one key impossible to both see
- *      'fresh', so it is pinned rather than assumed.
+ *   8. A synchronous reservation precedes mutation and survives the private
+ *      durability await. Concurrent retries join the same original, and no
+ *      successful answer is remembered before the accepted state is durable.
  *   9. Memory is bounded: a TTL and a hard ceiling, like every other in-engine
  *      map on the one core this runs on.
  *  10. Neither published series can be moved by a player on demand. The lookup
@@ -326,17 +326,80 @@ describe('LAW 7 - no key is legal, and a bad key is loud', () => {
   });
 });
 
-describe('LAW 8 - nothing awaits between the lookup and the remember', () => {
-  it('the window that makes two simultaneous posts impossible is still closed', () => {
+describe('LAW 8 - the original reservation survives the durability await', () => {
+  it('reserves before mutation and remembers only after durability', () => {
     const fn = sliceMethod(HANDLER_SRC, 'export async function handleAction(');
     const code = blankNonCode(fn);
-    const from = code.indexOf('lookupAction(');
-    const to = code.indexOf('rememberAction(');
-    expect(from).toBeGreaterThan(0);
-    expect(to).toBeGreaterThan(from);
-    // An await in here would let a second request observe 'fresh' while the
-    // first was still running, and both would move chips.
-    expect(code.slice(from, to)).not.toContain('await');
+    expect(code.indexOf('lookupActionFlight(')).toBeLessThan(code.indexOf('checkRateLimit('));
+    expect(code.indexOf('reserveActionFlight(')).toBeLessThan(
+      code.indexOf('engine.handlePlayerAction(')
+    );
+    expect(code.indexOf('await engine.awaitActionPersistence()')).toBeGreaterThan(
+      code.indexOf('engine.handlePlayerAction(')
+    );
+    expect(code.indexOf('rememberAction(')).toBeGreaterThan(
+      code.indexOf('await engine.awaitActionPersistence()')
+    );
+    expect(code.indexOf('flight?.complete(')).toBeGreaterThan(code.indexOf('rememberAction('));
+  });
+  it('applies concurrent copies once and answers neither before the original write', async () => {
+    let durable!: () => void;
+    const engine = {
+      handlePlayerAction: vi.fn(() => ({ success: true })),
+      recordActionPerformance: vi.fn(),
+      awaitActionPersistence: vi.fn(
+        () =>
+          new Promise<void>((r) => {
+            durable = r;
+          })
+      ),
+    };
+    const deps = { gameServer: { getTableEngine: () => engine } };
+    const body = { tableId: 't1', action: 'call', idempotencyKey: 'key-durable-1' };
+    const a = fakeReqRes(body),
+      b = fakeReqRes(body);
+    const first = handleAction(a.req as never, a.res as never, deps);
+    await vi.waitFor(() => expect(engine.awaitActionPersistence).toHaveBeenCalledOnce());
+    const second = handleAction(b.req as never, b.res as never, deps);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(a.sent().status).toBe(0);
+    expect(b.sent().status).toBe(0);
+    expect(engine.handlePlayerAction).toHaveBeenCalledOnce();
+    const conflict = fakeReqRes({ ...body, action: 'fold' });
+    await handleAction(conflict.req as never, conflict.res as never, deps);
+    expect(conflict.sent().status).toBe(409);
+    durable();
+    await Promise.all([first, second]);
+    expect(a.sent()).toEqual({ status: 200, body: { success: true } });
+    expect(b.sent()).toEqual({ status: 200, body: { success: true, replayed: true } });
+    expect(engine.handlePlayerAction).toHaveBeenCalledOnce();
+  });
+  it('does not cache a successful action when persistence is unknown', async () => {
+    const engine = {
+      handlePlayerAction: vi.fn(() => ({ success: true })),
+      recordActionPerformance: vi.fn(),
+      awaitActionPersistence: vi.fn(async () => {
+        throw new Error('write acknowledgement unknown');
+      }),
+    };
+    const request = fakeReqRes({ tableId: 't1', action: 'call', idempotencyKey: 'key-durable-2' });
+    await handleAction(request.req as never, request.res as never, {
+      gameServer: { getTableEngine: () => engine },
+    });
+    expect(request.sent().status).toBe(503);
+    expect(request.sent().body).toMatchObject({ success: false, code: 'ACTION_OUTCOME_PENDING' });
+    const retry = fakeReqRes({ tableId: 't1', action: 'call', idempotencyKey: 'key-durable-2' });
+    await handleAction(retry.req as never, retry.res as never, {
+      gameServer: { getTableEngine: () => engine },
+    });
+    expect(retry.sent().status).toBe(503);
+    expect(retry.sent().body).toMatchObject({
+      success: false,
+      code: 'ACTION_OUTCOME_PENDING',
+      replayed: true,
+    });
+    expect(engine.handlePlayerAction).toHaveBeenCalledOnce();
   });
 });
 

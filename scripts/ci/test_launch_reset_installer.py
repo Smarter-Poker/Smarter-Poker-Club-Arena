@@ -158,3 +158,11 @@ subprocess.run([
  '--pgbin',str(pg),'--node',str(a.node),'--openssl',str(a.openssl),
  '--output',str(a.output.with_name('maintenance-thaw-repair.json'))
 ],check=True,timeout=120)
+
+# Maintenance drains retention without queuing continuation writes behind it.
+subprocess.run([
+ sys.executable, str(a.repository/'scripts/ci/fixtures/launch-reset/maintenance-write-admission/qualify.py'),
+ '--repository',str(a.repository),'--scratch',str(a.scratch),'--pg-bin',str(pg),
+ '--migration',str(a.repository/'supabase/migrations/20261029172107_maintenance_writers_reserve_retention_before_their_existing_.sql'),
+ '--output',str(a.output.with_name('maintenance-write-admission.json'))
+],check=True,timeout=120)

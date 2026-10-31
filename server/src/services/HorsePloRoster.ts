@@ -1,9 +1,7 @@
-/** Cash roster reader. Owner October 23: cash horses are eligible for any
- * variant/stake their bankroll supports. The old PLO profitability list is
- * retained as historical data and never used as a seating restriction.
- * The historical cash roster is advisory. Scheduled horses are eligible across all games.
- */
+/** Owner October 27: the selected half plays Club Arena cash; all registered
+ * horses remain candidates for Diamond cash and tournaments. */
 
+import { parseTableArenaIdentity } from '../domain/ArenaContext.js';
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import type { PloPerformance } from './HorseMadnessSelection.js';
@@ -11,7 +9,7 @@ import type { PloPerformance } from './HorseMadnessSelection.js';
 export const PLO_ROSTER_TTL_MS = 60_000;
 
 let roster: Set<string> | null = null;
-/** ca_horse_active_roster: the only horses that sit at CASH (Dan 2026-10-23). */
+/** ca_horse_active_roster selects Club Arena cash candidates only. */
 let cashRoster: Set<string> | null = null;
 /**
  * ca_horse_roster_exempt_clubs: clubs whose cash tables are outside both
@@ -139,21 +137,27 @@ export function ploRosterAllows(_horseId: string, _variant: unknown, _bigBlind?:
   return true;
 }
 
-/** Historical rankings are advisory. All active fleet horses may enter cash;
- * callers retain activity schedules, bankroll and normal player admission. */
-export function cashRosterAllows(_horseId: string): boolean | undefined {
-  // Owner October 23: the full scheduled fleet may play cash. Membership,
-  // bankroll, activity hours and ordinary player doors are checked by callers.
-  // A historical ranking or an unavailable ranking read cannot deny a seat.
-  return true;
+/** Unknown membership blocks new admission in callers but does not evict existing seats. */
+export function cashRosterAllows(
+  horseId: string,
+  table?: { club_id?: unknown; union_id?: unknown; arena?: unknown }
+): boolean | undefined {
+  // This is only the roster verdict. Identity/status, schedule, capacity and
+  // the ordinary funded Diamond buy-in door still decide actual admission.
+  if (table) {
+    try {
+      if (parseTableArenaIdentity(table).kind === 'diamond_arena') return true;
+    } catch {
+      // Missing or malformed arena evidence cannot widen Club Arena eligibility.
+    }
+  }
+  return cashRoster === null ? undefined : cashRoster.has(horseId);
 }
 
-/**
- * Is this club's cash floor outside the roster rules? The Lightning private
- * pilot is: any of its horses sits at its tables, PLO included.
- */
-export function rosterExemptClub(clubId: unknown): boolean {
-  return typeof clubId === 'string' && exemptClubs.has(clubId);
+/** Legacy club-id exemptions cannot widen Club Arena selection. Diamond scope
+ * requires the authoritative table arena identity in cashRosterAllows. */
+export function rosterExemptClub(_clubId: unknown): boolean {
+  return false;
 }
 
 /** Test seam for the exempt clubs. */

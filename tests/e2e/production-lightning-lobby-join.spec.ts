@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 /**
  * JOIN LIGHTNING FROM THE GAME LOBBY, ON THE DEPLOYED SITE (2026-10-24).
  *
@@ -48,6 +49,7 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${club}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
     await prepareCashLobbyActions(page);
+    await openLobbyGameSection(page, 'ALL');
     // A visible game row is the lobby's readiness at every width (the wallets
     // button the phone check waits on is hidden at 1440px, run 40153826373).
     await expect(

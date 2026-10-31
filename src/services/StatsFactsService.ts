@@ -19,6 +19,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { resolvedTimeZone } from '../lib/localTime';
 import { reportError } from '../utils/errorReporter';
 import {
   CHIP_STATS,
@@ -541,11 +542,12 @@ export const StatsFactsService = {
   async getRakeStats(
     scope: StatsScope,
     days: number | null = null,
-    clubId: StatsClubId = null
+    clubId: StatsClubId = null,
+    timeZone = resolvedTimeZone()
   ): Promise<ScopedRead<PlayerRakeStats>> {
     const raw = await callRpc<PlayerRakeStats>(
-      'ca_player_rake_stats',
-      { p_user: null, p_days: days },
+      'ca_player_rake_stats_calendar',
+      { p_user: null, p_days: days, p_tz: timeZone },
       EMPTY_RAKE_STATS,
       scope,
       clubId

@@ -301,6 +301,7 @@ export function TournamentBreakScreen({
     // down, but the seed is re-sent when the countdown truly starts.
     let fallback = read();
     const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       if (breakEndsAtMs) {
         setDisplayTime(read());
       } else {
@@ -308,7 +309,18 @@ export function TournamentBreakScreen({
         setDisplayTime(fallback);
       }
     }, 1000);
-    return () => clearInterval(timer);
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        setDisplayTime(read());
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isVisible, countingDown, breakEndsAtMs, breakTimeRemaining]);
 
   /**
@@ -340,7 +352,9 @@ export function TournamentBreakScreen({
   };
   const waitingForResume = countingDown && displayTime === 0;
 
-  if (!isVisible) return null;
+  // Expiry retires this presentation only. The engine still owns all play
+  // and pause authority, including a delayed resume.
+  if (!isVisible || (countingDown && displayTime <= 0)) return null;
 
   // A real button keeps the clock reachable by keyboard as well as touch.
   if (minimized) {

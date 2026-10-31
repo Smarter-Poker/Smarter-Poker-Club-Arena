@@ -1,0 +1,32 @@
+{
+  "passed": true,
+  "source_only": true,
+  "source_sha256": "6e83a4a48bf8e2d3e4f23f8cdd826426b76c3cc175fd409345f8a362cce908e6",
+  "exact27_canonical_before": true,
+  "exact3_changed": [
+    "public.fn_union_pnl_touched_registrations(timestamp with time zone,timestamp with time zone,boolean)",
+    "public.fn_union_pnl_tournament_entry_club_of(text,numeric,uuid,uuid,uuid,jsonb)",
+    "public.fn_union_pnl_week_shaped_hands(uuid,timestamp with time zone,timestamp with time zone,boolean)"
+  ],
+  "other24_fullmetadata_and_canonical_definitions_byteunchanged": true,
+  "native_cases": [
+    "positive",
+    "replay",
+    "mixed",
+    "post_failure",
+    "ACL_drift",
+    "non_target_caller_drift",
+    "unauthorized_actual_owner_predicate",
+    "missing_PK",
+    "deferred_PK"
+  ],
+  "full_wrapper_grammar_compiles": true,
+  "native_GEN_gate_not_executed_not_actualGENproof": true,
+  "unchanged_actual_GEN_definition": true,
+  "fivepaid84_checks": "Exact existing query source preserved and full wrapper grammar compiled; no financial tables/rows faked; actual pre/post still required",
+  "normal_maintenance_stats_history_admission": "Full source grammar only; no fake required90331 install or maintenance admission",
+  "no_semantic_bags_repeated": true,
+  "original_TQ_fixture_invariants_before_native_bootstrap": true,
+  "actual_two_source_critical_TQ_md5_and_fullmetadata_predicates_executed": true,
+  "expected27_sha256": "bf3782b9ccbec3893957a3248bcb517ef04c8928add18de0505da87cef68015b"
+}

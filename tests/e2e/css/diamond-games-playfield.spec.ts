@@ -5,7 +5,9 @@ import { diamondGamesFixture } from '../helpers/diamond-games-fixture.mjs';
 // trace in run35285753046 spent 19.5s opening Plinko and a further 30.7s on it
 // before compiling Crossing. Keep the full transition and every assertion;
 // budget the complete cold-render sequence, not one scene.
-test.describe.configure({ mode: 'default', timeout: 180_000 });
+// Each case owns its page and local bundle routes. Allow disjoint hosted
+// shards while CI retains one software-WebGL worker per VM.
+test.describe.configure({ mode: 'parallel', timeout: 180_000 });
 
 /**
  * THE TWO LIVE PLINKO BOARDS, BY NAME (2026-09-19).

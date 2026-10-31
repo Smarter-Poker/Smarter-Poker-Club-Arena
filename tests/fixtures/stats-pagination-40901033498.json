@@ -1,0 +1,99 @@
+{
+  "provenance": {
+    "run": 40901033498,
+    "job": 123543048468,
+    "artifact": 12908114713,
+    "note": "Public observation projection only; browser authentication, traces and unrelated reporter configuration excluded."
+  },
+  "report": {
+    "errors": [],
+    "suites": [
+      {
+        "specs": [
+          {
+            "file": "stats-deep.spec.ts",
+            "title": "published downline pagination survives the initial debounce and resets only for changed search",
+            "ok": true,
+            "tests": [
+              {
+                "projectName": "chromium",
+                "status": "expected",
+                "expectedStatus": "passed",
+                "results": [
+                  {
+                    "status": "passed",
+                    "retry": 0,
+                    "duration": 13326,
+                    "errors": [],
+                    "attachments": [
+                      {
+                        "name": "published-downline-pagination",
+                        "contentType": "application/json",
+                        "body": "eyJjbGllbnRTaGEiOiI3NDQ3ZDU0Yzk0M2IxYWE2YWMyMGFiNWNmNjc5ZjRhZmFmMmQ5ODczIiwib3JpZ2luYWxKb2JTaGEiOiI3NDQ3ZDU0Yzk0M2IxYWE2YWMyMGFiNWNmNjc5ZjRhZmFmMmQ5ODczIiwiYnJhY2tldCI6W3sicG9pbnQiOiJiZWZvcmUiLCJvcmlnaW4iOiJodHRwczovL2NhLXN0YXRpYy5zbWFydGVyLnBva2VyIiwic2hhIjoiNzQ0N2Q1NGM5NDNiMWFhNmFjMjBhYjVjZjY3OWY0YWZhZjJkOTg3MyIsInJlYXNvbiI6bnVsbH0seyJwb2ludCI6ImJlZm9yZSIsIm9yaWdpbiI6Imh0dHBzOi8vc21hcnRlci5wb2tlci9odWIvY2x1Yi1hcmVuYSIsInNoYSI6Ijc0NDdkNTRjOTQzYjFhYTZhYzIwYWI1Y2Y2NzlmNGFmYWYyZDk4NzMiLCJyZWFzb24iOm51bGx9LHsicG9pbnQiOiJhZnRlciIsIm9yaWdpbiI6Imh0dHBzOi8vY2Etc3RhdGljLnNtYXJ0ZXIucG9rZXIiLCJzaGEiOiI3NDQ3ZDU0Yzk0M2IxYWE2YWMyMGFiNWNmNjc5ZjRhZmFmMmQ5ODczIiwicmVhc29uIjpudWxsfSx7InBvaW50IjoiYWZ0ZXIiLCJvcmlnaW4iOiJodHRwczovL3NtYXJ0ZXIucG9rZXIvaHViL2NsdWItYXJlbmEiLCJzaGEiOiI3NDQ3ZDU0Yzk0M2IxYWE2YWMyMGFiNWNmNjc5ZjRhZmFmMmQ5ODczIiwicmVhc29uIjpudWxsfV0sInN5bnRoZXRpY1JlYWRSZXNwb25zZXMiOnRydWUsImFjdHVhbFB1Ymxpc2hlZEFzc2V0cyI6dHJ1ZSwicmVhZHMiOlt7ImxpbWl0Ijo1MDEsInNlYXJjaCI6bnVsbH0seyJsaW1pdCI6MTAwMSwic2VhcmNoIjpudWxsfSx7ImxpbWl0Ijo1MDEsInNlYXJjaCI6InJpdmVyIn1dLCJ3YXJtdXBSZWFkcyI6W3sibGltaXQiOjUwMSwic2VhcmNoIjpudWxsfV0sImJsb2NrZWRXcml0ZXMiOjB9"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "before": {
+    "sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+    "builds": [
+      {
+        "url": "https://smarter.poker/hub/club-arena/build-info.json",
+        "sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+        "build": {
+          "ca_sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+          "built_at": "2026-10-29T10:59:44Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "40861513098"
+        }
+      },
+      {
+        "url": "https://ca-static.smarter.poker/build-info.json",
+        "sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+        "build": {
+          "ca_sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+          "built_at": "2026-10-29T10:59:44Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "40861513098"
+        }
+      }
+    ],
+    "observedAt": "2026-10-29T15:24:33.714Z"
+  },
+  "after": {
+    "sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+    "builds": [
+      {
+        "url": "https://smarter.poker/hub/club-arena/build-info.json",
+        "sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+        "build": {
+          "ca_sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+          "built_at": "2026-10-29T10:59:44Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "40861513098"
+        }
+      },
+      {
+        "url": "https://ca-static.smarter.poker/build-info.json",
+        "sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+        "build": {
+          "ca_sha": "7447d54c943b1aa6ac20ab5cf679f4afaf2d9873",
+          "built_at": "2026-10-29T10:59:44Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "40861513098"
+        }
+      }
+    ],
+    "observedAt": "2026-10-29T15:25:12.296Z"
+  },
+  "cleanup": {
+    "verified": true
+  }
+}

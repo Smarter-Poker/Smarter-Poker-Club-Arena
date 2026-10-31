@@ -1,0 +1,32 @@
+[
+  {
+    "md5": "7b4a5f4572a45db069b6058899614021",
+    "body": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_certificate(p_kind text, p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE sql\n STABLE\n SET search_path TO 'public'\nAS $function$\n SELECT c.value FROM public.accounting_close_certificates c\n  WHERE COALESCE(current_setting('app.weekly_accounting_chunked',true),'')='on'\n    AND current_setting('app.accounting_close_memo',true)='on'\n    AND c.kind=p_kind AND c.union_id=p_union_id AND c.period_start=p_start AND c.period_end=p_end\n    AND c.certified_at>=p_end AND c.certified_at>clock_timestamp()-interval '12 hours'\n$function$\n",
+    "signature": "fn_accounting_close_certificate(text,uuid,timestamp with time zone,timestamp with time zone)"
+  },
+  {
+    "md5": "307d83a1ee3d912bade24c48144aa801",
+    "body": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_inventory_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN RAISE EXCEPTION 'original_pnl_inventory_is_immutable' USING ERRCODE='55000'; END $function$\n",
+    "signature": "fn_union_pnl_inventory_immutable()"
+  },
+  {
+    "md5": "2db7263f8d42e2e0e5a45b42b7198e4d",
+    "body": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_posthand_escrow_participants(o union_pnl_cash_outcomes)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET \"TimeZone\" TO 'UTC'\nAS $function$\nDECLARE actual public.union_pnl_cash_outcomes; proof jsonb; projected jsonb;\nBEGIN\n SELECT * INTO actual FROM public.union_pnl_cash_outcomes q WHERE q.table_id=o.table_id AND q.hand_number=o.hand_number;\n IF NOT FOUND OR to_jsonb(actual) IS DISTINCT FROM to_jsonb(o) THEN RAISE EXCEPTION 'posthand_escrow_projection_original_disagrees' USING ERRCODE='55000';END IF;\n IF smarter_private.posthand_escrow_certified_evidence(o.table_id,o.hand_number) IS NULL THEN RETURN o.evidence->'participants';END IF;\n proof:=public.fn_union_pnl_prove_posthand_escrow(o.table_id,o.hand_number);\n IF proof->>'status' IS DISTINCT FROM 'proven' THEN RETURN o.evidence->'participants';END IF;\n IF proof->>'table_id' IS DISTINCT FROM o.table_id::text OR proof->>'hand_number' IS DISTINCT FROM o.hand_number::text\n  OR proof->>'hand_id' IS DISTINCT FROM o.hand_id::text OR proof->>'outcome_payload_hash' IS DISTINCT FROM o.payload_hash\n  OR proof->>'outcome_evidence_md5' IS DISTINCT FROM md5(o.evidence::text)\n  OR jsonb_array_length(proof->'participants')<>jsonb_array_length(o.evidence->'participants') THEN\n  RAISE EXCEPTION 'posthand_escrow_projection_proof_disagrees' USING ERRCODE='55000';END IF;\n SELECT jsonb_agg(original.participant||jsonb_build_object('earning_club_id',p.participant->'earning_club_id','ownership_certified',true) ORDER BY original.n)\n INTO projected FROM jsonb_array_elements(o.evidence->'participants') WITH ORDINALITY original(participant,n)\n JOIN LATERAL jsonb_array_elements(proof->'participants') p(participant) ON p.participant->>'user_id'=original.participant->>'user_id'\n  AND public.fn_pnl_evidence_cents(original.participant->'observed_stack_delta')=public.fn_pnl_evidence_cents(p.participant->'poker_delta');\n IF projected IS NULL OR jsonb_array_length(projected)<>jsonb_array_length(o.evidence->'participants') THEN\n  RAISE EXCEPTION 'posthand_escrow_projection_original_roster_disagrees' USING ERRCODE='55000';END IF;\n RETURN projected;\nEND $function$\n",
+    "signature": "fn_union_pnl_posthand_escrow_participants(union_pnl_cash_outcomes)"
+  },
+  {
+    "md5": "e51decda42bbe46dd90aaf1bd3119023",
+    "body": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_posthand_escrow_touch(h union_pnl_cash_outcome_touches)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET \"TimeZone\" TO 'UTC'\nAS $function$\nDECLARE o public.union_pnl_cash_outcomes;\nBEGIN\n SELECT q.* INTO o FROM public.union_pnl_cash_outcomes q WHERE q.table_id=h.table_id AND q.hand_number=h.hand_number;\n IF NOT FOUND OR o.recognized_at IS DISTINCT FROM h.recognized_at\n  OR o.game_scope->>'game_union_id' IS DISTINCT FROM h.game_union_id\n  OR o.evidence->>'accepted_rake' IS DISTINCT FROM h.accepted_rake\n  OR public.fn_union_pnl_compact_participants(o.evidence->'participants') IS DISTINCT FROM h.participants THEN\n  RAISE EXCEPTION 'posthand_escrow_projection_touch_disagrees' USING ERRCODE='55000';END IF;\n RETURN public.fn_union_pnl_posthand_escrow_participants(o);\nEND $function$\n",
+    "signature": "fn_union_pnl_posthand_escrow_touch(union_pnl_cash_outcome_touches)"
+  },
+  {
+    "md5": "5f643c03d3595c20354d753087988476",
+    "body": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_projection_ready(p_projection text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT COALESCE((SELECT b.completed_at IS NOT NULL FROM public.union_pnl_projection_build b WHERE b.projection=p_projection),false)\n$function$\n",
+    "signature": "fn_union_pnl_projection_ready(text)"
+  },
+  {
+    "md5": "14b1ddb37d4e3e83a9a42a34438e4b6e",
+    "body": "CREATE OR REPLACE FUNCTION smarter_private.posthand_escrow_certificate_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE original jsonb;\nBEGIN\n IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'POSTHAND_ESCROW_CERTIFICATE_IMMUTABLE' USING ERRCODE='55000';END IF;\n original:=smarter_private.posthand_escrow_original_snapshot(NEW.table_id,NEW.hand_number);\n IF NEW.hand_id::text IS DISTINCT FROM original->>'hand_id' OR NEW.original IS DISTINCT FROM original\n  OR NEW.original_sha256 IS DISTINCT FROM encode(extensions.digest(convert_to(original::text,'UTF8'),'sha256'),'hex') THEN\n  RAISE EXCEPTION 'POSTHAND_ESCROW_EXACT_ORIGINAL_REQUIRED' USING ERRCODE='55000';END IF;\n RETURN NEW;\nEND $function$\n",
+    "signature": "smarter_private.posthand_escrow_certificate_immutable()"
+  }
+]

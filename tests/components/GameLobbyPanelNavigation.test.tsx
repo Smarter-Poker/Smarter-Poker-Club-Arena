@@ -26,6 +26,7 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 
 import GameLobbyPanel from '../../src/components/lobby/GameLobbyPanel';
+import { tournamentService } from '../../src/services/TournamentService';
 import {
   cashEntry,
   tournamentEntry,
@@ -55,7 +56,12 @@ function Location() {
   return <output data-testid="route">{location.pathname + location.search}</output>;
 }
 
-function mountDrawer(inTab?: InTabLobbyNav, selected: LobbyEntry = entry) {
+function mountDrawer(
+  inTab?: InTabLobbyNav,
+  selected: LobbyEntry = entry,
+  onViewCashTable?: (id: string) => void,
+  busy = false
+) {
   const drawer = (
     <GameLobbyPanel
       entry={selected}
@@ -64,9 +70,10 @@ function mountDrawer(inTab?: InTabLobbyNav, selected: LobbyEntry = entry) {
       waitlisted={false}
       seated={false}
       registered
-      busy={false}
+      busy={busy}
       onClose={vi.fn()}
       onJoinTable={vi.fn()}
+      onViewCashTable={onViewCashTable}
       onWaitlistToggle={vi.fn()}
       onRegister={vi.fn()}
       onUnregister={vi.fn()}
@@ -157,4 +164,53 @@ it('keeps cash-table navigation outside the tournament interception', () => {
   fireEvent.click(screen.getByRole('button', { name: 'View Table', exact: true }));
   expect(navigation.openTournament).not.toHaveBeenCalled();
   expect(screen.getByTestId('route').textContent).toBe('/table/cash-a');
+});
+
+it('cash Details uses the prepared-entry door instead of navigating an unready felt', () => {
+  const prepare = vi.fn();
+  const cash = cashEntry({
+    id: 'cash-a',
+    name: 'Cash Game',
+    game_variant: 'nlh',
+    status: 'active',
+    small_blind: 1,
+    big_blind: 2,
+    min_buy_in: 40,
+    max_buy_in: 200,
+    current_players: 2,
+    max_players: 6,
+  });
+  mountDrawer(undefined, cash, prepare);
+  fireEvent.click(screen.getByRole('button', { name: 'View Table', exact: true }));
+  expect(prepare).toHaveBeenCalledExactlyOnceWith('cash-a');
+  expect(screen.getByTestId('route').textContent).toBe('/table/live');
+});
+
+it('preserves tournament Details navigation while an unrelated action is busy', () => {
+  mountDrawer(undefined, entry, undefined, true);
+  fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
+  expect(screen.getByTestId('route')).toHaveTextContent('/tournaments/event-a?club=club-a');
+});
+
+it('shows ticket prizes rather than the placeholder percentage ladder for a satellite', async () => {
+  vi.mocked(tournamentService.getTournament).mockResolvedValueOnce({
+    id: 'event-a',
+    name: 'Satellite',
+    variant: 'satellite',
+    tournament_type: 'MTT',
+    satellite_seats: 1,
+    payout_structure: JSON.stringify([
+      { place: 1, percentage: 40 },
+      { place: 2, percentage: 25 },
+    ]),
+    prize_pool: 100,
+    buy_in_amount: 4.5,
+    buy_in_fee: 0.5,
+  } as never);
+  mountDrawer();
+  fireEvent.click(screen.getByRole('tab', { name: 'Payouts' }));
+  expect(await screen.findByText('1 Ticket Guaranteed')).toBeInTheDocument();
+  expect(screen.queryByRole('columnheader', { name: 'Share' })).not.toBeInTheDocument();
+  expect(screen.queryByText('40%')).not.toBeInTheDocument();
+  expect(screen.getByText(/The Bubble Receives Any Remaining Cash/)).toBeInTheDocument();
 });

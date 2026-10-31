@@ -286,3 +286,26 @@ describe('manager lifecycle diagnostics on the selected non-F06 base', () => {
     await value.stop();
   });
 });
+
+it('reads physical refusal against the manager identity without capturing custody or changing authority', () => {
+  const value = manager();
+  const refusal = vi.fn(() => 'generation_mismatch');
+  const capture = vi.fn(() => {
+    throw new Error('must not capture');
+  });
+  value.tableEngines.set(id(100), {
+    ...original(100),
+    drainedF06IdentityRefusal: refusal,
+    captureDrainedF06Identity: capture,
+  });
+  expect(
+    value.getLifecycleDiagnosticSnapshot({ tableIds: [id(100)] }).originals[0]
+      .physicalIdentityRefusal
+  ).toBe('generation_mismatch');
+  expect(refusal).toHaveBeenCalledWith(id(100), id(1), id(2));
+  expect(capture).not.toHaveBeenCalled();
+  expect(
+    value.getLifecycleDiagnosticSnapshot({ tableIds: [id(999)] }).originals[0]
+      .physicalIdentityRefusal
+  ).toBe('unavailable');
+});

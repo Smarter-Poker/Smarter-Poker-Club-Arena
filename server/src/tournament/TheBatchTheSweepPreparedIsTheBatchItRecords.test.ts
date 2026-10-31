@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  THE BATCH THE SWEEP PREPARED IS THE BATCH IT RECORDS (2026-09-27)
@@ -84,6 +85,7 @@ function transport(answer: (request: Request) => Answer): void {
     return new Promise((resolve) => setTimeout(() => resolve(response), TRIP_MS));
   };
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     const request: Request = { table, columns: null, head: false, filters: [] };
     const filter = (column: string, op: string, value: unknown): unknown => {
       request.filters.push([column, op, value]);
@@ -100,6 +102,8 @@ function transport(answer: (request: Request) => Answer): void {
       in: (column: string, value: unknown) => filter(column, 'in', value),
       is: (column: string, value: unknown) => filter(column, 'is', value),
       order: () => query,
+      limit: () => query,
+      gt: () => query,
       not: (column: string, op: string, value: unknown) => filter(column, `not.${op}`, value),
       then: (resolve: (value: Answer) => unknown, reject: (reason: unknown) => unknown) =>
         reply(request).then(resolve, reject),
@@ -118,10 +122,10 @@ function transport(answer: (request: Request) => Answer): void {
 function threeBustsOfFour(players = 4): void {
   transport((request) => {
     if (request.table === 'tournament_players') {
-      if (request.columns === 'user_id, chips')
+      if (request.columns === 'id, user_id, chips')
         return { data: bustedIds.map((user_id) => ({ user_id, chips: 0 })) };
       if (request.head && has(request, 'status', 'eq', 'playing')) return { count: players };
-      if (request.columns === 'position') return { data: [] };
+      if (request.columns === 'id, position') return { data: [] };
       if (request.head && has(request, 'position', 'is', null)) return { count: players };
       if (request.head) return { count: players };
     }

@@ -16,7 +16,7 @@ describe('one explicit read-only fleet observation in the original provider', ()
     expect(workflow.on.repository_dispatch.types).toContain('observe-club-arena-horse-fleet');
     expect(job.if).toBe("github.event.action == 'observe-club-arena-horse-fleet'");
     expect(job.needs).toBeUndefined();
-    expect(job['timeout-minutes']).toBe(10);
+    expect(job['timeout-minutes']).toBe(35);
     expect(job.permissions).toEqual({ contents: 'read' });
     expect(job.concurrency).toEqual({
       group: 'club-arena-private-horse-fleet-observation',
@@ -51,8 +51,8 @@ describe('one explicit read-only fleet observation in the original provider', ()
     expect(commands).toContain('StrictHostKeyChecking=yes');
     expect(commands).toContain('GlobalKnownHostsFile=/dev/null');
     expect(commands).toContain('chmod 0600');
-    expect(commands).toContain('--ssh-command "$HSSH"');
-    expect(commands).toContain('--summarize');
+    expect(commands).toContain('"$HSSH" "$PRIVATE_DIR/result.json"');
+    expect(commands).toContain('--observe-bounded');
     expect(job.steps.at(-1).if).toBe('always()');
     expect(job.steps.at(-1).run).toContain('rm -rf -- "$PRIVATE_DIR"');
     expect(
@@ -96,4 +96,86 @@ it('enforces actual native packet execution only after the existing signed Postg
     "${{ github.event_name == 'pull_request' }}"
   );
   expect(qualification.jobs['original-operation'].concurrency['cancel-in-progress']).toBe(false);
+});
+
+it('retains bounded bootstrap witness contracts in the existing observation route', () => {
+  const step = job.steps.find(
+    (s: { name?: string }) =>
+      s.name === 'Read one bounded current-container public bootstrap witness'
+  );
+  expect(step.if).toBe('github.event.client_payload.public_pool_bootstrap == true');
+  expect(step.run).toContain('35s python3 -B scripts/ci/horse-public-bootstrap-witness.py');
+  expect(step.run).toContain('--source-sha "$FLEET_SOURCE_SHA" --ssh-command "$HSSH"');
+  expect(job.steps[0].with['sparse-checkout']).toContain(
+    '/scripts/ci/horse-public-bootstrap-witness.py'
+  );
+  expect(
+    job.steps.find(
+      (s: { name?: string }) =>
+        s.name === 'Observe the installed CLI without release or maintenance actions'
+    ).run
+  ).toContain('--observe-bounded');
+  expect(readFileSync(join(root, 'scripts/ci/horse-fleet-packet.py'), 'utf8')).toContain(
+    'public,river=union_read_evidence(packet,attestation,parts,results)'
+  );
+  execFileSync('python3', ['-B', 'scripts/ci/test-horse-public-bootstrap-witness.py'], {
+    cwd: process.cwd(),
+    stdio: 'pipe',
+  });
+});
+
+it('selects the closed committed-turn census in the same private observation job', () => {
+  expect(job.env.FLEET_TURN_CENSUS_JSON).toBe(
+    '${{ toJSON(github.event.client_payload.turn_census) }}'
+  );
+  for (const path of [
+    '/scripts/ci/horse-turn-census-packet.py',
+    '/scripts/ci/horse-turn-census-proof.mjs',
+    '/server/scripts/phase6d-turn-census.mjs',
+  ])
+    expect(job.steps[0].with['sparse-checkout']).toContain(path);
+  const preflight = job.steps.find(
+    (s: { name?: string }) => s.name === 'Refuse unprotected source and unavailable local clients'
+  ).run;
+  const guard = preflight.slice(preflight.indexOf('case '), preflight.indexOf('esac') + 4);
+  for (const value of ['true', 'false', 'null'])
+    expect(() =>
+      execFileSync('bash', ['-c', guard], {
+        env: { ...process.env, FLEET_TURN_CENSUS_JSON: value },
+        stdio: 'pipe',
+      })
+    ).not.toThrow();
+  for (const value of ['"true"', '1', '{}', '[]'])
+    expect(() =>
+      execFileSync('bash', ['-c', guard], {
+        env: { ...process.env, FLEET_TURN_CENSUS_JSON: value },
+        stdio: 'pipe',
+      })
+    ).toThrow();
+  const packet = job.steps.find(
+    (s: { name?: string }) =>
+      s.name === 'Read one canonical cohort and original accepted coordinates'
+  ).run;
+  const observe = job.steps.find(
+    (s: { name?: string }) =>
+      s.name === 'Observe the installed CLI without release or maintenance actions'
+  ).run;
+  const invoke = (script: string, flag: string) =>
+    execFileSync('bash', ['-c', 'timeout() { printf "%s\\n" "$@"; };\n' + script], {
+      env: {
+        ...process.env,
+        FLEET_TURN_CENSUS_JSON: flag,
+        PRIVATE_DIR: '/private-fixture',
+        HSSH: '/private-fixture/hssh',
+      },
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n');
+  expect(invoke(packet, 'true')).toContain('--turn-census');
+  expect(invoke(observe, 'true')).toContain('--observe-turn-census');
+  for (const flag of ['false', 'null']) {
+    expect(invoke(packet, flag)).not.toContain('--turn-census');
+    expect(invoke(observe, flag)).toContain('--observe-bounded');
+  }
 });

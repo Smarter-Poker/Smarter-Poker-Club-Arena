@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import FeedbackForm from '../components/support/FeedbackForm';
@@ -13,7 +14,7 @@ const HELP_SUMMARY =
 
 export default function HelpPage() {
   const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePlayerPreference('HelpPage:searchQuery', '');
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
 
   useEffect(() => {
@@ -111,7 +112,7 @@ export default function HelpPage() {
 
           {filteredFAQ.length === 0 && (
             <div className={styles.emptyState} role="status">
-              <strong>No Matching Guidance</strong>
+              <strong>No Matching Help Topics</strong>
               <span>Try A Broader Search Or Send A Support Request.</span>
             </div>
           )}

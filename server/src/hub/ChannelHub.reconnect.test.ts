@@ -114,15 +114,26 @@ describe('ChannelHub - multiple tabs coexist (2026-08-24)', () => {
     expect(socketsOf(hub, 'u2')).toBeUndefined();
   });
 
-  it('beyond the per-user cap the OLDEST socket is closed, newest kept', () => {
-    const hub = new ChannelHub();
-    hub.close();
-    const sockets = Array.from({ length: 9 }, () => mkWs());
-    for (const ws of sockets) hub.addConnection('u3', ws);
-    expect(socketsOf(hub, 'u3')?.size).toBe(8);
-    expect(sockets[0].closed.length).toBeGreaterThan(0); // oldest evicted
-    expect(socketsOf(hub, 'u3')?.has(sockets[8])).toBe(true); // newest kept
-  });
+  it.each([9, 10])(
+    'keeps all %i transport-admitted sockets without evicting another tab',
+    (count) => {
+      const hub = new ChannelHub();
+      hub.close();
+      const sockets = Array.from({ length: count }, () => mkWs());
+      for (const ws of sockets) hub.addConnection('u3', ws);
+      expect(socketsOf(hub, 'u3')?.size).toBe(count);
+      expect(sockets.every((ws) => ws.closed.length === 0)).toBe(true);
+      hub.joinLobby('u3');
+      hub.joinTournament('u3', 't3');
+      hub.removeConnection('u3', sockets[0]);
+      hub.removeConnection('u3', sockets[0]); // A delayed duplicate close owns no survivor.
+      expect(socketsOf(hub, 'u3')?.size).toBe(count - 1);
+      expect(hub.lobbySubscriberCount()).toBe(1);
+      expect(hub.tournamentSubscriberCount('t3')).toBe(1);
+      hub.sendToUser('u3', { type: 'CHANNEL_PONG' });
+      expect(sockets.slice(1).every((ws) => ws.sent.length === 1)).toBe(true);
+    }
+  );
 
   it('connectionCount counts sockets, userCount counts users', () => {
     const hub = new ChannelHub();

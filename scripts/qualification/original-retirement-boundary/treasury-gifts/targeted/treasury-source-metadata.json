@@ -1,0 +1,56 @@
+{
+  "columns": [
+    { "type": "text", "table": "entry_purchase_idempotency_receipts", "column": "key_domain" },
+    { "type": "text", "table": "entry_purchase_idempotency_receipts", "column": "idempotency_key" },
+    { "type": "jsonb", "table": "entry_purchase_idempotency_receipts", "column": "request" },
+    { "type": "jsonb", "table": "entry_purchase_idempotency_receipts", "column": "response" },
+    {
+      "type": "timestamp with time zone",
+      "table": "entry_purchase_idempotency_receipts",
+      "column": "claimed_at"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "entry_purchase_idempotency_receipts",
+      "column": "completed_at"
+    },
+    { "type": "bigint", "table": "union_pnl_inventory_events", "column": "event_id" },
+    { "type": "text", "table": "union_pnl_inventory_events", "column": "source_name" },
+    { "type": "uuid", "table": "union_pnl_inventory_events", "column": "row_id" },
+    {
+      "type": "timestamp with time zone",
+      "table": "union_pnl_inventory_events",
+      "column": "observed_at"
+    },
+    { "type": "xid8", "table": "union_pnl_inventory_events", "column": "transaction_id" },
+    { "type": "text", "table": "union_pnl_inventory_events", "column": "operation" },
+    { "type": "jsonb", "table": "union_pnl_inventory_events", "column": "before_row" },
+    { "type": "jsonb", "table": "union_pnl_inventory_events", "column": "after_row" },
+    { "type": "xid8", "table": "union_pnl_transaction_frames", "column": "transaction_id" },
+    {
+      "type": "timestamp with time zone",
+      "table": "union_pnl_transaction_frames",
+      "column": "observed_at"
+    },
+    {
+      "type": "timestamp with time zone",
+      "table": "union_pnl_transaction_frames",
+      "column": "book_start"
+    },
+    { "type": "uuid", "table": "union_pnl_original_flows", "column": "ledger_id" },
+    { "type": "xid8", "table": "union_pnl_original_flows", "column": "transaction_id" },
+    {
+      "type": "timestamp with time zone",
+      "table": "union_pnl_original_flows",
+      "column": "recognized_at"
+    },
+    { "type": "jsonb", "table": "union_pnl_original_flows", "column": "game_scope" },
+    { "type": "jsonb", "table": "union_pnl_original_flows", "column": "ledger_snapshot" }
+  ],
+  "earning": [
+    {
+      "sig": "fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_earning_club(p_hand_id uuid, p_table_id uuid, p_player_id uuid, p_source_club uuid, p_union_id uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE started timestamptz;clubs uuid[];chair uuid[];paid uuid[];\nBEGIN\n IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'service_role_required' USING ERRCODE='42501'; END IF;\n IF p_hand_id IS NULL OR p_table_id IS NULL OR p_player_id IS NULL OR p_source_club IS NULL THEN\n  RAISE EXCEPTION 'cash_earning_identity_missing' USING ERRCODE='23514'; END IF;\n SELECT h.started_at INTO started FROM public.hand_history h WHERE h.id=p_hand_id AND h.table_id=p_table_id;\n -- Original off-chair custody exists only in the accepted native hand's\n -- transaction. Never derive ownership from today's replacement chair.\n IF started IS NOT NULL AND isfinite(started) AND started<=transaction_timestamp() THEN\n  SELECT array_agg(DISTINCT r.funding_club_id) INTO clubs\n  FROM smarter_private.retired_cash_hand_custody r\n  JOIN smarter_private.retired_cash_hand_qualification q USING(submission_id)\n  JOIN smarter_private.hand_submissions s USING(submission_id)\n  JOIN smarter_private.hand_submission_handoffs h USING(submission_id)\n  JOIN public.hand_atomic_commits a ON a.hand_id=r.submission_id\n   AND a.table_id=r.table_id AND a.hand_number=r.hand_number\n  WHERE r.submission_id=p_hand_id AND r.table_id=p_table_id AND r.user_id=p_player_id\n   AND r.state='consumed' AND r.transaction_id=txid_current()\n   AND h.transaction_id=r.transaction_id AND h.request_hash=r.request_hash\n   AND s.request_hash=r.request_hash AND q.request_hash=r.request_hash\n   AND r.accepted_time_bank=r.original_time_bank AND r.settlement_id IS NOT NULL\n   AND (q.table_id,q.hand_number)=(r.table_id,r.hand_number)\n   AND EXISTS(SELECT 1 FROM jsonb_array_elements(q.expected->'participants') e\n    WHERE (e#>>'{stack,user_id}')::uuid=r.user_id\n     AND (e#>>'{stack,seat_id}')::uuid=r.seat_id\n     AND (e#>>'{stack,occupancy_id}')::uuid=r.occupancy_id\n     AND (e#>>'{stack,seat_joined_at}')::timestamptz=r.seat_joined_at\n     AND (e#>>'{stack,stack_before}')::numeric=r.stack_before\n     AND (e#>>'{stack,stack}')::numeric=r.stack_after\n     AND (e->>'funding_club_id')::uuid=r.funding_club_id);\n  IF cardinality(clubs)=1 AND clubs[1] IS NOT NULL\n   AND EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=clubs[1]\n    AND (c.is_union IS NOT TRUE OR (p_union_id IS NOT NULL AND (c.id=p_union_id OR c.union_id=p_union_id))))\n  THEN RETURN clubs[1]; END IF;\n END IF;\n -- Funding must exist by the persisted actual hand start. The logical formed_at\n -- supplied by the engine can precede the transaction that opens its slot.\n -- A pooled Lightning hand is funded by its original pool/cash session,\n -- not a physical chair at the synthetic host table. Anchor seats can be\n -- elsewhere or already gone by settlement; their session is retained.\n IF EXISTS(SELECT 1 FROM public.lightning_hand h\n   WHERE h.hand_history_id=p_hand_id AND h.host_table_id=p_table_id) THEN\n  IF started IS NULL OR NOT isfinite(started) OR started>transaction_timestamp() THEN\n   RAISE EXCEPTION 'cash_hand_start_not_recorded' USING ERRCODE='23514'; END IF;\n  -- The earning club is the club whose wallet funded the anchor chair, as\n  -- for every Classic chair. cash_player_session.club_id is the TABLE's club,\n  -- which on a union-hosted game is the union itself, not the funding club.\n  SELECT array_agg(DISTINCT s.club_id) FILTER (WHERE s.club_id IS NOT NULL),\n         array_agg(DISTINCT r.funding_club_id) FILTER (WHERE r.funding_club_id IS NOT NULL),\n         array_agg(DISTINCT cs.club_id)\n    INTO chair, paid, clubs\n   FROM public.lightning_hand h\n   JOIN public.lightning_hand_player hp ON hp.hand_id=h.hand_id\n    AND hp.player_id=p_player_id AND hp.cluster_id=h.cluster_id AND hp.cluster_epoch=h.cluster_epoch\n   JOIN public.lightning_pool_slot sl ON sl.id=hp.pool_slot_id AND sl.player_id=hp.player_id\n    AND sl.cluster_id=h.cluster_id AND sl.cluster_epoch=h.cluster_epoch\n   JOIN public.lightning_pool_session ps ON ps.id=sl.pool_session_id AND ps.player_id=hp.player_id\n    AND ps.cluster_id=h.cluster_id AND ps.cluster_epoch=h.cluster_epoch\n   JOIN public.cash_player_session cs ON cs.id=ps.cash_player_session_id AND cs.player_id=hp.player_id\n   LEFT JOIN public.table_seats s ON s.id=ps.anchor_seat_id AND s.user_id=hp.player_id\n    AND s.joined_at<=started AND (s.left_at IS NULL OR s.left_at>started)\n   -- A chair row can be gone by settlement; its buy-in receipt is immutable.\n   LEFT JOIN LATERAL (\n    SELECT f.funding_club_id FROM public.cash_participant_funding_receipts f\n     WHERE f.operation_kind='buyin' AND f.table_id=cs.table_id AND f.account_entity_id=hp.player_id\n      AND f.user_id=hp.player_id AND f.seat_id=ps.anchor_seat_id\n      AND f.seat_joined_at<=ps.entered_at AND f.recorded_at<=started\n     ORDER BY f.seat_joined_at DESC, f.recorded_at DESC, f.id DESC LIMIT 1) r ON true\n   WHERE h.hand_history_id=p_hand_id AND h.host_table_id=p_table_id\n    AND h.formed_at<=started AND ps.entered_at<=started AND sl.opened_at<=started\n    AND cs.opened_at<=started\n    AND (ps.exited_at IS NULL OR ps.exited_at>started)\n    AND (sl.closed_at IS NULL OR sl.closed_at>started)\n    AND (cs.closed_at IS NULL OR cs.closed_at>started);\n  IF cardinality(chair)=1\n   AND EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=chair[1]\n    AND (c.is_union IS NOT TRUE OR (p_union_id IS NOT NULL AND (c.id=p_union_id OR c.union_id=p_union_id))))\n  THEN RETURN chair[1]; END IF;\n  IF chair IS NULL AND cardinality(paid)=1\n   AND EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=paid[1]\n    AND (c.is_union IS NOT TRUE OR (p_union_id IS NOT NULL AND (c.id=p_union_id OR c.union_id=p_union_id))))\n  THEN RETURN paid[1]; END IF;\n  -- No unambiguous funding chair: the original session reader, unchanged.\n  IF cardinality(clubs)=1 AND clubs[1] IS NOT NULL\n   AND EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=clubs[1]\n    AND (c.is_union IS NOT TRUE OR (p_union_id IS NOT NULL AND (c.id=p_union_id OR c.union_id=p_union_id))))\n  THEN RETURN clubs[1]; END IF;\n  IF p_union_id IS NOT NULL THEN\n   RAISE EXCEPTION 'cash_earning_seat_provenance_missing_or_ambiguous' USING ERRCODE='23514'; END IF;\n  RETURN NULL;\n END IF;\n IF p_union_id IS NULL THEN\n  -- Private games may admit a seat funded by another club. Preserve the\n  -- actual club at the hand's start; the host only identifies the bank route.\n  -- This reader runs before banking an already accepted hand. Unknown seat\n  -- evidence must therefore stay NULL, not abort its bank obligation or invent\n  -- host ownership. The existing source worker durably refuses that NULL or\n  -- an unsupported cross-club liability after the exact bank receipt exists.\n  IF started IS NULL OR NOT isfinite(started) OR started>transaction_timestamp() THEN RETURN NULL; END IF;\n  SELECT array_agg(DISTINCT s.club_id) INTO clubs FROM public.table_seats s\n   WHERE s.table_id=p_table_id AND s.user_id=p_player_id\n    AND s.joined_at<=started AND (s.left_at IS NULL OR s.left_at>started);\n  -- An overlapping unknown-club seat also makes the evidence ambiguous.\n  IF cardinality(clubs) IS DISTINCT FROM 1 OR clubs[1] IS NULL\n   OR NOT EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=clubs[1] AND c.is_union IS NOT TRUE)\n  THEN RETURN NULL; END IF;\n  RETURN clubs[1];\n END IF;\n -- Preserve the existing shared-union validation and failure contract.\n IF started IS NULL OR started>transaction_timestamp() THEN RAISE EXCEPTION 'cash_hand_start_not_recorded' USING ERRCODE='23514'; END IF;\n SELECT array_agg(DISTINCT s.club_id) INTO clubs FROM public.table_seats s\n  WHERE s.table_id=p_table_id AND s.user_id=p_player_id AND s.club_id IS NOT NULL\n   AND s.joined_at<=started AND (s.left_at IS NULL OR s.left_at>started);\n IF cardinality(clubs) IS DISTINCT FROM 1\n  OR NOT EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=clubs[1]\n   AND (c.is_union IS NOT TRUE OR c.id=p_union_id OR c.union_id=p_union_id))\n THEN RAISE EXCEPTION 'cash_earning_seat_provenance_missing_or_ambiguous' USING ERRCODE='23514'; END IF;\n RETURN clubs[1];\nEND $function$\n"
+    }
+  ]
+}

@@ -11,6 +11,17 @@ name: Stage Exact Club Arena Engine Release
 # (scripts/ci/install-window-migrations.mjs). It adds no schedule, sends no
 # event, and never touches the engine or the host.
 on:
+  workflow_dispatch:
+    inputs:
+      owner_window_id:
+        description: 'Reviewed database-only owner window; never requests an engine release or a break'
+        required: true
+        type: string
+      request_database_break:
+        description: 'Explicit reviewed DB-only maintenance reservation; never replaces the engine'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
   schedule:
@@ -21,6 +32,7 @@ permissions: {}
 
 jobs:
   detect:
+    if: github.event_name != 'workflow_dispatch'
     name: Prove Whether The Server Tree Changed
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -99,28 +111,89 @@ jobs:
             # naming the owner's order and the exact commit this release must
             # contain. Commit text is never consulted. The host transaction
             # re-reads the same entry from the target tree and owns timing.
-            if OWNER_CONTAINS=$(python3 - <<'PYTHON'
-          import json
+            if OWNER_PICKED=$(python3 - <<'PYTHON'
+          import json, re
           from datetime import datetime, timezone
           doc = json.load(open("server/release/owner-maintenance-windows.json"))
           now = datetime.now(timezone.utc)
-          for w in (doc.get("windows") or []) if doc.get("version") == 1 else []:
+          entries = (doc.get("windows") or []) if doc.get("version") == 1 else []
+          entries = [w for w in entries if isinstance(w, dict)]
+          # Specific feature orders are stable when appended; retain ordering
+          # within each class and the original first-legacy-window behavior.
+          entries = [w for w in entries if "releaseWitness" in w] + [w for w in entries if "releaseWitness" not in w]
+          for w in entries:
               try:
                   nb = datetime.fromisoformat(w["notBefore"].replace("Z", "+00:00"))
                   na = datetime.fromisoformat(w["notAfter"].replace("Z", "+00:00"))
               except Exception:
                   continue
               if 0 < (na - nb).total_seconds() <= 6 * 3600 and nb <= now <= na:
-                  print(w["contains"])
-                  break
+                  witness = w.get("releaseWitness")
+                  path, digest = "-", "-"
+                  if "releaseWitness" in w:
+                      valid = isinstance(witness, dict) and set(witness) == {"path", "sha256"}
+                      if valid: path, digest = witness["path"], witness["sha256"]
+                      floor_witness = False
+                      if path == "server/release/activation-floor.json":
+                          try:
+                              import hashlib
+                              raw = open(path, "rb").read()
+                              floor = json.loads(raw)
+                              # Historical floor witnesses cannot grant or refuse
+                              # the currently selected immutable floor.
+                              if (isinstance(floor, dict) and floor.get("schema") == "engine-release-activation-floor/v2-owner-window"
+                                      and isinstance(floor.get("ownerWindowId"), str)
+                                      and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", floor["ownerWindowId"])
+                                      and floor["ownerWindowId"] != w.get("id")):
+                                  continue
+                              floor_witness = (floor.get("schema") == "engine-release-activation-floor/v2-owner-window" and floor.get("ownerWindowId") == w.get("id") and hashlib.sha256(raw).hexdigest() == digest)
+                          except (OSError, ValueError):
+                              pass
+                      if not (valid and isinstance(path, str) and (re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path) or path == "server/scripts/retained-original-checkpoint-guard.mjs" or floor_witness)
+                              and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
+                          print("invalid - -")
+                          break
+                  print(w["contains"], path, digest)
           PYTHON
-            ) && [[ "$OWNER_CONTAINS" =~ ^[0-9a-f]{40}$ ]] \
-              && git merge-base --is-ancestor "$OWNER_CONTAINS" HEAD; then
+            ); then
+              while read -r OWNER_CONTAINS OWNER_WITNESS_PATH OWNER_WITNESS_SHA; do
+              [[ "$OWNER_CONTAINS" =~ ^[0-9a-f]{40}$ ]] \
+                && git merge-base --is-ancestor "$OWNER_CONTAINS" HEAD || break
               # Once: a window whose commit is already serving admits nothing.
               SERVING=$(curl -sS --max-time 15 https://engine.smarter.poker/health \
                 | python3 -c 'import json,re,sys; v=json.load(sys.stdin).get("releaseSha"); print(v if isinstance(v,str) and re.fullmatch(r"[0-9a-f]{40}",v) else "")' 2>/dev/null) || SERVING=''
               if [ -z "$SERVING" ]; then
                 echo "Owner-ordered window: serving identity unreadable; not admitted."
+              elif [ "$OWNER_WITNESS_PATH" != '-' ]; then
+                # Reserved immutable source identifies this feature, rather than
+                # a shared base another release can adopt before this PR merges.
+                # Full history also remembers a later deletion: never re-admit it.
+                witness_git() {
+                  timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 git "$@"
+                }
+                consumed_witness() {
+                  if [ "$OWNER_WITNESS_PATH" = server/release/activation-floor.json ]; then
+                    local blob
+                    blob="$(witness_git rev-parse "HEAD:$OWNER_WITNESS_PATH")" || return 1
+                    witness_git log -1 --format=%H --find-object="$blob" "$SERVING" -- "$OWNER_WITNESS_PATH"
+                  else
+                    witness_git rev-list -1 "$SERVING" -- "$OWNER_WITNESS_PATH"
+                  fi
+                }
+                if [ "$(witness_git rev-parse --is-shallow-repository)" = false ] \
+                  && TARGET_WITNESS=$(witness_git show "HEAD:$OWNER_WITNESS_PATH" \
+                    | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') \
+                  && [ "$TARGET_WITNESS" = "$OWNER_WITNESS_SHA" ] \
+                  && SERVED_WITNESS=$(consumed_witness); then
+                  # Only known consumption may try another independently
+                  # authorized order. Unknown history never becomes authority.
+                  if [ -n "$SERVED_WITNESS" ]; then continue; fi
+                  echo "Owner-ordered window admits this exact unserved source witness."
+                  allowed=true
+                  owner_window_id=$(python3 -c 'import json,sys; d=json.load(open("server/release/owner-maintenance-windows.json")); print(next((w["id"] for w in d["windows"] if w["contains"] == sys.argv[1] and w.get("migrations")), ""))' "$OWNER_CONTAINS")
+                else
+                  echo "Owner-ordered source witness already served or unverifiable; not admitted."
+                fi
               elif git merge-base --is-ancestor "$OWNER_CONTAINS" "$SERVING"; then
                 echo "Owner-ordered window already served ($OWNER_CONTAINS is in $SERVING); not admitted."
               else
@@ -128,6 +201,8 @@ jobs:
                 allowed=true
                 owner_window_id=$(python3 -c 'import json,sys; d=json.load(open("server/release/owner-maintenance-windows.json")); print(next((w["id"] for w in d["windows"] if w["contains"] == sys.argv[1] and w.get("migrations")), ""))' "$OWNER_CONTAINS")
               fi
+              break
+              done <<< "$OWNER_PICKED"
             fi
           fi
           if [ "$allowed" = false ]; then
@@ -270,7 +345,11 @@ jobs:
   window-migrations:
     name: Install Queued Daily-Maintenance Migrations
     needs: detect
-    if: needs.detect.outputs.admission_allowed == 'true' && (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')
+    if: >-
+      always() &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (needs.detect.result == 'success' && needs.detect.outputs.admission_allowed == 'true' &&
+        (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')))
     runs-on: ubuntu-latest
     timeout-minutes: 75
     concurrency:
@@ -294,15 +373,36 @@ jobs:
       - name: Install the Postgres client library
         run: npm i pg@8 --no-save --no-audit --no-fund
 
-      - name: Install every queued window migration inside the 04:00 break
+      # An explicit dispatch only consumes a reviewed migration window. The
+      # detector is skipped, so it cannot signal an engine or request a break.
+      # The existing installer validates the manifest/ancestry and requires
+      # the database-owned freeze with all admission and commit reserves.
+      - name: Install every queued window migration inside the certified break
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          OWNER_WINDOW_ID: ${{ needs.detect.outputs.owner_window_id }}
+          OWNER_WINDOW_ID: ${{ inputs.owner_window_id || needs.detect.outputs.owner_window_id }}
+          REQUEST_DATABASE_BREAK: ${{ inputs.request_database_break }}
+          HETZNER_HOST: ${{ inputs.request_database_break && secrets.HETZNER_HOST || '' }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ inputs.request_database_break && secrets.HETZNER_SSH_PRIVATE_KEY || '' }}
+          HETZNER_HOST_KEY: ${{ inputs.request_database_break && secrets.HETZNER_HOST_KEY || '' }}
         run: |
+          if [ "$REQUEST_DATABASE_BREAK" = true ]; then
+            python3 -B scripts/ci/database-maintenance-window.py
+            exit $?
+          fi
           owner_args=()
           if [ -n "$OWNER_WINDOW_ID" ]; then owner_args=(--owner-window "$OWNER_WINDOW_ID"); fi
           node scripts/ci/install-window-migrations.mjs "${owner_args[@]}" \
             --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt
+
+      - name: Retain the database-only terminal receipt
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.request_database_break
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-maintenance-${{ github.run_id }}
+          path: artifacts/database-maintenance/receipt.json
+          if-no-files-found: error
+          retention-days: 7
 
   signal:
     name: Dispatch The Exact Main SHA

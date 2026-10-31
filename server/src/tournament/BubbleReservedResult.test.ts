@@ -3,6 +3,7 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 import { resolvePayoutStructure } from './payoutStructure.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 
 const source = readFileSync('src/tournament/TournamentManagerEliminations.ts', 'utf8');
@@ -45,6 +46,9 @@ function harness(
     satellite?: boolean;
     /** What the base class answers for the tournament's unit; null is "the club was not read". */
     unit?: number | null;
+    rows?: Array<{ id: string; user_id: string; position: number; prize: number }>;
+    failLaterPage?: boolean;
+    stopAfterFirstPage?: boolean;
   } = {}
 ) {
   const tournament = {
@@ -59,10 +63,12 @@ function harness(
     buy_in_amount: options.buyIn ?? 100,
     variant: options.satellite ? 'satellite' : 'mtt',
   };
-  const rows = [
-    { user_id: 'second', position: 2, prize: 0 },
-    { user_id: 'third', position: 3, prize: 0 },
+  const rows = options.rows ?? [
+    { id: 'entry-000001', user_id: 'second', position: 2, prize: 0 },
+    { id: 'entry-000002', user_id: 'third', position: 3, prize: 0 },
   ];
+  let active = true;
+  const lifecycle = {};
   const selections: string[] = [];
   const rpc = vi.fn(async (name: string, request: any) => ({
     error: null,
@@ -79,6 +85,8 @@ function harness(
   const db = {
     rpc,
     from(table: string) {
+      let cursor: string | null = null;
+      let pageSize = 1000;
       const query: any = {
         select(columns: string) {
           selections.push(columns);
@@ -87,12 +95,31 @@ function harness(
         eq() {
           return query;
         },
+        order() {
+          return query;
+        },
+        limit(value: number) {
+          pageSize = Math.min(value, 1000);
+          return query;
+        },
+        gt(_column: string, value: string) {
+          cursor = value;
+          return query;
+        },
         maybeSingle: async () => ({
           error: null,
           data: table === 'tournaments' ? tournament : { status: 'playing', username: 'Player' },
         }),
         then(resolve: (v: unknown) => void) {
-          return Promise.resolve({ error: null, data: rows }).then(resolve);
+          const result =
+            cursor !== null && options.failLaterPage
+              ? { error: { message: 'later page unavailable' }, data: null }
+              : {
+                  error: null,
+                  data: rows.filter((row) => cursor === null || row.id > cursor).slice(0, pageSize),
+                };
+          if (options.stopAfterFirstPage) active = false;
+          return Promise.resolve(result).then(resolve);
         },
       };
       return query;
@@ -110,6 +137,7 @@ function harness(
     // The free identifier `placeLadderUnitCents` returns, injected by name for
     // the same reason every other one above is.
     'UNIT_CENTS_ASSET_NOT_READ',
+    'fetchAllRows',
     compiled
   )(
     db,
@@ -119,13 +147,16 @@ function harness(
     prizePoolAvailableToPlaces,
     resolvePayoutStructure,
     { SWEEP_MUTATION_BATCH_SIZE: 100, UNRESOLVED_BUST_RETRY_MS: 100 },
-    UNIT_CENTS_ASSET_NOT_READ
+    UNIT_CENTS_ASSET_NOT_READ,
+    fetchAllRows
   );
   const subject = Object.assign(new Subject(), {
     tournamentId: 'event',
     tournamentCache: tournament,
     finalFieldSize: async () => options.field ?? 4,
-    eliminationMutationAllowed: () => true,
+    captureLifecycleToken: () => lifecycle,
+    lifecycleIsCurrent: (token: unknown) => active && token === lifecycle,
+    eliminationMutationAllowed: () => active,
     eliminationWorkBudgetExpired: () => false,
     requestUrgentEliminationSweepAfter: vi.fn(),
     broadcast: vi.fn(async () => {}),
@@ -220,5 +251,39 @@ describe('result amounts reserve the same bubble buy-in as terminal SQL', () => 
     const h = harness({ satellite: true });
     expect(await h.subject.eliminatePlayer('second', 2)).toBe(true);
     expect(h.rpc.mock.calls[0][1].p_prize).toBe(0);
+  });
+});
+
+describe('entry repricing reads every eliminated entrant before changing entitlements', () => {
+  const field = (size: number) =>
+    Array.from({ length: size }, (_, i) => ({
+      id: `entry-${String(i + 1).padStart(6, '0')}`,
+      user_id: i === size - 1 ? 'second' : `out-${i}`,
+      position: i === size - 1 ? 2 : i + 4,
+      prize: 0,
+    }));
+  it.each([1000, 1001, 9001])('reprices the paid entrant at the end of %i rows', async (size) => {
+    const h = harness({ rows: field(size), field: size + 1 });
+    expect(await h.subject.recalculateEliminatedPrizes(1000)).toBe(true);
+    expect(h.rpc).toHaveBeenCalledTimes(1);
+    expect(h.rpc).toHaveBeenCalledWith('fn_ca_reprice_unpaid_tournament_place', {
+      p_tournament_id: 'event',
+      p_user_id: 'second',
+      p_expected_prize: 0,
+      p_new_prize: 270,
+    });
+  });
+  it('does not certify or partially reprice an incomplete second page', async () => {
+    const rows = field(1001);
+    rows[0].position = 3;
+    const h = harness({ rows, failLaterPage: true });
+    expect(await h.subject.recalculateEliminatedPrizes(1000)).toBe(false);
+    expect(h.rpc).not.toHaveBeenCalled();
+    expect(h.report).toHaveBeenCalled();
+  });
+  it('does not write from an obsolete manager after the field read', async () => {
+    const h = harness({ rows: field(1001), stopAfterFirstPage: true });
+    expect(await h.subject.recalculateEliminatedPrizes(1000)).toBe(false);
+    expect(h.rpc).not.toHaveBeenCalled();
   });
 });

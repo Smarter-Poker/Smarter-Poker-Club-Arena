@@ -23,3 +23,31 @@ started=1
 # round 3 owner rules behind every agent statement, on the exact live stages.
 python3 -B "$root/scripts/ci/test-commission-agent-wallet-postgres.py" --pg-bin "$pgbin" \
   --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Owner-confirmed prior sends are discharged in those same R2/R3 owners once.
+python3 -B "$root/scripts/ci/test-existing-transfer-discharge-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# A former standalone zero book verifies the paid foreign original R2 receipts.
+python3 -B "$root/scripts/ci/test-zero-standalone-foreign-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Strict foreign certificates validate each original allocation against one source bag.
+python3 -B "$root/scripts/ci/test-foreign-certificate-allocations-once-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Valid historical role promotion cannot strand the original commission cascade.
+python3 -B "$root/scripts/ci/test-historical-agent-role-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Optional club-book memo generation begins after the original player round.
+python3 -B "$root/scripts/ci/test-book-memo-after-r3-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Deleted-agent reserves reuse only unchanged original payer proofs per request.
+python3 -B "$root/scripts/ci/test-deleted-reserve-reuse-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# R3 uses the existing original close deadline and preserves completed batches.
+python3 -B "$root/scripts/ci/test-rakeback-original-deadline-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"

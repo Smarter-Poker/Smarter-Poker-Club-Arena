@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  CLUB LOBBY — real-browser click-through (LOBBY V2, line-based)
@@ -36,6 +37,8 @@ async function rowCount(page: Page): Promise<number> {
  * the empty state did. A genuinely empty club is a pass, not a timeout.
  */
 async function lobbySettled(page: Page): Promise<void> {
+  await prepareCashLobbyActions(page);
+  await openLobbyGameSection(page, 'ALL');
   await page
     .locator('.club-home__games .lt-row:not(.lt-row--skeleton), .empty-tables')
     .first()
@@ -44,6 +47,17 @@ async function lobbySettled(page: Page): Promise<void> {
   // Every test has a fresh context. Dismiss the optional entry greeting and
   // Diamond invitation through their real controls before lobby interactions.
   await prepareCashLobbyActions(page);
+}
+
+/** Cash-door cases must not inherit another case's durable MTT/PLO filter. */
+async function selectAllGames(page: Page): Promise<void> {
+  await openLobbyGameSection(page, 'ALL');
+  const all = page.getByRole('tab', { name: 'ALL', exact: true });
+  await all.click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.club-home__games .lt-row[data-kind="cash"]').first()).toBeVisible({
+    timeout: 45_000,
+  });
 }
 
 test.describe('Club lobby', () => {
@@ -136,6 +150,7 @@ test.describe('Club lobby', () => {
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);
+    await selectAllGames(page);
 
     const rows = await rowCount(page);
     test.skip(rows === 0, 'no games in this lobby right now');
@@ -183,8 +198,18 @@ test.describe('Club lobby', () => {
     if (!ok) return;
     await lobbySettled(page);
 
+    // The dedicated tournament club has a real maintained catalog. ALL only
+    // includes registering/late entries; use the actual MTT category instead
+    // of silently skipping when that subset is temporarily empty.
+    await openLobbyGameSection(page, 'MTT');
+    await page.getByRole('tab', { name: "MTT'S", exact: true }).click();
+    await expect(page.locator('.club-home__games .lt-row[data-kind="mtt"]').first()).toBeVisible({
+      timeout: 45_000,
+    });
     const i = await firstRow(page, 'mtt');
-    test.skip(i < 0, 'no tournament in this lobby right now');
+    expect(i, 'the maintained tournament club must expose a real MTT row').toBeGreaterThanOrEqual(
+      0
+    );
 
     const row = page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').nth(i);
     const id = await row.getAttribute('data-id');
@@ -210,56 +235,34 @@ test.describe('Club lobby', () => {
     ).toHaveCount(0);
   });
 
-  test('a full table says it is full and offers the queue without navigating', async ({ page }) => {
+  test('a clustered cash game reviews its game-level door without joining', async ({ page }) => {
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);
+    await selectAllGames(page);
 
-    // Find a full CASH row by its status badge.
-    const fullRow = page
-      .locator('.club-home__games .lt-row[data-kind="cash"]')
-      .filter({ has: page.locator('.lt-status--full') })
-      .first();
-    test.skip((await fullRow.count()) === 0, 'no full cash tables in this lobby right now');
-
-    await fullRow.scrollIntoViewIfNeeded();
-    await fullRow.click();
-
+    // R10: a cash GAME opens feeders when a Main fills. It never advertises
+    // the game as Full or offers a standalone table queue. The maintained
+    // Diamond catalog exercises this real production path. The standalone
+    // 6/6 table's Join/Leave Waitlist path remains enforced by the actual
+    // GameLobbyPanel browser fixture in both browser engines.
+    const row = page.locator('.club-home__games .lt-row[data-kind="cash"]').first();
+    await expect(row).toBeVisible();
+    await expect(row.locator('.lt-status--full')).toHaveCount(0);
+    await row.scrollIntoViewIfNeeded();
+    const before = new URL(page.url());
+    await row.click();
     const panel = page.locator('.glp');
-    await expect(panel).toBeVisible({ timeout: 8000 });
-
-    /* Re-resolve the CTA before every interaction: toggling the queue
-       re-renders the panel and a stale handle detaches. */
-    const cta = () => panel.locator('.agc-action--primary');
-    await expect(cta(), 'a full table offers no waitlist control').toBeVisible({ timeout: 10000 });
-
-    const label = (await cta().innerText()).trim().toLowerCase();
-    test.skip(
-      !label.includes('waitlist'),
-      'full table CTA is not a waitlist control (player may be seated here)'
-    );
-    const wasQueued = label.includes('leave');
-
-    const before = page.url();
-    await cta().click();
-    await expect
-      .poll(async () => (await cta().innerText()).trim().toLowerCase().includes('leave'), {
-        timeout: 12000,
-        message: 'the waitlist CTA never changed state',
-      })
-      .toBe(!wasQueued);
-    expect(page.url(), 'joining the waitlist navigated away from the lobby').toBe(before);
-
-    /* PUT IT BACK — this runs against production with a real account. */
-    await cta().click();
-    await expect
-      .poll(async () => (await cta().innerText()).trim().toLowerCase().includes('leave'), {
-        timeout: 12000,
-        message: 'the waitlist state was not restored, so this run left a queue entry behind',
-      })
-      .toBe(wasQueued);
-
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.arena-game-card')).toBeVisible();
+    const cta = panel.locator('button[data-zone="primaryAction"]');
+    await expect(cta).toBeVisible();
+    await expect(cta).toHaveAccessibleName(/^(Join Game|Join Lightning|Not Open Yet)$/i);
+    await expect(panel.getByRole('button', { name: /^(Join|Leave) Waitlist$/i })).toHaveCount(0);
+    expect(new URL(page.url()).pathname).toBe(before.pathname);
     await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    expect(new URL(page.url()).pathname).toBe(before.pathname);
   });
 
   test('advanced filters open and close', async ({ page }) => {
@@ -332,6 +335,7 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${memberClub}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
     await prepareCashLobbyActions(page);
+    await openLobbyGameSection(page, 'ALL');
     const all = page.getByRole('tab', { name: 'ALL', exact: true });
     await expect(all).toBeVisible({ timeout: 45_000 });
     await settleDiamondSpinsOffer(page, offer);

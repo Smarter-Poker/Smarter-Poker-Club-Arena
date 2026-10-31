@@ -70,6 +70,7 @@ import {
   buyIntoLightning,
   currentLightningUserId,
   readLightningBuyInContext,
+  rejoinLightningSeat,
   rememberLightningBuyIn,
   rememberedLightningBuyIn,
   type LightningBuyInContext,
@@ -208,6 +209,16 @@ export default function LightningEntryPage() {
         toast.warning('Sign In To Join A Game.');
         return;
       }
+      // A funded disconnected anchor already paid. Rejoin before asking its
+      // empty wallet for a second buy-in; a busted anchor is released here.
+      const existing = await rejoinLightningSeat(clusterId);
+      if (!ownsPage()) return;
+      if (existing) {
+        const meta = phase.kind === 'entry' ? phase.meta : null;
+        registerLightningPoolSession({ poolSessionId: existing.poolSessionId, clusterId, meta });
+        navigate(lightningRoomPath(existing.poolSessionId, meta));
+        return;
+      }
       const context = await readLightningBuyInContext(clusterId, userId);
       if (!ownsPage()) return;
       if (!context) {
@@ -225,7 +236,7 @@ export default function LightningEntryPage() {
         setJoining(false);
       }
     }
-  }, [clusterId, joining, toast]);
+  }, [clusterId, joining, toast, phase, navigate]);
 
   /** The amount is confirmed: hold a chair, buy it, open the room. */
   const confirmLightningBuyIn = useCallback(

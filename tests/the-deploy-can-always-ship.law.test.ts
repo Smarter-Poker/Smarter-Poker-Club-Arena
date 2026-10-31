@@ -56,8 +56,11 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
     expect(triggers).toContain('branches: [main]');
     expect(triggers).not.toMatch(/^\s+paths(?:-ignore)?:/m);
     expect(triggers).not.toMatch(
-      /^\s{2}(?:workflow_dispatch|repository_dispatch|pull_request|pull_request_target|workflow_run):/m
+      /^\s{2}(?:repository_dispatch|pull_request|pull_request_target|workflow_run):/m
     );
+    // The explicit migration continuation skips detection and every dependent engine signal.
+    expect(engineSignal).toContain("if: github.event_name != 'workflow_dispatch'");
+    expect(engineSignal).toContain('needs: detect');
     expect(triggers).toContain("cron: '30 8 * * *'");
     expect(triggers).toContain("cron: '30 9 * * *'");
     expect(engineSignalCode).toContain('RUN_CREATED_AT=$(gh api');
@@ -136,7 +139,7 @@ describe('the static publisher is event-driven and independent', () => {
   });
 
   it('does not wait on or share a concurrency group with the engine deploy', () => {
-    const publishGroup = publisher.match(/^concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
+    const publishGroup = publisher.match(/^ {4}concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
     const engineGroup = engine.match(/^concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
     expect(publishGroup).toBeTruthy();
     expect(engineGroup).toBeTruthy();
@@ -209,7 +212,7 @@ describe('a run that ships nothing says so, and says which half failed', () => {
     );
   });
 
-  it('annotates NOT DEPLOYED on every non-shipping path', () => {
+  it('reports unshipped outcomes without asserting the current serving identity', () => {
     expect(engine).toContain('name: Say plainly when nothing shipped');
     expect(engineCode).toContain('::warning title=NOT DEPLOYED::');
     const step = engine.slice(engine.indexOf('name: Say plainly when nothing shipped'));

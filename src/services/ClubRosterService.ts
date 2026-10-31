@@ -43,7 +43,11 @@ async function readMemberRpc(
   const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
   return runRosterReadWithRetry(
     async (attemptSignal) => {
-      const { data, error } = await supabase.rpc(name, parameters).abortSignal(attemptSignal);
+      let request = supabase.rpc(name, parameters);
+      if (name === 'ca_club_member_detail' || name === 'ca_club_member_statistics') {
+        request = request.setHeader('x-client-info', 'club-arena-member-results/2');
+      }
+      const { data, error } = await request.abortSignal(attemptSignal);
       if (error) throw error;
       return data;
     },
@@ -81,12 +85,16 @@ function isMetric(value: unknown): boolean {
   );
 }
 
-function hasMetrics(value: unknown, fields: string[]): boolean {
+function hasMetrics(value: unknown, fields: string[], nullable: string[] = []): boolean {
   return (
     value !== null &&
     typeof value === 'object' &&
     !Array.isArray(value) &&
-    fields.every((key) => isMetric((value as Record<string, unknown>)[key]))
+    fields.every(
+      (key) =>
+        isMetric((value as Record<string, unknown>)[key]) ||
+        (nullable.includes(key) && (value as Record<string, unknown>)[key] === null)
+    )
   );
 }
 
@@ -301,7 +309,7 @@ export interface MemberDetail {
     mtt_fee: number;
     claimed_back: number;
     sent_out: number;
-    total_winnings: number;
+    total_winnings: number | null;
     mtt_winnings: number;
   } | null;
   range: { from: string | null; to: string | null; is_overall: boolean };
@@ -333,7 +341,7 @@ export interface MemberStatistics {
   faced_three_bets: number;
   cbet: number;
   cbet_opportunities: number;
-  net: number;
+  net: number | null;
   fees: number;
   from: string | null;
   to: string | null;
@@ -353,17 +361,20 @@ export interface DownlineMember {
   is_online: boolean;
 }
 
-/** Today uses Chicago midnight. Week/month use UTC; the week starts Monday. */
+/** Calendar periods use Chicago midnight; the current week starts Monday. */
 export type WinLossPeriod = 'today' | 'week' | 'month' | 'overall';
 
 /** One window of a member's results, in club chips. Positive is a win. */
 export interface WinLossFigure {
   /** Signed cash hand results, after rake. */
-  cash: number;
+  cash: number | null;
   /** Tournament money: prizes, bounties and refunds minus buy-ins, rebuys and add-ons. */
   mtt: number;
   /** cash + mtt. */
-  net: number;
+  net: number | null;
+  /** Fees for this exact selected period, never lifetime roster totals. */
+  fees?: number;
+  downline_fees?: number;
 }
 
 export interface MemberWinLoss {
@@ -393,7 +404,11 @@ function winLossError(error: { message?: string; code?: string; status?: number 
 
 function winLossFigure(value: unknown): WinLossFigure {
   const row = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
-  return { cash: num(row.cash), mtt: num(row.mtt), net: num(row.net) };
+  return {
+    cash: row.cash === null ? null : num(row.cash),
+    mtt: num(row.mtt),
+    net: row.net === null ? null : num(row.net),
+  };
 }
 
 export const ClubRosterService = {
@@ -444,6 +459,42 @@ export const ClubRosterService = {
       },
       { signal, timeoutMs: 8_000 }
     );
+  },
+
+  /** Data opens individual records; upline and club matches must not crowd them out. */
+  async getDataPlayerMatches(
+    clubId: string,
+    query: Pick<RosterQuery, 'search' | 'signal'> = {}
+  ): Promise<{ items: RosterMember[] }> {
+    const data = await readMemberRpc(
+      'ca_club_data_player_search',
+      {
+        p_club_id: clubId,
+        p_search: normalizeRosterSearch(query.search),
+        p_limit: 20,
+      },
+      query.signal
+    );
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      !('items' in data) ||
+      !Array.isArray(data.items) ||
+      data.items.length > 20 ||
+      !data.items.every(
+        (row: unknown) =>
+          !!row &&
+          typeof row === 'object' &&
+          'user_id' in row &&
+          typeof row.user_id === 'string' &&
+          row.user_id.length > 0 &&
+          'can_view_financials' in row &&
+          row.can_view_financials === true
+      )
+    ) {
+      throw new Error('The Player Search Response Was Incomplete');
+    }
+    return { items: data.items.map((row: Record<string, unknown>) => mapRosterRow(row)) };
   },
 
   async getRosterPage(clubId: string, query: RosterQuery = {}): Promise<RosterPage> {
@@ -562,10 +613,12 @@ export const ClubRosterService = {
     const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
     const data = await runRosterReadWithRetry(
       async (attemptSignal) => {
-        let request = supabase.rpc('ca_club_member_win_loss', {
-          p_club_id: clubId,
-          p_user_id: userId,
-        });
+        let request = supabase
+          .rpc('ca_club_member_win_loss', {
+            p_club_id: clubId,
+            p_user_id: userId,
+          })
+          .setHeader('x-client-info', 'club-arena-member-results/2');
         if (typeof (request as any).abortSignal === 'function') {
           request = (request as any).abortSignal(attemptSignal);
         }
@@ -604,11 +657,13 @@ export const ClubRosterService = {
       const batch = ids.slice(start, start + 100);
       const data = await runRosterReadWithRetry(
         async (attemptSignal) => {
-          let request = supabase.rpc('ca_club_members_win_loss', {
-            p_club_id: clubId,
-            p_user_ids: batch,
-            p_period: period,
-          });
+          let request = supabase
+            .rpc('ca_club_members_period_summary', {
+              p_club_id: clubId,
+              p_user_ids: batch,
+              p_period: period,
+            })
+            .setHeader('x-client-info', 'club-arena-member-results/2');
           if (typeof (request as any).abortSignal === 'function') {
             request = (request as any).abortSignal(attemptSignal);
           }
@@ -619,7 +674,18 @@ export const ClubRosterService = {
         { ...WIN_LOSS_READ, signal }
       );
       for (const row of (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>) {
-        if (typeof row.user_id === 'string') out.set(row.user_id, winLossFigure(row));
+        if (typeof row.user_id === 'string') {
+          const validFee = (value: unknown) =>
+            (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+            Number.isFinite(Number(value));
+          if (!validFee(row.fees) || !validFee(row.downline_fees))
+            throw new Error('The Period Fee Response Was Incomplete');
+          out.set(row.user_id, {
+            ...winLossFigure(row),
+            fees: num(row.fees),
+            downline_fees: num(row.downline_fees),
+          });
+        }
       }
     }
     return out;
@@ -693,7 +759,13 @@ export const ClubRosterService = {
           ],
         ],
       ].every(([key, fields]) =>
-        d[key as string] === null ? !sensitive : hasMetrics(d[key as string], fields as string[])
+        d[key as string] === null
+          ? !sensitive
+          : hasMetrics(
+              d[key as string],
+              fields as string[],
+              key === 'stats' ? ['total_winnings'] : []
+            )
       )
     )
       throw new Error('The Member Response Was Incomplete');
@@ -743,7 +815,7 @@ export const ClubRosterService = {
             mtt_fee: num(d.stats?.mtt_fee),
             claimed_back: num(d.stats?.claimed_back),
             sent_out: num(d.stats?.sent_out),
-            total_winnings: num(d.stats?.total_winnings),
+            total_winnings: d.stats?.total_winnings === null ? null : num(d.stats?.total_winnings),
             mtt_winnings: num(d.stats?.mtt_winnings),
           }
         : null,
@@ -794,21 +866,25 @@ export const ClubRosterService = {
       (!['hands', 'hands_won', 'three_bets', 'faced_three_bets', 'cbet_opportunities'].every(
         (key) => isRosterCount(d[key])
       ) ||
-        !hasMetrics(d, [
-          'hands',
-          'hands_won',
-          'win_rate',
-          'vpip',
-          'pfr',
-          'three_bet',
-          'three_bets',
-          'fold_to_three_bet',
-          'faced_three_bets',
-          'cbet',
-          'cbet_opportunities',
-          'net',
-          'fees',
-        ]) ||
+        !hasMetrics(
+          d,
+          [
+            'hands',
+            'hands_won',
+            'win_rate',
+            'vpip',
+            'pfr',
+            'three_bet',
+            'three_bets',
+            'fold_to_three_bet',
+            'faced_three_bets',
+            'cbet',
+            'cbet_opportunities',
+            'net',
+            'fees',
+          ],
+          ['net']
+        ) ||
         typeof d.variant !== 'string' ||
         !Array.isArray(d.variants) ||
         !d.variants.every((value: unknown) => typeof value === 'string') ||
@@ -833,7 +909,7 @@ export const ClubRosterService = {
       faced_three_bets: num(d.faced_three_bets),
       cbet: num(d.cbet),
       cbet_opportunities: num(d.cbet_opportunities),
-      net: num(d.net),
+      net: d.net === null ? null : num(d.net),
       fees: num(d.fees),
       from: d.from ?? null,
       to: d.to ?? null,
@@ -844,13 +920,16 @@ export const ClubRosterService = {
   async getDownline(
     clubId: string,
     userId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    range: MemberRange = RANGE_OVERALL
   ): Promise<DownlineMember[]> {
     const data = await readMemberRpc(
-      'ca_club_member_downline',
+      'ca_club_member_downline_in_range',
       {
         p_club_id: clubId,
         p_user_id: userId,
+        p_from: range.from,
+        p_to: range.to,
       },
       signal
     );

@@ -18,7 +18,7 @@
  * - playDeal()              Card slide/flip
  * - playCheck()             Double table tap
  * - playChips()             Chip clink (call, blinds)
- * - playRaise()             Stack push + chip run + rising flick (bet/raise)
+ * - playRaise()             Deep chip splash into the pot (bet/raise)
  * - playFold()              Card swoosh to muck
  * - playDiscard()           ONE card swept to the muck (Crazy Pineapple)
  * - playAllIn()             Dramatic bass thud + chip push
@@ -448,6 +448,25 @@ class SoundService {
 
   private unlockInstalled = false;
   private removeUnlockListeners: (() => void) | null = null;
+  private idleSuspendTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private resetIdleSuspendTimer(): void {
+    if (this.idleSuspendTimer) {
+      clearTimeout(this.idleSuspendTimer);
+      this.idleSuspendTimer = null;
+    }
+    // Mobile energy optimization:
+    // If no sounds have played for 20 seconds, suspend the AudioContext so
+    // mobile OS audio daemons (iOS CoreAudio / Android AudioFlinger) can enter
+    // low-power deep sleep mode instead of continuously drawing hardware power.
+    if (typeof window !== 'undefined' && this.ctx && this.ctx.state === 'running') {
+      this.idleSuspendTimer = setTimeout(() => {
+        if (this.ctx && this.ctx.state === 'running') {
+          void this.ctx.suspend().catch(() => {});
+        }
+      }, 20_000);
+    }
+  }
 
   private installUnlockListeners(): void {
     if (this.unlockInstalled || typeof window === 'undefined') return;
@@ -558,6 +577,7 @@ class SoundService {
         /* only a real gesture can do it - installUnlockListeners is waiting */
       });
     }
+    this.resetIdleSuspendTimer();
     return true;
   }
 
@@ -1113,36 +1133,9 @@ class SoundService {
   }
 
   /**
-   * Raise — a stack pushed forward, a run of chips landing, and a rising flick.
-   *
-   * Dan 2026-10-24: "A RAISE SHOULD HAVE A DIFFERENT SOUND EFFECT THEN A CALL."
-   *
-   * Two things made them the same sound at the table:
-   *
-   * 1. Every OPPONENT raise and bet played `playChips()` — the call clink — in
-   *    TablePage's action echo. Only the hero's own raise ever reached this
-   *    method, so most raises anyone heard were literally the call sound.
-   * 2. Even where it did play, the old raise was the call clink three times:
-   *    the same pitched oscillator click swept down to 100Hz, just at 1.8,
-   *    2.2 and 2.8kHz instead of 2.2 and 2.6. Same timbre, one more hit; the
-   *    ear files that as "the chip sound, a bit longer", not as a raise.
-   *
-   * So the raise is now built from pieces the call does not have:
-   *   - a stack PUSHED across the felt: noise through a bandpass sweeping UP
-   *     (every other swept cue at the table — deal, fold — sweeps down, so an
-   *     upward sweep is unmistakably "forward"),
-   *   - a wooden knock under it as the stack lands (the call has no body),
-   *   - a run of 4-6 glassy chips on the audio clock, more for a bigger raise,
-   *   - and a short rising two-note flick at the end, the raise's signature:
-   *     nothing else in the action set ends on an upward interval.
-   * It stays well clear of the all-in, which owns the deep sub thud.
-   *
-   * Everything is scheduled on the AudioContext clock (see scheduleTone):
-   * setTimeout spacing wobbles with the frame rate and smears a cascade.
-   *
-   * Bible V8 §5.3: "chip stack sound (louder for larger amounts)".
-   * @param betAmount optional bet amount — larger amounts are louder and longer
-   * @param bigBlind optional BB for scaling reference
+   * Raise: a short, low chip splash into the pot. The call stays a dry clink.
+   * Owner correction October 26: deeper body, no melodic flourish or rising beep.
+   * Larger raises add a few chips and modest volume, scheduled on the audio clock.
    */
   playRaise(betAmount?: number, bigBlind?: number) {
     if (!this.shouldPlay('raise', 'action') || !this.ensureContext()) return;
@@ -1163,27 +1156,18 @@ class SoundService {
       chips = bbMultiple >= 25 ? 6 : bbMultiple >= 8 ? 5 : 4;
     }
 
-    // 1. The push: the stack slid forward across the felt (rising band).
-    this.createSweptNoiseBurst(t, 0.13, 0.1 * volumeScale, 650, 2600, 1.1);
-
-    // 2. The stack lands: a short wooden knock, two partials a fifth apart.
-    const land = t + 0.1;
-    this.scheduleTone(land, 196, 0.12, 0.14 * volumeScale, 'sine');
-    this.scheduleTone(land, 294, 0.07, 0.05 * volumeScale, 'sine');
-
-    // 3. The chips: glassy, ringing hits rather than the call's dry clicks.
-    const pitches = [3150, 2750, 3450, 2950, 3300, 2850];
+    // A soft felt contact under a dense, irregular cascade of chip impacts.
+    this.createSweptNoiseBurst(t, 0.09, 0.045 * volumeScale, 900, 420, 0.7);
+    const land = t + 0.025;
+    this.scheduleTone(land, 145, 0.095, 0.13 * volumeScale, 'sine');
+    const pitches = [1120, 830, 1350, 960, 1210, 760];
+    const offsets = [0, 0.019, 0.047, 0.061, 0.092, 0.118];
     for (let i = 0; i < chips; i++) {
-      const at = land + 0.012 + i * 0.034;
-      const level = (0.13 - i * 0.012) * volumeScale;
-      this.scheduleTone(at, pitches[i], 0.075, level, 'triangle');
-      this.scheduleTone(at, pitches[i] * 1.5, 0.035, level * 0.45, 'sine');
+      const at = land + offsets[i];
+      const level = (0.075 - i * 0.007) * volumeScale;
+      this.createSweptNoiseBurst(at, 0.035, level, pitches[i], pitches[i] * 0.55, 0.8);
+      this.scheduleTone(at, pitches[i], 0.027, level * 0.38, 'sine');
     }
-
-    // 4. The flick: a rising fourth (E5 -> A5) — the raise's signature.
-    const flick = land + 0.012 + chips * 0.034 + 0.01;
-    this.scheduleTone(flick, 659, 0.07, 0.06 * volumeScale, 'triangle');
-    this.scheduleTone(flick + 0.06, 880, 0.11, 0.07 * volumeScale, 'triangle');
 
     haptic.medium();
   }
@@ -3570,6 +3554,7 @@ class SoundService {
     this.removeUnlockListeners?.();
     this.removeUnlockListeners = null;
     this.unlockInstalled = false;
+    if (this.idleSuspendTimer) clearTimeout(this.idleSuspendTimer);
     if (this.priorityResetTimer) clearTimeout(this.priorityResetTimer);
     this.stopAllMotors(0.02);
     this.stopTimerWarning();

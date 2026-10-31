@@ -136,7 +136,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
@@ -163,6 +163,11 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+          # Classify Git paths without hydrating the full artwork/source tree.
+          # Cone mode also retains root package and Playwright configuration files.
+          sparse-checkout: |
+            scripts
+            .github
           persist-credentials: false
       - id: f
         env:
@@ -247,9 +252,12 @@ jobs:
   # It reads source and asserts on text. It needs no database, no build and no
   # network, and it finishes in well under a second, so there is no reason for
   # it to be behind a gate that can hide it.
+  # PRs run these unchanged guards in typecheck_compile, sharing its install.
+  # Schedules retain their independent guard job without adding a full compiler run.
   source_windows:
+    if: github.event_name == 'schedule'
     name: Source Windows Are Structural
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 6
     steps:
       - name: Checkout
@@ -295,7 +303,7 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -366,8 +374,14 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    # 8443 job122933361176 completed every functional step at14:59, then
+    # its 15-minute cap cancelled cache cleanup. Comparable8440 took14:26.
+    # Preserve all commands/test deadlines and reserve5minutes for the
+    # observed checkout/execution variance plus cache/cleanup.
+    # Run40726879893 passed every guard but exceeded15m during cleanup;
+    # comparable successful run40714001791 took13m45. Preserve execution headroom.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -420,6 +434,51 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
+      - name: Classify the actual checked compiler tree
+        id: compile_scope
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.sha }}
+        run: |
+          node scripts/ci/classify-ci-changes.mjs
+          node scripts/ci/ui-test-selection.mjs scope
+
+      # Share the compiler's checkout/install for repository-wide guards.
+      # Structural source-pin and matte-baseline laws remain independent of
+      # classification. Only the expensive bitmap scan may omit unchanged art
+      # after the positive immutable presentation proof succeeds.
+      - name: Every source pin is bounded by a structure
+        run: npx vitest run tests/unit/noFixedSizeSourceWindows.test.ts
+
+      # ── NO ASSET SHIPS A WHITE MATTE (2026-09-11) ─────────────────────────
+      # Four painted shells reached production with their glow exported as a
+      # WHITE ramp at full alpha instead of cut out - club-nav-shell was 12.7%
+      # matte - and they were cleaned by hand on 2026-09-10. This is what stops
+      # the next export putting it back.
+      #
+      # It lives in this UNGATED job on purpose. An asset change touches
+      # neither src/ nor tests/, so every `changes`-gated job below skips
+      # precisely the pull request that needs this one.
+      #
+      # It is a recorded baseline, not a threshold: the obvious gate was
+      # measured against all 148 assets first and every reading above the floor
+      # turned out to be the detector eating ARTWORK. docs/art/matte-baseline.json
+      # records those six with the reason each was looked at and kept, and the
+      # build fails when a reading RISES above what is recorded. See
+      # docs/laws.d/an-asset-never-ships-a-white-matte.md.
+      - name: No asset ships a white matte
+        if: steps.compile_scope.outputs.presentation_only != 'true'
+        run: npm run art:matte
+
+      # The gate above judges the pixels. This judges the baseline: that every
+      # entry names a file that exists and carries a reason saying what was
+      # looked at. A pull request that edits only docs/art/ runs no other
+      # vitest, which is exactly when an excuse would slip in unread.
+      - name: The matte baseline is a record, not a list of excuses
+        run: npx vitest run tests/an-asset-never-ships-a-white-matte.law.test.ts
+
+      - name: UI selection proves presentation boundaries and retains unknown readers
+        run: node --test tests/operations/ui-test-selection.test.mjs tests/operations/publisher-ui-selection-base.test.mjs tests/operations/client-vitest-worker-budget.test.mjs
       - name: Actual client runtime retention refuses incomplete and changed inputs
         run: node --test tests/operations/client-runtime-retention.test.mjs
 
@@ -427,18 +486,12 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - name: Classify the actual checked compiler tree
-        id: compile_scope
-        env:
-          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          CI_HEAD_SHA: ${{ github.sha }}
-        run: node scripts/ci/classify-ci-changes.mjs
-
-      # Only the exact five-file instruction allowlist can omit this unchanged
-      # SQL/native fixture. Keep all compiler, invariant and source-contract checks.
+      # Only exact policy prose or proved presentation-only UI can omit this
+      # unchanged SQL fixture. Financial/executable/shared inputs still run it.
+      # Keep all compiler, invariant and source-contract checks.
       # Unavailable classification always executes the existing replay.
       - name: Chip journal transactions survive failures and replays
-        if: steps.compile_scope.outputs.instructions_only != 'true'
+        if: steps.compile_scope.outputs.instructions_only != 'true' && steps.compile_scope.outputs.presentation_only != 'true'
         run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
 
       - name: TypeScript Check
@@ -645,6 +698,7 @@ jobs:
       - name: Evaluate real SLO alert durations, thresholds and recovery
         run: bash scripts/ci/test-slo-stall-duration.sh
       - name: Evaluate fleet throughput against live dealing capacity
+        if: steps.compile_scope.outputs.presentation_only != 'true'
         run: bash scripts/ci/test-fleet-throughput.sh
       - name: Report Typecheck Time
         if: always()
@@ -1217,26 +1271,34 @@ jobs:
         needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
+    # Use up to eight workers; Vitest clamps this to the actual VM CPU budget.
+    env:
+      VITEST_MAX_THREADS: 8
     # Every pull-request shard gets a fresh hosted image. A dependency or test
     # from a branch cannot persist into any later credential-bearing job.
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
     # critical path by a distance - p50 264s, max 779s, against 236s for the
     # next longest job. The publisher has run the same suite four ways since
     # 2026-09-02 (publish-club-arena.yml `client-tests`); this is that, moved
     # one step earlier so the pull request feels it too.
+    # Current October 30: CI partitions the same inventory eight ways.
+    # The publisher retains its separate four/sixteen-shard proof profiles.
     #
     # fail-fast cancels the siblings the moment one shard fails, which is what
     # a gate wants: the answer is already known.
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1261,12 +1323,15 @@ jobs:
         run: npm ci
 
       - name: Run Test Suite
-        run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8
 
       - name: Report
         if: always()
         run: |
-          echo "## Client Unit Tests - shard ${{ matrix.shard }}/4" >> $GITHUB_STEP_SUMMARY
+          echo "## Client Unit Tests - shard ${{ matrix.shard }}/8" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`tests/**\` via vitest. Blocking - see the note above this job" >> $GITHUB_STEP_SUMMARY
           echo "in ci.yml for why it exists." >> $GITHUB_STEP_SUMMARY
@@ -1300,16 +1365,16 @@ jobs:
           RESULT="${{ needs.unit_shards.result }}"
           echo "## Client Unit Tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Four shards, aggregated. Matrix result: **$RESULT**" >> $GITHUB_STEP_SUMMARY
+          echo "Eight shards, aggregated. Matrix result: **$RESULT**" >> $GITHUB_STEP_SUMMARY
           case "$RESULT" in
             success)
-              echo "All four shards passed." >> $GITHUB_STEP_SUMMARY ;;
+              echo "All eight shards passed." >> $GITHUB_STEP_SUMMARY ;;
             skipped)
               # Not a failure: the diff touched neither src/ nor tests/.
               echo "Skipped - the diff touched neither \`src/\` nor \`tests/\`." >> $GITHUB_STEP_SUMMARY ;;
             *)
               echo "A shard did not pass. Open the shard job for the failing test." >> $GITHUB_STEP_SUMMARY
-              echo "::error title=CLIENT UNIT TESTS FAILED::At least one of the four vitest shards did not pass ($RESULT). The failing test is in the shard job, not here."
+              echo "::error title=CLIENT UNIT TESTS FAILED::At least one of the eight vitest shards did not pass ($RESULT). The failing test is in the shard job, not here."
               exit 1 ;;
           esac
 
@@ -1325,11 +1390,17 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4
-    runs-on: ubuntu-latest
+    # Standard hosted qualification remains available when paid runners refuse admission.
+    # Only the fixed large profile opts this exact repository into its approved 8-core label.
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}
     # Run 35276340849 reached V31 after 26m13s and exhausted the 30m job cap.
     # V31 passed in 4m31s in 35276304884. Keep room for hosted runtime variance;
     # every case, statement, cleanup deadline and required gate stays unchanged.
-    timeout-minutes: 40
+    # Run 40528107352 shard 1 reached Spin at 35m52s and hit the 40m
+    # job deadline. The comparable successful 40520906517 Spin took 5m23s:
+    # 41m15s combined, before artifact cleanup. Fifty minutes retains ~20%
+    # hosted variance headroom; all case/statement/cleanup limits are unchanged.
+    timeout-minutes: 50
     # ── FOUR SHARDS, EVERY CASE (2026-09-26) ─────────────────────────────────
     #
     # This job was the critical path of every server-touching pull request:
@@ -1359,6 +1430,11 @@ jobs:
     # Lightning steps took 692s while shard 3 finished in 878s. Moving only
     # that unchanged family to shard 3 balances observed work (~1570s on 3),
     # preserving the 40m cap, every suite, financial deadline and artifact.
+    # October 28 run 40628889736: shard 1 took 2203s, shard 2 827s,
+    # shard 3 1462s and shard 4 1198s. The isolated weekly recompute took
+    # 766s on shard 1. Move that unchanged proof AND artifact to shard 2:
+    # measured workload predicts a ~1593s maximum instead of 2203s,
+    # with the same four runners, every assertion and all evidence retained.
     # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
     # every suite step belongs to exactly one shard.
     strategy:
@@ -1397,7 +1473,15 @@ jobs:
               if [[ ! -x /usr/lib/postgresql/17/bin/pg_config ||
                     ! -f /usr/include/postgresql/17/server/postgres.h ]]; then pg_ci_build_tools_ready=false; fi
               ;;
-            2) ;;
+            2)
+              # The private-record admission proof builds the real pg_net in an
+              # isolated private PostgreSQL prefix; never install into the host.
+              pg_ci_build_packages=(build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev)
+              for pg_ci_tool in cc make bison flex perl bzip2 pkg-config curl-config; do
+                if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
+              done
+              if ! pkg-config --exists libcurl; then pg_ci_build_tools_ready=false; fi
+              ;;
             3|4)
               pg_ci_build_packages=(postgresql-server-dev-17 build-essential bison flex perl bzip2 patch)
               for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
@@ -1453,6 +1537,36 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: python3 -B scripts/ci/test-cash-addon-receipt-postgres.py
 
+      - name: Original committed horse turns have an independent complete census
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B scripts/ci/test-horse-turn-census-packet.py
+          node --test tests/operations/horse-turn-census-transport.test.mjs
+          python3 -B scripts/ci/test-horse-turn-census-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Runtime privilege changes preserve the schema DDL boundary
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-runtime-privilege-ddl-guard-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
+      - name: Retention bounds retained prefixes before accounting guards
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/hand-prune-bounded-scan.sql --candidate supabase/migrations/20261026174211_the_retention_scan_bounds_work_before_evaluating_guards.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+      - name: Retention commits one page before releasing maintenance admission
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/hand-prune-one-page.sql --candidate supabase/migrations/20261029154153_hand_history_pruning_commits_one_raw_page_before_releasing_m.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+      - name: Weekly linked proofs preserve original windows and paid books
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B scripts/ci/test-weekly-linked-window-proof-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-linked-window-proof.json"
+          python3 -B scripts/ci/test-weekly-linked-window-proof-verifier.py --scratch "${{ runner.temp }}"
       - name: Cash horses use bankroll eligibility and table closure preserves seats
         if: matrix.shard == 2
         env:
@@ -1463,6 +1577,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/scheduled-horses.sql --candidate supabase/migrations/20261023222825_scheduled_horses_play_every_game_without_roster_restrictions.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+      - name: Half cash capacity keeps only measured top performers
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/qualification/test-cash-half-top-horses.py
       - name: Horse layer drift uses original eligible populations
         if: matrix.shard == 2
         env:
@@ -1481,6 +1600,13 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           QUICK_CLUB_TEST_WORK: ${{ runner.temp }}
         run: python3 -B scripts/ci/test-quick-club-opening.py
+
+      - name: Digest player periods stay within one daily request
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          DIGEST_NATIVE_WORK: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-digest-player-period.py
 
       - name: Digest database sources stay qualified
         if: matrix.shard == 2
@@ -1540,6 +1666,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
         run: python3 -B scripts/ci/test-messenger-inbox-equipment.py
+      - name: Midway daily bounty freezeout preserves the owner contract
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-midway-bounty-freezeout.py
       - name: Owner alerts preserve the actual finding through the real PostgreSQL trigger
         if: matrix.shard == 1
         env:
@@ -1593,6 +1725,15 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           MANAGED_GAME_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-managed-game-one-door-postgres.sh
+      # The Hold'em live measure's river one-pair cells are computed in the
+      # database (fn_horse_river_one_pair_calls) and by the TypeScript module;
+      # both read the same fixture hands and must agree cell for cell.
+      - name: River one-pair calls agree between SQL and TypeScript
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: bash scripts/dev/test-horse-river-one-pair-calls.sh
       - name: A chip request approval key belongs to its approver (20261010003544)
         if: matrix.shard == 2
         env:
@@ -1653,6 +1794,7 @@ jobs:
           node --test scripts/qualification/stable-admin-close-selector/source.test.mjs
           node scripts/qualify-stable-admin-floor.mjs
           node scripts/qualify-stable-admin-close-selector.mjs
+          node scripts/qualify-lightning-rejoin.mjs
       - name: Stable Admin original cancellation and emergency-stop writers qualify on native PostgreSQL 17
         if: matrix.shard == 3
         env:
@@ -1727,6 +1869,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 tests/sql/run-horse-observation-window.py
 
+      - name: Horse river-call evidence survives exact migration and legacy writers
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 tests/sql/run-horse-river-call-persistence.py
+
       - name: Horse hand review publishes its row, rollup and receipt atomically
         if: matrix.shard == 4
         env:
@@ -1744,6 +1892,12 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-horse-own-public-history.py
+
+      - name: Multiway river reads retain exact public node and action bindings
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-horse-multiway-river-nodes.py
 
       - name: Reserved certification identities retain immutable ledger actors
         if: matrix.shard == 4
@@ -1775,6 +1929,10 @@ jobs:
       - name: Player Command totals remain exact through writes and concurrent initialization
         if: matrix.shard == 4
         run: python3 scripts/ci/test-player-command-hand-totals.py
+
+      - name: Player Management period fees preserve custody and Chicago boundaries
+        if: matrix.shard == 4
+        run: python3 -B scripts/ci/test-player-period-fees.py
 
       - name: Satellite conservation keeps exact results through an online source index
         if: matrix.shard == 4
@@ -1890,7 +2048,7 @@ jobs:
         run: bash scripts/dev/test-union-weekly-accounting.sh
       - name: Weekly recompute commits bounded parts and preserves real payouts
         id: weekly_recompute_split
-        if: matrix.shard == 1
+        if: matrix.shard == 2
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/weekly-recompute
@@ -1898,7 +2056,7 @@ jobs:
           mkdir -p "$ACCOUNTING_FIXTURE_PARENT"
           python3 -B scripts/dev/test-union-weekly-basis.py --split-recompute-only
       - name: Retain exact weekly recompute qualification
-        if: always() && matrix.shard == 1 && steps.weekly_recompute_split.outcome != 'skipped'
+        if: always() && matrix.shard == 2 && steps.weekly_recompute_split.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: weekly-recompute-${{ github.run_id }}-${{ github.run_attempt }}
@@ -2197,6 +2355,15 @@ jobs:
             2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/build.log"
           bash scripts/dev/test-full-weekly-accounting-activation.sh \
             2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/full-weekly-accounting.log"
+          python3 -B scripts/ci/test-cash-assert-empty-presence-postgres.py \
+            --pg-bin "$PG_BIN" --scratch "$ACCOUNTING_FIXTURE_PARENT" \
+            --out-dir "$ACCOUNTING_TEST_OUTPUT_DIR" \
+            --candidate supabase/migrations/20261030143333_skip_empty_cash_commission_scopes_without_scanning_other_clu.sql \
+            2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/cash-assert-empty-presence.log"
+          python3 -B scripts/ci/test-weekly-quality-receipt-access-postgres.py \
+            --pg-bin "$PG_BIN" --scratch "$ACCOUNTING_FIXTURE_PARENT" \
+            --output "$ACCOUNTING_TEST_OUTPUT_DIR/weekly-quality-receipt-access.json" \
+            2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/weekly-quality-receipt-access.log"
       - name: Cash commissions retain every contributor and exact source identity
         if: matrix.shard == 1
         env:
@@ -2227,6 +2394,27 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-unified-weekly-accounting.sh
+      - name: Original weekly payout owns its complete fleet pause and fixed deadlines
+        if: matrix.shard == 1
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/weekly-payout-owned-pause
+          python3 -B scripts/ci/test-weekly-payout-owned-phase-postgres.py --scratch "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/protocol.log
+      - name: Original weekly financial rounds wait for the concurrent physical fleet ACK
+        if: matrix.shard == 1
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/weekly-payout-owned-pause
+          python3 -B scripts/ci/test-weekly-payout-financial-phase-postgres.py --pg-bin /usr/lib/postgresql/17/bin --scratch-root "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/financial.log
+          python3 -B scripts/ci/test-weekly-current-typed-union-phase-postgres.py --controller-migration supabase/migrations/20261030014346_weekly_union_round_receipts_keep_their_original_zero_payer_d.sql --pg-bin /usr/lib/postgresql/17/bin --scratch-root "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/current-typed-union.log
+          cp -R "$RUNNER_TEMP/weekly-current-typed-union-phase-output" artifacts/weekly-payout-owned-pause/current-typed-union-evidence
+      - name: Preserve original weekly payout qualification evidence
+        if: always() && matrix.shard == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-payout-owned-pause-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/weekly-payout-owned-pause
+          retention-days: 7
       - name: Push health uses exact addressable counts and receipt confirmations
         if: matrix.shard == 1
         env:
@@ -2365,6 +2553,23 @@ jobs:
           path: artifacts/hand-submission/
           if-no-files-found: error
           retention-days: 7
+      - name: Club promo payments retain their journal source across every destination
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-club-promo-journal-source.py --pg-bin /usr/lib/postgresql/17/bin --work-root "$RUNNER_TEMP/club-promo-journal" --evidence artifacts/club-promo-journal
+      - name: Durable private original hands survive restart and settle once
+        id: hand_continuation
+        if: matrix.shard == 3
+        env:
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: python3 scripts/ci/test-hand-continuation.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/hand-continuation --socket-root "$RUNNER_TEMP"
+      - name: Retain durable original continuation proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_continuation.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-continuation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-continuation/
+          if-no-files-found: error
+          retention-days: 7
       - name: The accepted actor roster is produced inside the settlement transaction
         id: accepted_hand_roster
         if: matrix.shard == 3
@@ -2385,6 +2590,20 @@ jobs:
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-hand-submission-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-disposal
+      - name: Superseded horse requests retire only their certified action copy
+        id: superseded_horse_actions
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-superseded-horse-actions.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/superseded-horse-actions
+      - name: Retain superseded horse action proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.superseded_horse_actions.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: superseded-horse-actions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/superseded-horse-actions/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain superseded hand disposal proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_disposal.outcome)
         uses: actions/upload-artifact@v4
@@ -2687,6 +2906,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Cash returns retain full stacks without a minimum stay
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-cash-return-rule-postgres.py
+
       - name: Original posthand escrow stays distinct from poker winnings
         id: posthand_escrow
         if: matrix.shard == 3
@@ -2982,6 +3207,21 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Roster tournament fees read only their charged window
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-roster-tournament-fee-window.py --pg-bin "$PG_BIN" --scratch "$RUNNER_TEMP" --output artifacts/roster-fee-window/native.json
+
+      - name: Retain roster fee window index qualification
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: roster-fee-window-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/roster-fee-window/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Check composed alert fixture admission and cleanup guards
         if: matrix.shard == 4
         run: python3 scripts/ci/test_production_alert_core_postgres.py
@@ -3066,6 +3306,71 @@ jobs:
           path: artifacts/spin-expiry/
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Cancellation admission cannot queue ahead of unrelated hands
+        if: matrix.shard == 4
+        run: |
+          python3 -B scripts/ci/test-tournament-cancellation-lane.py \
+            --evidence artifacts/tournament-cancellation-lane \
+            --work-root "$RUNNER_TEMP/cancellation-lane-work" \
+            --socket-root "$RUNNER_TEMP/cancellation-socket" \
+            --pg-bin /usr/lib/postgresql/17/bin
+
+      - name: Retain cancellation admission and funded rollback evidence
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: tournament-cancellation-lane-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/tournament-cancellation-lane/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Roster cash preserves funded boundaries and computes each total once
+        id: roster_cash_batch
+        if: matrix.shard == 4
+        run: python3 -B scripts/ci/test-roster-cash-batch.py --pg-bin /usr/lib/postgresql/17/bin --scratch "$RUNNER_TEMP" --output artifacts/roster-cash-batch/native.json
+      - name: Retain roster cash native equivalence and index proof
+        if: always() && matrix.shard == 4 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.roster_cash_batch.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: roster-cash-batch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/roster-cash-batch/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Certification cleanup reserves a turn without blocking players
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-certification-retention-admission.py
+
+      - name: Retain certification admission concurrency evidence
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: certification-retention-admission-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/certification-retention-admission/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Certification cleanup isolates its club from live hand saves
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B scripts/ci/test-certification-club-lock-scope.py
+          python3 -B scripts/ci/test-club-welcome-package.py --certification-club-scope --output artifacts/certification-club-scope-business
+
+      - name: Retain certification club scope evidence
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: certification-club-scope-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/certification-club-lock-scope/
+            artifacts/certification-club-scope-business/
+          retention-days: 7
+          if-no-files-found: error
 
       - name: PKO heads follow exact accepted knockout dependencies
         if: matrix.shard == 4
@@ -3213,8 +3518,10 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Standard hosted qualification remains available when paid runners refuse admission.
+    # Only the fixed large profile opts this exact repository into its approved 8-core label.
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -3228,6 +3535,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The retained-original qualification compiles one exact historical
+          # engine and verifies its observed source bytes before any admission.
+          fetch-depth: 0
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -3253,6 +3564,13 @@ jobs:
       - name: TypeScript Check (server)
         run: npx tsc --noEmit
 
+      # server/scripts/*.ts are operator CLIs outside tsconfig.json's rootDir,
+      # so until 2026-10-31 nothing compiled them (the Hold'em live measure CLI
+      # was checked by hand). tsconfig.scripts.json covers them all except the
+      # qualification vitest files, which carried a pre-existing baseline.
+      - name: TypeScript Check (server scripts)
+        run: npx tsc -p tsconfig.scripts.json --noEmit
+
       # BLOCKING. Named explicitly so it is obvious in the job log which
       # regressions are being defended, and so deleting them is a visible diff.
       # PHASE 2 (2026-09-02): the restart gate's pins ride the named regression
@@ -3260,6 +3578,13 @@ jobs:
       # them is a named red line on a required check.
       - name: Freeze + watchdog + restart-gate regression suite
         run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
+
+      - name: V31 public feature and final model-index controller contracts
+        if: matrix.shard == 1
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B -m unittest discover -s scripts -p 'test_*public215*.py'
 
       - name: Full server test suite
         env:
@@ -3433,7 +3758,7 @@ jobs:
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -3639,7 +3964,7 @@ jobs:
     # that is the "is main actually green" net (see the schedule note).
     if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 25
 
     steps:
@@ -3781,7 +4106,7 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -3900,8 +4225,20 @@ jobs:
     # the beats, on one worker for 7.1 of the job's 16 test minutes (run
     # 36886817861); it builds its own bundle and needs neither this build nor
     # the shared preview, so it runs beside this job instead of after it.
-    name: CSS Beat suites (multi-table, animations, Table Studio)
-    runs-on: ubuntu-latest
+    name: CSS Beat ${{ matrix.partition }} shard ${{ matrix.shard }}/10 (multi-table, animations, Table Studio)
+    # Hosted VMs run disjoint Playwright shards. The required aggregate waits for
+    # every shard; independent real-component gates execute once across them.
+    # Separate the measured expensive portrait cluster before sharding so its
+    # sixteen cases spread across workers instead of remaining contiguous.
+    # General and portrait are disjoint; every case and independent gate stays.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        partition: [general, portrait]
+    # Dedicated 8-core/300-GB hosted pool keeps browser setup off the shared
+    # 4-core queue. The same image, tests and disk-capacity guard remain.
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
     # to build/install; 20m killed the final financial-decision suite.
     # Preserve every suite and its own deadlines, with room for cleanup.
@@ -3910,12 +4247,20 @@ jobs:
     steps:
       - name: Reserve disk for browser checks
         # This browser-only job does not invoke the separate Android build.
-        # Keep its fixtures and failure evidence; reclaim the unused hosted SDK.
+        # The paid VM had 369 GiB free while measuring/removing this unused
+        # 12 GiB SDK cost 98 seconds. Skip that work only with >=100 GiB proven
+        # free; smaller or unparseable capacity keeps the existing cleanup.
+        # A failed capacity command remains a visible failure.
         run: |
+          set -euo pipefail
           df -h /
-          if [ -d /usr/local/lib/android/sdk ]; then
-            sudo du -sh /usr/local/lib/android/sdk
-            sudo rm -rf -- /usr/local/lib/android/sdk
+          FREE_KB=$(df -Pk / | awk 'NR == 2 { print $4 }')
+          if [[ "$FREE_KB" =~ ^[0-9]+$ ]] && (( 10#$FREE_KB >= 100 * 1024 * 1024 )); then
+            echo 'At least 100 GiB is free; browser checks need no SDK cleanup.'
+          else
+            if [ -d /usr/local/lib/android/sdk ]; then
+              sudo rm -rf -- /usr/local/lib/android/sdk
+            fi
           fi
           df -h /
 
@@ -4085,6 +4430,9 @@ jobs:
       - name: Run the beats against this commit's CSS
         id: css-beats
         env:
+          CSS_BEAT_GREP: ${{ matrix.partition == 'portrait' && 'occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at' || '^(?!.*occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at)' }}
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           ARENA_BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena
           BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/
         # hero-card-row.spec.ts was written to gate bug list item 11 and then
@@ -4166,7 +4514,7 @@ jobs:
           # The JSON report beside the line reporter feeds the flaky-case
           # summary step below: these suites have run with one retry since
           # before 2026-09-26, and a case that passed only on retry is named.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/css/player-detail-containment.spec.ts tests/e2e/css/hand-review-awards.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" node scripts/ci/ui-test-selection.mjs browser tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/css/player-detail-containment.spec.ts tests/e2e/css/hand-review-awards.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1 --grep="$CSS_BEAT_GREP" --shard=${{ matrix.shard }}/10
 
       # The CSS Beat suites run with one retry: a case that passed only on
       # retry is named, never counted as clean.
@@ -4184,7 +4532,7 @@ jobs:
         if: ${{ failure() && steps.css-beats.outcome == 'failure' }}
         uses: actions/upload-artifact@v4
         with:
-          name: css-beats-failure-${{ github.sha }}-${{ github.run_attempt }}
+          name: css-beats-failure-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.partition }}-${{ matrix.shard }}
           path: test-results/
           retention-days: 3
           if-no-files-found: warn
@@ -4194,6 +4542,7 @@ jobs:
       # Its dedicated route redirects unless the test-harness flag is enabled -
       # which the shared build below now carries, so this needs no server.
       - name: Table Studio real-component purchase, sync, and accessibility gate
+        if: matrix.partition == 'general' && matrix.shard == 1
         id: table-studio
         env:
           ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
@@ -4212,6 +4561,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Insurance and Rabbit Hunt 375px decision gate
+        if: matrix.partition == 'general' && matrix.shard == 2
         env:
           ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
         run: npm run test:e2e:financial-decisions
@@ -4221,6 +4571,7 @@ jobs:
       # login and no production data. Guards the shared /push/ registration,
       # the Not Now cool-down and the owner receipt exception (2026-09-27).
       - name: Push enrollment opt-in browser gate
+        if: matrix.partition == 'general' && matrix.shard == 5
         run: npm run test:e2e:push-enrollment
 
       # if: always() because the preview is now started outside the step that
@@ -4250,8 +4601,13 @@ jobs:
       !cancelled() && github.event_name == 'pull_request' &&
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
-    name: Diamond playfield (software WebGL)
-    runs-on: ubuntu-latest
+    name: Diamond playfield shard ${{ matrix.shard }}/3 (software WebGL)
+    # Separate VMs retain one software-WebGL worker each and the complete cases.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     # 7.1 minutes measured inside the old job; room for a slow browser install.
     timeout-minutes: 25
 
@@ -4298,7 +4654,7 @@ jobs:
           # every flaky case as a warning and in the job summary, so a retried
           # pass is seen rather than counted as clean. A case that fails twice
           # still fails the job.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1 --shard=${{ matrix.shard }}/3
 
       # Reads the playfield invocation's JSON report and names every case that
       # passed only on retry. Runs whether the suite passed or failed, and
@@ -4314,7 +4670,7 @@ jobs:
         if: ${{ failure() && steps.diamond-playfield.outcome == 'failure' }}
         uses: actions/upload-artifact@v4
         with:
-          name: diamond-playfield-failure-${{ github.sha }}-${{ github.run_attempt }}
+          name: diamond-playfield-failure-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: test-results/
           retention-days: 3
           if-no-files-found: warn

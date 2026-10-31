@@ -1,4 +1,6 @@
+import { handleGtoV31Reload } from './handlers/gtoV31Reload.js';
 import { handlePlatformControl } from './handlers/platformControl.js';
+import { handleTournamentAbortBoundary } from './handlers/tournamentAbortBoundary.js';
 import { handleAdminKickOccupancy } from './handlers/admin.js';
 /**
  * HTTP request router for the Hetzner game server.
@@ -91,6 +93,7 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
     getTournamentLifecycleDiagnostic?: GameServer['getTournamentLifecycleDiagnostic'];
     requestMaintenanceRecoveryWindow?: GameServer['requestMaintenanceRecoveryWindow'];
     applyOperatorFloorCommand?: GameServer['applyOperatorFloorCommand'];
+    acknowledgeTournamentAbortBoundary?: GameServer['acknowledgeTournamentAbortBoundary'];
     endOperatorMaintenance?: GameServer['endOperatorMaintenance'];
     /** Lightning Phase 6: a pool_session_id resolves to its seat proxy. */
     getActionEngine?: GameServer['getActionEngine'];
@@ -165,6 +168,8 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'active',
   'archivedCount',
   'archivedScanned',
+  'archivedHistoryOmittedCount',
+  'archivedHistoryTruncated',
   'archivedTruncated',
   'packets',
   'originGeneration',
@@ -174,6 +179,8 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'diagnosticOnly',
   'tournamentId',
   'observedAtMs',
+  'historical',
+  'capturedAtMs',
   'observedMonotonicMs',
   'pid',
   'gameServerInitializedAtMs',
@@ -248,6 +255,7 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'engine',
   'movement',
   'claimedBoundary',
+  'physicalIdentityRefusal',
   'retainedPermit',
   'phase',
   'session',
@@ -587,8 +595,17 @@ export function createRouter(
     if (method === 'POST' && url === '/insurance') return handleInsurance(req, res, { gameServer });
     if (method === 'POST' && url === '/showhand') return handleShowhand(req, res, { gameServer });
     if (method === 'POST' && url === '/discard') return handleDiscard(req, res, { gameServer });
+    if ((method === 'POST' || method === 'GET') && url === '/internal/gto-v31/reload') {
+      const local =
+        ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '') &&
+        req.headers['x-forwarded-for'] === undefined &&
+        req.headers.forwarded === undefined;
+      return handleGtoV31Reload(req, res, (request) => local && verifyInternalKey(request));
+    }
     if (url.split('?')[0] === '/admin/platform-control')
       return handlePlatformControl(req, res, { gameServer });
+    if (url === '/admin/tournament-abort-boundary')
+      return handleTournamentAbortBoundary(req, res, { gameServer });
     if (method === 'POST' && url === '/admin/pause')
       return handleAdminPause(req, res, { gameServer });
     if (method === 'POST' && url === '/admin/resume')

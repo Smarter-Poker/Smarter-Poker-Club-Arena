@@ -25,7 +25,7 @@ const MIGRATION = readFileSync(
 
 // Execute the owning React effect's actual callback. Only its remote reads
 // are replaced; counter merging and writes to the summary refs stay real.
-function restoreOccupiedSeat(stack: number, delayed = false) {
+function restoreOccupiedSeat(stack: number, delayed = false, carriedHands = 0) {
   const src = readFileSync(join(ROOT, 'src/pages/TablePage.tsx'), 'utf8');
   const ast = ts.createSourceFile(
     'TablePage.tsx',
@@ -75,6 +75,7 @@ function restoreOccupiedSeat(stack: number, delayed = false) {
   const currentKey = { current: 'table:player' as string | null };
   const context = {
     ...refs,
+    sessionCarryRef: { current: { handsPlayed: carriedHands, handsWon: 0, fundingAdjustment: 0 } },
     tableId: 'table',
     userId: 'player',
     sessionStatsService: { getStats: () => ({}), restoreFunding: () => {}, updateStack: () => {} },
@@ -166,6 +167,13 @@ describe('the Session Complete card reads the whole session', () => {
       expect(1376 - refs.totalBuyInRef.current).toBe(-2624);
     }
   );
+
+  it('adds carried hands to the destination table facts in the actual restoration callback', async () => {
+    const { refs } = restoreOccupiedSeat(1376, false, 12);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(refs.handsPlayedRef.current).toBe(32);
+    expect(refs.totalBuyInRef.current).toBe(4000);
+  });
 
   it('does not apply a pending answer after the seat is left', async () => {
     const { refs, cleanup, deliver } = restoreOccupiedSeat(1376, true);

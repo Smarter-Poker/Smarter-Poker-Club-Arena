@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 /**
  * A REBUY WINDOW DOES NOT STARVE THE BALANCER (2026-10-26).
  *
@@ -61,6 +62,7 @@ function transport(answer: (request: Request) => Record<string, unknown>): void 
   const reply = (request: Request) =>
     Promise.resolve({ data: null, count: null, error: null, ...answer(request) });
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     const request: Request = { table, columns: null, head: false, filters: [] };
     const filter = (column: string, op: string, value: unknown): unknown => {
       request.filters.push([column, op, value]);
@@ -77,6 +79,8 @@ function transport(answer: (request: Request) => Record<string, unknown>): void 
       in: (c: string, v: unknown) => filter(c, 'in', v),
       is: (c: string, v: unknown) => filter(c, 'is', v),
       order: () => query,
+      limit: () => query,
+      gt: () => query,
       not: (c: string, op: string, v: unknown) => filter(c, `not.${op}`, v),
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
         reply(request).then(resolve, reject),
@@ -93,9 +97,9 @@ function field(options: { windowOpen: boolean }) {
   const deadline = new Date(Date.now() + 25_000).toISOString();
   transport((r) => {
     if (r.table === 'tournament_players') {
-      if (r.columns === 'user_id, chips')
+      if (r.columns === 'id, user_id, chips')
         return { data: busted.map((user_id) => ({ user_id, chips: 0 })) };
-      if (r.columns === 'position') return { data: [] };
+      if (r.columns === 'id, position') return { data: [] };
       if (r.head) return { count: 180 };
     }
     if (r.table === 'tournament_knockout_candidates')

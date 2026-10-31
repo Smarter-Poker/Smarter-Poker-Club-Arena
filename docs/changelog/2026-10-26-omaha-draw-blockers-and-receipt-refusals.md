@@ -1,0 +1,9 @@
+# Omaha draw blockers and named decision refusals
+
+A queen-high flush draw on a board containing the suited ace and king was classified as dominated. The shared `omahaDrawQuality` now finds the highest suited rank not already on the board, while still requiring two suited hole cards. PLO4, PLO5 and PLO6 use this same evaluator through the actual decision-pricing consumer. Ace-high, king-high and genuinely dominated draws retain their classification.
+
+The new regression fails in all three variants before the correction. Decision-pricing tests exercise the corrected nut draw with the real evaluator, policy graph and EV consumer (only Monte Carlo equity is held fixed to isolate the draw adjustment). A separate test compares the fast evaluator's winning/tied/losing order with the settlement evaluator on 1,152 generated physical deals across 4/5/6 hole cards and 3/4/5 board cards, also checking card-order invariance. The existing exhaustive five-card lookup tests remain unchanged.
+
+Decision receipt rejection now returns a finite boundary name, such as `policy_graph`, `phase11_binding` or `policy_ownership`, through the existing recoverable refusal path. This preserves the original refusal predicates, request retirement and safe caller fallback. The public error contains no cards, player identity or receipt payload. The boolean validator remains available and delegates to the same predicates. Naming the failure is a prerequisite for tracing the observed production invalid-receipt errors, not a claim that their cause is repaired.
+
+This is the first independently deliverable correction in the owner's full horse-strength assignment. It does not declare the broader strategy, human-profitability, calibration, solver-coverage or deployment acceptance checklist complete. Existing authority and policy-digest qualification remains in force; source changes cannot manufacture qualified strength evidence.

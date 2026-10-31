@@ -62,14 +62,16 @@ export function cronJobsThatWriteFeeRedemptions(files: Migration[]): string[] {
       writers.delete(m[1].toLowerCase().replace(/^public\./, ''));
     }
     for (const m of sql.matchAll(
-      /cron\.schedule\(\s*'([^']+)'\s*,\s*'[^']*'\s*,\s*(\$\w*\$[\s\S]*?\$\w*\$|'(?:[^']|'')*')\s*\)/gi,
+      /cron\.schedule\(\s*'([^']+)'\s*,\s*'[^']*'\s*,\s*(\$\w*\$[\s\S]*?\$\w*\$|'(?:[^']|'')*')\s*\)/gi
     )) {
       jobs.set(m[1], m[2]);
     }
     for (const m of sql.matchAll(/cron\.unschedule\(\s*'([^']+)'\s*\)/gi)) jobs.delete(m[1]);
     // The by-jobid form: FOR ... SELECT jobid FROM cron.job WHERE jobname = 'x' ... cron.unschedule(...)
     if (/cron\.unschedule\(/i.test(sql)) {
-      for (const m of sql.matchAll(/from\s+cron\.job\s+\w*\s*where\s+\w*\.?jobname\s*=\s*'([^']+)'/gi)) {
+      for (const m of sql.matchAll(
+        /from\s+cron\.job\s+\w*\s*where\s+\w*\.?jobname\s*=\s*'([^']+)'/gi
+      )) {
         jobs.delete(m[1]);
       }
     }
@@ -86,16 +88,25 @@ export function cronJobsThatWriteFeeRedemptions(files: Migration[]): string[] {
 }
 
 function latestDefinition(files: Migration[], signature: string): Migration {
-  const create = new RegExp(`create\\s+or\\s+replace\\s+function\\s+${signature.replace('.', '\\.')}\\(`, 'i');
+  const create = new RegExp(
+    `create\\s+or\\s+replace\\s+function\\s+${signature.replace('.', '\\.')}\\(`,
+    'i'
+  );
   const patch = new RegExp(`pg_get_functiondef\\(\\s*'${signature.replace('.', '\\.')}\\(`, 'i');
-  const hits = files.filter((m) => create.test(m.sql) || patch.test(m.sql));
+  // A dependency hash guard only reads a definition. A dynamic patch reads
+  // and EXECUTEs it within the same DO block; grants do not execute SQL.
+  const executesPatch = (sql: string) =>
+    [...sql.matchAll(/\bdo\s+(\$\w*\$)([\s\S]*?)\1/gi)].some(
+      (block) => patch.test(block[2]) && /\bexecute\s+(?!on\b)/i.test(block[2])
+    );
+  const hits = files.filter((m) => create.test(m.sql) || executesPatch(m.sql));
   expect(hits.length, `${signature} has a definition`).toBeGreaterThan(0);
   return hits[hits.length - 1];
 }
 
 function body(sql: string, signature: string): string {
   const start = sql.search(
-    new RegExp(`create\\s+or\\s+replace\\s+function\\s+${signature.replace('.', '\\.')}\\(`, 'i'),
+    new RegExp(`create\\s+or\\s+replace\\s+function\\s+${signature.replace('.', '\\.')}\\(`, 'i')
   );
   expect(start, `${signature} is created, not patched`).toBeGreaterThanOrEqual(0);
   const rest = sql.slice(start);
@@ -106,6 +117,28 @@ function body(sql: string, signature: string): string {
 
 describe('a rake share is read, not written by a cron', () => {
   const all = migrations();
+
+  it('keeps a read-only dependency guard separate from an executed definition patch', () => {
+    const signature = 'public.ca_club_member_fee_totals';
+    const definition = {
+      file: '1.sql',
+      sql: `CREATE OR REPLACE FUNCTION ${signature}() RETURNS void LANGUAGE sql AS $function$ SELECT 1 $function$;`,
+    };
+    const guard = {
+      file: '2.sql',
+      sql: `DO $$ BEGIN IF md5(pg_get_functiondef('${signature}()'::regprocedure)) <> 'expected' THEN RAISE EXCEPTION 'Changed'; END IF; END $$; GRANT EXECUTE ON FUNCTION public.other_reader() TO authenticated;`,
+    };
+    const patch = {
+      file: '3.sql',
+      sql: `DO $$ DECLARE candidate text; BEGIN candidate := pg_get_functiondef('${signature}()'::regprocedure); EXECUTE candidate; END $$;`,
+    };
+    expect(latestDefinition([definition, guard], signature)).toBe(definition);
+    expect(latestDefinition([definition, guard, patch], signature)).toBe(patch);
+    const historicalPatch = all.find(
+      (m) => m.file === '20261023224850_player_fee_redemption_reaches_metrics_and_statistics.sql'
+    )!;
+    expect(latestDefinition([definition, historicalPatch], signature)).toBe(historicalPatch);
+  });
 
   it('leaves no cron job writing the fee redemptions after every migration', () => {
     expect(cronJobsThatWriteFeeRedemptions(all)).toEqual([]);
@@ -144,20 +177,26 @@ describe('a rake share is read, not written by a cron', () => {
 
   it('keeps the rule table service-only', () => {
     const sql = all.find((m) => m.file === SHARE)!.sql;
-    expect(sql).toContain('ALTER TABLE smarter_private.player_rake_share_rules ENABLE ROW LEVEL SECURITY;');
     expect(sql).toContain(
-      'REVOKE ALL ON smarter_private.player_rake_share_rules FROM PUBLIC, anon, authenticated;',
+      'ALTER TABLE smarter_private.player_rake_share_rules ENABLE ROW LEVEL SECURITY;'
     );
-    expect(sql).toContain('GRANT SELECT ON smarter_private.player_rake_share_rules TO service_role;');
+    expect(sql).toContain(
+      'REVOKE ALL ON smarter_private.player_rake_share_rules FROM PUBLIC, anon, authenticated;'
+    );
+    expect(sql).toContain(
+      'GRANT SELECT ON smarter_private.player_rake_share_rules TO service_role;'
+    );
   });
 
   it('has every reader apply the rule at read time', () => {
     const helper = body(
-      all.find((m) => m.file === SHARE)!.sql.replace(
-        'CREATE FUNCTION smarter_private.fn_player_rake_share_hand_cents(',
-        'CREATE OR REPLACE FUNCTION smarter_private.fn_player_rake_share_hand_cents(',
-      ),
-      'smarter_private.fn_player_rake_share_hand_cents',
+      all
+        .find((m) => m.file === SHARE)!
+        .sql.replace(
+          'CREATE FUNCTION smarter_private.fn_player_rake_share_hand_cents(',
+          'CREATE OR REPLACE FUNCTION smarter_private.fn_player_rake_share_hand_cents('
+        ),
+      'smarter_private.fn_player_rake_share_hand_cents'
     );
     expect(helper).toContain('FROM smarter_private.player_rake_share_rules r');
     expect(helper).toContain('public.cash_participant_funding_receipts');
@@ -171,7 +210,11 @@ describe('a rake share is read, not written by a cron', () => {
       const b = body(latestDefinition(all, reader).sql, reader);
       expect(b, reader).toContain('smarter_private.fn_player_rake_share_hand_cents(');
     }
-    for (const reader of [fee, 'public.ca_player_rake_stats', 'public.ca_player_rake_stats_by_club']) {
+    for (const reader of [
+      fee,
+      'public.ca_player_rake_stats',
+      'public.ca_player_rake_stats_by_club',
+    ]) {
       expect(body(latestDefinition(all, reader).sql, reader), reader).not.toMatch(/-split-/);
     }
   });

@@ -96,25 +96,17 @@ describe('avatarChoreography.css cascade', () => {
     }
   });
 
-  it('keeps the holo band able to actually move', () => {
-    // THE BUG THIS EXISTS FOR: `background-position` percentages resolve as
-    // (container - image) * percentage. At `background-size: 100% 100%` that
-    // factor is ZERO, so the band cannot move however the keyframe is written
-    // and the whole effect renders as nothing. It was written that way first
-    // and only caught by screenshotting it in chromium — the CSS reads
-    // perfectly, the animation is "running", and the output is blank.
-    const holo = CSS.slice(CSS.indexOf('.seat__avatar--holo::after'));
-    const size = holo.match(/background-size:\s*([^;]+);/)?.[1]?.trim();
-    expect(size, 'holo overlay has no background-size').toBeTruthy();
-    expect(
-      size,
-      'background-size must be SHORTER than the box or background-position ' +
-        'percentages have zero range and the band never moves'
-    ).not.toBe('100% 100%');
+  it('moves a short strip through the fixed mask without repainting its background', () => {
+    const holo = CSS.slice(CSS.indexOf('.seat__holo::after {'));
+    expect(holo).toMatch(/height: 40%;/);
+    expect(holo).toMatch(/top: -36%;/);
+    expect(holo).toMatch(/translateY\(480%\)/);
+    const at = CSS.indexOf('@keyframes spAvatarHolo');
+    expect(CSS.slice(at, CSS.indexOf('\n}', at) + 2)).not.toMatch(/background-position/);
   });
 
   it('masks the holo band to the character, not to a rectangle', () => {
-    const holo = CSS.slice(CSS.indexOf('.seat__avatar--holo::after'));
+    const holo = CSS.slice(CSS.indexOf('.seat__holo {'));
     // Without the mask the band is a rectangle that overshoots the character
     // and lies across the felt — the "ring behind the player" complaint in a
     // different costume, and a violation of the standing no-glow rule.
@@ -167,7 +159,7 @@ describe('avatarChoreography.css cascade', () => {
     // span only 1.1s-3.9s, a good spread across a ~4s breath and a poor one
     // across a 7s sweep. Every VIP would flash inside one narrow window and go
     // dark together — the synchronised-machinery look the phase exists to stop.
-    const holo = CSS.slice(CSS.indexOf('.seat__avatar--holo::after'));
+    const holo = CSS.slice(CSS.indexOf('.seat__holo {'));
     const delay = holo.match(/animation-delay:\s*var\((--[a-z-]+)/)?.[1];
     expect(delay, 'holo has no animation-delay').toBeTruthy();
     expect(
@@ -180,7 +172,7 @@ describe('avatarChoreography.css cascade', () => {
   it('stops the holo sweep under reduced motion', () => {
     const rm = CSS.slice(CSS.indexOf('@media (prefers-reduced-motion: reduce)'));
     expect(
-      rm.includes('.seat__avatar--holo::after'),
+      rm.includes('.seat__holo::after'),
       'the holo sweep is infinite, so reduced motion must switch it off too'
     ).toBe(true);
   });

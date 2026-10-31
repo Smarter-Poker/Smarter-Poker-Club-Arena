@@ -1,0 +1,383 @@
+{
+  "acl": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+  "rls": true,
+  "kind": "r",
+  "name": "accounting_tournament_fee_sources",
+  "owner": "postgres",
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "default": "gen_random_uuid()",
+      "notnull": true
+    },
+    {
+      "name": "rake_record_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "coordinator_union_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": false
+    },
+    {
+      "name": "game_type",
+      "type": "text",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "registration_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "source_charge_ledger_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "source_entitlement_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "charged_at",
+      "type": "timestamp with time zone",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "rake_credit",
+      "type": "numeric",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "contract",
+      "type": "jsonb",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "recorded_at",
+      "type": "timestamp with time zone",
+      "default": "transaction_timestamp()",
+      "notnull": true
+    }
+  ],
+  "indexes": [
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_fee_scope_union_cover ON public.accounting_tournament_fee_sources USING btree (tournament_id) INCLUDE (union_id)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_fee_sources_club_event ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_fee_sources_club_recorded ON public.accounting_tournament_fee_sources USING btree (club_id, recorded_at) INCLUDE (charged_at)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_fee_sources_coordinator_club ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, club_id) WHERE (coordinator_union_id IS NOT NULL)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_fee_sources_coordinator_event ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, tournament_id) WHERE (coordinator_union_id IS NOT NULL)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_fee_sources_event ON public.accounting_tournament_fee_sources USING btree (tournament_id, rake_record_id)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_fee_sources_standalone_club ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id) WHERE (coordinator_union_id IS NULL)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_rakeback_player ON public.accounting_tournament_fee_sources USING btree (club_id, player_id)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_source_record_credit_cover ON public.accounting_tournament_fee_sources USING btree (rake_record_id) INCLUDE (rake_credit)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_standalone_club_event_cover ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id) INCLUDE (id, charged_at, rake_credit, union_id) WHERE (coordinator_union_id IS NULL)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE INDEX accounting_tournament_week_club_event_cover ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, club_id, tournament_id) INCLUDE (id, charged_at, rake_credit, union_id) WHERE (coordinator_union_id IS NOT NULL)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_pkey ON public.accounting_tournament_fee_sources USING btree (id)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_rake_record_id_player_id_key ON public.accounting_tournament_fee_sources USING btree (rake_record_id, player_id)"
+    },
+    {
+      "live": true,
+      "owner": "postgres",
+      "ready": true,
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_source_entitlement_id_key ON public.accounting_tournament_fee_sources USING btree (source_entitlement_id)"
+    }
+  ],
+  "policies": null,
+  "triggers": [
+    {
+      "name": "RI_ConstraintTrigger_OBJECT",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 5,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": true,
+        "tginitdeferred": false
+      },
+      "function": "\"RI_FKey_check_ins\"()",
+      "constraint_definition": "FOREIGN KEY (rake_record_id) REFERENCES accounting_tournament_fee_batches(rake_record_id)",
+      "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_OBJECT\" AFTER INSERT ON public.accounting_tournament_fee_sources FROM accounting_tournament_fee_batches NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()"
+    },
+    {
+      "name": "RI_ConstraintTrigger_OBJECT",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 17,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": true,
+        "tginitdeferred": false
+      },
+      "function": "\"RI_FKey_check_upd\"()",
+      "constraint_definition": "FOREIGN KEY (rake_record_id) REFERENCES accounting_tournament_fee_batches(rake_record_id)",
+      "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_OBJECT\" AFTER UPDATE ON public.accounting_tournament_fee_sources FROM accounting_tournament_fee_batches NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()"
+    },
+    {
+      "name": "RI_ConstraintTrigger_OBJECT",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 9,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": true,
+        "tginitdeferred": false
+      },
+      "function": "\"RI_FKey_noaction_del\"()",
+      "constraint_definition": "FOREIGN KEY (source_id) REFERENCES accounting_tournament_fee_sources(id)",
+      "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_OBJECT\" AFTER DELETE ON public.accounting_tournament_fee_sources FROM accounting_tournament_recognized_sources NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_del\"()"
+    },
+    {
+      "name": "RI_ConstraintTrigger_OBJECT",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 17,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": true,
+        "tginitdeferred": false
+      },
+      "function": "\"RI_FKey_noaction_upd\"()",
+      "constraint_definition": "FOREIGN KEY (source_id) REFERENCES accounting_tournament_fee_sources(id)",
+      "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_OBJECT\" AFTER UPDATE ON public.accounting_tournament_fee_sources FROM accounting_tournament_recognized_sources NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()"
+    },
+    {
+      "name": "aa_poker_arena_no_chip_money",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [5, 3],
+        "tgqual": null,
+        "tgtype": 23,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": false,
+        "tginitdeferred": false
+      },
+      "function": "fn_poker_reject_diamond_chip_money()",
+      "constraint_definition": null,
+      "definition": "CREATE TRIGGER aa_poker_arena_no_chip_money BEFORE INSERT OR UPDATE OF club_id, tournament_id ON public.accounting_tournament_fee_sources FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_chip_money()"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_immutable",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 27,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": false,
+        "tginitdeferred": false
+      },
+      "function": "fn_accounting_tournament_fee_receipt_immutable()",
+      "constraint_definition": null,
+      "definition": "CREATE TRIGGER accounting_tournament_fee_sources_immutable BEFORE DELETE OR UPDATE ON public.accounting_tournament_fee_sources FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_no_truncate",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 34,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": false,
+        "tginitdeferred": false
+      },
+      "function": "fn_accounting_tournament_fee_receipt_immutable()",
+      "constraint_definition": null,
+      "definition": "CREATE TRIGGER accounting_tournament_fee_sources_no_truncate BEFORE TRUNCATE ON public.accounting_tournament_fee_sources FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_tournament_fee_receipt_immutable()"
+    },
+    {
+      "name": "trg_ca_club_member_tournament_fee_daily",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 4,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": "new_rows",
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": false,
+        "tginitdeferred": false
+      },
+      "function": "fn_ca_club_member_tournament_fee_daily_apply()",
+      "constraint_definition": null,
+      "definition": "CREATE TRIGGER trg_ca_club_member_tournament_fee_daily AFTER INSERT ON public.accounting_tournament_fee_sources REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_club_member_tournament_fee_daily_apply()"
+    }
+  ],
+  "force_rls": false,
+  "constraints": [
+    {
+      "name": "accounting_tournament_fee_sources_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_credit_check",
+      "validated": true,
+      "definition": "CHECK (((rake_credit >= (0)::numeric) AND (rake_credit = round(rake_credit, 2)) AND ((rake_credit)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_record_id_fkey",
+      "validated": true,
+      "definition": "FOREIGN KEY (rake_record_id) REFERENCES accounting_tournament_fee_batches(rake_record_id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_record_id_player_id_key",
+      "validated": true,
+      "definition": "UNIQUE (rake_record_id, player_id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_source_entitlement_id_key",
+      "validated": true,
+      "definition": "UNIQUE (source_entitlement_id)"
+    }
+  ],
+  "persistence": "p"
+}

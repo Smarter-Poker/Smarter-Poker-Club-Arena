@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
@@ -29,9 +30,24 @@ CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
 # Managers emit this marker immediately after the Error label. A prefix is
 # inferred attribution only, never evidence that the full UUID was logged.
 EVENT_PREFIX = re.compile(r'^\[Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80}\] Error: \[Tournament:([0-9a-f]{8})\](?:[ \t]|$)')
+# Fixed existing manager transitions, with bounded counts only. Never export
+# the rest of a console line, a generic message, or an arbitrary object.
+BALANCE_PROGRESS = re.compile(r'^\[Tournament:([0-9a-f]{8})\] (?:(consolidation outstanding - sweeps move to the consolidation lane|consolidation finished - sweeps return to the general lanes)|Resumed - ([0-9]{1,4}) tables, level ([0-9]{1,4}))$')
+BALANCE_REFUSAL = re.compile(r'^\[Tournament:([0-9a-f]{8})\] Break ([0-9a-f]{8}) (not begun|members not dispatched|not retired): ([a-z_]{1,64})(?::.{0,512})?$')
+BREAK_REFUSAL_REASONS = frozenset({
+    'source_engine_absent', 'source_retention_refused', 'source_park_probe_missed',
+    'source_engine_replaced', 'mutation_not_allowed', 'source_roster_unread',
+    'source_roster_empty', 'source_seat_unfunded_or_unbound',
+    'source_registrations_unread', 'source_roster_disagrees', 'destinations_unread',
+    'destinations_full', 'movement_unproven', 'begin_refused',
+    'seat_move_outcome_pending', 'source_boundary_unclaimed',
+    'terminal_handoff_required', 'original_owner_lifecycle_changed',
+    'members_unresolved', 'state_not_retirable', 'manager_authority_unavailable',
+    'reconcile_refused', 'amendment_refused',
+})
 # Keep the original deal refusals as well as their later watchdog consequence.
 # Only these emitted call sites, with an exactly selected table, are admitted.
-ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping|failed_to_start)\]')
+ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping|failed_to_start|hand_continuation_unproven)\]')
 ENGINE_REASON = re.compile(r'Engine self-terminating for restart: (tournament_table_zombie|cash_table_zombie|cash_lease_proof_expired|tournament_lease_proof_expired|dealing_loop_threw|post_hand_settlement_failed|authoritative_hand_commit_not_proved|atomic_stack_settlement_refused|post_commit_stack_refresh_failed|stalled_no_seat)\b')
 # Successor admission is owned by GameServer, before or while a new manager
 # recovers its originals. Keep this an exact call-site list, never GameServer.*.
@@ -58,6 +74,28 @@ CONNECT_TIMEOUT = 10
 # Both host identity reads surround capture; the outer transport owns their
 # complete budget plus connection setup and a finite transfer allowance.
 TRANSPORT_TIMEOUT = 2 * HEALTH_TIMEOUT + CAPTURE_TIMEOUT + CONNECT_TIMEOUT + 5
+LEASE_METRICS_TIMEOUT = 5
+LEASE_METRIC_NAMES = frozenset({
+    'poker_lease_heartbeat_outcomes_total', 'poker_lease_renewal_passes_total',
+    'poker_lease_renewal_loop_running', 'poker_lease_renewal_loop_relaunches_total',
+    'poker_lease_renewal_outstanding_total', 'poker_lease_heartbeat_session_enabled',
+    'poker_lease_heartbeat_session_connected', 'poker_lease_heartbeat_statements_total',
+    'poker_lease_heartbeat_session_disconnects_total', 'poker_event_loop_delay_p50_ms',
+    'poker_event_loop_delay_p99_ms', 'poker_fleet_table_stall_max_ms',
+})
+LEASE_METRIC_LABELS = {
+    'scope': {'table', 'tournament'},
+    'state': {'kept', 'busy', 'taken', 'stale', 'missing', 'malformed'},
+    'transport': {'dedicated', 'shared'},
+    'outcome': {'completed', 'threw', 'abandoned'},
+    'half': {'cash', 'tournament'},
+}
+# Prometheus attaches these maintained static labels to every engine scrape.
+# Accept only their configured values and never include them in evidence.
+LEASE_METRIC_TARGET_LABELS = {
+    'host': 'engine-01', 'role': 'engine', 'app': 'club-arena-engine',
+}
+MAX_WINDOW_AGE = datetime.timedelta(hours=48)
 COMMAND = ['docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine']
 
 
@@ -70,7 +108,9 @@ def log_window(value, now=None):
     start = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
     now = now or datetime.datetime.now(datetime.timezone.utc)
     end = start + datetime.timedelta(minutes=15)
-    if start < now - datetime.timedelta(hours=24) or end > now:
+    # A next-day digest can name yesterday morning more than 24 hours later.
+    # Keep one completed 15-minute interval and every existing transport bound.
+    if start < now - MAX_WINDOW_AGE or end > now:
         raise ValueError('Observation window is not a completed recent interval')
     return {'since': value, 'until': end.strftime('%Y-%m-%dT%H:%M:%SZ')}
 
@@ -85,6 +125,86 @@ def log_command(window):
 def window_description(window):
     return ({**window, 'durationMinutes': 15, 'maximumPhysicalLines': 20000}
             if window else 'last 15 minutes; last 20000 physical lines')
+
+
+def lease_metrics_requested(value, window):
+    if value is None:
+        return False
+    if value is not True or window is None:
+        raise ValueError('Lease metrics require an explicit completed incident window')
+    return True
+
+
+def extract_lease_metrics(value, window):
+    """A fixed fleet-only matrix, never arbitrary series, labels or provider errors."""
+    data = value.get('data') if isinstance(value, dict) else None
+    if not isinstance(value, dict) or value.get('status') != 'success' or not isinstance(data, dict) or data.get('resultType') != 'matrix':
+        raise ValueError('Metrics response unavailable')
+    rows = data.get('result')
+    if not isinstance(rows, list) or len(rows) > 64:
+        raise ValueError('Metrics series bound refused')
+    start, end = [datetime.datetime.fromisoformat(window[k].replace('Z', '+00:00')).timestamp()
+                  for k in ('since', 'until')]
+    series, unknown = [], 0
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('metric'), dict):
+            raise ValueError('Metrics series refused')
+        metric = row['metric']
+        name = metric.get('__name__')
+        if not isinstance(name, str) or name not in LEASE_METRIC_NAMES or set(metric)-{'__name__', 'job', 'instance'}-set(LEASE_METRIC_LABELS)-set(LEASE_METRIC_TARGET_LABELS):
+            raise ValueError('Metrics identity refused')
+        if any(metric[key] != expected for key, expected in LEASE_METRIC_TARGET_LABELS.items() if key in metric):
+            raise ValueError('Metrics target refused')
+        labels = {k: v for k, v in metric.items() if k in LEASE_METRIC_LABELS}
+        if any(not isinstance(v, str) or v not in LEASE_METRIC_LABELS[k] for k, v in labels.items()):
+            raise ValueError('Metrics labels refused')
+        points = row.get('values')
+        if not isinstance(points, list) or not 1 <= len(points) <= 61:
+            raise ValueError('Metrics sample bound refused')
+        clean, previous = [], start-1
+        for point in points:
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError('Metrics sample refused')
+            stamp, reading = point
+            if type(stamp) not in (int, float) or not math.isfinite(stamp) or not start <= stamp <= end or stamp <= previous:
+                raise ValueError('Metrics timestamp refused')
+            if not isinstance(reading, str) or len(reading) > 40:
+                raise ValueError('Metrics value refused')
+            numeric = float(reading)
+            if not math.isfinite(numeric):
+                numeric = None
+                unknown += 1
+            elif numeric < 0:
+                raise ValueError('Metrics value refused')
+            clean.append([stamp, numeric])
+            previous = stamp
+        series.append({'name': name, 'labels': labels, 'values': clean})
+    missing = sorted(LEASE_METRIC_NAMES-{row['name'] for row in series})
+    return {'status': ('partial' if missing else 'observed') if series else 'no_series',
+            'series': series, 'missingMetrics': missing,
+            'unknownSamples': unknown,
+            'sampleTimes': 'evaluation times; Prometheus lookback may reuse an older scrape'}
+
+
+def read_lease_metrics(window):
+    # One fixed localhost GET, no auth material, arbitrary PromQL or redirects.
+    query = '{job="engine_game_server",__name__=~"'+'|'.join(sorted(LEASE_METRIC_NAMES))+'"}'
+    params = urllib.parse.urlencode({'query': query, 'start': window['since'],
+                                    'end': window['until'], 'step': '15s'})
+    try:
+        with urllib.request.build_opener(NoRedirect).open(
+                'http://127.0.0.1:9090/api/v1/query_range?'+params,
+                timeout=LEASE_METRICS_TIMEOUT) as response:
+            if response.status != 200:
+                raise ValueError('Metrics unavailable')
+            body = response.read(262145)
+        if len(body) > 262144:
+            raise ValueError('Metrics response bound refused')
+        return extract_lease_metrics(json.loads(body), window)
+    except Exception:
+        # The original log evidence remains usable; an absent metric is UNKNOWN.
+        return {'status': 'unavailable', 'reason': 'transport_or_response_refused',
+                'series': [], 'unknownSamples': 0}
 
 
 def mux_timing_requested(value, window):
@@ -223,6 +343,106 @@ def extract_lightning_fold_timings(raw):
             'absenceMeans': 'unknown; bounded retained logs and producer sampling may omit requests'}
 
 
+
+def restart_incident_requested(value, window):
+    if value is None:
+        return False
+    if value is not True or window is None:
+        raise ValueError('Restart evidence requires an explicit completed window')
+    return True
+
+
+def restart_log_signs(raw):
+    """Fixed fatal signatures only. Never export a log line or exception text."""
+    signatures = {
+        'v8_heap_exhausted': r'FATAL ERROR: (?:Ineffective mark-compacts near heap limit|Reached heap limit|CALL_AND_RETRY_LAST) .*Allocation failed',
+        'v8_allocation_failed': r'FATAL ERROR: .*Allocation failed - JavaScript heap out of memory',
+        'native_allocation_failed': r'(?:std::bad_alloc|FATAL ERROR:.*(?:Failed to reserve|Zone Allocation failed))',
+        'fatal_uncaught_exception': r'^\[GameServer\] FATAL \(GameServer\.Uncaught_exception\) - draining for supervisor restart$',
+        'fatal_unhandled_rejection': r'^\[GameServer\] FATAL \(GameServer\.Unhandled_rejection\) - draining for supervisor restart$',
+        'shutdown_started': r'^\[GameServer\] Received shutdown signal\.\.\.$',
+        'shutdown_deadline': r'^\[GameServer\] graceful shutdown exceeded [0-9]{1,6}ms before ownership release$',
+        'sigterm_received': r'\b(?:SIGTERM received|Received SIGTERM)\b',
+        'sigint_received': r'\b(?:SIGINT received|Received SIGINT)\b',
+    }
+    records = []
+    for line in raw.decode('utf-8', errors='replace').splitlines():
+        stamp = STAMP.match(line)
+        if not stamp:
+            continue
+        for kind, pattern in signatures.items():
+            if re.search(pattern, line[stamp.end():]):
+                records.append({'timestamp': stamp[1], 'kind': kind})
+    return {'records': records[-40:], 'matchingRecords': len(records),
+            'absenceMeans': 'unknown; bounded retained logs may omit the failure'}
+
+
+def read_restart_incident(window, raw):
+    """Read the fixed engine container and original host window; no mutation."""
+    result = {'engineLogSigns': restart_log_signs(raw), 'sources': {},
+              'absenceMeans': 'unknown; Docker events and host journals have finite retention'}
+    commands = {
+        'container': ['docker', 'inspect', '--format', '{{json .State}}', 'club-arena-engine'],
+        'events': ['docker', 'events', '--since', window['since'], '--until', window['until'],
+                   '--filter', 'container=club-arena-engine', '--format', '{{json .}}'],
+        'autoheal': ['docker', 'logs', '--since', window['since'], '--until', window['until'],
+                     '--tail', '1000', '--timestamps', 'sp-autoheal'],
+        'kernel': ['journalctl', '-k', '--since', window['since'], '--until', window['until'],
+                   '--no-pager', '-n', '1000', '-o', 'json', '--output-fields=MESSAGE'],
+    }
+    for source, command in commands.items():
+        try:
+            data = capture(command, seconds=4)
+            rows = []
+            if source == 'container':
+                value = json.loads(data)
+                row = {}
+                for key in ['OOMKilled', 'Running', 'Restarting']:
+                    if type(value.get(key)) is bool:
+                        row[key] = value[key]
+                if type(value.get('ExitCode')) is int and 0 <= value['ExitCode'] <= 255:
+                    row['ExitCode'] = value['ExitCode']
+                for key in ['StartedAt', 'FinishedAt']:
+                    if isinstance(value.get(key), str) and re.fullmatch(r'\d{4}-\d\d-\d\dT[0-9:.]+Z', value[key]):
+                        row[key] = value[key]
+                rows.append(row)
+            elif source == 'events':
+                for line in data.splitlines():
+                    value = json.loads(line)
+                    action = value.get('Action')
+                    if action not in {'oom', 'die', 'kill', 'restart', 'start', 'stop', 'health_status: unhealthy', 'health_status: healthy'}:
+                        continue
+                    attributes = value.get('Actor', {}).get('Attributes', {})
+                    if attributes.get('name') != 'club-arena-engine':
+                        continue
+                    if type(value.get('timeNano')) is not int:
+                        continue
+                    row = {'action': action, 'timeNano': value['timeNano']}
+                    for key in ['exitCode', 'signal']:
+                        v = attributes.get(key)
+                        if isinstance(v, str) and re.fullmatch(r'[0-9]{1,3}', v):
+                            row[key] = int(v)
+                    rows.append(row)
+            elif source == 'autoheal':
+                for line in data.decode('utf-8', errors='replace').splitlines():
+                    stamp = STAMP.match(line)
+                    if stamp and re.search(r'(?<![A-Za-z0-9_-])club-arena-engine(?![A-Za-z0-9_-])', line) and re.search(r'(?i)unhealthy|restart', line):
+                        rows.append({'timestamp': stamp[1], 'kind': 'autoheal_engine_restart_observed'})
+            else:
+                for line in data.splitlines():
+                    value = json.loads(line)
+                    message = value.get('MESSAGE', '')
+                    if isinstance(message, str) and re.search(r'Out of memory: Killed process|oom-kill:|Memory cgroup out of memory', message):
+                        timestamp = value.get('__REALTIME_TIMESTAMP')
+                        rows.append({'timestampUs': timestamp if isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}', timestamp) else None,
+                                     'kind': 'host_oom_observed', 'engineAttribution': 'unproven'})
+            result['sources'][source] = {'status': 'observed', 'records': rows[-40:],
+                                         'matchingRecords': len(rows), 'inputBytes': len(data)}
+        except Exception:
+            result['sources'][source] = {'status': 'unavailable'}
+    return result
+
+
 def selection(value):
     if not isinstance(value, list) or not 1 <= len(value) <= 2:
         raise ValueError('Invalid observation scope')
@@ -238,6 +458,78 @@ def selection(value):
         result.append(item)
     if len({i['tournamentId'] for i in result if 'tournamentId' in i}) != sum('tournamentId' in i for i in result) or len({t for i in result for t in i['tableIds']}) != sum(len(i['tableIds']) for i in result):
         raise ValueError('Duplicate observation scope')
+    return result
+
+
+def continuation_failure(block):
+    """Fixed categories and call sites only; never exception text or stack frames.
+
+    The lane reports capture, retain and consumer failures through one context.
+    A generic write refusal has already lost its underlying RPC error: it must
+    never be relabelled as a timeout, lock conflict or failed transaction.
+    """
+    message = block[0].split('] ', 1)[1] if '] ' in block[0] else ''
+    categories = {
+        'Error: Hand Continuation Write Is Unproven': 'write_unproven',
+        'Error: Hand Continuation Lease Is Unproven': 'lease_unproven',
+        'Error: Hand Continuation Owner Changed': 'owner_changed',
+        'Error: Hand Continuation Is Fenced': 'fenced',
+        'Error: Hand Sequence Is Exhausted': 'sequence_exhausted',
+        'Error: Hand Continuation Is Too Large': 'payload_bound',
+        'Error: Hand Recovery Requires The External Runout Original': 'external_runout_original_required',
+        'Error: Hand Recovery State Is Invalid': 'controller_state_invalid',
+        'TimeoutError: The operation was aborted due to timeout': 'timeout',
+        'DOMException [TimeoutError]: The operation was aborted due to timeout': 'timeout',
+        'AbortError: This operation was aborted': 'aborted',
+        'DOMException [AbortError]: This operation was aborted': 'aborted',
+    }
+    category = categories.get(message, 'unknown')
+    if message.startswith('DOMException [DataCloneError]: '):
+        category = 'clone_failed'
+    text = '\n'.join(block[1:])
+    phase = 'unknown'
+    # Only maintained owner names are recognized. No caller-provided file,
+    # function, line, message, cards or other payload crosses the boundary.
+    for name, pattern in [
+        ('retain', r'\bat (?:async )?(?:retainHandContinuation|[A-Za-z]+\.retainOriginalBatch) \('),
+        ('capture', r'\bat (?:HandController\.serializeRecoveryState|HandContinuationLane\.captureBatch) \('),
+        ('dispatch', r'\bat (?:async )?[A-Za-z]+\.handleHandEvent \('),
+    ]:
+        if re.search(pattern, text):
+            phase = name
+            break
+    return {'category': category, 'phase': phase}
+
+
+def rebuy_decision(block, selected_events):
+    """Only the original input's fixed, scoped diagnostic fields; never arbitrary payloads."""
+    prefix = '[Tournament.horse_rebuy_decision] '
+    if not block or not block[0].startswith(prefix):
+        return None
+    try:
+        value = json.loads(block[0][len(prefix):])
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(value, dict) or value.get('schema') != 'horse-rebuy-decision/v1':
+        return None
+    if not isinstance(value.get('tournamentId'), str) or value.get('tournamentId') not in selected_events or not isinstance(value.get('userId'), str) or not UUID.fullmatch(value['userId']):
+        return None
+    if type(value.get('handNumber')) is not int or not 0 < value['handNumber'] <= 9007199254740991 or type(value.get('choice')) is not bool:
+        return None
+    if not isinstance(value.get('phase'), str) or value.get('phase') not in {'choice', 'deferred', 'expired', 'capacity_deferred', 'purchase_pending', 'purchase_started', 'purchased', 'purchase_unproven'}:
+        return None
+    result = {k: value[k] for k in ('schema', 'tournamentId', 'userId', 'handNumber', 'choice', 'phase')}
+    share = value.get('choiceShare')
+    result['choiceShare'] = share if type(share) in (int, float) and math.isfinite(share) and 0 <= share <= 1 else None
+    for key in ('bustAtMs', 'promptUntilMs', 'dueAtMs', 'startedAtMs', 'observedAtMs', 'remainingMs', 'elapsedMs'):
+        number = value.get(key)
+        if number is not None and (type(number) not in (int, float) or not math.isfinite(number) or abs(number) > 9007199254740991):
+            return None
+        result[key] = number
+    state = value.get('sqlstate')
+    result['sqlstate'] = state if isinstance(state, str) and re.fullmatch(r'[0-9A-Z]{5}', state) else None
+    category = value.get('failureClass')
+    result['failureClass'] = category if isinstance(category, str) and category in {'cutoff', 'funding', 'limit', 'generation', 'seat', 'bounty', 'freeze', 'timeout', 'transport', 'unknown'} else None
     return result
 
 
@@ -269,6 +561,12 @@ def extract(raw, scopes):
                       'symbolicErrors': sorted(set(ERROR.findall(text))),
                       'engineReasons': sorted(set(ENGINE_REASON.findall(text)))
                       if context == 'ServerTableEngine.watchdog_kill' else []}
+            if context == 'Tournament.horse_rebuy_decision':
+                decision = rebuy_decision(block, {s['tournamentId'] for s in scopes if 'tournamentId' in s})
+                if decision is not None:
+                    record['rebuyDecision'] = decision
+            if context == 'ServerTableEngine.hand_continuation_unproven':
+                record['continuationFailure'] = continuation_failure(block)
             if context == 'GameServer.stalled_elimination_successor_drain_requested':
                 stall = SUCCESSOR_STALL.search(text)
                 if stall and stall.group(1) in allowed:
@@ -293,6 +591,37 @@ def extract(raw, scopes):
         body = line[ts.end():] if ts else line
         if HEADER.match(body):
             finish()
+            refusal = BALANCE_REFUSAL.fullmatch(body)
+            if refusal and refusal[4] in BREAK_REFUSAL_REASONS:
+                block, context, stamp = [], None, None
+                candidates = event_prefixes.get(refusal[1], [])
+                if len(candidates) == 1:
+                    records.append({'timestamp': ts.group(1) if ts else None,
+                                    'context': 'Tournament.break_refused', 'scopeIds': [],
+                                    'inferredScopeIds': candidates,
+                                    'scopeAttribution': 'canonical_event_prefix_inferred',
+                                    'symbolicErrors': sorted(set(ERROR.findall(body))),
+                                    'engineReasons': [],
+                                    'breakRefusal': {'breakIdPrefix': refusal[2],
+                                                     'stage': refusal[3], 'reason': refusal[4]}})
+                continue
+            progress = BALANCE_PROGRESS.fullmatch(body)
+            if progress:
+                block, context, stamp = [], None, None
+                candidates = event_prefixes.get(progress[1], [])
+                if len(candidates) == 1:
+                    kind = ('resumed' if progress[3] is not None else
+                            'consolidation_outstanding' if progress[2].startswith('consolidation outstanding') else
+                            'consolidation_finished')
+                    record = {'timestamp': ts.group(1) if ts else None,
+                              'context': 'Tournament.'+kind, 'scopeIds': [],
+                              'inferredScopeIds': candidates,
+                              'scopeAttribution': 'canonical_event_prefix_inferred',
+                              'symbolicErrors': [], 'engineReasons': []}
+                    if kind == 'resumed':
+                        record['resumedBoard'] = {'tables': int(progress[3]), 'level': int(progress[4])}
+                    records.append(record)
+                continue
             match = CONTEXT.match(body) or ADMISSION_CONTEXT.match(body) or POSTCOMMIT_CONTEXT.match(body)
             context = match.group(1) if match else None
             engine_match = ENGINE_CONTEXT.match(body)
@@ -310,11 +639,11 @@ def extract(raw, scopes):
             'absenceMeans': 'unknown; some owner refusals are not logged, and this is a bounded window'}
 
 
-def capture(command=COMMAND):
+def capture(command=COMMAND, seconds=CAPTURE_TIMEOUT):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     stream = selectors.DefaultSelector()
     stream.register(process.stdout, selectors.EVENT_READ)
-    chunks, size, deadline = [], 0, time.monotonic()+CAPTURE_TIMEOUT
+    chunks, size, deadline = [], 0, time.monotonic()+seconds
     try:
         while True:
             remaining = deadline-time.monotonic()
@@ -347,7 +676,7 @@ MAX_PHYSICAL_LINES = 20000
 MAX_ARCHIVE_EXPANSION = 256 * 1024 * 1024
 
 
-def archived_window(window, current, seconds=10):
+def archived_window(window, current, seconds=10, scopes=None):
     """Bounded scan of the run-spec's existing outgoing logs, never caller paths.
 
     Prefixes come from the archive name, not today's host health. Neither an
@@ -363,7 +692,7 @@ def archived_window(window, current, seconds=10):
     now = datetime.datetime.now(datetime.timezone.utc)
     start = datetime.datetime.fromisoformat(window['since'].replace('Z', '+00:00'))
     until = datetime.datetime.fromisoformat(window['until'].replace('Z', '+00:00'))
-    if start < now-datetime.timedelta(hours=24) or until > now or until-start != datetime.timedelta(minutes=15):
+    if start < now-MAX_WINDOW_AGE or until > now or until-start != datetime.timedelta(minutes=15):
         raise ValueError('Invalid archive observation window')
     sources, candidates = [], []
     size, lines = len(current), len(current.splitlines())
@@ -388,7 +717,7 @@ def archived_window(window, current, seconds=10):
                 try:
                     ended = datetime.datetime.strptime(match[1], '%Y%m%dT%H%M%SZ').replace(tzinfo=datetime.timezone.utc)
                     started = datetime.datetime.strptime(match[2], '%Y%m%dT%H%M%S').replace(tzinfo=datetime.timezone.utc)
-                    if not (now-datetime.timedelta(hours=24) <= ended <= now and started <= ended
+                    if not (now-MAX_WINDOW_AGE <= ended <= now and started <= ended
                             and started < until and ended >= start):
                         continue
                     candidates.append((ended, entry.name, match[3], match[4]))
@@ -401,7 +730,35 @@ def archived_window(window, current, seconds=10):
                         'imageIdPrefix': image, 'fullEngineRevision': 'unproven; archive filename prefix only'}
             item = {**identity, 'status': 'observed', 'retainedBytes': 0, 'retainedPhysicalLines': 0}
             metadata['archives'].append(item)
-            output, pending = [], b''
+            output, pending, block = [], b'', []
+
+            def retain(record):
+                nonlocal size, lines
+                if not record:
+                    return True
+                raw_record = b''.join(record)
+                # Scope before the retained-input bound. Otherwise unrelated
+                # fleet traffic can consume all 20,000 lines before the named
+                # event's original refusal, even in an explicitly selected
+                # incident window. Extraction remains the same allowlisted,
+                # redacted parser; raw records never leave the host.
+                if scopes is not None and not extract(raw_record, scopes)['matchingRecords']:
+                    return True
+                fresh, record_seen = [], set()
+                for line in record:
+                    key = line.rstrip(b'\n')
+                    if key not in seen and key not in record_seen:
+                        record_seen.add(key)
+                        fresh.append(line)
+                byte_count = sum(map(len, fresh))
+                if size+byte_count > MAX_BYTES or lines+len(fresh) > MAX_PHYSICAL_LINES:
+                    item['status'] = 'inputBound'; metadata['truncated'] = True
+                    return False
+                for line in fresh:
+                    seen.add(line.rstrip(b'\n'))
+                output.extend(fresh)
+                size += byte_count; lines += len(fresh)
+                return True
             process, stream = None, None
             try:
                 if time.monotonic() >= deadline:
@@ -451,14 +808,25 @@ def archived_window(window, current, seconds=10):
                                 continue
                             if not start <= timestamp < until or line in seen:
                                 continue
-                            if size+len(line)+1 > MAX_BYTES or lines >= MAX_PHYSICAL_LINES:
-                                item['status'] = 'inputBound'; metadata['truncated'] = True
-                                stop = True
-                                break
-                            seen.add(line); output.append(line+b'\n')
-                            size += len(line)+1; lines += 1
+                            if scopes is None:
+                                if not retain([line+b'\n']):
+                                    stop = True
+                                    break
+                            else:
+                                body = line.decode('utf-8', errors='replace')[match.end():]
+                                if HEADER.match(body):
+                                    if not retain(block):
+                                        stop = True
+                                        break
+                                    block = []
+                                # Same oversized-record refusal as extract():
+                                # a later scope cannot attach to a lost header.
+                                if len(block) <= 64:
+                                    block.append(line[:65537]+b'\n')
                         if stop:
                             break
+                if scopes is not None and item['status'] != 'inputBound':
+                    retain(block)
                 raw = b''.join(output)
                 item.update(retainedBytes=len(raw), retainedPhysicalLines=len(output))
                 sources.append((raw, identity))
@@ -516,34 +884,117 @@ def health(origin='https://engine.smarter.poker'):
     return {k: value[k] for k in ['version', 'instanceId']}
 
 
+# Failure diagnostics contain only fixed categories. Never forward exception
+# text, SSH stderr, URLs, credentials, log content or request parameters.
+FAILURE_STAGE = 'admission'
+FAILURE_STAGES = frozenset({
+    'admission', 'public_health_before', 'key_validation', 'pin_validation',
+    'remote_transport', 'remote_admission', 'host_health_before', 'current_logs',
+    'archives', 'lease_metrics', 'host_health_after', 'response_validation',
+    'public_health_after', 'artifact_write', 'transport_setup', 'response_sanitization',
+})
+FAILURE_CATEGORIES = frozenset({
+    'refused', 'timeout', 'invalid_json', 'transport_exit', 'ssh_exit_255',
+    'response_bound', 'input_bound', 'identity_mismatch', 'subprocess_exit', 'io_unavailable',
+    'unexpected',
+})
+
+
+class ObservationFailure(RuntimeError):
+    def __init__(self, category, stage):
+        super().__init__('Scoped observation refused')
+        self.category, self.stage = category, stage
+
+
+def failure_diagnostic(error):
+    stage = FAILURE_STAGE if FAILURE_STAGE in FAILURE_STAGES else 'admission'
+    if isinstance(error, ObservationFailure):
+        if (isinstance(error.category, str) and isinstance(error.stage, str)
+                and error.category in FAILURE_CATEGORIES and error.stage in FAILURE_STAGES):
+            return {'schema': 'scoped-runtime-failure/v1', 'stage': error.stage,
+                    'category': error.category, 'readOnly': True}
+    category = ('timeout' if isinstance(error, (TimeoutError, subprocess.TimeoutExpired))
+                or (isinstance(error, RuntimeError) and str(error) == 'Log read timed out')
+                else 'invalid_json' if isinstance(error, json.JSONDecodeError)
+                else 'subprocess_exit' if isinstance(error, subprocess.CalledProcessError)
+                else 'io_unavailable' if isinstance(error, OSError)
+                else 'input_bound' if isinstance(error, RuntimeError) and str(error) in {
+                    'Log read exceeded bounded input', 'Log read exceeded bounded physical lines'}
+                else 'identity_mismatch' if isinstance(error, RuntimeError) and str(error) in {
+                    'Host engine changed during observation',
+                    'Public and host engine identity changed or differ'}
+                else 'refused' if isinstance(error, (ValueError, RuntimeError))
+                else 'unexpected')
+    return {'schema': 'scoped-runtime-failure/v1', 'stage': stage,
+            'category': category, 'readOnly': True}
+
+
+def remote_failure(reply):
+    # Only our exact bounded JSON diagnostic may cross the SSH boundary.
+    # Anything else remains a transport category; it is never printed.
+    if len(reply.stderr) <= 4096:
+        for line in reply.stderr.splitlines():
+            try:
+                value = json.loads(line)
+            except (ValueError, UnicodeError):
+                continue
+            if (isinstance(value, dict) and set(value) == {'schema', 'stage', 'category', 'readOnly'}
+                    and value['schema'] == 'scoped-runtime-failure/v1'
+                    and value['readOnly'] is True and isinstance(value['stage'], str)
+                    and isinstance(value['category'], str) and value['stage'] in FAILURE_STAGES
+                    and value['category'] in FAILURE_CATEGORIES):
+                return ObservationFailure(value['category'], value['stage'])
+    return ObservationFailure('ssh_exit_255' if reply.returncode == 255 else 'transport_exit',
+                              'remote_transport')
+
+
 def main():
+    global FAILURE_STAGE
+    FAILURE_STAGE = 'admission'
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
+        FAILURE_STAGE = 'remote_admission'
         request = json.loads(base64.b64decode(sys.argv[2], validate=True))
         if isinstance(request, list):
-            scopes, window, mux_timing, fold_timing = selection(request), None, False, False
-        elif isinstance(request, dict) and {'scopes', 'windowStart'} <= set(request) <= {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming'}:
+            scopes, window, mux_timing, fold_timing, lease_metrics, restart_incident = selection(request), None, False, False, False, False
+        elif isinstance(request, dict) and {'scopes', 'windowStart'} <= set(request) <= {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming', 'leaseIncidentMetrics', 'restartIncident'}:
             scopes, window = selection(request['scopes']), log_window(request['windowStart'])
             mux_timing = mux_timing_requested(request.get('muxTiming'), window)
             fold_timing = lightning_fold_timing_requested(request.get('lightningFoldTiming'), window)
+            lease_metrics = lease_metrics_requested(request.get('leaseIncidentMetrics'), window)
+            restart_incident = restart_incident_requested(request.get('restartIncident'), window)
         else:
             raise ValueError('Invalid observation request')
+        FAILURE_STAGE = 'host_health_before'
         before = health('http://127.0.0.1:8080')
         capture_started = time.monotonic()
+        FAILURE_STAGE = 'current_logs'
         raw = capture(log_command(window))
         # Docker's --tail bounds current physical lines. Enforce the same
         # shared ceiling even if a source violates that contract.
         if len(raw.splitlines()) > MAX_PHYSICAL_LINES:
             raise RuntimeError('Log read exceeded bounded physical lines')
+        FAILURE_STAGE = 'archives'
         archives, archive_metadata = archived_window(
-            window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)))
+            window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)),
+            # Explicit anonymous timing reads retain their existing framing.
+            scopes=None if mux_timing or fold_timing or restart_incident else scopes)
         current_raw = raw
         raw += b''.join(source for source, _identity in archives)
+        FAILURE_STAGE = 'lease_metrics'
+        metric_evidence = read_lease_metrics(window) if lease_metrics else None
+        restart_evidence = read_restart_incident(window, raw) if restart_incident else None
+        FAILURE_STAGE = 'host_health_after'
         after = health('http://127.0.0.1:8080')
         if before != after:
             raise RuntimeError('Host engine changed during observation')
+        FAILURE_STAGE = 'response_sanitization'
         extra = {'muxSubscriptionTimings': extract_mux_timings(raw)} if mux_timing else {}
         if fold_timing:
             extra['lightningFoldTimings'] = extract_lightning_fold_timings(raw)
+        if lease_metrics:
+            extra['leaseIncidentMetrics'] = metric_evidence
+        if restart_incident:
+            extra['restartIncident'] = restart_evidence
         print(json.dumps({'schema': 'scoped-runtime-errors/v1', 'readOnly': True,
                           'window': window_description(window),
                           'hostEngineBefore': before, 'hostEngineAfter': after,
@@ -560,12 +1011,16 @@ def main():
     window = log_window(event.get('client_payload', {}).get('tournament_log_window_start'))
     mux_timing = mux_timing_requested(event.get('client_payload', {}).get('mux_subscription_timing'), window)
     fold_timing = lightning_fold_timing_requested(event.get('client_payload', {}).get('lightningFoldTiming'), window)
+    lease_metrics = lease_metrics_requested(event.get('client_payload', {}).get('leaseIncidentMetrics'), window)
+    restart_incident = restart_incident_requested(event.get('client_payload', {}).get('restartIncident'), window)
     host = os.environ.get('HETZNER_HOST', '')
     key = os.environ.get('HETZNER_SSH_PRIVATE_KEY', '')
     pin = os.environ.get('HETZNER_HOST_KEY', '')
     if not re.fullmatch('[A-Za-z0-9.-]+', host) or host.startswith('-') or not key.strip() or not pin.strip():
         raise RuntimeError('Configured read transport unavailable')
+    FAILURE_STAGE = 'public_health_before'
     before = health()
+    FAILURE_STAGE = 'transport_setup'
     directory = Path(tempfile.mkdtemp(prefix='scoped-engine-read-', dir=os.environ['RUNNER_TEMP']))
     try:
         for name, content in [('key', key), ('known_hosts', pin)]:
@@ -573,12 +1028,17 @@ def main():
             path.write_text(content+'\n')
             path.chmod(0o600)
         for args in [['ssh-keygen', '-y', '-f', str(directory/'key')], ['ssh-keygen', '-l', '-f', str(directory/'known_hosts')]]:
+            FAILURE_STAGE = 'key_validation' if args[1] == '-y' else 'pin_validation'
             subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=5)
         request = {'scopes': scopes, 'windowStart': window['since'] if window else None}
         if mux_timing:
             request['muxTiming'] = True
         if fold_timing:
             request['lightningFoldTiming'] = True
+        if lease_metrics:
+            request['leaseIncidentMetrics'] = True
+        if restart_incident:
+            request['restartIncident'] = True
         encoded = base64.b64encode(json.dumps(request).encode()).decode()
         # Only validated UUID scope and an exact recent fifteen-minute interval
         # enter the fixed reader. Host, account, container and command stay fixed.
@@ -586,9 +1046,14 @@ def main():
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
                 '-o', 'UserKnownHostsFile='+str(directory/'known_hosts'), '-o', f'ConnectTimeout={CONNECT_TIMEOUT}',
                 'root@'+host, "python3 - --remote '"+encoded+"'"]
-        reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=TRANSPORT_TIMEOUT)
-        if reply.returncode or len(reply.stdout) > 262144:
-            raise RuntimeError('Scoped transport unavailable')
+        FAILURE_STAGE = 'remote_transport'
+        reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True,
+                               timeout=TRANSPORT_TIMEOUT+(LEASE_METRICS_TIMEOUT if lease_metrics else 0)+(20 if restart_incident else 0))
+        if reply.returncode:
+            raise remote_failure(reply)
+        if len(reply.stdout) > 262144:
+            raise ObservationFailure('response_bound', 'response_validation')
+        FAILURE_STAGE = 'response_validation'
         result = json.loads(reply.stdout)
         if result.get('schema') != 'scoped-runtime-errors/v1' or result.get('readOnly') is not True:
             raise RuntimeError('Observation contract unavailable')
@@ -598,14 +1063,21 @@ def main():
             raise RuntimeError('Anonymous timing observation differs')
         if ('lightningFoldTimings' in result) != fold_timing:
             raise RuntimeError('Lightning timing observation differs')
+        if ('leaseIncidentMetrics' in result) != lease_metrics:
+            raise RuntimeError('Lease metric observation differs')
+        if ('restartIncident' in result) != restart_incident:
+            raise RuntimeError('Restart observation differs')
+        FAILURE_STAGE = 'public_health_after'
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:
             raise RuntimeError('Public and host engine identity changed or differ')
+        FAILURE_STAGE = 'response_sanitization'
         output = {**result, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   'engineAtObservation': after, 'selection': scopes, 'diagnosticOnly': True}
         serialized = json.dumps(output, indent=2)+'\n'
         if key in serialized or pin in serialized:
             raise RuntimeError('Observation refused')
+        FAILURE_STAGE = 'artifact_write'
         destination = Path('artifacts/scoped-runtime-errors')
         destination.mkdir(parents=True, exist_ok=True)
         target = destination/'observation.json'
@@ -619,6 +1091,7 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except Exception:
+    except Exception as error:
+        print(json.dumps(failure_diagnostic(error), sort_keys=True), file=sys.stderr)
         print('Scoped runtime observation unavailable. No production action performed.', file=sys.stderr)
         sys.exit(1)

@@ -1,3 +1,4 @@
+import type { HorseRangeSampleUse } from './HorseRangeConsumptionReceipt.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE EVAL — Hand Evaluators, Monte Carlo Equity, Preflop Scores (V7 split)
@@ -23,6 +24,7 @@
  */
 
 import type { Card } from '../types.js';
+import { isBoardOnlyRiverHand } from './HorseBoardContact.js';
 import {
   CONTINUATION_POLICY,
   continuationStrength,
@@ -527,7 +529,12 @@ export interface NextCardOutlook {
   madeNow: number;
 }
 
-export function nextCardOutlook(hole: Card[], board: Card[], vi: VariantInfo): NextCardOutlook {
+export function nextCardOutlook(
+  hole: Card[],
+  board: Card[],
+  vi: VariantInfo,
+  quality = true
+): NextCardOutlook {
   const out: NextCardOutlook = { good: [], scare: [], madeNow: 0 };
   if (!hole || hole.length < 2 || !board || board.length < 3 || board.length >= 5) return out;
   const known = new Set<string>();
@@ -562,16 +569,48 @@ export function nextCardOutlook(hole: Card[], board: Card[], vi: VariantInfo): N
     if (known.has(k)) continue;
     next[board.length] = c;
     const after = cat(next);
-    if (after > out.madeNow) {
+    const suitAfter = (suitN.get(c.suit) || 0) + 1;
+    const holdsSuit = (heroSuits.get(c.suit) || 0) >= (vi.isOmaha ? 2 : 1);
+    // A category improvement cannot clean a third-suit out when hero cannot
+    // make that flush. Omaha needs TWO suited hole cards; a lone nut blocker
+    // remains a strategic bluff input at the consumer, not a made flush here.
+    // Keep quality=false as the original paired-comparison baseline.
+    const holdem = quality && !vi.isOmaha && !vi.isShortDeck && hole.length === 2;
+    if (
+      quality &&
+      (holdem || (vi.isOmaha && !vi.isHiLo)) &&
+      suitAfter >= 3 &&
+      !holdsSuit &&
+      after < CAT_FLUSH
+    ) {
+      out.scare.push(k);
+      continue;
+    }
+    const sharedPair =
+      holdem && after <= 3 && !hole.some((h) => h.rank === c.rank) && (rankN.get(c.rank) || 0) > 0;
+    if (after > out.madeNow && !sharedPair) {
       out.good.push(k);
       continue;
     }
     // a third (or fourth) of a suit hero holds none of, when hero has no flush
-    const suitAfter = (suitN.get(c.suit) || 0) + 1;
-    const holdsSuit = (heroSuits.get(c.suit) || 0) >= (vi.isOmaha ? 2 : 1);
     if (suitAfter >= 3 && !holdsSuit && out.madeNow < CAT_FLUSH) {
       out.scare.push(k);
       continue;
+    }
+    // The documented four-straight scare was missing from the implementation.
+    if (holdem && after < CAT_STRAIGHT) {
+      const ranks = new Set(next.map((card) => RANK_VALUES[card.rank]));
+      if (ranks.has(14)) ranks.add(1);
+      let connected = false;
+      for (let low = 1; low <= 10 && !connected; low++) {
+        let count = 0;
+        for (let rank = low; rank < low + 5; rank++) if (ranks.has(rank)) count++;
+        connected = count >= 4;
+      }
+      if (connected) {
+        out.scare.push(k);
+        continue;
+      }
     }
     // the board pairs under hero's straight or flush: boats are live
     if ((rankN.get(c.rank) || 0) >= 1 && out.madeNow >= CAT_STRAIGHT && out.madeNow <= CAT_FLUSH) {
@@ -673,17 +712,19 @@ export function scoreOmahaLow(hole: Card[], board: Card[]): number {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface OmahaDrawInfo {
-  /** flush draw to the NUT flush (ace of suit, or king when the ace is on board) */
+  /** flush draw holding the highest suited rank that is not already on board */
   nutFlushDraw: boolean;
   /** flush draw that is NOT to the nuts — the classic PLO trap hand */
   dominatedFlushDraw: boolean;
   /** deck cards that improve hero to a straight or straight flush */
   straightOuts: number;
-  /** 9+ straight outs — a true wrap */
+  /** 9+ raw straight outs, which may still be dominated or dirty. */
   bigWrap: boolean;
+  /** Straight completions to the nut straight on unpaired, non-flush boards. */
+  nutStraightOuts: number;
   /** V16 plo8: one card from the NUT LOW with A-2 live in hand */
   nutLowDraw: boolean;
-  /** the draw is worth fighting for: nut flush draw, big wrap, or nut-low draw */
+  /** Nut flush/low draw, or 9+ usable nut-straight completions. */
   nutty: boolean;
 }
 
@@ -691,6 +732,7 @@ const NO_DRAW_INFO: OmahaDrawInfo = {
   nutFlushDraw: false,
   dominatedFlushDraw: false,
   straightOuts: 0,
+  nutStraightOuts: 0,
   bigWrap: false,
   nutLowDraw: false,
   nutty: false,
@@ -725,10 +767,11 @@ export function omahaDrawQuality(
       if (n !== 2) continue;
       const heroSuited = hole.filter((c) => c.suit === suit);
       if (heroSuited.length >= 2) {
-        const hasAce = heroSuited.some((c) => c.rank === 'A');
-        const aceOnBoard = board.some((c) => c.suit === suit && c.rank === 'A');
-        const hasKing = heroSuited.some((c) => c.rank === 'K');
-        if (hasAce || (aceOnBoard && hasKing)) nutFlushDraw = true;
+        // Board cards cannot be held by an opponent. In particular Q-high
+        // is the nut draw on A-K of the suit, just as K-high is on A-x.
+        const boardRanks = new Set(board.filter((c) => c.suit === suit).map((c) => c.rank));
+        const highestLive = [...RANKS].reverse().find((rank) => !boardRanks.has(rank));
+        if (heroSuited.some((c) => c.rank === highestLive)) nutFlushDraw = true;
         else dominatedFlushDraw = true;
       }
     }
@@ -736,6 +779,7 @@ export function omahaDrawQuality(
     // Straight outs by enumeration (straight family only: 5, 9, 10 — flushes
     // and boats are tracked separately and would double-count otherwise).
     let straightOuts = 0;
+    let nutStraightOuts = 0;
     const cur = scoreOmahaHiPartial(hole, board);
     if (Math.floor(cur / 0x100000) < 5) {
       const used = new Set<string>();
@@ -747,6 +791,13 @@ export function omahaDrawQuality(
         extended[extended.length - 1] = c;
         const cat = Math.floor(scoreOmahaHiPartial(hole, extended) / 0x100000);
         if (cat === 5 || cat >= 9) straightOuts++;
+        // Raw wrap size is not nut quality: a higher straight, a flush or a
+        // full house can beat the completion. Reuse the exact-two-hole
+        // straight authority; no opponent holdings or additional draws.
+        if (cat === 5 && new Set(extended.map((card) => card.rank)).size === extended.length) {
+          const status = omahaNutStatus(hole, extended);
+          if (status.straightIsNut && !status.flushPossible) nutStraightOuts++;
+        }
       }
     }
 
@@ -782,9 +833,10 @@ export function omahaDrawQuality(
       nutFlushDraw,
       dominatedFlushDraw,
       straightOuts,
+      nutStraightOuts,
       bigWrap,
       nutLowDraw,
-      nutty: nutFlushDraw || bigWrap || nutLowDraw,
+      nutty: nutFlushDraw || nutStraightOuts >= 9 || nutLowDraw,
     };
   } catch {
     return NO_DRAW_INFO;
@@ -1218,6 +1270,163 @@ export interface OppPostflopRead {
   /** V56 qualification arm: sample the declared made-hand stratum directly
    * instead of treating a bounded rejection miss as a value hand. */
   strictPressureRange?: boolean;
+  /** V62: the newest postflop street on which this opponent bet or raised. */
+  lastStage?: 'flop' | 'turn' | 'river';
+  /** V62 (Hold'em, attached by HorseLogic on the river only): this opponent
+   * wagered on the river, so their sampled hand is kept with the likelihood
+   * a river bettor holds it at that size - value always, a worse made hand
+   * by how often it is bet for value, air by a bluff share. */
+  riverPolar?: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V62 RIVER BETTOR POLARITY (2026-10-30)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The V12/V16 contact sampler asks whether a river bettor's hand CONNECTS
+// with the board; the river asks a different question - whether they would
+// BET that hand. A middle pair or a weak top pair is contact, but a river
+// bettor rarely holds one at half a pot or more: a river wager is value that
+// expects to be paid or a bluff, and the bigger the wager the more polar the
+// range. Pricing a one-pair call against "any pair" (and, on a dry board,
+// against the band's large mass of air that never bets) credited the horse
+// with equity against hands that check behind, which is the measured Hold'em
+// leak: one-pair river calls won 14-22% against prices demanding 20-40%.
+//
+// The model draws the river bettor's hand by STRATUM, not by keep factor on
+// whatever the band happens to contain: a target composition is
+// board-independent wherever the board permits it, which is how the leak
+// was measured (aggregated over every board). First the sample is declared
+// a BLUFF with the size class's bluff share (measured on this pool: one-pair
+// calls won 17-18% under a quarter pot, 21-22% at a quarter to a half, 14%
+// at a half to a full pot - a human river bettor here bluffs less than the
+// balanced 20-33%; the shares below sit a little above the measurement so a
+// credible mix is still called down). Otherwise it is a VALUE draw from one
+// of three sub-strata whose shares shift with the size: two pair or better
+// dominates a large wager, top pair / an overpair is bet for value mostly at
+// small and medium sizes, a weaker pair is a merged small bet and almost
+// never a large one. A river RAISE uses the largest class. Each stratum is
+// rejection-sampled inside the band with bounded tries; late tries accept
+// the nearest class (any pair for a value draw) so a board that cannot make
+// the target still yields a made hand, never a random one. The prior is
+// independent of the hero's hand, as the bettor cannot see it.
+export const V62_BLUFF_SHARE = [0.25, 0.22, 0.18] as const;
+/** Value sub-strata shares by size class: [two pair+, top pair/overpair, weaker pair]. */
+export const V62_VALUE_MIX = [
+  [0.35, 0.45, 0.2],
+  [0.55, 0.38, 0.07],
+  [0.75, 0.22, 0.03],
+] as const;
+
+export function v62SizeClass(read: OppPostflopRead): 0 | 1 | 2 {
+  if (read.raised) return 2;
+  const frac = read.lastFrac ?? (read.bigBet ? 1 : 0.5);
+  if (read.bigBet || frac >= 0.7) return 2;
+  if (frac >= 0.4) return 1;
+  return 0;
+}
+
+/** Made-hand class of a sampled river hand: 3 = two pair or better made by
+ * the hole cards, 2 = top pair or an overpair, 1 = a weaker pair, 0 = no
+ * pair. Exported for the test. */
+export function v62ValueClass(oppCards: Card[], board: Card[], shortDeck: boolean): 0 | 1 | 2 | 3 {
+  const cat = connectsBoard(oppCards, board, shortDeck);
+  if (cat >= 3) return 3;
+  if (cat !== 2) return 0;
+  let topRank = 0;
+  for (const c of board) topRank = Math.max(topRank, RANK_VALUES[c.rank]);
+  const pocket = oppCards.length === 2 && oppCards[0].rank === oppCards[1].rank;
+  const pairsTop = oppCards.some((c) => RANK_VALUES[c.rank] === topRank);
+  const overpair = pocket && RANK_VALUES[oppCards[0].rank] > topRank;
+  return pairsTop || overpair ? 2 : 1;
+}
+
+/** Draw the target stratum for one river-bettor sample: 0 = bluff, else the
+ * value class (1..3). `r1`/`r2` are uniform draws. Exported for the test. */
+export function v62TargetClass(sizeClass: 0 | 1 | 2, r1: number, r2: number): 0 | 1 | 2 | 3 {
+  if (r1 < V62_BLUFF_SHARE[sizeClass]) return 0;
+  const mix = V62_VALUE_MIX[sizeClass];
+  if (r2 < mix[0]) return 3;
+  if (r2 < mix[0] + mix[1]) return 2;
+  return 1;
+}
+
+/** Per-decision index of a river bettor's band: the combo-table indices of
+ * every two-card hand inside the band that is still possible given the hero's
+ * cards, the board and known dead cards, bucketed by v62ValueClass. Built
+ * once per simulateEquity call, so the stratum is drawn exactly instead of
+ * by bounded rejection (a band that holds few two-pair hands on this board
+ * still yields two pair when the target asks for it). */
+export type V62StratumIndex = [number[], number[], number[], number[]];
+
+export function buildV62StratumIndex(
+  band: [number, number] | null,
+  board: Card[],
+  excluded: readonly Card[],
+  shortDeck: boolean
+): V62StratumIndex {
+  const tbl = comboTable(shortDeck);
+  const lo = band ? lowerBound(tbl.scores, band[0]) : 0;
+  const hi = band ? lowerBound(tbl.scores, band[1] + 1e-12) : tbl.scores.length;
+  const dead = new Uint8Array(64);
+  for (const c of excluded) dead[cardId(c)] = 1;
+  for (const c of board) dead[cardId(c)] = 1;
+  const out: V62StratumIndex = [[], [], [], []];
+  for (let idx = lo; idx < hi; idx++) {
+    const a = tbl.c1[idx];
+    const b = tbl.c2[idx];
+    if (dead[cardId(a)] || dead[cardId(b)]) continue;
+    out[v62ValueClass([a, b], board, shortDeck)].push(idx);
+  }
+  return out;
+}
+
+/** Nearest-class order for a target: the exact stratum first, then the
+ * closest made class (a value target never falls to air while any pair is
+ * available). */
+export const V62_FALLBACK: ReadonlyArray<ReadonlyArray<0 | 1 | 2 | 3>> = [
+  [0, 1],
+  [1, 2, 3],
+  [2, 3, 1],
+  [3, 2, 1],
+];
+
+function placeV62Combo(
+  deck: Card[],
+  windowStart: number,
+  n: number,
+  index: V62StratumIndex,
+  target: 0 | 1 | 2 | 3,
+  shortDeck: boolean
+): boolean {
+  const tbl = comboTable(shortDeck);
+  cardAvail.fill(0);
+  for (let i = windowStart; i < n; i++) cardAvail[cardId(deck[i])] = 1;
+  for (const cls of V62_FALLBACK[target]) {
+    const list = index[cls];
+    if (list.length === 0) continue;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const idx = list[Math.floor(fastRandom() * list.length)];
+      const a = tbl.c1[idx];
+      const b = tbl.c2[idx];
+      if (!cardAvail[cardId(a)] || !cardAvail[cardId(b)]) continue;
+      for (let k = 0; k < 2; k++) {
+        const want = k === 0 ? a : b;
+        const slot = windowStart + k;
+        if (deck[slot] === want) continue;
+        for (let j = slot; j < n; j++) {
+          if (deck[j] === want) {
+            const tmp = deck[slot];
+            deck[slot] = deck[j];
+            deck[j] = tmp;
+            break;
+          }
+        }
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1566,14 +1775,20 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
   // ("pair-equivalent connection") so the acceptance logic treats a real
   // draw like real contact.
   const all = hole.concat(board);
-  const cat = Math.floor(scoreHoldem(all, all.length, shortDeck) / 0x100000);
+  const madeScore = scoreHoldem(all, all.length, shortDeck);
+  const cat = Math.floor(madeScore / 0x100000);
   // V13: the hole cards must IMPROVE on what the board already makes. This
   // scored the board's own hand as opponent contact, so on any paired board
   // (~17% of flops) every holding "connected" — 32o on K K 7 returned a pair
   // of kings — and the whole V12 board-contact conditioning became a no-op
   // exactly where reads matter most. A pocket pair stays contact by intent.
-  const boardCat =
-    board.length > 0 ? Math.floor(scoreHoldem(board, board.length, shortDeck) / 0x100000) : 0;
+  const boardScore = board.length > 0 ? scoreHoldem(board, board.length, shortDeck) : 0;
+  const boardCat = Math.floor(boardScore / 0x100000);
+  // A pocket pair is contact only while it contributes. On a complete board,
+  // an unused underpair cannot turn shared two pair, a straight or a full
+  // house into the private value the aggressor sampler is looking for.
+  // Compare the whole score: a pair improving only the kicker still counts.
+  if (isBoardOnlyRiverHand(board.length, madeScore, boardScore)) return 1;
   const isPocketPair = hole.length === 2 && hole[0].rank === hole[1].rank;
   if (cat >= 2 && (cat > boardCat || isPocketPair)) {
     // A pocket pair UNDER every board card is a hidden non-connector — but it
@@ -2375,7 +2590,8 @@ export function simulateEquity(
   outcomeOut?: HorseEquityOutcomeCollector,
   // A hero's known discard stays out of every future board and opponent hand.
   // Callers may provide only cards already known to that decision's owner.
-  knownDeadCards: readonly Card[] = []
+  knownDeadCards: readonly Card[] = [],
+  rangeUse?: HorseRangeSampleUse
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -2437,7 +2653,25 @@ export function simulateEquity(
   // hold 3 preflop but 2 after the discard — opponents mirror that).
   const oppHole = vi.isOmaha ? vi.holeCount : holeCards.length;
   const cardsNeeded = boardNeeded + numOpponents * oppHole;
-  if (deck.length < cardsNeeded || holeCards.length < 2) return 0.5;
+  if (deck.length < cardsNeeded || holeCards.length < 2) {
+    if (rangeUse) rangeUse.invalidDeck = true;
+    return 0.5;
+  }
+  // V62: one exact stratum index per river bettor for this call.
+  let v62Indexes: Array<V62StratumIndex | null> | null = null;
+  if (oppReads && !vi.isOmaha && boardCards.length === 5 && oppHole === 2) {
+    for (let o = 0; o < numOpponents; o++) {
+      const read = oppReads[o];
+      if (!read || read.riverPolar !== true) continue;
+      if (!v62Indexes) v62Indexes = new Array<V62StratumIndex | null>(numOpponents).fill(null);
+      v62Indexes[o] = buildV62StratumIndex(
+        oppBands ? (oppBands[o] ?? null) : null,
+        boardCards,
+        [...holeCards, ...knownDeadCards],
+        vi.isShortDeck
+      );
+    }
+  }
 
   let score = 0; // pot share accumulated across iterations
   const n = deck.length;
@@ -2554,6 +2788,7 @@ export function simulateEquity(
     }
 
     for (let o = 0; o < numOpponents; o++) {
+      if (rangeUse) rangeUse.reachedMask |= 1 << o;
       const windowStart = dealIdx;
       for (let c = 0; c < oppHole; c++) oppCards[c] = deck[dealIdx++];
 
@@ -2564,6 +2799,7 @@ export function simulateEquity(
       // stay tight instead of degrading toward random.
       const band = oppBands ? oppBands[o] : null;
       if (band) {
+        if (rangeUse) rangeUse.bandMask |= 1 << o;
         const scoreOf = (cards: Card[]): number =>
           vi.isOmaha
             ? omahaPreflopScore(cards, vi.isHiLo)
@@ -2679,7 +2915,16 @@ export function simulateEquity(
         // standing in for made hands. Tight bands (a 3-bet range) keep the
         // in-band sampler on every redraw so the V13 collapse cannot recur.
         const tier40 = read.streets != null ? omahaAggressorTier(read) : 0;
+        if (rangeUse && read.streets != null) {
+          rangeUse.tierMask |= 1 << o;
+          rangeUse.tiers |= tier40 << (2 * o);
+          // Mirror the actual short-circuit accesses inside omahaAggressorTier.
+          // A pot-sized fraction can establish the tier without reading bigBet.
+          if (tier40 > 0 && (read.lastFrac == null || !(read.lastFrac >= 0.7)))
+            rangeUse.bigBetMask |= 1 << o;
+        }
         if (tier40 >= 1 && omahaTierShape != null) {
+          if (rangeUse) rangeUse.conditionedMask |= 1 << o;
           const req = omahaTierRequirement(tier40, boardCards.length, omahaTierShape);
           if (read.strictPressureRange === true && !vi.isHiLo) {
             if (
@@ -2721,6 +2966,7 @@ export function simulateEquity(
             }
           }
         } else if (bandWidth >= 0.45 && read.aggrW > 0) {
+          if (rangeUse) rangeUse.conditionedMask |= 1 << o;
           const pConnect = Math.min(0.85, 0.4 + read.aggrW * 2.0);
           for (let t = 0; t < 2; t++) {
             if (omahaConnectsBoard(oppCards, boardCards)) break;
@@ -2773,6 +3019,10 @@ export function simulateEquity(
           }
         };
         if (read.aggrW > 0) {
+          if (rangeUse) {
+            rangeUse.conditionedMask |= 1 << o;
+            rangeUse.bigBetMask |= 1 << o;
+          }
           // V16: a BIG bet is sampled toward REAL strength (two pair+), not
           // just any contact — an overbettor's range is not middle pair.
           const wantCat = read.bigBet ? 3 : 2;
@@ -2784,9 +3034,25 @@ export function simulateEquity(
             redraw();
           }
         } else if (read.checked >= 1) {
+          if (rangeUse) rangeUse.conditionedMask |= 1 << o;
           const cat = connectsBoard(oppCards, boardCards, vi.isShortDeck);
           if (cat >= 4 && fastRandom() < 0.55 + Math.min(0.25, read.checked * 0.12)) {
             redraw();
+          }
+        }
+        // V62: a river bettor's hand is drawn from a target stratum - bluff
+        // by the size class's bluff share, otherwise two pair+, top pair or
+        // a weaker pair by the size class's value mix (V62_BLUFF_SHARE /
+        // V62_VALUE_MIX) - placed exactly from the per-call band index. A
+        // collision with cards already dealt keeps the contact-sampled hand.
+        if (read.riverPolar === true && boardCards.length === 5 && oppHole === 2) {
+          const index62 = v62Indexes ? v62Indexes[o] : null;
+          if (index62) {
+            const target62 = v62TargetClass(v62SizeClass(read), fastRandom(), fastRandom());
+            if (placeV62Combo(deck, windowStart, n, index62, target62, vi.isShortDeck)) {
+              oppCards[0] = deck[windowStart];
+              oppCards[1] = deck[windowStart + 1];
+            }
           }
         }
       }
@@ -2879,15 +3145,21 @@ export function simulateEquity(
         const d = Math.abs(eq - t);
         if (d < minDist) minDist = d;
       }
-      if (minDist > 3.5 * se) return finalizeSplit(splitOut, done, eq);
+      if (minDist > 3.5 * se) return finalizeSplit(splitOut, done, eq, rangeUse);
     }
   }
 
-  return finalizeSplit(splitOut, done, score / done);
+  return finalizeSplit(splitOut, done, score / done, rangeUse);
 }
 
 /** Normalize a HiLoSplit accumulator by the iterations actually run. */
-function finalizeSplit(splitOut: HiLoSplit | undefined, done: number, eq: number): number {
+function finalizeSplit(
+  splitOut: HiLoSplit | undefined,
+  done: number,
+  eq: number,
+  rangeUse?: HorseRangeSampleUse
+): number {
+  if (rangeUse) rangeUse.samples = done;
   if (splitOut && done > 0) {
     splitOut.hi /= done;
     splitOut.lo /= done;
@@ -3505,4 +3777,114 @@ export function omahaRiverBeatProbability(
     if (hit) hits++;
   }
   return hits / samples;
+}
+
+/**
+ * V54 RIVER BLUFF (2026-10-24): what hero's PUBLIC river range is made of
+ * against the opponent's public range on this exact board. Each sampled
+ * hero combo is scored against `OPP_PER_HERO` sampled opponent combos; a combo
+ * winning at least `valueBar` of them is value, one winning at most `airBar`
+ * is air. The ratio of value to air is what caps how often a river bluff may
+ * fire at a given size (HorseLogic V54). Hero's actual holding and every
+ * private card are deliberately absent.
+ *
+ * River only (no runout), high-only games only (Hold'em and PLO4/5/6). A
+ * private deterministic stream keyed by the inputs is saved and restored
+ * around the sampling, so the estimate is reproducible and consumes no
+ * decision RNG. Returns null when the bands cannot be sampled. A bounded
+ * approximation, not a solver range.
+ */
+export interface RiverRangeComposition {
+  valueShare: number;
+  airShare: number;
+  samples: number;
+}
+const riverCompositionCache = new Map<string, RiverRangeComposition>();
+export function estimateRiverRangeComposition(
+  board: Card[],
+  heroBand: [number, number],
+  oppBand: [number, number],
+  vi: VariantInfo,
+  valueBar = 0.65,
+  airBar = 0.2
+): RiverRangeComposition | null {
+  if (
+    !Number.isFinite(valueBar) ||
+    !Number.isFinite(airBar) ||
+    airBar < 0 ||
+    valueBar > 1 ||
+    airBar >= valueBar ||
+    (vi.isOmaha && ![4, 5, 6].includes(vi.holeCount)) ||
+    board.length !== 5 ||
+    new Set(board.map(cardKey)).size !== 5 ||
+    board.some((c) => !FULL_DECK.some((d) => cardKey(c) === cardKey(d))) ||
+    (!vi.isOmaha && vi.holeCount !== 2) ||
+    vi.isHiLo ||
+    vi.isFixedLimit ||
+    vi.isShortDeck
+  )
+    return null;
+  if (
+    [heroBand, oppBand].some(
+      (b) => !b.every(Number.isFinite) || b[0] < 0 || b[1] > 1 || b[0] >= b[1]
+    )
+  )
+    return null;
+  const key = JSON.stringify([
+    vi.holeCount,
+    board.map(cardKey).sort(),
+    heroBand,
+    oppBand,
+    valueBar,
+    airBar,
+  ]);
+  const cached = riverCompositionCache.get(key);
+  if (cached) return { ...cached };
+  const HERO_SAMPLES = 96;
+  const OPP_PER_HERO = 8;
+  const known = new Set(board.map(cardKey));
+  const available = FULL_DECK.filter((c) => !known.has(cardKey(c)));
+  const h = vi.holeCount;
+  const n = available.length;
+  const score = (hole: Card[]) =>
+    vi.isOmaha ? scoreOmahaHi(hole, board) : scoreHoldem([...hole, ...board], 7, false);
+  const place = (deck: Card[], start: number, band: [number, number]) =>
+    vi.isOmaha
+      ? placeOmahaBandCombo(deck, start, n, band, h, false)
+      : placeBandCombo(deck, start, n, band, false);
+  let seed = 2166136261;
+  for (let i = 0; i < key.length; i++) seed = Math.imul(seed ^ key.charCodeAt(i), 16777619);
+  const saved = saveFastRandom();
+  let total = 0;
+  let value = 0;
+  let air = 0;
+  seedFastRandom(seed ^ 0x54);
+  try {
+    for (let sample = 0; sample < HERO_SAMPLES; sample++) {
+      const deck = available.slice();
+      if (!place(deck, 0, heroBand)) continue;
+      const heroScore = score(deck.slice(0, h));
+      let faced = 0;
+      let won = 0;
+      for (let j = 0; j < OPP_PER_HERO; j++) {
+        if (!place(deck, h, oppBand)) continue;
+        const os = score(deck.slice(h, 2 * h));
+        faced++;
+        won += heroScore > os ? 1 : heroScore === os ? 0.5 : 0;
+      }
+      if (faced < OPP_PER_HERO / 2) continue;
+      const share = won / faced;
+      total++;
+      if (share >= valueBar) value++;
+      else if (share <= airBar) air++;
+    }
+  } finally {
+    restoreFastRandom(saved);
+  }
+  if (total < HERO_SAMPLES / 2) return null;
+  const read = { valueShare: value / total, airShare: air / total, samples: total };
+  riverCompositionCache.set(key, read);
+  while (riverCompositionCache.size > 512)
+    riverCompositionCache.delete(riverCompositionCache.keys().next().value!);
+  return { ...read };
 }

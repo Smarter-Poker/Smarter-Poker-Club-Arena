@@ -14,7 +14,7 @@
  * This file is now presentation only: states, and a list.
  */
 import type { TournamentTabProps } from './types';
-import TournamentLobbyCard from '../TournamentLobbyCard';
+import SatelliteCard from './SatelliteCard';
 import { useSatellites } from './useSatellites';
 import './SatellitesTab.css';
 
@@ -57,8 +57,9 @@ export default function SatellitesTab({ tournament, currentUserId }: TournamentT
   return (
     <div className="tab-pane-content sat-list">
       {cards.map((sat) => (
-        <TournamentLobbyCard
+        <SatelliteCard
           key={sat.id}
+          onRegistered={retry}
           tournament={sat}
           /* `registration` is null when the batch query failed. Passing null
              makes the card fall back to its own lookup rather than render a

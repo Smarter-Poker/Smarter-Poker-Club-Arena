@@ -1,3 +1,4 @@
+import { formatAllInEquity } from '../../lib/allInEquityDisplay';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  HAND DETAIL VIEW — the one rundown, rendered once
@@ -89,7 +90,9 @@ function AllInFacts({
 }) {
   const actualMoney = moneyForHand({ arenaAsset });
   if (!facts.was_all_in || facts.all_in_equity === null) return null;
-  const pct = Math.round(facts.all_in_equity * 1000) / 10;
+  // Legacy persisted facts have no exactness provenance; a stored zero may
+  // have been rounded or sampled. Never present that as a proven dead hand.
+  const pct = formatAllInEquity(facts.all_in_equity * 100, false);
   const luck = facts.ev_returned === null ? null : money(facts.net - facts.ev_net);
   const above = facts.net - facts.ev_net;
   return (
@@ -98,10 +101,12 @@ function AllInFacts({
         All In {STREET_WORD[facts.all_in_street || ''] || ''}
       </header>
       <div className="hdv__allin-grid">
-        <div className="hdv__allin-cell">
-          <span className="hdv__allin-label">Your Equity</span>
-          <span className="hdv__allin-value">{pct}%</span>
-        </div>
+        {pct !== null && (
+          <div className="hdv__allin-cell">
+            <span className="hdv__allin-label">Your Equity</span>
+            <span className="hdv__allin-value">{pct}</span>
+          </div>
+        )}
         {facts.all_in_at_risk !== null && (
           <div className="hdv__allin-cell">
             <span className="hdv__allin-label">At Risk</span>
@@ -145,8 +150,13 @@ function AllInFacts({
 
 /**
  * Per-street equity, priced only where every contender's cards are known.
- * Exact where the runout can be enumerated; sampled preflop and marked so.
+ * Exact where the runout can be enumerated; sampled preflop.
  */
+function StreetEquity({ percent, exact }: { percent: number; exact: boolean }) {
+  const label = formatAllInEquity(percent, exact);
+  return label === null ? null : <span className="hdv__fact-eq">{label}</span>;
+}
+
 function useStreetEquities(model: ReplayModel): Map<string, EquityResult> {
   return useMemo(() => {
     const out = new Map<string, EquityResult>();
@@ -155,6 +165,9 @@ function useStreetEquities(model: ReplayModel): Map<string, EquityResult> {
     for (const street of model.streets) {
       if (street.key === 'showdown' || street.key === 'pineapple_discard') continue;
       if (street.contenders.length < 2) continue;
+      // The replay solver prices one board only. Extra exposed runs cannot
+      // be presented as an exact percentage for the whole multiboard hand.
+      if (street.extraBoards.some((board) => board.length > 0)) continue;
       const players: Array<{
         userId: string;
         hole: NonNullable<ReplayModel['players'][number]['hole']>;
@@ -487,8 +500,7 @@ export function HandDetailView({
 
           {/* PHASE 2: what each known hand had made on this street, and - when
               every player still in had known cards - each one's chance to win
-              from here. Exact where the runout was enumerated; a sampled
-              preflop figure carries a tilde. */}
+              from here. Unavailable percentages are omitted. */}
           {street.key !== 'showdown' &&
             (street.madeHands.length > 0 || equities.has(street.key)) && (
               <div className="hdv__street-facts">
@@ -502,10 +514,10 @@ export function HandDetailView({
                       <span className="hdv__fact-name">{nameOf(m.userId)}</span>
                       <span className="hdv__fact-hand">{m.name}</span>
                       {eq && (
-                        <span className="hdv__fact-eq">
-                          {equities.get(street.key)?.exact ? '' : '~'}
-                          {eq.pct}%
-                        </span>
+                        <StreetEquity
+                          percent={eq.pct}
+                          exact={equities.get(street.key)?.exact === true}
+                        />
                       )}
                     </span>
                   );
@@ -517,10 +529,10 @@ export function HandDetailView({
                       className={`hdv__fact${isYou(e.userId, nameOf(e.userId)) ? ' is-you' : ''}`}
                     >
                       <span className="hdv__fact-name">{nameOf(e.userId)}</span>
-                      <span className="hdv__fact-eq">
-                        {equities.get(street.key)?.exact ? '' : '~'}
-                        {e.pct}%
-                      </span>
+                      <StreetEquity
+                        percent={e.pct}
+                        exact={equities.get(street.key)?.exact === true}
+                      />
                     </span>
                   ))}
                 {equities.get(street.key)?.highOnly && (

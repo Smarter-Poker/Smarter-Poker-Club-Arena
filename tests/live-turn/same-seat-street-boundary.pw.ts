@@ -315,3 +315,39 @@ test('the action bar does not come back while the engine is between turns', asyn
     engine.dispose();
   }
 });
+
+test('a missing decision refreshes the table without sending the fold or reloading', async ({
+  page,
+}) => {
+  const rec = recording();
+  const engine = await openTable(page, rec);
+  const bar = felt(page);
+  try {
+    await expect(bar.call).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(() => engine.sent.some((frame) => frame.detail.startsWith('turn_change seat 2')))
+      .toBe(true);
+    engine.publishDecisionUnavailable();
+    // Wait for the missing-context snapshot to reach the page before tapping.
+    await page.waitForTimeout(300);
+    const before = engine.resyncRequests;
+    await bar.fold.click();
+    await expect.poll(() => engine.resyncRequests).toBe(before + 1);
+    await expect(
+      page.getByText('Your Action Was Not Sent. Please Review The Table And Try Again.', {
+        exact: true,
+      })
+    ).toBeVisible();
+    expect(engine.accepted).toEqual([]);
+    expect(engine.problems).toEqual([]);
+    await expect(bar.call).toBeVisible();
+    // The refreshed decision belongs to the same visible hand; only a NEW
+    // player gesture submits it. The rejected fold was never replayed.
+    await bar.call.click();
+    await expect.poll(() => engine.accepted.length).toBe(1);
+    expect(engine.accepted[0].action).toBe('call');
+    expect(engine.problems).toEqual([]);
+  } finally {
+    engine.dispose();
+  }
+});

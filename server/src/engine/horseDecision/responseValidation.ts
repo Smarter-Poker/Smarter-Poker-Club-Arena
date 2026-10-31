@@ -1,3 +1,5 @@
+import { HORSE_FEATURE_FLAGS } from '../HorseFeatureAuthority.js';
+import { CATASTROPHE_GUARD_VERSION } from '../HorseTournamentCatastropheGuard.js';
 import { correctiveKernelReceiptIsValid } from '../../services/horseCorrectiveReview/kernelReceipt.js';
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
@@ -394,6 +396,159 @@ export function horsePhase7EvidenceMismatch(
  * authority receipt for the running continuation, and the final action equal
  * to the ledger's candidate. Acceptance-time fields stay unset in the worker.
  */
+/** Distinct guard family; never admits a continuation receipt or unqualified candidate. */
+export function horsePhase8GuardLedgerIsValid(value: unknown, decision: RecordValue): boolean {
+  if (value === undefined) return true;
+  if (
+    !record(value) ||
+    !exact(value, [
+      'version',
+      'policyFamily',
+      'workKind',
+      'mode',
+      'eligible',
+      'fired',
+      'completed',
+      'changed',
+      'applied',
+      'selection',
+      'authority',
+      'authorityVerdict',
+      'reason',
+      'reasons',
+      'baselineAction',
+      'baselineAmount',
+      'candidateAction',
+      'candidateAmount',
+      'objective',
+      'confidence',
+      'futureGame',
+      'baselineFutureGame',
+      'guardPolicy',
+      'guardWork',
+      'baselineCriticalCommitment',
+      'candidateCriticalCommitment',
+      'before',
+      'after',
+      'latencyMs',
+      'simulationMs',
+      'policyMs',
+      'work',
+      'executionStatus',
+      'executedAction',
+      'executedAmount',
+      ...('selectionRefusal' in value ? ['selectionRefusal'] : []),
+    ])
+  )
+    return false;
+  if (
+    !record(value.guardPolicy) ||
+    !exact(value.guardPolicy, ['version', 'maxCandidates', 'deepStackBB', 'deepCommitFraction']) ||
+    !record(value.guardWork) ||
+    !exact(value.guardWork, ['assessmentCompleted', 'candidateCount']) ||
+    !record(value.work) ||
+    !exact(value.work, [
+      'attempts',
+      'candidateCount',
+      'candidatesCompleted',
+      'outcomeSamples',
+      'samplesVisited',
+      'rollouts',
+      'rolloutCacheHits',
+      'estimates',
+      'estimateCacheHits',
+      'icmMethod',
+      'levelBounds',
+      'budgetStop',
+    ]) ||
+    ![
+      'not_postflop',
+      'unsupported_variant',
+      'context_incomplete',
+      'multiple_boards',
+      'private_state_rejected',
+      'utility_unavailable',
+      'phase7_choice_retained',
+      'candidate_budget',
+      'baseline_not_legal',
+      'baseline_not_modeled',
+      'guard_baseline_retained',
+      'guard_safe_candidate_unavailable',
+      'guard_candidate_changed',
+    ].includes(String(value.reason)) ||
+    !Array.isArray(value.reasons) ||
+    value.reasons.some((r) => r !== 'deep_one_pair_commitment') ||
+    typeof value.baselineCriticalCommitment !== 'boolean' ||
+    typeof value.candidateCriticalCommitment !== 'boolean' ||
+    !ACTIONS.includes(value.baselineAction as never) ||
+    !ACTIONS.includes(value.candidateAction as never) ||
+    !(value.baselineAmount === null || nonnegative(value.baselineAmount)) ||
+    !(value.candidateAmount === null || nonnegative(value.candidateAmount))
+  )
+    return false;
+  if (
+    !record(value) ||
+    value.version !== CATASTROPHE_GUARD_VERSION ||
+    value.policyFamily !== 'catastrophe_guard_v1' ||
+    value.workKind !== 'phase7_candidate_guard' ||
+    !['shadow', 'candidate'].includes(String(value.mode)) ||
+    typeof value.eligible !== 'boolean' ||
+    value.fired !== value.eligible ||
+    value.completed !== value.eligible ||
+    typeof value.changed !== 'boolean' ||
+    typeof value.applied !== 'boolean' ||
+    value.authorityVerdict !== null ||
+    value.futureGame !== null ||
+    value.baselineFutureGame !== null ||
+    value.simulationMs !== 0 ||
+    !record(value.guardPolicy) ||
+    value.guardPolicy.version !== CATASTROPHE_GUARD_VERSION ||
+    value.guardPolicy.maxCandidates !== 16 ||
+    value.guardPolicy.deepStackBB !== PHASE8_POLICY.deepStackBB ||
+    value.guardPolicy.deepCommitFraction !== PHASE8_POLICY.deepCommitFraction ||
+    !record(value.guardWork) ||
+    value.guardWork.assessmentCompleted !== value.completed ||
+    !Number.isSafeInteger(value.guardWork.candidateCount) ||
+    Number(value.guardWork.candidateCount) < 0 ||
+    Number(value.guardWork.candidateCount) > 16 ||
+    (value.completed === true && Number(value.guardWork.candidateCount) < 1) ||
+    !record(value.work) ||
+    Object.entries(value.work).some(([key, v]) =>
+      key === 'icmMethod' ? v !== 'unavailable' : key === 'budgetStop' ? v !== 'none' : v !== 0
+    ) ||
+    !Array.isArray(value.before) ||
+    value.before.length > 16 ||
+    !Array.isArray(value.after) ||
+    value.after.length > 16 ||
+    !nonnegative(value.latencyMs) ||
+    !nonnegative(value.policyMs) ||
+    !['none', 'shadow_change', 'selected'].includes(String(value.selection)) ||
+    (value.selectionRefusal !== undefined &&
+      !['downstream_owner', 'illegal_candidate'].includes(String(value.selectionRefusal)))
+  )
+    return false;
+  const authority = value.authority;
+  if (
+    authority !== null &&
+    (!horseAuthorityReceiptIsWellFormed(authority) ||
+      authority.continuationVersion !== CATASTROPHE_GUARD_VERSION)
+  )
+    return false;
+  if (value.mode === 'candidate' && (!record(authority) || authority.state !== 'usable'))
+    return false;
+  if (!value.applied) return value.selection !== 'selected';
+  return (
+    value.mode === 'candidate' &&
+    value.changed === true &&
+    value.completed === true &&
+    value.selection === 'selected' &&
+    ['check', 'fold'].includes(String(value.candidateAction)) &&
+    value.candidateAmount === null &&
+    decision.action === value.candidateAction &&
+    (decision.amount ?? null) === null
+  );
+}
+
 export function horsePhase8LedgerIsValid(value: unknown, decision: RecordValue): boolean {
   if (value === undefined) return true;
   if (!record(value)) return false;
@@ -621,6 +776,12 @@ function packSelectionIsValid(
 
 /** Phase 7 owns the action Phase 8 received; an applied candidate replaces it. */
 function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'amount'> {
+  const guard = value.tournamentCatastropheGuard;
+  if (record(guard) && guard.changed === true)
+    return {
+      action: guard.baselineAction as HorseDecision['action'],
+      amount: (guard.baselineAmount as number | null) ?? undefined,
+    };
   const phase8 = value.tournamentPostflop;
   if (record(phase8) && phase8.applied === true)
     return {
@@ -634,6 +795,36 @@ function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'am
 export interface HorseDecisionReceiptContext {
   player: SeatPlayer;
   gameState: HorseGameStateV2;
+}
+
+/** V58/V59 may cap a PLO6 river raise/jam at the call. When the original
+ * request is available, bind that de-escalation to its single board, legal
+ * call menu and exact additional-chip price. This does not re-run or relax
+ * the owner's equity rule, and never admits a new wager or another game. */
+function plo6RiverCallIsPriced(
+  selected: HorsePolicyAction,
+  context?: HorseDecisionReceiptContext
+): boolean {
+  if (selected.amount === null || selected.amount <= 0) return false;
+  // Retained context-free receipts cannot establish input provenance; they
+  // still have to carry the priced call and the PLO6 transition below.
+  if (context === undefined) return true;
+  const { player, gameState: gs } = context;
+  const toCall = Number.isFinite(gs.toCall)
+    ? Math.max(0, gs.toCall as number)
+    : Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
+  return (
+    String(gs.gameVariant).toLowerCase() === 'plo6' &&
+    gs.stage === 'river' &&
+    gs.communityCards?.length === 5 &&
+    (gs.boardCount ?? 1) === 1 &&
+    player.cards?.length === 6 &&
+    gs.legalActions?.includes('call') === true &&
+    Number.isFinite(player.stack) &&
+    toCall > 0.005 &&
+    toCall < player.stack - 0.005 &&
+    selected.amount === Math.round(toCall * 100) / 100
+  );
 }
 
 function policyGraphIsValid(
@@ -672,7 +863,7 @@ function policyGraphIsValid(
       return false;
     const changed = previous !== null && !same(previous, transition.after);
     if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
-    // Wager rules only add aggression, with one exception: two owner rules of
+    // Wager rules add aggression or apply a named owner discipline. Two rules of
     // 2026-10-25 turn a call, raise or jam into a fold. The PLO4/5/6
     // paired-board fold (HorsePloPairedBoardFold) and the no-limit hold'em
     // dominated-hand fold to a big 3-bet (HorseHoldemPremiumAggression). A
@@ -693,11 +884,19 @@ function policyGraphIsValid(
       previous !== null &&
       previous.action === 'fold' &&
       (context === undefined || shortAllInSpot(context.player, context.gameState) !== null);
+    const plo6RiverRaiseToCall =
+      transition.node === 'wager_rules' &&
+      variant === 'plo6' &&
+      transition.after.action === 'call' &&
+      previous !== null &&
+      ['raise', 'all_in'].includes(previous.action) &&
+      plo6RiverCallIsPriced(transition.after, context);
     if (
       transition.node === 'wager_rules' &&
       changed &&
       !pairedBoardFold &&
       !shortAllInCall &&
+      !plo6RiverRaiseToCall &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;
@@ -713,11 +912,12 @@ function policyGraphIsValid(
   );
 }
 
-export function horseDecisionReceiptIsValid(
+/** Finite refusal names only: no player identity, cards or raw receipt data. */
+export function horseDecisionReceiptRefusal(
   value: unknown,
   expectedVariant?: string,
   context?: HorseDecisionReceiptContext
-): value is HorseDecision {
+): string | null {
   if (
     !record(value) ||
     !ACTIONS.includes(value.action as (typeof ACTIONS)[number]) ||
@@ -725,7 +925,7 @@ export function horseDecisionReceiptIsValid(
     (value.amount !== undefined && !nonnegative(value.amount)) ||
     (value.policyFallback !== undefined && value.policyFallback !== 'brain_exception')
   )
-    return false;
+    return 'decision_shape';
   if (
     value.policyFallback === 'brain_exception' &&
     (!['check', 'fold'].includes(value.action as string) ||
@@ -736,9 +936,29 @@ export function horseDecisionReceiptIsValid(
       value.tournamentUtility !== undefined ||
       value.tournamentUtilityRefusal !== undefined)
   )
-    return false;
-  if (!policyGraphIsValid(value, expectedVariant, context)) return false;
-  if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision)) return false;
+    return 'exception_fallback';
+  if (value.featureAuthority !== undefined) {
+    const f = value.featureAuthority;
+    if (
+      !record(f) ||
+      !exact(f, ['version', 'authority', 'compositionDigest', 'flags', 'domain']) ||
+      f.version !== 'horse-feature-decision-v1' ||
+      !horseAuthorityReceiptIsWellFormed(f.authority) ||
+      f.authority.state !== 'usable' ||
+      typeof f.compositionDigest !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(f.compositionDigest) ||
+      !record(f.flags) ||
+      !exact(f.flags, HORSE_FEATURE_FLAGS) ||
+      !Object.values(f.flags).every((v) => typeof v === 'boolean') ||
+      !Object.values(f.flags).some(Boolean) ||
+      !record(f.domain) ||
+      f.domain.variant !== expectedVariant
+    )
+      return 'feature_authority';
+  }
+  if (!policyGraphIsValid(value, expectedVariant, context)) return 'policy_graph';
+  if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision))
+    return 'corrective_kernel';
   // The final nuts rule can supersede an owner without rewriting what that
   // owner actually selected. Bind its receipt to the graph's verified input
   // to the final rule; the graph itself still binds the executed output.
@@ -756,48 +976,73 @@ export function horseDecisionReceiptIsValid(
       !/^[a-z0-9_]{1,64}$/.test(value.tournamentUtilityRefusal) ||
       value.tournamentUtility !== undefined)
   )
-    return false;
+    return 'phase7_refusal';
   if (
     value.tournamentUtility !== undefined &&
     !horseTournamentUtilityReceiptIsValid(value.tournamentUtility, phase7Selection(selected))
   )
-    return false;
-  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, selected)) return false;
+    return 'phase7_utility';
+  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, selected)) return 'phase8_ledger';
+  if (
+    record(value.tournamentCatastropheGuard) &&
+    value.tournamentCatastropheGuard.eligible === true &&
+    context &&
+    !(
+      context.gameState.gameMode === 'tournament' &&
+      context.gameState.gameVariant === 'nlh' &&
+      ['flop', 'turn', 'river'].includes(context.gameState.stage) &&
+      (context.gameState.boardCount ?? 1) === 1 &&
+      !context.gameState.communityCards2?.length &&
+      !context.gameState.communityCards3?.length
+    )
+  )
+    return 'phase8_guard_domain';
+  if (!horsePhase8GuardLedgerIsValid(value.tournamentCatastropheGuard, selected))
+    return 'phase8_guard_ledger';
   if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
-    return false;
-  if (!horsePhase10SelectionIsValid(value.plo4Policy, selected)) return false;
+    return 'phase10_binding';
+  if (!horsePhase10SelectionIsValid(value.plo4Policy, selected)) return 'phase10_selection';
   // P11.1: a Phase 11 receipt's input binding is shape-checked at the boundary.
   if (
     value.omahaVariantPolicy !== undefined &&
     !omahaVariantReceiptBindingIsValid(value.omahaVariantPolicy)
   )
-    return false;
-  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, selected)) return false;
+    return 'phase11_binding';
+  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, selected)) return 'phase11_selection';
   // P12.1: a Phase 12 receipt's bindings (inputs, and the P12-B net-action
   // economics) are re-checked at the boundary.
   if (
     value.remainingVariantPolicy !== undefined &&
     !remainingVariantReceiptBindingIsValid(value.remainingVariantPolicy)
   )
-    return false;
-  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, selected)) return false;
+    return 'phase12_binding';
+  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, selected))
+    return 'phase12_selection';
   // P13.1: a Phase 13 receipt's input binding, pack versions and selection
   // refusal are re-checked at the boundary.
   if (value.jointPolicy !== undefined && !jointReceiptBindingIsValid(value.jointPolicy))
-    return false;
+    return 'phase13_binding';
   // P13.3: and its selection, by the Phase 10/11/12 law.
-  if (!horsePhase13SelectionIsValid(value.jointPolicy, selected)) return false;
+  if (!horsePhase13SelectionIsValid(value.jointPolicy, selected)) return 'phase13_selection';
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)
   )
-    return false;
-  if (!horsePolicyOwnershipMatches(value as unknown as HorseDecision)) return false;
+    return 'phase6_attribution';
+  if (!horsePolicyOwnershipMatches(value as unknown as HorseDecision)) return 'policy_ownership';
   if (
     value.policyOwnership !== undefined &&
     expectedVariant !== undefined &&
     (value.policyOwnership as HorseDecision['policyOwnership'])?.variant !== expectedVariant
   )
-    return false;
-  return true;
+    return 'owner_variant';
+  return null;
+}
+
+export function horseDecisionReceiptIsValid(
+  value: unknown,
+  expectedVariant?: string,
+  context?: HorseDecisionReceiptContext
+): value is HorseDecision {
+  return horseDecisionReceiptRefusal(value, expectedVariant, context) === null;
 }

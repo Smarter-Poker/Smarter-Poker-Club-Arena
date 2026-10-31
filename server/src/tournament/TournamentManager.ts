@@ -39,6 +39,7 @@ import { type BalancerTable, type MoveInstruction } from '../engine/TableBalance
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
@@ -176,10 +177,16 @@ export class TournamentManager extends TournamentManagerEliminations {
   private mixedRecoveryOperation: Promise<Readonly<Record<string, unknown>>> | null = null;
 
   protected override eliminationMutationAllowed(): boolean {
+    if (this.balancePreparationOpen && isMaintenanceFrozen()) return false;
     if (super.eliminationMutationAllowed()) return true;
     // One discovered break's visit finishes once started; stop and abort
     // still end it (see visitTournamentBreakPage).
-    if (this.tournamentBreakVisitOpen && this.running && !this.eliminationSweepSignal?.aborted)
+    if (
+      (this.tournamentBreakVisitOpen || this.balancePreparationOpen) &&
+      this.running &&
+      !this.eliminationSweepSignal?.aborted &&
+      (!this.balancePreparationOpen || !isMaintenanceFrozen())
+    )
       return true;
     if (!this.mixedRecovery || !this.isF06RecoveryOwner() || this.mixedRecovery.completion)
       return false;
@@ -2357,9 +2364,10 @@ export class TournamentManager extends TournamentManagerEliminations {
       const destination = destinations.find(
         (table) => table.tableId === member.destination_table_id
       );
-      const occupied = destination?.players.some(
-        (player) => player.seat === member.destination_seat_number
-      );
+      const occupied =
+        destination?.players.some((player) => player.seat === member.destination_seat_number) ||
+        (member.destination_seat_number !== null &&
+          destination?.reservedSeats?.includes(member.destination_seat_number));
       if (
         destination &&
         !occupied &&
@@ -2596,10 +2604,10 @@ export class TournamentManager extends TournamentManagerEliminations {
    * until a fifth migration taught the proof one more arrival shape.
    *
    * The proof is right to refuse what it cannot prove, and it stays strict.
-   * What was wrong is that the table waited on it. A park that has not begun
-   * and whose movement admission has been refused for
-   * UNPROVEN_MOVEMENT_PARK_GRACE_MS (long enough for an unrecorded bust, the
-   * commonest transient refusal, to be recorded) is withdrawn through
+   * What was wrong is that the table waited on it. A park that has not begun,
+   * has existed for UNPROVEN_MOVEMENT_PARK_GRACE_MS, and whose movement
+   * admission still refuses (allowing an unrecorded bust, the commonest
+   * transient refusal, time to be recorded) is withdrawn through
    * fn_f06_withdraw_unproven_movement_park. The database re-asks the proof,
    * withdraws only while it still refuses with a named F06_MOVEMENT_*
    * refusal, proves the park never began, writes that refusal into the
@@ -2629,8 +2637,19 @@ export class TournamentManager extends TournamentManagerEliminations {
       return false;
     }
     const now = Date.now();
-    const since = this.unprovenMovementParkSince.get(state.break_id);
-    if (since === undefined) this.unprovenMovementParkSince.set(state.break_id, now);
+    // A successor must not restart this original park's grace. The database's
+    // immutable creation time survives adoption; the withdrawal door still
+    // re-proves the refusal and exact custody before changing anything.
+    let since: number | undefined;
+    if (state.park_created_at !== undefined) {
+      since = Date.parse(state.park_created_at);
+      if (!Number.isFinite(since) || since > now) return false;
+    } else {
+      // Compatibility with the pre-timestamp RPC contract: retain its local
+      // first-refusal grace until the database supplies durable age evidence.
+      since = this.unprovenMovementParkSince.get(state.break_id);
+      if (since === undefined) this.unprovenMovementParkSince.set(state.break_id, now);
+    }
     if (since === undefined || now - since < TournamentManager.UNPROVEN_MOVEMENT_PARK_GRACE_MS)
       return false;
     if (!(await this.withdrawUnbegunPark(state, 'unproven_movement'))) return false;
@@ -2785,6 +2804,85 @@ export class TournamentManager extends TournamentManagerEliminations {
     return null;
   }
 
+  /** Capture every engine-holding child registry only after the base proves
+   * exact physical original release. No future fresh-state claim is implied. */
+  captureCompletedF06CustodyIdentity(expected: readonly (readonly [string, ServerTableEngine])[]) {
+    const base = this.captureCompletedF06CustodyBaseIdentity(expected);
+    if (!base) return null;
+    const byId = new Map(expected);
+    const source = (id: string, engine: ServerTableEngine): boolean => byId.get(id) === engine;
+    // These registries use break/request IDs, not table IDs. The base has
+    // already proved every expected engine's exact table and physical release.
+    const originals = new Set(byId.values());
+    for (const engine of this.stoppedOriginalBreaks.values())
+      if (!originals.has(engine)) return null;
+    for (const [id, value] of this.retainedTournamentBreakSources)
+      if (!source(id, value.engine)) return null;
+    for (const value of this.pendingNoStartContinuations.values())
+      if (!source(value.binding.tableId, value.engine)) return null;
+    for (const wakes of this.tournamentBreakArrivalWakes.values())
+      for (const engine of wakes.values()) if (!originals.has(engine)) return null;
+    if (
+      this.pendingTableBreakRetirement &&
+      !source(this.pendingTableBreakRetirement.tableId, this.pendingTableBreakRetirement.engine)
+    )
+      return null;
+    return base;
+  }
+
+  protected override tournamentAbortSourcesMatch(
+    expected: readonly (readonly [string, ServerTableEngine])[]
+  ): boolean {
+    if (!super.tournamentAbortSourcesMatch(expected)) return false;
+    const byId = new Map(expected);
+    const originals = new Set(byId.values());
+    for (const engine of this.stoppedOriginalBreaks.values())
+      if (!originals.has(engine)) return false;
+    for (const [id, value] of this.retainedTournamentBreakSources)
+      if (byId.get(id) !== value.engine) return false;
+    for (const value of this.pendingNoStartContinuations.values())
+      if (byId.get(value.binding.tableId) !== value.engine) return false;
+    for (const wakes of this.tournamentBreakArrivalWakes.values())
+      for (const engine of wakes.values()) if (!originals.has(engine)) return false;
+    if (
+      this.pendingTableBreakRetirement &&
+      byId.get(this.pendingTableBreakRetirement.tableId) !== this.pendingTableBreakRetirement.engine
+    )
+      return false;
+    return (
+      this.pendingTournamentSeatMoveOutcomes.size === 0 &&
+      this.pendingTournamentParkRequests.size === 0 &&
+      this.pendingTournamentBreakBegins.size === 0 &&
+      this.pendingTournamentBreakAmendments.size === 0 &&
+      this.rejectedTournamentBreakBegins.size === 0 &&
+      this.resolvedTournamentBreakProposals.size === 0 &&
+      this.pendingTournamentBreakCustodyIds.size === 0 &&
+      this.pendingTournamentCleanupKinds.size === 0 &&
+      this.pendingNoStartContinuations.size === 0 &&
+      this.activeStoppedOriginalCustody.size === 0 &&
+      this.stoppedOriginalBreaks.size === 0 &&
+      this.tournamentBreakArrivalWakes.size === 0 &&
+      this.pendingTableBreakRetirement === null
+    );
+  }
+
+  protected override tournamentAbortBusinessTailsDrained(): boolean {
+    return this.mixedRecoveryOperation === null && super.tournamentAbortBusinessTailsDrained();
+  }
+
+  protected override tournamentAbortOwnedTailIdentity(): unknown {
+    return this.tournamentSeatMoveSerialTail;
+  }
+
+  protected override async joinTournamentAbortOwnedTails(): Promise<void> {
+    await super.joinTournamentAbortOwnedTails();
+    for (;;) {
+      const original = this.tournamentSeatMoveSerialTail;
+      await original;
+      if (original === this.tournamentSeatMoveSerialTail) return;
+    }
+  }
+
   /** Transfer only a positively drained pre-manifest park, never an unknown move. */
   async captureDrainedF06Custody(): Promise<DrainedF06Custody | null> {
     return this.runWithTournamentSeatMoveAuthority(async () => {
@@ -2926,7 +3024,22 @@ export class TournamentManager extends TournamentManagerEliminations {
             engine.captureDrainedF06Identity?.(id, this.tournamentId, originGeneration) ?? null
         );
       const initial = physical();
-      if (initial.some((value) => value === null)) return refuse('physical_identity_unreadable');
+      const physicalRefusal = (values: ReturnType<typeof physical>) => {
+        const index = values.findIndex((value) => value === null);
+        if (index < 0) return null;
+        const [tableId, engine] = engines[index];
+        let reason = 'unavailable';
+        try {
+          reason =
+            engine.drainedF06IdentityRefusal?.(tableId, this.tournamentId, originGeneration) ??
+            'capture_unavailable';
+        } catch {
+          // Never expose arbitrary exception text or substitute identity data.
+        }
+        return `${tableId}:${reason}`;
+      };
+      const initialRefusal = physicalRefusal(initial);
+      if (initialRefusal) return refuse('physical_identity_unreadable', initialRefusal);
       // At the process root: see readMixedF06PresenceEvidence.
       const { data: presence, error: presenceError } = await readMixedF06PresenceEvidence(
         engines.map(([id]) => id)
@@ -3047,7 +3160,8 @@ export class TournamentManager extends TournamentManagerEliminations {
           )
         )
           return 'original_not_owned';
-        if (!physical().every((value) => value !== null)) return 'physical_identity_unreadable';
+        const physicalFailure = physicalRefusal(physical());
+        if (physicalFailure) return `physical_identity_unreadable:${physicalFailure}`;
         if (custodyJSON(vector()) !== custodyJSON(local)) return 'local_vector_changed';
         if (
           ![...this.retainedTournamentBreakSources].every(([id, value]) =>
@@ -3813,11 +3927,19 @@ export class TournamentManager extends TournamentManagerEliminations {
     return data.length;
   }
 
+  // A fresh balance preparation is one bounded progress unit: read the board
+  // and request its first durable park, or fence one gap source. The shared
+  // clock may stop further units, never restart this read prefix forever.
+  private balancePreparationOpen = false;
+
   protected async checkTableBalance(): Promise<TournamentBalanceProgress | void> {
     if (!this.eliminationMutationAllowed()) return;
+    const redrivesBeforeRecovery = this.urgentRedrivesRequested;
+    let originalRecoveryUnproven = false;
     try {
       await this.recoverF06OriginalAdmissions();
     } catch (error) {
+      originalRecoveryUnproven = true;
       reportError(error, 'Tournament.original_admission_recovery_pending', {
         tournamentId: this.tournamentId,
       });
@@ -3843,13 +3965,50 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
       return;
     }
-    if (!(await this.visitTournamentBreakPage((state) => this.recoverTournamentBreak(state))))
+    // A lost park reply still owns its original UUID/lifecycle/boundary.
+    // Resume that exact request before rereading a fresh board, whose slow
+    // prefix could otherwise prevent this acknowledgement from ever landing.
+    const pendingParkSource = this.pendingTournamentParkRequests.keys().next().value;
+    if (pendingParkSource && !originalRecoveryUnproven) {
+      if (!this.eliminationMutationAllowed()) return;
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      await this.requestTournamentBreakPark(pendingParkSource);
+      return { kind: 'park-continuation' };
+    }
+    let visitedBreak = false;
+    if (
+      !(await this.visitTournamentBreakPage(async (state) => {
+        visitedBreak = true;
+        await this.recoverTournamentBreak(state);
+      }))
+    )
       return;
     if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
     if (!this.tournamentBreakDiscoveryComplete) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       return;
     }
+    if (!this.running || this.eliminationSweepSignal?.aborted || isMaintenanceFrozen()) return;
+    // This pass was admitted before its deadline. If it only read an empty
+    // discovery page, it still owes its first productive unit. An existing
+    // break, unknown park/move or original recovery keeps its own budget.
+    this.balancePreparationOpen =
+      !originalRecoveryUnproven &&
+      this.urgentRedrivesRequested === redrivesBeforeRecovery &&
+      !visitedBreak &&
+      this.durableTournamentBreaks.size === 0 &&
+      this.pendingTournamentParkRequests.size === 0 &&
+      this.pendingTournamentSeatMoveOutcomes.size === 0 &&
+      !this.mixedRecovery;
+    try {
+      return await this.prepareFreshTableBalance();
+    } finally {
+      this.balancePreparationOpen = false;
+    }
+  }
+
+  private async prepareFreshTableBalance(): Promise<TournamentBalanceProgress | void> {
+    if (!this.eliminationMutationAllowed()) return;
     // Final Table is a durable MTT lifecycle transition, never a visual label
     // inferred from player count or a single-table fixed-format event.
     if (
@@ -3992,7 +4151,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       return;
     }
-    if (liveTableIds.length <= 1) return;
+    if (liveTableIds.length <= 1) return { kind: 'planning-complete' };
 
     // ── FIX 154: Build BalancerTable[] from a bounded live DB snapshot ──
     const balancerTables = await this.loadBalancerTables(liveTableIds, 'balanceInitial');
@@ -4086,7 +4245,14 @@ export class TournamentManager extends TournamentManagerEliminations {
         if (requestedBreaks.length > 0 && this.eliminationWorkBudgetExpired()) break;
         const requested = await this.requestTournamentBreakPark(tableId);
         if (!this.eliminationMutationAllowed()) return;
-        if (!requested?.ok) continue;
+        if (!requested?.ok) {
+          this.balancePreparationOpen = false;
+          if (this.eliminationWorkBudgetExpired()) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            return;
+          }
+          continue;
+        }
         requestedBreaks.push(requested);
         // The durable park precedes the fence. Fence now, so every source
         // stops at its own next boundary instead of waiting for its turn; the
@@ -4101,6 +4267,14 @@ export class TournamentManager extends TournamentManagerEliminations {
                 tableId,
               })
             );
+        if (this.balancePreparationOpen) {
+          this.balancePreparationOpen = false;
+          if (this.eliminationWorkBudgetExpired()) {
+            this.breakOccurredThisCycle = true;
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            return;
+          }
+        }
       }
       this.breakOccurredThisCycle = true;
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
@@ -4160,33 +4334,24 @@ export class TournamentManager extends TournamentManagerEliminations {
           // regard for in-flight hands. Wait for each source table's current
           // hand to complete (final stacks persisted) before moving.
           const sourceTables = [...new Set(moves.map((m) => m.fromTableId))] as string[];
+          // A slow fresh board must not be discarded before it can act.
+          // The existing source-boundary owner rereads the board and moves it;
+          // fence only its first source, then yield the spent admission.
+          if (this.balancePreparationOpen && this.eliminationWorkBudgetExpired()) {
+            this.fenceGapBalanceSource(sourceTables[0]);
+            this.balancePreparationOpen = false;
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            return;
+          }
+          this.balancePreparationOpen = false;
           const unsafeTables = new Set<string>();
           for (const t of sourceTables) {
             const safe = await this.waitForHandComplete(t);
             if (!this.eliminationMutationAllowed()) return;
             if (safe) continue;
             unsafeTables.add(t);
-            // Its own park edge moves the player (claimGapBalanceAtBoundary).
-            this.gapBalanceFencedSources.add(t);
-            /* A DEFERRED MOVE FENCES ITS SOURCE (2026-10-02). This check is a
-               snapshot, and a dealing table is between hands for a moment
-               only, so a move deferred here was deferred again on every
-               sweep. Production 2026-10-02 05:03-05:05Z: event 09a56a25 sat
-               9/9/9/1, its six moves "Deferring ... still in-hand" every
-               sweep while one player waited alone. Arm the same move fence
-               `claimTournamentMoveBoundary` arms (it expires on its own if
-               never claimed): the source stops at its next boundary and its
-               park edge wakes the sweep that moves the player. */
-            const sourceEngine = this.tableEngines.get(t);
-            if (sourceEngine && this.gameServer.ownsTournamentTableEngine(t, sourceEngine))
-              void sourceEngine
-                .parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0)
-                .catch((error) =>
-                  reportError(error, 'Tournament.rebalance_source_hold_failed', {
-                    tournamentId: this.tournamentId,
-                    tableId: t,
-                  })
-                );
+            // Arm before the request so a synchronous park edge can be claimed.
+            this.fenceGapBalanceSource(t);
           }
           // TOURNEY-AUDIT 2026-07-24 (sweep 4): drop moves from tables still
           // in-hand instead of moving players with stale mid-hand stacks.
@@ -4199,7 +4364,10 @@ export class TournamentManager extends TournamentManagerEliminations {
           }
           if (safeMoves.length > 0) {
             const movedCount = await this.executePlayerMoves(safeMoves);
-            for (const m of safeMoves) this.gapBalanceFencedSources.delete(m.fromTableId);
+            for (const m of safeMoves) {
+              this.gapBalanceFencedSources.delete(m.fromTableId);
+              this.gapBalanceClaimedSources.delete(m.fromTableId);
+            }
             if (!this.eliminationMutationAllowed()) return;
             if (movedCount < safeMoves.length) {
               console.warn(
@@ -4220,6 +4388,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         }
       }
     }
+    return { kind: 'planning-complete' };
   }
 
   /**
@@ -4260,7 +4429,41 @@ export class TournamentManager extends TournamentManagerEliminations {
    * that arrives during a sweep is drained when that sweep settles.
    */
   private readonly gapBalanceFencedSources = new Set<string>();
+  // A successful park request has already claimed this manager's owner.
+  // awaitsTournamentMoveClaim() is therefore false for that exact result.
+  private readonly gapBalanceClaimedSources = new Map<string, ServerTableEngine>();
   private boundaryBalanceRequested = false;
+
+  private fenceGapBalanceSource(tableId: string): void {
+    const engine = this.tableEngines.get(tableId);
+    if (!engine || !this.gameServer.ownsTournamentTableEngine(tableId, engine)) return;
+    this.gapBalanceFencedSources.add(tableId);
+    void engine
+      .parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0)
+      .then((parked) => {
+        // The dealer may have parked before this request. There is no new
+        // pause-ready edge then, so consume the authoritative result here.
+        if (
+          parked &&
+          this.tableEngines.get(tableId) === engine &&
+          this.running &&
+          this.gapBalanceFencedSources.has(tableId)
+        ) {
+          this.gapBalanceClaimedSources.set(tableId, engine);
+          this.claimGapBalanceAtBoundary(tableId);
+        }
+      })
+      .catch((error) => {
+        this.gapBalanceFencedSources.delete(tableId);
+        this.gapBalanceClaimedSources.delete(tableId);
+        reportError(error, 'Tournament.rebalance_source_hold_failed', {
+          tournamentId: this.tournamentId,
+          tableId,
+        });
+        if (this.running)
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      });
+  }
 
   protected override claimGapBalanceAtBoundary(tableId: string): boolean {
     if (!this.gapBalanceFencedSources.has(tableId)) return false;
@@ -4269,6 +4472,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     const engine = this.tableEngines.get(tableId);
     if (engine && this.retainsTournamentBreakSource(tableId, engine)) {
       this.gapBalanceFencedSources.delete(tableId);
+      this.gapBalanceClaimedSources.delete(tableId);
       return false;
     }
     this.boundaryBalanceRequested = true;
@@ -4310,15 +4514,23 @@ export class TournamentManager extends TournamentManagerEliminations {
       const engine = this.tableEngines.get(tableId);
       if (!engine || !this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
         this.gapBalanceFencedSources.delete(tableId);
+        this.gapBalanceClaimedSources.delete(tableId);
         continue;
       }
-      if (engine.awaitsTournamentMoveClaim()) parked.set(tableId, engine);
+      if (this.gapBalanceClaimedSources.get(tableId) !== engine)
+        this.gapBalanceClaimedSources.delete(tableId);
+      if (
+        engine.awaitsTournamentMoveClaim() ||
+        this.gapBalanceClaimedSources.get(tableId) === engine
+      )
+        parked.set(tableId, engine);
     }
     if (parked.size === 0) return;
 
     // Give a parked source back to the dealer unless a break owns it.
     const release = (tableId: string): void => {
       this.gapBalanceFencedSources.delete(tableId);
+      this.gapBalanceClaimedSources.delete(tableId);
       const engine = parked.get(tableId);
       if (engine && !this.retainsTournamentBreakSource(tableId, engine))
         engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
@@ -4327,36 +4539,38 @@ export class TournamentManager extends TournamentManagerEliminations {
       for (const tableId of parked.keys()) release(tableId);
     };
 
-    // A frozen platform, a tournament break, a finished event or a manager
-    // that no longer owns its tables: nothing is moved, the table deals on
-    // and the sweep plans again later.
-    if (
-      isMaintenanceFrozen() ||
-      this.isOnBreak() ||
-      this.tournamentFinished ||
-      !this.eliminationMutationAllowed()
-    ) {
-      releaseAll();
-      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-      return;
-    }
-    // Work the sweep must finish first: a table retirement, a seat move whose
-    // outcome is not yet known, break discovery or a mixed recovery. The
-    // parked source KEEPS its park and the sweep is woken now, exactly as the
-    // park edge did before this path existed: the sweep redrives that work
-    // first and then claims the source while its park is still valid.
-    // Releasing it here would let it deal again and fence it again.
-    if (
-      this.pendingTableBreakRetirement ||
+    // Recheck after every awaited read/probe: a break, freeze or lifecycle
+    // change can begin while this source waits for its plan.
+    const lifecycleAllowed = (): boolean =>
+      !isMaintenanceFrozen() &&
+      !this.isOnBreak() &&
+      !this.tournamentFinished &&
+      this.eliminationMutationAllowed();
+    const recoveryPending = (): boolean =>
+      !!this.pendingTableBreakRetirement ||
       this.pendingTournamentSeatMoveOutcomes.size > 0 ||
       !this.tournamentBreakDiscoveryComplete ||
-      this.mixedRecovery !== null
-    ) {
-      this.requestEliminationSweep('tournament_move_parked');
+      this.mixedRecovery !== null;
+    const balanceAllowed = (): boolean => lifecycleAllowed() && !recoveryPending();
+    const defer = (): void => {
+      // Pending recovery retains the source park and wakes its owning sweep.
+      if (lifecycleAllowed() && recoveryPending()) {
+        this.requestEliminationSweep('tournament_move_parked');
+        return;
+      }
+      releaseAll();
+      if (this.running)
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+    };
+    if (!balanceAllowed()) {
+      defer();
       return;
     }
-
     const liveTableIds = await this.liveTournamentTableIdsWithPlayers();
+    if (!balanceAllowed()) {
+      defer();
+      return;
+    }
     if (liveTableIds === null) {
       releaseAll();
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
@@ -4366,6 +4580,10 @@ export class TournamentManager extends TournamentManagerEliminations {
       liveTableIds.length > 1
         ? await this.loadBalancerTables(liveTableIds, 'balanceAtBoundary')
         : null;
+    if (!balanceAllowed()) {
+      defer();
+      return;
+    }
     if (!tables || !this.tableBalancer.shouldRebalance(tables)) {
       releaseAll();
       if (!tables && liveTableIds.length > 1)
@@ -4378,9 +4596,16 @@ export class TournamentManager extends TournamentManagerEliminations {
     // Sources the plan still needs that cannot move at this instant.
     const waiting = new Set<string>();
     for (const move of moves) {
-      if (parked.has(move.fromTableId) && (await this.waitForHandComplete(move.fromTableId))) {
-        ready.push(move);
-        continue;
+      if (parked.has(move.fromTableId)) {
+        const safe = await this.waitForHandComplete(move.fromTableId);
+        if (!balanceAllowed()) {
+          defer();
+          return;
+        }
+        if (safe) {
+          ready.push(move);
+          continue;
+        }
       }
       waiting.add(move.fromTableId);
     }
@@ -4404,13 +4629,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         !sourceEngine.isBetweenHands()
       )
         continue;
-      this.gapBalanceFencedSources.add(tableId);
-      void sourceEngine.parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0).catch((error) =>
-        reportError(error, 'Tournament.rebalance_source_hold_failed', {
-          tournamentId: this.tournamentId,
-          tableId,
-        })
-      );
+      this.fenceGapBalanceSource(tableId);
     }
     // The tables are still apart: one coalesced follow-up claims whatever the
     // fences above could not hand to a park edge.
@@ -4418,10 +4637,29 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
     if (ready.length === 0) return;
 
-    for (const tableId of moving) this.gapBalanceFencedSources.delete(tableId);
+    for (const tableId of moving) {
+      this.gapBalanceFencedSources.delete(tableId);
+      this.gapBalanceClaimedSources.delete(tableId);
+    }
     // executePlayerMoves claims each parked boundary, makes the atomic moves
     // and gives the boundary back when its source is done.
-    const movedCount = await this.executePlayerMoves(ready);
+    let movedCount: number;
+    try {
+      movedCount = await this.executePlayerMoves(ready);
+    } finally {
+      // A successful park probe already claimed its hold. The atomic door
+      // normally releases it, but an early return or throw can precede that
+      // door's source loop. Only a retained unknown outcome or durable break
+      // may keep this exact captured engine parked.
+      for (const tableId of moving) {
+        const engine = parked.get(tableId)!;
+        const unknown = [...this.pendingTournamentSeatMoveOutcomes.values()].some(
+          (pending) => pending.input.sourceTableId === tableId
+        );
+        if (!unknown && !this.retainsTournamentBreakSource(tableId, engine))
+          engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+      }
+    }
     const score = this.tableBalancer.evaluateBalance(tables);
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] Balanced at the hand boundary: ${movedCount}/${ready.length} move(s) (gap was ${score.gap}, target <=1)`
@@ -4461,20 +4699,43 @@ export class TournamentManager extends TournamentManagerEliminations {
    * stranded" and never "everybody is".
    */
   public async absorbOrphanedSeats(): Promise<number> {
-    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return 0;
-    const { data: tableRows, error: tableErr } = await supabase
-      .from('tables')
-      .select('id, status, is_deleted, max_players')
-      .eq('tournament_id', this.tournamentId);
-    if (tableErr || !tableRows || tableRows.length === 0) return 0;
+    const lifecycle = this.captureLifecycleToken();
+    const current = () => this.lifecycleIsCurrent(lifecycle);
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomes()) || !current()) return 0;
+    const { rows: tableRows, complete: tablesComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tables')
+          .select('id, status, is_deleted, max_players')
+          .eq('tournament_id', this.tournamentId)
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.orphan_tables', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!tablesComplete || tableRows.length === 0) return 0;
 
-    const tableIds = tableRows.map((r) => String((r as { id: string }).id));
-    const { data: seatRows, error: seatErr } = await supabase
-      .from('table_seats')
-      .select('table_id, user_id, seat_number, stack')
-      .in('table_id', tableIds)
-      .is('left_at', null);
-    if (seatErr || !seatRows) return 0;
+    // The tournament relationship bounds the filter without a giant IN URL.
+    // Every live chair is needed before deciding occupancy or source ambiguity.
+    const { rows: seatRows, complete: seatsComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('table_seats')
+          .select(
+            'id, table_id, user_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(tournament_id)'
+          )
+          .eq('tables.tournament_id', this.tournamentId)
+          .is('left_at', null)
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.orphan_seats', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!seatsComplete) return 0;
 
     const moves = planOrphanReseats(tableRows as OrphanTableRow[], seatRows as OrphanSeatRow[]);
 
@@ -4729,7 +4990,35 @@ export class TournamentManager extends TournamentManagerEliminations {
    * Any failure leaves the receipts pending for the expansion stage, which
    * admits and acknowledges the same receipts idempotently.
    */
-  protected async admitCommittedCapacityTables(): Promise<void> {
+  private capacityAdmissionOperation: Promise<void> | null = null;
+
+  /** Complete only the committed dealer handoff, independently of a busy sweep. */
+  async admitCommittedCapacityTablesForWake(ownerIsCurrent: () => boolean): Promise<void> {
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle) return;
+    const current = () =>
+      ownerIsCurrent() &&
+      this.lifecycleIsCurrent(lifecycle) &&
+      !this.isF06RecoveryOwner() &&
+      !this.tournamentFinished &&
+      !this.finalTableDealHandled &&
+      !isMaintenanceFrozen();
+    if (!current()) return;
+    return this.trackLifecycleJob(
+      (async () => {
+        // At most two bounded passes for this cause. A request joining a read
+        // already in flight needs one fresh read after it settles: its newly
+        // committed table may not have been in the earlier SELECT snapshot.
+        for (let pass = 0; pass < 2 && current(); pass++) {
+          const joined = this.capacityAdmissionOperation !== null;
+          await this.admitCommittedCapacityTables(current);
+          if (!joined) return;
+        }
+      })()
+    );
+  }
+
+  protected async admitCommittedCapacityTables(directAuthority?: () => boolean): Promise<void> {
     /*
      * ADMISSION IS NOT BUDGETED WORK (2026-10-26).
      *
@@ -4747,73 +5036,110 @@ export class TournamentManager extends TournamentManagerEliminations {
      * share. Only manager stop, the scheduler's abort and the platform freeze
      * may stop it.
      */
+    // Terminal state is checked again after every await: a finish may commit
+    // while the receipt read or acknowledgement is in flight.
     const admissionAllowed = (): boolean =>
-      this.eliminationMutationAllowed() || (this.running && !this.eliminationSweepSignal?.aborted);
+      !this.tournamentFinished &&
+      !this.finalTableDealHandled &&
+      (directAuthority
+        ? directAuthority()
+        : this.eliminationMutationAllowed() ||
+          (this.running && !this.eliminationSweepSignal?.aborted));
     if (isMaintenanceFrozen() || !admissionAllowed()) return;
-    // A finished event never starts a dealer, whatever receipt is left over.
-    if (this.tournamentFinished || this.finalTableDealHandled) return;
-    const { data, error } = await supabase
-      .from('tournament_capacity_table_receipts')
-      .select('table_id, created_at')
-      .eq('tournament_id', this.tournamentId)
-      .is('manager_admitted_at', null)
-      .order('created_at', { ascending: true })
-      .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
-    if (!admissionAllowed()) return;
-    if (error || !Array.isArray(data)) {
-      if (error) reportError(error, 'Tournament.capacity_receipts_unreadable');
+    if (this.capacityAdmissionOperation) {
+      await this.capacityAdmissionOperation;
       return;
     }
-    const pendingTableIds = [
-      ...new Set(
-        data
-          .map((row: { table_id?: string | null }) => String(row.table_id ?? ''))
-          .filter((id) => id.length > 0)
-      ),
-    ];
-    if (pendingTableIds.length === 0) return;
-
-    const newTableIds: string[] = [];
-    for (const tableId of pendingTableIds) {
-      if (isMaintenanceFrozen() || !admissionAllowed()) return;
-      if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
-    }
-
-    // Same order as the expansion stage: queue the continuation, then ack.
-    this.requestUrgentEliminationSweepAfter(0);
-    const { data: ackData, error: ackError } = await supabase.rpc(
-      'fn_ack_tournament_capacity_tables',
-      { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
-    );
-    if (!admissionAllowed()) return;
-    const acknowledgement = (ackData ?? {}) as {
-      ok?: boolean;
-      reason?: string;
-      requested?: number;
-    };
-    if (
-      ackError ||
-      acknowledgement.ok !== true ||
-      Number(acknowledgement.requested) !== pendingTableIds.length
-    ) {
-      reportError(
-        new Error(
-          `capacity table admission acknowledgement failed: ${ackError?.message ?? acknowledgement.reason ?? 'invalid contract'}`
+    const operation = (async () => {
+      const { data, error } = await supabase
+        .from('tournament_capacity_table_receipts')
+        .select('table_id, created_at')
+        .eq('tournament_id', this.tournamentId)
+        .is('manager_admitted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+      if (!admissionAllowed()) return;
+      if (error || !Array.isArray(data)) {
+        if (error) reportError(error, 'Tournament.capacity_receipts_unreadable');
+        return;
+      }
+      if (directAuthority) {
+        // Read after the receipts: an external finish may have committed while
+        // that SELECT was in flight. Its adoption/financial cleanup remains
+        // with the existing sweep owner. Native F06 admission still owns the
+        // final database fence if a finish races this last read.
+        const { data: event, error: eventError } = await supabase
+          .from('tournaments')
+          .select('status')
+          .eq('id', this.tournamentId)
+          .maybeSingle();
+        if (!admissionAllowed() || isMaintenanceFrozen()) return;
+        if (eventError || !event || typeof event.status !== 'string') {
+          reportError(
+            eventError ?? new Error('Capacity wake tournament authority is unreadable'),
+            'Tournament.capacity_wake_authority_unknown'
+          );
+          return;
+        }
+        if (event.status !== 'RUNNING') return;
+      }
+      const pendingTableIds = [
+        ...new Set(
+          data
+            .map((row: { table_id?: string | null }) => String(row.table_id ?? ''))
+            .filter((id) => id.length > 0)
         ),
-        'Tournament.wake_capacity_table_handoff_ack_failed'
+      ];
+      if (pendingTableIds.length === 0) return;
+
+      const newTableIds: string[] = [];
+      for (const tableId of pendingTableIds) {
+        if (isMaintenanceFrozen() || !admissionAllowed()) return;
+        if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
+      }
+
+      // Same order as the expansion stage: queue the continuation, then ack.
+      this.requestUrgentEliminationSweepAfter(0);
+      const { data: ackData, error: ackError } = await supabase.rpc(
+        'fn_ack_tournament_capacity_tables',
+        { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
       );
-      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-      return;
-    }
-    if (newTableIds.length > 0) {
-      console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Started ${newTableIds.length} late-registration table(s) on their wake`
-      );
-      await this.broadcast('table_expansion', {
-        newTableIds,
-        totalTables: this.tableEngines.size,
-        reason: 'late_registration_capacity',
-      });
+      if (!admissionAllowed()) return;
+      const acknowledgement = (ackData ?? {}) as {
+        ok?: boolean;
+        reason?: string;
+        requested?: number;
+      };
+      if (
+        ackError ||
+        acknowledgement.ok !== true ||
+        Number(acknowledgement.requested) !== pendingTableIds.length
+      ) {
+        reportError(
+          new Error(
+            `capacity table admission acknowledgement failed: ${ackError?.message ?? acknowledgement.reason ?? 'invalid contract'}`
+          ),
+          'Tournament.wake_capacity_table_handoff_ack_failed'
+        );
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return;
+      }
+      if (newTableIds.length > 0) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Started ${newTableIds.length} late-registration table(s) on their wake`
+        );
+        await this.broadcast('table_expansion', {
+          newTableIds,
+          totalTables: this.tableEngines.size,
+          reason: 'late_registration_capacity',
+        });
+      }
+    })();
+    this.capacityAdmissionOperation = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.capacityAdmissionOperation === operation) this.capacityAdmissionOperation = null;
     }
   }
 

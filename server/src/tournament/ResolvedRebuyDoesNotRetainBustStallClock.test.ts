@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn(), reportError: vi.fn() }));
@@ -14,6 +15,7 @@ const EVENT = 'aaaaaaaa-0000-4000-8000-000000000001';
 
 function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [USER]) {
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     let head = false;
     let columns = '';
     const query: any = {
@@ -26,6 +28,8 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
       lte: () => query,
       in: () => query,
       order: () => query,
+      limit: () => query,
+      gt: () => query,
       not: () => query,
       is: () => query,
       then: (resolve: (value: unknown) => unknown) =>
@@ -47,7 +51,9 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
               ? { count: users.length + 4, data: null, error: null }
               : {
                   data:
-                    columns === 'position' ? [] : users.map((user_id) => ({ user_id, chips: 0 })),
+                    columns === 'id, position'
+                      ? []
+                      : users.map((user_id) => ({ user_id, chips: 0 })),
                   error: null,
                 }
         ).then(resolve),
@@ -62,6 +68,7 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
         { data: [], error: null }
   );
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
+    recoveredOriginalAdmissions: new Map(),
     tournamentId: EVENT,
     running: true,
     pendingManagerWakes: new Map(),
@@ -78,6 +85,7 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
       deferredUntil: new Map(),
       answered: new Set(),
     }),
+    checkDynamicTableExpansion: vi.fn().mockResolvedValue(true),
     tableEngines: new Map(),
     tournamentLeaseAuthorityIsCurrent: () => true,
     gameServer: { handTournamentToSuccessorGeneration: vi.fn() },
@@ -315,9 +323,13 @@ describe('resolved rebuys do not manufacture a stalled tournament manager', () =
     const query: any = {
       select: () => query,
       eq: () => query,
-      lte: () => Promise.resolve({ data: null, error: null }),
+      lte: () => query,
+      order: () => query,
+      limit: () => query,
+      gt: () => query,
+      then: (resolve: any) => Promise.resolve({ data: null, error: null }).then(resolve),
     };
-    fixture.from.mockImplementationOnce(() => query);
+    fixture.from.mockReturnValueOnce(emptyManagerWakeInbox()).mockReturnValueOnce(query);
     await manager.runEliminationSweep(new AbortController().signal);
     expect(manager.eliminatePlayer).not.toHaveBeenCalled();
     expect(manager.getStalledEliminationSweep(130000)).toMatchObject({
@@ -325,7 +337,7 @@ describe('resolved rebuys do not manufacture a stalled tournament manager', () =
       msBustWaiting: 129000,
     });
     expect(fixture.reportError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringContaining('authoritative rows missing') }),
+      expect.objectContaining({ message: expect.stringContaining('incomplete bust roster') }),
       'Tournament.busted_list_unavailable'
     );
     expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledWith(5000);

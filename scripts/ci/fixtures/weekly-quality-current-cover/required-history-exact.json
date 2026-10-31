@@ -1,0 +1,22 @@
+[
+  {
+    "version": "20261030054822",
+    "name": "original_cash_helpers_preserve_genuine_refreshed_weekly_proo",
+    "sha256": "d71475888fdd2b69cb857cc5623a5f2a1760e4558a567769054716892b472b80",
+    "metadata": {
+      "rollback": null,
+      "created_by": null,
+      "idempotency_key": null
+    }
+  },
+  {
+    "version": "20261030051108",
+    "name": "standalone_paid_rakeback_preparation_reuses_its_completed_or",
+    "sha256": "612b8bae47b7d24ee63afb2de7033ec72346c33c28153daf42dd14f43e0bd7ff",
+    "metadata": {
+      "rollback": null,
+      "created_by": null,
+      "idempotency_key": null
+    }
+  }
+]

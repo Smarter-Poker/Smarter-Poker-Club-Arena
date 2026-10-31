@@ -1,4 +1,3 @@
-import { engineChannelClient } from '../services/EngineStateClient';
 /**
  * Private Supabase Broadcast subscription owned by the MasterBus registry.
  *
@@ -44,6 +43,9 @@ export function useMasterBusBroadcastChannel({
   onSubscriptionStatus,
 }: UseMasterBusBroadcastChannelOptions): void {
   const [engineReady, setEngineReady] = useState(false);
+  // Network callbacks may share a React batch. Retire fallback authority at
+  // READY itself, before the effect cleanup gets its turn.
+  const engineReadyRef = useRef(false);
   const engineWasReady = useRef(false);
   const engineRecord =
     event === 'record_changed' &&
@@ -65,6 +67,7 @@ export function useMasterBusBroadcastChannel({
   }, [onSubscriptionStatus]);
 
   useEffect(() => {
+    engineReadyRef.current = false;
     setEngineReady(false);
     engineWasReady.current = false;
     if (!enabled || !channelName || !engineRecord) return;
@@ -72,7 +75,13 @@ export function useMasterBusBroadcastChannel({
     let generation = 0;
     let degraded = false;
     let remove = () => {};
+    let identityAllowsBind = true;
+    let engineChannelClient:
+      | (typeof import('../services/PrivateRecordTransport'))['privateRecordTransport']
+      | null = null;
     const bind = () => {
+      const client = engineChannelClient;
+      if (!client || !identityAllowsBind) return;
       remove();
       const scope = ++generation;
       degraded = false;
@@ -82,16 +91,17 @@ export function useMasterBusBroadcastChannel({
         degraded = true;
         errorCallbackRef.current?.('CHANNEL_ERROR');
       };
-      remove = engineChannelClient.onPrivateRecord(channelName, (message) => {
+      remove = client.onPrivateRecord(channelName, (message) => {
         if (!alive || scope !== generation) return;
         if (message.type === 'PRIVATE_RECORD_STATUS') {
+          engineReadyRef.current = message.ready === true;
           setEngineReady(message.ready === true);
           if (message.ready === true) {
             degraded = false;
             engineWasReady.current = true;
             statusCallbackRef.current?.('SUBSCRIBED');
           } else {
-            const status = engineChannelClient.getStatus();
+            const status = client.getStatus();
             // Initial socket/listener startup and identity idle are normal.
             // Explicit listener failure or actual transport loss is unavailable.
             if (
@@ -104,16 +114,19 @@ export function useMasterBusBroadcastChannel({
         } else callbackRef.current({ payload: {} });
       });
       // Joining an already failed/reconnecting singleton need not change status.
+      // An existing standby may have acknowledged READY synchronously above.
+      // Its topic readiness takes authority over the primary's coarse status.
       if (
-        ['reconnecting', 'failed', 'auth_failed', 'access_refused'].includes(
-          engineChannelClient.getStatus()
-        )
+        !engineReadyRef.current &&
+        ['reconnecting', 'failed', 'auth_failed', 'access_refused'].includes(client.getStatus())
       )
         markUnavailable();
     };
     const stopIdentity = masterBus.subscribe('AUTH_STATE_CHANGED', (change) => {
+      identityAllowsBind = change.payload.isAuthenticated;
       const scope = ++generation;
       remove();
+      engineReadyRef.current = false;
       setEngineReady(false);
       engineWasReady.current = false;
       statusCallbackRef.current?.('CONNECTING');
@@ -124,7 +137,17 @@ export function useMasterBusBroadcastChannel({
           if (alive && scope === generation) bind();
         });
     });
-    bind();
+    void import('../services/PrivateRecordTransport')
+      .then((module) => {
+        if (!alive) return;
+        engineChannelClient = module.privateRecordTransport;
+        bind();
+      })
+      .catch((error) => {
+        if (!alive) return;
+        reportError(error, 'useMasterBusBroadcastChannel.private_record_load');
+        errorCallbackRef.current?.('CHANNEL_ERROR');
+      });
     return () => {
       alive = false;
       generation++;
@@ -175,12 +198,22 @@ export function useMasterBusBroadcastChannel({
       }
 
       channel.on('broadcast', { event }, (payload: unknown) => {
-        if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
+        if (
+          alive &&
+          generation === subscriptionGeneration &&
+          !(engineRecord && engineReadyRef.current)
+        )
+          callbackRef.current(payload);
       });
       void subscribeRealtime(
         channel,
         (status: string, err?: Error) => {
-          if (!alive || generation !== subscriptionGeneration) return;
+          if (
+            !alive ||
+            generation !== subscriptionGeneration ||
+            (engineRecord && engineReadyRef.current)
+          )
+            return;
           if (status === 'SUBSCRIBED') {
             disarmAuthRetry?.();
             noteRealtimeTransportRecovered();

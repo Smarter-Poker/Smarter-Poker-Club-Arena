@@ -769,7 +769,10 @@ export const WalletService = {
   async readPlayerBalance(
     userId: string,
     opts?: { clubId?: string | null; tableId?: string | null; tournamentId?: string | null }
-  ): Promise<{ balance: number | null; source: 'rpc' | 'wallet' | 'failed' }> {
+  ): Promise<{ balance: number | null; source: 'rpc' | 'wallet' | 'failed' | 'unauthenticated' }> {
+    // Anonymous table viewers have no wallet actor. Do not send the guest
+    // placeholder to a UUID RPC or turn the absence of an account into zero.
+    if (!userId || userId === 'guest') return { balance: null, source: 'unauthenticated' };
     // UNION LAW (Dan 2026-08-20): under club-scoped chips a player spends the
     // chips of the club they entered through, not the global player wallet.
     // fn_player_spendable_balance resolves this with EXACTLY the same rule the

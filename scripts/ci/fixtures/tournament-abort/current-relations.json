@@ -1,0 +1,896 @@
+[
+  {
+    "relation": "smarter_private.f06_hand_permits",
+    "columns": [
+      {
+        "name": "permit_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "lifecycle",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "custody_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "default": "'reserved'::text",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "evidence_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_hand_permits_pkey",
+        "definition": "PRIMARY KEY (permit_id)"
+      },
+      {
+        "name": "f06_hand_permits_state_check",
+        "definition": "CHECK ((state = ANY (ARRAY['reserved'::text, 'accepted'::text, 'never_started'::text, 'aborted_unsettled'::text])))"
+      },
+      {
+        "name": "f06_hand_permits_table_id_hand_number_key",
+        "definition": "UNIQUE (table_id, hand_number)"
+      }
+    ]
+  },
+  {
+    "relation": "smarter_private.f06_attempts",
+    "columns": [
+      {
+        "name": "request_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "break_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "revision",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "predecessor",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amendment_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amendment_payload",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "destination_table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "destination_seat_number",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "default": "'active'::text",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "receipt",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_attempts_amendment_id_key",
+        "definition": "UNIQUE (amendment_id)"
+      },
+      {
+        "name": "f06_attempts_break_id_user_id_revision_key",
+        "definition": "UNIQUE (break_id, user_id, revision)"
+      },
+      {
+        "name": "f06_attempts_check",
+        "definition": "CHECK (((state = 'winner'::text) = (receipt IS NOT NULL)))"
+      },
+      {
+        "name": "f06_attempts_destination_seat_number_check",
+        "definition": "CHECK (((destination_seat_number >= 1) AND (destination_seat_number <= 10)))"
+      },
+      {
+        "name": "f06_attempts_pkey",
+        "definition": "PRIMARY KEY (request_id)"
+      },
+      {
+        "name": "f06_attempts_predecessor_key",
+        "definition": "UNIQUE (predecessor)"
+      },
+      {
+        "name": "f06_attempts_revision_check",
+        "definition": "CHECK ((revision > 0))"
+      },
+      {
+        "name": "f06_attempts_state_check",
+        "definition": "CHECK ((state = ANY (ARRAY['active'::text, 'fenced'::text, 'winner'::text])))"
+      }
+    ]
+  },
+  {
+    "relation": "smarter_private.f06_operations",
+    "columns": [
+      {
+        "name": "break_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "ordinal",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "a",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "source_table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "lifecycle",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "boundary_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "origin_generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "default": "'park_requested'::text",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "manifest",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "revision",
+        "type": "bigint",
+        "default": "0",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "custody_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "custody_generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "cleanup_kind",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "close_receipt",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "abort_receipt_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_operations_boundary_id_key",
+        "definition": "UNIQUE (boundary_id)"
+      },
+      {
+        "name": "f06_operations_check",
+        "definition": "CHECK (((state = ANY (ARRAY['close_confirmed'::text, 'acknowledged'::text])) = (close_receipt IS NOT NULL)))"
+      },
+      {
+        "name": "f06_operations_ordinal_key",
+        "definition": "UNIQUE (ordinal)"
+      },
+      {
+        "name": "f06_operations_pkey",
+        "definition": "PRIMARY KEY (break_id)"
+      },
+      {
+        "name": "f06_operations_state_check",
+        "definition": "CHECK ((state = ANY (ARRAY['park_requested'::text, 'begun'::text, 'close_confirmed'::text, 'acknowledged'::text, 'withdrawn_before_manifest'::text])))"
+      },
+      {
+        "name": "f06_withdrawal_has_no_manifest",
+        "definition": "CHECK (((state <> 'withdrawn_before_manifest'::text) OR (manifest IS NULL)))"
+      },
+      {
+        "name": "f06_withdrawal_receipt",
+        "definition": "CHECK (((state = 'withdrawn_before_manifest'::text) = (abort_receipt_id IS NOT NULL)))"
+      }
+    ]
+  },
+  {
+    "relation": "public.ca_launch_operator_scopes",
+    "columns": [
+      {
+        "name": "operation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "club_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_launch_operator_scopes_pkey",
+        "definition": "PRIMARY KEY (operation_id)"
+      }
+    ]
+  },
+  {
+    "relation": "public.hand_state_snapshots",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "state_json",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "config_json",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "dealer_seat",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "players_json",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "stage",
+        "type": "text",
+        "default": "'preflop'::text",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "is_complete",
+        "type": "boolean",
+        "default": "false",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "pending_deadlines",
+        "type": "jsonb",
+        "default": "'[]'::jsonb",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "disconnect_states",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "hand_state_snapshots_pkey",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ]
+  },
+  {
+    "relation": "public.engine_tournament_leases",
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "instance_id",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "engine_version",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "acquired_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "heartbeat_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "lease_generation",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "protocol_version",
+        "type": "integer",
+        "default": "1",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "engine_tournament_leases_pkey",
+        "definition": "PRIMARY KEY (tournament_id)"
+      },
+      {
+        "name": "engine_tournament_leases_protocol_version_check",
+        "definition": "CHECK ((protocol_version = ANY (ARRAY[1, 2])))"
+      }
+    ]
+  },
+  {
+    "relation": "smarter_private.f06_manager_custody_transfers",
+    "columns": [
+      {
+        "name": "transfer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "origin_generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "successor_generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "local_proof",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "canonical_proof",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_manager_custody_transfers_canonical_proof_check",
+        "definition": "CHECK ((jsonb_typeof(canonical_proof) = 'object'::text))"
+      },
+      {
+        "name": "f06_manager_custody_transfers_check",
+        "definition": "CHECK ((origin_generation <> successor_generation))"
+      },
+      {
+        "name": "f06_manager_custody_transfers_local_proof_check",
+        "definition": "CHECK ((jsonb_typeof(local_proof) = 'object'::text))"
+      },
+      {
+        "name": "f06_manager_custody_transfers_pkey",
+        "definition": "PRIMARY KEY (transfer_id)"
+      },
+      {
+        "name": "f06_manager_custody_transfers_tournament_id_origin_generati_key",
+        "definition": "UNIQUE (tournament_id, origin_generation)"
+      },
+      {
+        "name": "f06_manager_custody_transfers_tournament_id_successor_gener_key",
+        "definition": "UNIQUE (tournament_id, successor_generation)"
+      }
+    ]
+  },
+  {
+    "relation": "smarter_private.f06_manager_custody_completions",
+    "columns": [
+      {
+        "name": "transfer_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "admission",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "operation_receipts",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "presence_receipts",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_manager_custody_completions_pkey",
+        "definition": "PRIMARY KEY (transfer_id)"
+      }
+    ]
+  },
+  {
+    "relation": "public.ca_operator_floor_hold",
+    "columns": [
+      {
+        "name": "id",
+        "type": "boolean",
+        "default": "true",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "operation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "mode",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "held_since",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp with time zone",
+        "default": "(clock_timestamp() + '01:00:00'::interval)",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_operator_floor_hold_id_check",
+        "definition": "CHECK (id)"
+      },
+      {
+        "name": "ca_operator_floor_hold_mode_check",
+        "definition": "CHECK ((mode = ANY (ARRAY['pause'::text, 'park'::text])))"
+      },
+      {
+        "name": "ca_operator_floor_hold_pkey",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ]
+  },
+  {
+    "relation": "public.ca_operator_table_closes",
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "operation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "actor_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'pending'::text",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_operator_table_closes_pkey",
+        "definition": "PRIMARY KEY (table_id)"
+      },
+      {
+        "name": "ca_operator_table_closes_status_check",
+        "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'closed'::text])))"
+      }
+    ]
+  }
+]

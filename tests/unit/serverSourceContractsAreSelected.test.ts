@@ -77,6 +77,21 @@ describe('server source-contract laws are selected before a push', () => {
     expect(r.calls).not.toContain('HorseDataLedger');
   });
 
+  it('runs a changed source contract only once and excludes only that exact file from related tests', () => {
+    const r = gate({
+      'server/src/engine/HorseDataLedger.test.ts': '// changed contract\n',
+      'server/src/engine/Turns.ts': "noteFire('a_new_key');\n",
+    });
+    expect(r.status).toBe(0);
+    const calls = r.calls.trim().split('\n');
+    expect(calls.filter((line) => line === 'run src/engine/HorseDataLedger.test.ts')).toHaveLength(
+      1
+    );
+    expect(calls).toContain(
+      'related --run src/engine/Turns.ts --exclude src/engine/HorseDataLedger.test.ts --passWithNoTests'
+    );
+  });
+
   it('the ledger law still reads every fired telemetry key from source', () => {
     const law = readFileSync(join(ROOT, 'server/src/engine/HorseDataLedger.test.ts'), 'utf8');
     expect(law).toMatch(/noteFire/);

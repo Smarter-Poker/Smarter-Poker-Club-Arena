@@ -30,6 +30,7 @@ export interface OverallStats {
   biggest_hand_loss: number;
   bb_per_100: number;
   hours_played: number;
+  cash_hours_played?: number;
   // Compatibility fields retained by the RPC. Headline totals are unbounded;
   // the separate contract.coverage analysis cap applies only to analysis
   // collections such as positions, variants, stakes and sessions.

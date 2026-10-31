@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react';
+import { avatarRestPose, restingAvatarTop } from '../components/table/avatarCrownBounds';
 import { placeProtectedCardRow, type CardBox } from '../lib/protectedCardPlacement';
 import {
   assignProtectedWagers,
@@ -26,6 +27,7 @@ export function useProtectedCardLayout(
     key: '',
     rows: new WeakMap<HTMLElement, string>(),
     pods: new WeakMap<HTMLElement, string>(),
+    podPoses: new WeakMap<HTMLElement, string>(),
   });
   useLayoutEffect(() => {
     const scaler = root.current;
@@ -48,11 +50,23 @@ export function useProtectedCardLayout(
         scaler.style.getPropertyValue('--sp-tabled-card-w'),
       ].join(':');
       if (settled.current.key !== key) {
-        settled.current = { key, rows: new WeakMap(), pods: new WeakMap() };
+        settled.current = {
+          key,
+          rows: new WeakMap(),
+          pods: new WeakMap(),
+          podPoses: new WeakMap(),
+        };
       }
     };
     refreshGeometry();
-    const topPods = () => Array.from(scaler.querySelectorAll<HTMLElement>('.seat-wrapper--top'));
+    const topPods = () =>
+      Array.from(
+        scaler.querySelectorAll<HTMLElement>(
+          page.getAttribute('data-seats') === '6' && page.getBoundingClientRect().width > 480
+            ? '.seat-wrapper--cap, .seat-wrapper--top'
+            : '.seat-wrapper--top'
+        )
+      );
     const wagers = () => Array.from(scaler.querySelectorAll<HTMLElement>('.seat__bet-chips'));
     const resetWagers = () =>
       wagers().forEach((bet) => {
@@ -105,8 +119,21 @@ export function useProtectedCardLayout(
         const settled = dealerSettledBox(scaler, dealer);
         if (settled) protectedBoxes.push(settled);
       }
-      const bounds = page.getBoundingClientRect();
+      const pageBounds = page.getBoundingClientRect();
       for (const row of rows) {
+        // Top-cap reveals need daylight below the mobile page's clipping
+        // edge. Jackpot rectangles remain individual keep-outs: reserving
+        // their entire horizontal band would push a centred hand to a neighbour.
+        const mobileTop =
+          pageBounds.top +
+          (row.closest('.seat-wrapper--cap') && window.innerWidth <= 768 ? 8 * scale : 0);
+        const bounds = {
+          left: pageBounds.left,
+          top: mobileTop,
+          width: pageBounds.width,
+          height: Math.max(0, pageBounds.bottom - mobileTop),
+        };
+
         const fixed = settled.current.rows.get(row);
         if (fixed !== undefined) {
           row.style.translate = fixed;
@@ -186,8 +213,11 @@ export function useProtectedCardLayout(
               ) < 1 || own + 4 < Math.hypot(x - c.x, y - c.y)
           );
         };
+        // Prefer the owner's lane with zero extra padding before moving a
+        // shown hand beside another chair. Rectangles still cannot overlap.
         const place = (candidate: CardBox) =>
           placeProtectedCardRow(candidate, others, bounds, cards.length >= 5 ? 3 : 4, ownsIt) ??
+          placeProtectedCardRow(candidate, others, bounds, 0, ownsIt) ??
           placeProtectedCardRow(candidate, others, bounds);
         let natural = box;
         let next = place(box);
@@ -249,7 +279,9 @@ export function useProtectedCardLayout(
           let pick: { step: number; size: number; from: CardBox; to: CardBox } | null = null;
           for (const [step, size] of tries) {
             const from = at(step, size);
-            const to = placeProtectedCardRow(from, others, bounds, 4, ownsIt);
+            const to =
+              placeProtectedCardRow(from, others, bounds, 4, ownsIt) ??
+              placeProtectedCardRow(from, others, bounds, 0, ownsIt);
             if (!to) continue;
             if (!pick || shifted(from, to) < shifted(pick.from, pick.to))
               pick = { step, size, from, to };
@@ -307,7 +339,26 @@ export function useProtectedCardLayout(
           delete cluster.dataset.baseCardW;
         });
       const scale = scaler.getBoundingClientRect().width / scaler.offsetWidth || 1;
+      const pageBox = page.getBoundingClientRect();
+      // Production uses the desktop-width viewport on phones. Preserve the
+      // legacy <=480px fallback for browsers that ignore that viewport.
+      const sixMax = page.getAttribute('data-seats') === '6' && pageBox.width > 480;
+      for (const pod of scaler.querySelectorAll('.seat-wrapper--cap, .seat-wrapper--top')) {
+        const seat = pod.querySelector<HTMLElement>('.seat');
+        // Keep the character connected to its plate with the existing 3px
+        // minimum overlap. Reclaim only the extra overlap for the full PLO
+        // row, whose bottom reads this same shared token.
+        if (sixMax) seat?.style.setProperty('--sp-wrap-overlap', '3px');
+        else seat?.style.removeProperty('--sp-wrap-overlap');
+      }
       topPods().forEach((pod) => {
+        if (sixMax) {
+          const avatar = pod.querySelector<HTMLImageElement>('.seat__avatar-img');
+          const pose = `${avatar ? avatarRestPose(avatar) : ''}:${window.innerWidth <= 768 && Boolean(pod.querySelector('.seat__cards--revealed'))}`;
+          // Folded/resting posture is a layout input. Gesture frames are not.
+          if (settled.current.podPoses.get(pod) !== pose) settled.current.pods.delete(pod);
+          settled.current.podPoses.set(pod, pose);
+        }
         const shift = settled.current.pods.get(pod);
         if (shift === undefined) {
           pod.style.removeProperty('translate');
@@ -317,7 +368,6 @@ export function useProtectedCardLayout(
           pod.style.setProperty('--sp-top-seat-shift', `${shift}px`);
         }
       });
-      const pageBox = page.getBoundingClientRect();
       const chrome = Array.from(page.querySelectorAll('.bbj-widget, .bbj-mini-plate'))
         .map((element) => element.getBoundingClientRect())
         .filter((box) => box.width > 0 && box.height > 0);
@@ -329,10 +379,11 @@ export function useProtectedCardLayout(
       const chromeBottom = chrome.length
         ? Math.max(...chrome.map((box) => box.bottom))
         : pageBox.top + plateHeight;
-      if (pageBox.width <= 768) {
+      if (sixMax || pageBox.width <= 768) {
         for (const pod of topPods()) {
           if (settled.current.pods.has(pod)) continue;
-          const image = pod.querySelector('.seat__avatar-img')?.getBoundingClientRect();
+          const avatar = pod.querySelector<HTMLImageElement>('.seat__avatar-img');
+          const image = avatar?.getBoundingClientRect();
           if (image && image.height > 0) {
             // Dan 2026-10-22: "pull the table down so the top player isn't
             // scrunched up." The pod's highest painted part (the art, or the
@@ -358,7 +409,27 @@ export function useProtectedCardLayout(
               largeHand && window.innerHeight > window.innerWidth
                 ? Math.max(8, cardHeight + 9 - (plateTop - highest))
                 : 8;
-            const shift = (chromeBottom + clearance * scale - highest) / scale;
+            // Dan 2026-10-26: the six-max top-centre villain rises to the
+            // tab/action bar, with only the crown clipped. Corner jackpot
+            // plates do not reserve a band across this centred seat. Anchor
+            // the actual art, not its transparent slot or position badge.
+            const anchorTop = sixMax && avatar ? restingAvatarTop(avatar, scale) : highest;
+            const naturalTarget = sixMax
+              ? pageBox.top - 2 * scale
+              : chromeBottom + clearance * scale;
+            // A revealed top hand needs its full height above its own plate.
+            // Lower the pod as one unit instead of forcing the cards sideways
+            // into a neighbour when the compact crown anchor clips that lane.
+            const target =
+              window.innerWidth <= 768 && pod.querySelector('.seat__cards--revealed')
+                ? Math.max(
+                    naturalTarget,
+                    Math.max(pageBox.top, chromeBottom) +
+                      (cardHeight + 9) * scale -
+                      (plateTop - anchorTop)
+                  )
+                : naturalTarget;
+            const shift = (target - anchorTop) / scale;
             pod.style.translate = `0px ${shift}px`;
             // Bets use the scaler's rail coordinates. Moving the top avatar
             // within its lane must not carry its bet onto the player plate.
@@ -564,14 +635,16 @@ export function useProtectedCardLayout(
             // Sample exact obstacle edges as well as the oval, so a clear slot
             // beside a label is found before the overlapping last-resort tier.
             // Wider portrait side pods need the same exact slots.
-            if (window.innerWidth > 480 || window.innerWidth <= 375) {
+            if (sixMax || window.innerWidth > 480 || window.innerWidth <= 375) {
               const xs = new Set([anchor.x - box.width / 2]);
               const ys = new Set([anchor.y - box.height / 2]);
               for (const obstacle of hardObstacles) {
-                xs.add(obstacle.left - box.width - 3);
-                xs.add(obstacle.left + obstacle.width + 3);
-                ys.add(obstacle.top - box.height - 3);
-                ys.add(obstacle.top + obstacle.height + 3);
+                for (const air of sixMax ? [3, 1] : [3]) {
+                  xs.add(obstacle.left - box.width - air);
+                  xs.add(obstacle.left + obstacle.width + air);
+                  ys.add(obstacle.top - box.height - air);
+                  ys.add(obstacle.top + obstacle.height + air);
+                }
               }
               // A wider portrait page has bare screen beyond the table; a wager
               // stays on the table's own canvas there, never out in the margin.
@@ -786,6 +859,9 @@ export function useProtectedCardLayout(
       scaler.querySelector<HTMLElement>('.dealer-button')?.style.removeProperty('translate');
       scaler.removeEventListener('load', schedule, true);
       if (frame !== null) cancelAnimationFrame(frame);
+      scaler
+        .querySelectorAll<HTMLElement>('.seat-wrapper--cap .seat, .seat-wrapper--top .seat')
+        .forEach((seat) => seat.style.removeProperty('--sp-wrap-overlap'));
       topPods().forEach((pod) => {
         pod.style.removeProperty('translate');
         pod.style.removeProperty('--sp-top-seat-shift');
@@ -893,7 +969,7 @@ function placeDealerButton(
     if (best) break;
     let cost = Infinity;
     for (const point of points) {
-      if (point.depth < 10) continue; // off the rail band, wholly on the felt
+      if (point.depth < 0) continue; // include the clear rail band before covering protected content
       if (!owned(point.x, point.y) || !clear(boxAt(point.x, point.y))) continue;
       const next = Math.hypot(point.x - own.x, point.y - own.y);
       if (next < cost) {

@@ -8,12 +8,18 @@
  * - Hands played, hands/hour
  * - VPIP% and PFR%
  * - Session trajectory data points for mini-graph
- * - Resets on table leave
+ * - Follows confirmed table moves; ends on the confirmed session leave
  */
 
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import {
+  activateTableSessionState,
+  moveTableSessionState,
+  endTableSessionState,
+  clearTableSessionStates,
+} from './TableSessionState';
 
 /** Chips are stored to the cent. Every money field this service persists goes
  *  through here; a derived stat (BB won, percentages) may keep its own scale. */
@@ -25,6 +31,8 @@ const cents = (n: number): number => (Number.isFinite(n) ? Math.round(n * 100) /
 
 export interface SessionStats {
   tableId: string;
+  /** Accepted table/hand identities already counted in this game session. */
+  completedHandKeys?: string[];
   arenaAsset?: 'chips' | 'diamonds';
   userId: string;
   sessionStartTime: number;
@@ -58,6 +66,18 @@ class SessionStatsServiceClass {
   /** Enhancement #8: localStorage key for offline session queue */
   private readonly OFFLINE_QUEUE_KEY = 'club-arena-offline-sessions';
 
+  constructor() {
+    // Keep cleanup synchronous on the existing account event without loading
+    // this table-only service into the application's initial bundle.
+    masterBus.subscribe('AUTH_STATE_CHANGED', ({ payload }) => {
+      if (
+        !payload.isAuthenticated ||
+        [...this.sessions.values()].some((session) => session.userId !== payload.userId)
+      )
+        this.resetAll();
+    });
+  }
+
   /**
    * Start tracking a new session at a table
    */
@@ -68,6 +88,18 @@ class SessionStatsServiceClass {
     bigBlind: number,
     arenaAsset: 'chips' | 'diamonds' = 'chips'
   ): void {
+    const existing = this.sessions.get(tableId);
+    if (
+      existing?.userId === userId &&
+      existing.initialStack > 0 &&
+      (existing.arenaAsset ?? 'chips') === arenaAsset
+    ) {
+      existing.bigBlind = bigBlind;
+      existing.bigBlindsWon =
+        bigBlind > 0 ? Math.round((existing.profitLoss / bigBlind) * 100) / 100 : 0;
+      if (initialStack > 0) activateTableSessionState(tableId, userId);
+      return;
+    }
     const now = Date.now();
     const session: SessionStats = {
       tableId,
@@ -91,6 +123,7 @@ class SessionStatsServiceClass {
     };
 
     this.sessions.set(tableId, session);
+    if (initialStack > 0) activateTableSessionState(tableId, userId);
 
     // Enhancement #7: Try to restore previous session for same table/user
     try {
@@ -114,6 +147,41 @@ class SessionStatsServiceClass {
 
     // Enhancement #8: Flush any queued offline sessions on startup
     this.flushOfflineQueue();
+  }
+
+  /** Move the same live session before the source page is replaced. */
+  moveSession(from: string, to: string, userId: string): boolean {
+    const session = this.sessions.get(from);
+    if (!session || session.initialStack <= 0 || session.userId !== userId || from === to || !to)
+      return false;
+    const destination = this.sessions.get(to);
+    if (
+      destination &&
+      (destination.userId !== userId ||
+        (destination.arenaAsset ?? 'chips') !== (session.arenaAsset ?? 'chips') ||
+        destination.handsPlayed > 0)
+    )
+      return false;
+    const timer = this.emitTimers.get(from);
+    if (timer) clearTimeout(timer);
+    this.emitTimers.delete(from);
+    moveTableSessionState(from, to, userId, session.currentStack);
+    const moved = {
+      ...session,
+      tableId: to,
+      trajectory: [...session.trajectory],
+      completedHandKeys: [...(session.completedHandKeys || [])],
+    };
+    this.sessions.set(to, moved);
+    this.sessions.delete(from);
+    try {
+      localStorage.removeItem(this.STORAGE_PREFIX + from);
+      localStorage.setItem(this.STORAGE_PREFIX + to, JSON.stringify(moved));
+    } catch (error) {
+      reportError(error, 'SessionStatsService.moveBackup');
+    }
+    masterBus.emit('SESSION_STATS_UPDATE', { tableId: to, stats: { ...moved } });
+    return true;
   }
 
   /**
@@ -146,10 +214,21 @@ class SessionStatsServiceClass {
   /**
    * Record a completed hand
    */
-  recordHand(tableId: string, finalStack: number, won: boolean, vpip: boolean, pfr: boolean): void {
+  recordHand(
+    tableId: string,
+    finalStack: number,
+    won: boolean,
+    vpip: boolean,
+    pfr: boolean,
+    handKey?: string
+  ): void {
     const session = this.sessions.get(tableId);
     if (!session) return;
 
+    if (handKey) {
+      if (session.completedHandKeys?.includes(handKey)) return;
+      session.completedHandKeys = [...(session.completedHandKeys || []), handKey];
+    }
     session.handsPlayed++;
     if (won) session.handsWon++;
     if (vpip) session.vpipHands++;
@@ -260,6 +339,7 @@ class SessionStatsServiceClass {
     }
 
     this.sessions.delete(tableId);
+    endTableSessionState(tableId, session.userId);
 
     const durationMs = Date.now() - session.sessionStartTime;
     const durationMinutes = Math.round(durationMs / 60_000);
@@ -376,6 +456,7 @@ class SessionStatsServiceClass {
     this.emitTimers.forEach((timer) => clearTimeout(timer));
     this.emitTimers.clear();
     this.sessions.clear();
+    clearTableSessionStates();
   }
 }
 

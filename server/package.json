@@ -5,19 +5,19 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/build-public-hist215-native.mjs && tsc",
     "start": "node --env-file=.env dist/index.js",
     "dev": "tsx watch --env-file=.env src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "sim": "tsx sim/runner.ts",
     "fix:esbuild": "node scripts/fix-vitest-esbuild.mjs",
-    "pretest": "node scripts/fix-vitest-esbuild.mjs",
+    "pretest": "node scripts/fix-vitest-esbuild.mjs && node scripts/build-public-hist215-native.mjs && node --test scripts/finite-evaluation-worker.test.mjs",
     "soak": "tsx sim/soak-conservation.ts",
     "lightning:matcher-sim": "node --import tsx src/scripts/lightningMatcherSim.ts",
     "horses:tag": "tsx src/scripts/horsesTag.ts",
     "freebuy:verify": "tsx --env-file=.env src/scripts/freeBuyVerify.ts",
-    "horse:gto-v31-evaluate": "tsx --env-file=.env src/scripts/gtoV31Evaluate.ts",
+    "horse:gto-v31-evaluate": "node --env-file=.env scripts/gto-v31-evaluate-worker.mjs",
     "horse:omaha-evaluate": "tsx src/scripts/horseOmahaEvaluate.ts",
     "horse:plo4-evaluate": "node --import tsx src/scripts/plo4PolicyEvaluate.ts",
     "horse:omaha-variants-evaluate": "node --import tsx src/scripts/omahaVariantPolicyEvaluate.ts",
@@ -25,7 +25,8 @@
     "horse:remaining-variants-evaluate": "node --import tsx src/scripts/remainingVariantPolicyEvaluate.ts",
     "horse:remaining-variant-strength-evaluate": "node --import tsx src/scripts/remainingVariantStrengthEvaluate.ts",
     "horse:joint-strength-evaluate": "node --import tsx src/scripts/jointStrengthEvaluate.ts",
-    "horse:joint-evaluate": "node --import tsx src/scripts/jointPolicyEvaluate.ts"
+    "horse:joint-evaluate": "node --import tsx src/scripts/jointPolicyEvaluate.ts",
+    "horse:omaha-stress": "node --import tsx src/scripts/omahaAdversarialStress.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

@@ -114,7 +114,7 @@ describe('Drift Gate painted console', () => {
     const console = await screen.findByRole('region', { name: 'Burn-In Gate' });
     expect(console).toHaveAttribute('data-family', 'spade');
     expect(console).toHaveAttribute('data-crest', 'spade');
-    expect(screen.getByTestId('gate-pill')).toHaveTextContent('Green');
+    await waitFor(() => expect(screen.getByTestId('gate-pill')).toHaveTextContent('Green'));
     expect(screen.getByRole('combobox', { name: 'Entity Type' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Entity ID' })).toBeInTheDocument();
     expect(screen.getByLabelText('Balance As Of Time')).toBeInTheDocument();

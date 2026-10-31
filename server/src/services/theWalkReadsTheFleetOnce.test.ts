@@ -737,10 +737,7 @@ describe('the top-ups beside the walk are bounded', () => {
       const held = h.server.tournamentTopUpsInFlight.get('short');
       expect(held).toBeInstanceOf(Promise);
       expect(h.server.discoveryJobs.size).toBe(1);
-      expect(reportError).toHaveBeenCalledWith(
-        readFailure,
-        'GameServer.Tournament_discovery_error'
-      );
+      expect(reportError).toHaveBeenCalledWith(readFailure, 'GameServer.completingBoard.threw');
       await h.advance(1);
       expect(h.server.sleep).toHaveBeenCalledTimes(2);
       expect(h.server.tournamentRecurring.topUpWithHorses).toHaveBeenCalledOnce();
@@ -754,7 +751,11 @@ describe('the top-ups beside the walk are bounded', () => {
           tournamentId: 'short',
         }
       );
-      expect(reportError).toHaveBeenCalledTimes(2);
+      expect(reportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'GameServer.completing_scan_failed'
+      );
+      expect(reportError).toHaveBeenCalledTimes(3);
       expect(h.server.tournamentTopUpsInFlight.size).toBe(0);
       expect(h.server.discoveryJobs.size).toBe(0);
     } finally {

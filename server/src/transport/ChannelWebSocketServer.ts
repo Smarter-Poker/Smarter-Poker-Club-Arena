@@ -1,3 +1,6 @@
+import { defaultOpenSession } from '../services/supabase/pgListenSession.js';
+import { resolveEngineListenConnectionString } from '../services/leaseHeartbeatSession.js';
+import { privateRecordTransportReady } from '../services/supabase/privateRecordTransportReady.js';
 import { PrivateRecordSubscriptions } from './PrivateRecordSubscriptions.js';
 import { PrivateRecordListener } from '../services/supabase/privateRecordListener.js';
 import { privateRecordTopicAllowed } from '../services/supabase/client.js';
@@ -189,7 +192,11 @@ export class ChannelWebSocketServer {
     },
     (ready, phase) => {
       for (const conn of this.connections.values()) conn.privateRecords?.readiness(ready, phase);
-    }
+    },
+    resolveEngineListenConnectionString,
+    (connection) =>
+      defaultOpenSession(connection, `club-arena-engine-private-record-listener:${process.pid}`),
+    privateRecordTransportReady
   );
   /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
   public async revokePlayerSessions(userId: string, isCurrent = () => true): Promise<void> {

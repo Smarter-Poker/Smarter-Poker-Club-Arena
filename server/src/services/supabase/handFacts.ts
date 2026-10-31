@@ -116,10 +116,11 @@ export function captureAllInEquity(tableId: string, payload: Record<string, unkn
     if (!Array.isArray(raw) || raw.length === 0) return;
 
     const byUser = new Map<string, number>();
-    for (const e of raw as Array<{ userId?: string; equity?: number }>) {
-      if (!e?.userId || typeof e.equity !== 'number' || !Number.isFinite(e.equity)) continue;
-      // The event carries percent with one decimal; store the fraction.
-      const fraction = Math.min(1, Math.max(0, e.equity / 100));
+    for (const e of raw as Array<{ userId?: string; equity?: number; equityRaw?: number }>) {
+      const percent = e?.equityRaw === undefined ? e?.equity : e.equityRaw;
+      if (!e?.userId || typeof percent !== 'number' || !Number.isFinite(percent)) continue;
+      // Prefer full precision; legacy events carry only the display percentage.
+      const fraction = Math.min(1, Math.max(0, percent / 100));
       byUser.set(e.userId, fraction);
     }
     if (byUser.size === 0) return;
@@ -533,6 +534,7 @@ export function deriveFlowFlags(
   actions: HandAction[],
   opts: {
     boardLength: number;
+    bigBlind?: number;
     returned: number;
     /** userIds who never folded — 2+ means a showdown happened. */
     nonFoldedCount: number;
@@ -573,7 +575,7 @@ export function deriveFlowFlags(
   // Walk preflop in order, tracking the voluntary raise count and the level,
   // so an all-in can be classified as a raise or a call rather than assumed.
   let raiseCount = 0;
-  let level = 0;
+  let level = Math.max(0, opts.bigBlind ?? 0);
   let myRaiseIndex = -1; // which voluntary raise (0-based) was mine
   let pfr = false;
   let threeBet = false;
@@ -605,6 +607,16 @@ export function deriveFlowFlags(
     const isMine = a.userId === userId;
     const amt = a.amount ?? 0;
     const voluntary = a.origin !== 'forced' && !a.dead;
+    // Live forced blinds set the price without being voluntary raises. A
+    // short all-in below that price is a call, including in straddled hands.
+    if (!voluntary) {
+      if (
+        !a.dead &&
+        ['sb', 'bb', 'small_blind', 'big_blind', 'straddle', 'kill_blind'].includes(a.action)
+      )
+        level = Math.max(level, amt);
+      continue;
+    }
 
     if (isMine && voluntary && contextAvailable) {
       if (raiseCount === 1) threeBetOpportunity = true;
@@ -960,6 +972,8 @@ export interface HandFactsInput {
   contributions: Map<string, number>;
   /** Authoritative stacks frozen when cards were dealt, before any forced money. */
   dealtStacksAtDeal?: Map<string, number>;
+  /** Original controller witness, captured before remaining community cards. */
+  allInRunoutWitness?: import('../../types.js').AllInRunoutWitness | null;
   winners: Array<{ userId: string; amount: number }>;
   actions: HandAction[];
   /**
@@ -1156,6 +1170,7 @@ export async function writeHandFacts(
 
       const flags = deriveFlowFlags(uid, input.actions, {
         boardLength: input.boardLength,
+        bigBlind: bb,
         returned,
         nonFoldedCount,
         position:
@@ -1195,16 +1210,20 @@ export async function writeHandFacts(
       // with no further betting possible - which is exactly what the EV
       // adjustment is measuring, whether they got there by shoving or calling.
       const inAllInRunout = typeof eq === 'number';
-      const wasAllIn = flags.was_all_in || inAllInRunout;
+      const witness = input.allInRunoutWitness;
+      const equityOwed =
+        !!witness &&
+        ['preflop', 'flop', 'turn'].includes(witness.street) &&
+        witness.playerIds.length >= 2 &&
+        witness.playerIds.includes(uid);
+      const wasAllIn = flags.was_all_in || inAllInRunout || equityOwed;
 
       if (inAllInRunout) {
         allInEquity = eq;
         const eligible = maxWinnable(invested, investedList) * rakeFactor;
-        // NOTE: `eq` is equity against the whole all-in field while `eligible`
-        // caps at this player's main pot. In a side-pot spot a short stack's
-        // true share of the main pot is higher than its share of the field, so
-        // ev_returned is biased slightly LOW for short stacks. Exact for the
-        // two-way case that dominates volume.
+        // Exact display equity uses this player's eligible-pot denominator,
+        // including every side-pot layer, so the existing cap is also the
+        // correct denominator for the expected return.
         evReturned = r2(eq * eligible);
         evNet = r2(evReturned - invested);
       }
@@ -1344,7 +1363,10 @@ export async function writeHandFacts(
         // recorded as an all-in "on the flop" - a street the player never
         // chose to commit on. Fall back to the runout street only when the
         // action log has nothing (i.e. they got all-in by calling).
-        all_in_street: wasAllIn ? (flags.all_in_street ?? equity?.street ?? null) : null,
+        all_in_street: wasAllIn
+          ? (flags.all_in_street ?? (equityOwed ? witness!.street : equity?.street) ?? null)
+          : null,
+        all_in_equity_owed: equityOwed,
         all_in_at_risk: wasAllIn ? invested : null,
         all_in_equity: allInEquity,
         ev_returned: evReturned,

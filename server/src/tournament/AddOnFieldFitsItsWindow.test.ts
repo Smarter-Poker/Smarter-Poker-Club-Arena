@@ -56,6 +56,8 @@ function field(count: number, fail?: string) {
       eq: () => c,
       // Every fixture player holds chips, so the zero-stack filter keeps them all.
       gt: () => c,
+      order: () => c,
+      limit: () => c,
       is: () => c,
       in: (_column: string, values: string[]) => {
         if (table === 'profiles') batch = values;
@@ -66,11 +68,11 @@ function field(count: number, fail?: string) {
           error: null,
           data:
             table === 'tournament_players'
-              ? ids.map((user_id) => ({ user_id, add_on: receipts.has(user_id) }))
+              ? ids.map((user_id) => ({ id: user_id, user_id, add_on: receipts.has(user_id) }))
               : table === 'tables'
                 ? [{ id: 'table' }]
                 : table === 'table_seats'
-                  ? ids.map((user_id) => ({ user_id }))
+                  ? ids.map((user_id) => ({ id: user_id, user_id }))
                   : batch.map((id) => ({ id })),
         }).then(resolve),
     };
@@ -92,7 +94,7 @@ function field(count: number, fail?: string) {
     (id) =>
       createHash('sha256').update(`${id}|${eventId}|addon-participation`).digest().readUInt32BE(0) %
         1000 <
-      1000
+      740
   );
   return { ids, receipts, calls, selected, load };
 }

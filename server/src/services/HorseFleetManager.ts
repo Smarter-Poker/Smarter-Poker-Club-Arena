@@ -118,7 +118,8 @@ import {
 } from './HorseSitVerdict.js';
 import {
   applyStakeBandSupply,
-  buyInBBFor,
+  horseMaximumBuyIn,
+  horseCashMinimum,
   gameLaneFor,
   horseHash,
   isActiveNow,
@@ -522,8 +523,7 @@ const DEFAULT_TABLES: TableConfig[] = [
 // 100bb, tables filled to target instantly in one 30s cycle, and the
 // fewest-tables sort made the same horses appear in the same order forever.
 // These helpers give each horse a stable personality for HOW it shows up:
-//  - a deterministic buy-in profile (short-stacker / standard / deep) with
-//    per-sitting jitter, clamped to the table's real min/max buy-in
+//  - the table maximum for every buy-in (owner October 26)
 //  - a daily activity window (hash-derived start hour + length) so the
 //    population on the floor rotates through the whole stable instead of
 //    the same few dozen
@@ -655,9 +655,6 @@ export class HorseFleetManager {
     this.lastEligibleBuiltAt = ms;
   }
   private overrunTicks = 0; // 30s ticks dropped because the previous cycle was still running
-  /** Seeds the per-sitting buy-in jitter for the WHOLE cycle, so the count
-   *  and the chair size the same buy-in (buyInBBFor). Set at cycle start. */
-  private cycleSittingSeed = '0';
   /**
    * When `lastEligibleByTable` was last rebuilt from a full walk of the floor.
    *
@@ -1070,7 +1067,6 @@ export class HorseFleetManager {
     if (this.seeding) return; // Prevent concurrent seeding
     this.seeding = true;
     const cycleStartedAt = Date.now();
-    this.cycleSittingSeed = String(cycleStartedAt);
     /* THE PULSE (Phase 3). Filled in as the cycle learns things and published
        once, in `finally`, so that EVERY exit path beats - the early returns
        above all the way down to the catch. Starts as "we got nowhere", which
@@ -2696,7 +2692,7 @@ export class HorseFleetManager {
          are the cycle's live maps, so a seat bought this cycle is visible to
          the next verdict, exactly as before. See HorseSitVerdict. */
       const sitCtx: SitVerdictContext = {
-        bankrollOnlyCashHorse: (id) => cashRosterAllows(id) === true,
+        bankrollOnlyCashHorse: (id, table) => cashRosterAllows(id, table) === true,
         resolveSeatClub: (t, id) => this.resolveSeatClub(membership, t, id),
         sizeBuyIn: (t, id, club, floor) => {
           const telemetry: BankrollEvent[] = [];
@@ -3147,7 +3143,7 @@ export class HorseFleetManager {
             // Supersedes variant, stake and activity persona gates below.
             // The roster still bounds the pool; bankroll and normal player
             // admission rules still decide whether each seat is affordable.
-            const bankrollOnly = cashRosterAllows(h.id) === true;
+            const bankrollOnly = cashRosterAllows(h.id, table) === true;
             /* THE DATABASE ALREADY SAID THIS HORSE IS FULL (2026-09-11). It
                refused a buy-in for it at an earlier table in THIS cycle with
                the platform game limit, and nothing here lowers that count.
@@ -3214,9 +3210,10 @@ export class HorseFleetManager {
                club the tagger knows, so at an arena table `tag` is always
                undefined. The horse's own game - cash or events, and which
                variants - is the one its Deep Stack tag already says; reading
-               it here keeps a tournament-only horse off the arena's cash
-               tables and an NLH-only horse off another variant, exactly as at
-               home. The STAKE is not read from it: those are chip blinds, and
+               it here supplies historical variant preferences. The owner
+               now allows every registered horse at Diamond cash; its home
+               Club Arena cash bench must not deny that eligibility. The STAKE
+               is not read from it: those are chip blinds, and
                the arena's are Diamond blinds (see the stake gate below). */
             const laneTag = arenaTable
               ? DIAMOND_ARENA_HORSE_CLUBS.map((c) => book?.tags.get(tagKey(h.id, c))).find(
@@ -3263,10 +3260,11 @@ export class HorseFleetManager {
             }
 
             /* THE CASH ROSTER (Dan 2026-10-23: "THEY CAN PLAY TOURNAMENTS,
-               JUST NOT CASH GAMES"). Only the 45-horse active roster sits at
-               cash. Their tags already say so; this is the belt, and the
+               JUST NOT CASH GAMES"). Only the selected half sits at Club Arena
+               cash; Diamond cash has its own funded admission. Their tags
+               already say so; this is the belt, and the
                database seat door is the braces. */
-            if (!rosterExemptClub(table.club_id) && cashRosterAllows(h.id) === false) {
+            if (!rosterExemptClub(table.club_id) && cashRosterAllows(h.id, table) === false) {
               tagDropped++;
               return false;
             }
@@ -3425,7 +3423,6 @@ export class HorseFleetManager {
                not once the host is at its curve. Bypassed entirely when a
                human at this table needs the game rescued. */
             if (
-              !bankrollOnly &&
               !hostAllowsNewBody({
                 hostId: String((table as any).club_id ?? ''),
                 horseId: h.id,
@@ -4961,23 +4958,13 @@ export class HorseFleetManager {
        emits nothing and the seat stage emits it once. */
     note: (e: BankrollEvent) => void = bankrollEvent
   ): number {
-    const minB = Number(table.min_buy_in) || table.big_blind * 40;
+    const minB = horseCashMinimum(table, Number(table.min_buy_in) || table.big_blind * 40);
     const maxB = Number(table.max_buy_in) || table.big_blind * 200;
-    // V9: humans buy in for ROUND numbers, never 227.40. Snap to a 5bb step,
-    // then clamp to the table's real limits.
-    const step = table.big_blind * 5;
-    /* One roll per (horse, table, cycle): the count and the chair must size
-       the same buy-in or the aggregate-exposure ceiling can pass one and
-       refuse the other. See buyInBBFor. */
-    const raw =
-      table.big_blind * buyInBBFor(horseId, `${String(table.id)}|${this.cycleSittingSeed}`);
-    let buyIn =
-      Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
+    // Owner October 26: every entry chooses the table maximum. A bankroll
+    // that cannot carry that amount declines this seat rather than buying short.
+    const buyIn = horseMaximumBuyIn(minB, maxB);
+    if (!Number.isFinite(buyIn) || buyIn < minB || buyIn <= 0) return 0;
 
-    /* NEVER BRING TOO MUCH OF THE ROLL TO ONE TABLE. The table's max buy-in is
-       what the GAME allows, not what this bankroll should put at risk in a
-       single seat - a 400 max is not an instruction to a horse with 3,000 to
-       its name. */
     if (bankrollsLoaded) {
       /* Keyed on the club that will actually PAY (resolveSeatClub), never on
          `table.club_id`: for a union table that is the union's own club row,
@@ -4998,8 +4985,8 @@ export class HorseFleetManager {
         return 0;
       }
       if (capped < buyIn) note('buyin_capped');
-      const snapped = Math.round(capped / step) * step;
-      buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
+      // A policy cap is an eligibility refusal, never a smaller purchase.
+      if (capped < buyIn) return 0;
     }
     /* THE FLOOR IS THE LAST WORD, AS IT IS FOR A HUMAN (2026-09-05). The
        buy-in modal shows a returning player GREATEST(min, floor) clamped to

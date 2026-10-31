@@ -7,12 +7,17 @@
  * Complete card. One summary at a time; a new one replaces the last.
  */
 import { useSyncExternalStore } from 'react';
+import { masterBus } from '../core/MasterBus';
 
 export interface LightningSummaryRequest {
+  closeTableId?: string;
+  closeSeat?: number;
   poolSessionId: string;
   clusterId: string;
   /** The Cluster's name for the header, when known. */
   name: string | null;
+  /** Original anchor occupancy followed by the existing queued-cashout watcher. */
+  cashout?: { tableId: string; occupancyId: string };
 }
 
 let current: LightningSummaryRequest | null = null;
@@ -30,8 +35,19 @@ export function openLightningSessionSummary(req: LightningSummaryRequest): void 
 
 export function closeLightningSessionSummary(): void {
   if (!current) return;
+  const completed = current;
   current = null;
   emit();
+  if (completed.closeTableId) {
+    masterBus.emit('TABLE_LEFT', {
+      tableId: completed.closeTableId,
+      seat: completed.closeSeat ?? 0,
+    });
+    masterBus.emit('TABLE_MENU_ACTION', {
+      tableId: completed.closeTableId,
+      action: 'CLOSE_TABLE_TAB',
+    });
+  }
 }
 
 export function peekLightningSessionSummary(): LightningSummaryRequest | null {

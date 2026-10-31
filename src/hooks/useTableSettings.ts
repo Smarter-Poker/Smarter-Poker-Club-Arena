@@ -2,6 +2,13 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
+import {
+  awaitPreferenceSave,
+  beginTableSettingIntent,
+  confirmTableSettingIntent,
+  readTableSettingIntent,
+  orderTableSettingWrite,
+} from '../lib/tableSettingIntents';
 import { reportError } from '../utils/errorReporter';
 import { soundService } from '../services/SoundService';
 import { setVibrationAllowed, isVibrationPreferred } from '../utils/vibrationGate';
@@ -77,7 +84,7 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   theme: 'black',
   fourColorDeck: true,
   fourColorDeckExplicit: false,
-  showHUD: true,
+  showHUD: false,
   showPotOdds: false,
   showBetSizePresets: true,
   confirmAllIn: true,
@@ -340,6 +347,7 @@ function loadFromStorage(): TableUserSettings {
       // FELT_THEMES above records what was found live and what it did.
       merged.theme = coerceFeltTheme(merged.theme);
       if (merged.fourColorDeckExplicit !== true) merged.fourColorDeck = true;
+      merged.showHUD = false; // Opponent HUDs are prohibited, including saved legacy preferences.
       return merged;
     }
     return DEFAULT_SETTINGS;
@@ -502,6 +510,7 @@ function applyGateChanges(prev: TableUserSettings | null, next: TableUserSetting
 function commit(update: (prev: TableUserSettings) => TableUserSettings): void {
   const previous = sharedSettings;
   const next = update(getSnapshot());
+  next.showHUD = false; // Enforce for toggles, bulk updates and cross-tab events.
   if (next === sharedSettings) return;
   sharedSettings = next;
   applySideEffects(next);
@@ -573,6 +582,14 @@ function attachBusOnce(): void {
       rawSetting && isSettingKey(rawSetting) ? rawSetting : KEY_FOR_COLUMN[rawSetting ?? ''];
     const { value } = event.payload;
     if (setting && isSettingKey(setting)) {
+      const column = COLUMN_FOR_KEY[setting];
+      if (
+        event.payload.origin?.startsWith('postgres-sync:') &&
+        activeUserId &&
+        column &&
+        readTableSettingIntent(activeUserId, column)
+      )
+        return;
       commit((prev) => ({
         ...prev,
         [setting]: value,
@@ -607,26 +624,25 @@ function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
   const column = COLUMN_FOR_KEY[key];
   const ownerId = hydratedUserId;
   if (!column || !ownerId) return;
-  /* `.then(onFulfilled)` with ONE argument handles fulfilment only, and a
-     PostgREST builder REJECTS on transport failure (offline, DNS, aborted
-     fetch) rather than resolving with an `error`. So every settings change made
-     with the connection down produced an unhandled rejection and reached
-     telemetry through neither branch: the reportError below sits on the path
-     that was never taken. Fire-and-forget must still catch. */
-  void (async () => {
+  const intentId = beginTableSettingIntent(ownerId, column, value);
+  void orderTableSettingWrite(ownerId, column, async () => {
     try {
-      const { error } = await supabase
-        .from('user_table_settings')
-        .upsert({ user_id: ownerId, [column]: value }, { onConflict: 'user_id' });
+      const { error } = await awaitPreferenceSave(
+        supabase
+          .from('user_table_settings')
+          .upsert({ user_id: ownerId, [column]: value }, { onConflict: 'user_id' })
+      );
       if (error) {
         reportError(error, 'useTableSettings.Save_failed');
         return;
       }
-      await markSettingsTouched(ownerId, [column]);
+      if (await markSettingsTouched(ownerId, [column])) {
+        confirmTableSettingIntent(ownerId, column, intentId);
+      }
     } catch (error) {
       reportError(error, 'useTableSettings.Save_failed');
     }
-  })();
+  });
 }
 
 /**
@@ -639,8 +655,8 @@ function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
  * row — one marker for one table, or the two hooks would disagree about which
  * half of a user's settings were deliberate.
  */
-export async function markSettingsTouched(userId: string, columns: string[]): Promise<void> {
-  if (!userId || columns.length === 0) return;
+export async function markSettingsTouched(userId: string, columns: string[]): Promise<boolean> {
+  if (!userId || columns.length === 0) return false;
   try {
     /* BOUNDED, because `useUserTableSettings` awaits this INSIDE its ordered
        write queue: the promise it returns is what the next tap of the same
@@ -662,9 +678,14 @@ export async function markSettingsTouched(userId: string, columns: string[]): Pr
         )
       ),
     ]);
-    if (result.error) reportError(result.error, 'useTableSettings.Touch_mark_failed');
+    if (result.error) {
+      reportError(result.error, 'useTableSettings.Touch_mark_failed');
+      return false;
+    }
+    return true;
   } catch (error) {
     reportError(error, 'useTableSettings.Touch_mark_failed');
+    return false;
   }
 }
 
@@ -787,6 +808,14 @@ async function hydrateFromServer(userId: string): Promise<void> {
   for (const [key, column] of Object.entries(COLUMN_FOR_KEY) as Array<
     [keyof TableUserSettings, string]
   >) {
+    const pending = readTableSettingIntent(userId, column);
+    if (pending) {
+      (merged as unknown as Record<string, unknown>)[key] = pending.value;
+      if (key === 'fourColorDeck') merged.fourColorDeckExplicit = true;
+      changed = true;
+      toPush.push([key, pending.value]);
+      continue;
+    }
     const serverValue = row?.[column];
     if (row === null || serverValue === null || serverValue === undefined) {
       // No row, or a column this row predates: the local value is all there is.
@@ -946,6 +975,9 @@ export function useTableSettings() {
       // SHOWDOWN AUDIT 2026-08-25: same rule as updateSetting — an autoMuck
       // value arriving through the bulk path is a user action too.
       ...('autoMuck' in updates ? { autoMuckExplicit: true } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, 'fourColorDeck')
+        ? { fourColorDeckExplicit: true }
+        : {}),
     }));
     // Broadcast each change for cross-tab sync
     for (const [key, value] of Object.entries(updates)) {

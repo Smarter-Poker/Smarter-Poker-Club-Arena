@@ -1,3 +1,8 @@
+import { admitHorsePhase13LiveAuthority } from '../../engine/HorsePhase13Authority.js';
+import {
+  HORSE_OWNER_FORCED_EVIDENCE_PATH,
+  HORSE_OWNER_FORCED_EVIDENCE_SHA256,
+} from '../../engine/HorseOwnerForcedActivation.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   HorseFleetPhaseInterpreter,
@@ -6,6 +11,11 @@ import {
 } from './phaseProof.js';
 import { decisionRequest } from '../../testing/horseRegression/plan/fixture.js';
 import { HorseMind } from '../../engine/HorseMind.js';
+import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
+import {
+  horsePlanContextFromDecision,
+  horsePlanBatchBindingFromRequest,
+} from '../../engine/HorsePlanHandIdentity.js';
 import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import {
   createHorseExecutionWitness,
@@ -126,6 +136,33 @@ function fixture(mode: 'shadow' | 'candidate' = 'candidate') {
   return { capture, witness, admission };
 }
 describe('private phase interpretation requires source-qualified accepted evidence', () => {
+  it('does not substitute qualified continuation evidence for a missing captured guard receipt', () => {
+    const f = fixture();
+    vi.spyOn(qualifiedReplayAdmissions, 'admitPhase8Authority').mockReturnValue(f.admission);
+    f.capture.replayState = {
+      admission: { phase8Postflop: 'candidate', phase8CatastropheGuard: 'candidate' },
+    };
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase8
+    ).toMatchObject({ status: 'unknown', reason: 'owner_receipt_missing' });
+  });
+
+  it.each(['cash', 'omaha_tournament', 'multiple_boards'] as const)(
+    'keeps a captured guard admission outside its actual static domain: %s',
+    (domain) => {
+      const f = fixture();
+      delete f.capture.decision.tournamentPostflop;
+      delete (f.witness as { phase8Authority?: unknown }).phase8Authority;
+      f.capture.replayState = { admission: { phase8CatastropheGuard: 'candidate' } };
+      if (domain === 'cash') f.capture.snapshot.gameState.gameMode = 'cash';
+      else if (domain === 'omaha_tournament') f.capture.snapshot.gameState.gameVariant = 'plo4';
+      else f.capture.snapshot.gameState.boardCount = 2;
+      expect(
+        new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase8
+      ).toMatchObject({ status: 'outside-domain', application: 'not-applicable' });
+    }
+  );
+
   it.each([0, 0.99])(
     'joins actual corrective worker capture and accepted witness without confusing sampled application draw=%s',
     async (draw) => {
@@ -183,6 +220,54 @@ describe('private phase interpretation requires source-qualified accepted eviden
     }
   );
 
+  it('does not call a signed corrective composition independently qualified when its retained baseline is forced', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const h = harness(true, 0),
+      r = request(),
+      result = await run(h, r);
+    const capture = structuredClone(h.records[0]) as HorsePhaseCapture;
+    const w = createHorseExecutionWitness(r, result.decision, {
+      requestId: r.requestId,
+      lane: 'fast',
+      computeMs: result.computeMs,
+      governorScale: result.governorScale,
+    });
+    w.phase14Authority!.verdict = 'usable';
+    settleHorseExecutionWitness(w, {
+      applied: true,
+      acceptedActions: [
+        {
+          intended: true,
+          record: {
+            seat: r.player.seat,
+            userId: r.player.user_id,
+            action: result.decision.action,
+            amount: result.decision.action === 'fold' ? 0 : result.decision.amount!,
+            stage: 'river',
+          },
+        },
+      ],
+    });
+    // Explicit consumer input: a signed corrective owner composed with the
+    // actual running NLH cash baseline's forced authority, not a P8 cash claim.
+    const baseline = admitHorsePhase13LiveAuthority('nlh', now);
+    if (baseline.status !== 'admitted') throw Error('baseline fixture');
+    const holder = new HorseQualifiedAuthorityHolder('10000000-0000-4000-8000-000000000001');
+    holder.apply(baseline);
+    const receipt = holder.receipt();
+    expect(receipt.evidenceSha256).toBe(HORSE_OWNER_FORCED_EVIDENCE_SHA256);
+    capture.decision.correctivePolicy!.baselineAuthorities = { phase13: receipt };
+    vi.spyOn(qualifiedReplayAdmissions, 'admitPhase14Attachment').mockReturnValue(h.attachment);
+    vi.spyOn(qualifiedReplayAdmissions, 'admitPhase13Authority').mockReturnValue(baseline);
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(capture, w, plans).phase14
+    ).toMatchObject({
+      status: 'applicable-active',
+      application: 'accepted',
+      qualification: 'owner-forced',
+      reason: 'owner_forced_not_independently_qualified',
+    });
+  });
   it('requires request-owned DEEP admission and one exact retained FAST input, without borrowing globals', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(now);
     const h = harness(),
@@ -365,6 +450,27 @@ describe('private phase interpretation requires source-qualified accepted eviden
       ).toBe(originalFastBinding ? 'refused' : 'unknown');
     }
   );
+  it('keeps owner-forced accepted use active without claiming independent qualification', () => {
+    const f = structuredClone(fixture());
+    if (f.admission.status !== 'admitted') throw Error('fixture admission');
+    const evidence = {
+      evidencePath: HORSE_OWNER_FORCED_EVIDENCE_PATH,
+      evidenceSha256: HORSE_OWNER_FORCED_EVIDENCE_SHA256,
+    };
+    Object.assign(f.admission.authority, evidence);
+    Object.assign(f.capture.decision.tournamentPostflop!.authority!, evidence);
+    Object.assign(f.witness.phase8Authority!.authority!, evidence);
+    vi.spyOn(qualifiedReplayAdmissions, 'admitPhase8Authority').mockReturnValue(f.admission);
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase8
+    ).toMatchObject({
+      status: 'applicable-active',
+      eligibility: 'eligible',
+      application: 'accepted',
+      qualification: 'owner-forced',
+      reason: 'owner_forced_not_independently_qualified',
+    });
+  });
   it('verifies an optional owner through the maintained admission and original epoch restorer', () => {
     const f = fixture();
     const admit = vi
@@ -492,12 +598,13 @@ describe('private phase interpretation requires source-qualified accepted eviden
   });
 });
 
-function phase7Baseline() {
+function phase7Baseline(allocated = false) {
   const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'preflop');
   state.toCall = 0;
   state.legalActions = ['check'];
   state.minRaiseTo = null;
   state.maxRaiseTo = null;
+  if (allocated) state.actionHistory = decisionRequest().gameState.actionHistory;
   const opts = {
     telemetry: false,
     mind: false,
@@ -516,13 +623,20 @@ function phase7Baseline() {
   }
   if (!decision.tournamentUtility?.evidence) throw Error('actual supported utility not emitted');
   const snapshot = { ...decisionRequest(), player: hero, gameState: state, opts };
+  const context = allocated ? horsePlanContextFromDecision(snapshot) : undefined;
   const readFrame = encodeHorseDecisionReads(
     HorseMind.createSandbox(),
     state.players,
-    HorseMind.handKeyOf(state.actionHistory)
+    horsePlanHandKey(state.actionHistory, context),
+    context
   );
   decision.tournamentUtility.readFrameSha256 = readFrame.sha256;
   const capture: HorsePhaseCapture = { snapshot, decision, readFrame, effects: [] };
+  if (context)
+    Object.assign(capture, {
+      planContext: context,
+      planBinding: horsePlanBatchBindingFromRequest(snapshot),
+    });
   const witness = createHorseExecutionWitness(snapshot, decision, {
     requestId: snapshot.requestId,
     lane: 'fast',
@@ -561,6 +675,30 @@ describe('supported Phase7 baseline activation and closed qualification domains'
       reason: 'supported_uncalibrated_utility_baseline',
     });
   });
+  it('verifies an allocated original frame with nonempty public action history', () => {
+    const f = phase7Baseline(true);
+    expect(f.capture.readFrame.json).toContain('plan-hand-v1:');
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase7
+    ).toMatchObject({ qualification: 'verified', application: 'accepted' });
+  });
+  it('refuses allocated evidence with a malformed retained context', () => {
+    const f = phase7Baseline(true);
+    Object.assign(f.capture, { planContext: { version: 1, hand: { tableId: 'foreign' } } });
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase7
+    ).toMatchObject({ reason: 'utility_original_evidence_mismatch', application: 'refused' });
+  });
+  it('still refuses an allocated frame with a forged hash repeated by its receipts', () => {
+    const f = phase7Baseline(true);
+    f.capture.readFrame = { ...f.capture.readFrame, sha256: 'f'.repeat(64) };
+    f.capture.decision.tournamentUtility!.readFrameSha256 = 'f'.repeat(64);
+    const witness = structuredClone(f.witness);
+    (witness.phase7Evidence as any).readFrameSha256 = 'f'.repeat(64);
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, witness, plans).phase7
+    ).toMatchObject({ reason: 'utility_original_evidence_mismatch', application: 'refused' });
+  });
   it('refuses disabled or unsupported context and preserves an explicit utility refusal', () => {
     const f = phase7Baseline();
     f.capture.snapshot.opts = { ...f.capture.snapshot.opts, phase7Utility: false };
@@ -591,10 +729,11 @@ describe('supported Phase7 baseline activation and closed qualification domains'
       new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, witness, plans).phase7!.status
     ).toBe('refused');
   });
-  it('caches all eighteen baseline and forty-five canonical corrective admissions without a false bound', () => {
+  it('caches both Phase 8 families and all canonical baseline/corrective admissions without a false bound', () => {
     const refusal = { status: 'refused', reason: 'unselected', transient: false } as const;
     for (const name of [
       'admitPhase8Authority',
+      'admitPhase8GuardAuthority',
       'admitPhase10Authority',
       'admitPhase11Authority',
       'admitPhase12Authority',
@@ -609,6 +748,7 @@ describe('supported Phase7 baseline activation and closed qualification domains'
     expect(() => {
       for (let i = 0; i < 2; i++) {
         a.admitPhase8Authority();
+        a.admitPhase8GuardAuthority();
         a.admitPhase10Authority();
         for (const v of Object.keys(PHASE11_PROTECTED_RELEASE_SELECTIONS))
           a.admitPhase11Authority(v);
@@ -620,6 +760,7 @@ describe('supported Phase7 baseline activation and closed qualification domains'
       }
     }).not.toThrow();
     expect(corrective).toHaveBeenCalledTimes(45);
+    expect(qualifiedReplayAdmissions.admitPhase8GuardAuthority).toHaveBeenCalledTimes(1);
     expect(() => a.admitPhase14Attachment('nlh-untrusted-domain')).toThrow();
     expect(corrective).toHaveBeenCalledTimes(45);
   });

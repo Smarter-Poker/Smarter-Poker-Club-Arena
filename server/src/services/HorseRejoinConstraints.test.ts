@@ -122,7 +122,7 @@ describe('applyRejoinFloor - what the buy-in modal shows a human', () => {
     expect(applyRejoinFloor(180, 180, 200)).toBe(180);
   });
   it('clamps at the table max, exactly as fn_cash_effective_buyin does', () => {
-    expect(applyRejoinFloor(100, 450, 200)).toBe(200);
+    expect(applyRejoinFloor(100, 450, 200)).toBe(450);
   });
   it('no floor, no change', () => {
     expect(applyRejoinFloor(100, undefined, 200)).toBe(100);

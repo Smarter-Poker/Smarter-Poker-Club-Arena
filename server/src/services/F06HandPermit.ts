@@ -1,3 +1,4 @@
+import { bindTournamentDataAuthority } from './supabase/dataActorContext.js';
 import { observeCurrentEngineWriter } from './F06EngineWriterCapture.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 export type F06Rpc = (
@@ -66,15 +67,28 @@ export class F06HandPermit {
   private phase: 'new' | 'reserved' | 'unknown' | 'attempted' | 'terminated' | 'number_refused' =
     'new';
   private receipt: Readonly<F06TerminationReceipt> | null = null;
+  private originalRetentionAwaitingStart = false;
   private drainedWithoutStart = false;
   private durableCustodyEvidence: string | null = null;
+  private readonly writerGeneration: string;
   constructor(
     input: F06HandIdentity,
     private readonly rpc: F06Rpc,
     private readonly current: () => boolean,
-    private readonly startAllowed: () => boolean = current
+    private readonly startAllowed: () => boolean = current,
+    recoveredWriterGeneration?: string
   ) {
     this.binding = identity(input);
+    this.writerGeneration = recoveredWriterGeneration ?? this.binding.lease_generation;
+    if (!uuid.test(this.writerGeneration)) throw new Error('f06_identity_invalid');
+    this.rpc = bindTournamentDataAuthority(
+      { tournamentId: this.binding.tournament_id, leaseGeneration: this.writerGeneration },
+      rpc
+    );
+    // The original identity never changes. SQL's current-lease claim must
+    // already have proved custody before this adapter is installed. A claimed
+    // hand cannot reserve another number, start again, or become never_started.
+    if (recoveredWriterGeneration !== undefined) this.phase = 'attempted';
   }
   recoveryState(): string {
     return this.phase;
@@ -261,7 +275,7 @@ export class F06HandPermit {
     // SQL must verify the evidence row, not trust the local phase or signature.
     const result = await this.rpc('fn_f06_finish_hand', {
       p_tournament_id: b.tournament_id,
-      p_lease_generation: b.lease_generation,
+      p_lease_generation: this.writerGeneration,
       p_permit_id: b.permit_id,
       p_outcome: outcome,
       p_evidence_id: evidenceId,
@@ -334,10 +348,28 @@ export class F06HandPermit {
     return this.preparedCancellation;
   }
 
-  /** Must wrap the final synchronous persistence/start block, with no await. */
-  start(actuate: () => void): void {
+  assertPreparedStartAllowed(): void {
     if (this.phase !== 'reserved' || !this.current() || !this.startAllowed())
       throw new Error('f06_start_unproven');
+  }
+
+  /** A retention request may commit even when its answer is lost. */
+  attemptOriginalRetention(): void {
+    this.assertPreparedStartAllowed();
+    this.phase = 'attempted';
+    this.originalRetentionAwaitingStart = true;
+  }
+
+  /** Must wrap the final synchronous persistence/start block, with no await. */
+  start(actuate: () => void): void {
+    if (
+      (this.phase !== 'reserved' &&
+        !(this.phase === 'attempted' && this.originalRetentionAwaitingStart)) ||
+      !this.current() ||
+      !this.startAllowed()
+    )
+      throw new Error('f06_start_unproven');
+    this.originalRetentionAwaitingStart = false;
     this.phase = 'attempted'; // A partial throw never becomes never_started.
     actuate();
   }

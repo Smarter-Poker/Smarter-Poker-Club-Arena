@@ -11,10 +11,18 @@
  * identical to the original TablePage behaviour.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
+import {
+  tableSessionState,
+  bindTableSessionState,
+  releaseTableSessionState,
+  type SessionCarry,
+} from '../services/TableSessionState';
 import { masterBus } from '../core/MasterBus';
 
 export interface SessionRefs {
+  vpipCountRef: React.MutableRefObject<number>;
+  sessionCarryRef: React.MutableRefObject<SessionCarry>;
   /** Wall-clock timestamp when the player first sat down. */
   sessionStartRef: React.MutableRefObject<number>;
 
@@ -61,7 +69,7 @@ export interface UseTableSessionReturn extends SessionRefs {
    * Call this when the SessionSummary modal is closed so stale data
    * doesn't bleed into the next session.
    */
-  resetSession: () => void;
+  resetSession: (initialStack?: number) => void;
 }
 
 /**
@@ -69,18 +77,33 @@ export interface UseTableSessionReturn extends SessionRefs {
  *   below is scoped to it. See the comment on the subscriptions for why that
  *   is not optional.
  */
-export function useTableSession(tableId?: string | null): UseTableSessionReturn {
-  const sessionStartRef = useRef<number>(Date.now());
-  const handsPlayedRef = useRef<number>(0);
-  const handsWonRef = useRef<number>(0);
-  const biggestPotRef = useRef<number>(0);
-  const peakStackRef = useRef<number>(0);
-  const sessionPLRef = useRef<number>(0);
-  const totalBuyInRef = useRef<number>(0);
-  const totalRebuysRef = useRef<number>(0);
-  const bustPromptFiredRef = useRef<boolean>(false);
-  const heroWonCurrentHandRef = useRef<boolean>(false);
-  const hadShowdownRef = useRef<boolean>(false);
+export function useTableSession(
+  tableId?: string | null,
+  userId?: string | null
+): UseTableSessionReturn {
+  const refs = useMemo(() => tableSessionState(tableId, userId), [tableId, userId]);
+  const {
+    sessionStartRef,
+    handsPlayedRef,
+    handsWonRef,
+    biggestPotRef,
+    peakStackRef,
+    sessionPLRef,
+    totalBuyInRef,
+    totalRebuysRef,
+    vpipCountRef,
+    sessionCarryRef,
+    bustPromptFiredRef,
+    heroWonCurrentHandRef,
+    hadShowdownRef,
+  } = refs;
+  if (tableId && userId && userId !== 'guest') bindTableSessionState(tableId, userId, refs);
+  useEffect(
+    () => () => {
+      if (tableId && userId) releaseTableSessionState(tableId, userId);
+    },
+    [tableId, userId]
+  );
 
   // LIVE E2E FIX 2026-08-15: biggestPotRef was declared but NEVER written —
   // the Session Complete modal showed "BIGGEST POT 0" every session, and
@@ -183,43 +206,28 @@ export function useTableSession(tableId?: string | null): UseTableSessionReturn 
     };
     // Refs are stable for the hook's lifetime; re-subscribe only if the table
     // this session belongs to changes.
-  }, [tableId]);
+  }, [tableId, userId, refs]);
 
-  const resetSessionRef = useRef<() => void>(() => {});
-
-  const resetSession = () => {
+  const resetSession = (initialStack = 0) => {
     sessionStartRef.current = Date.now();
     handsPlayedRef.current = 0;
+    vpipCountRef.current = 0;
+    sessionCarryRef.current = { handsPlayed: 0, handsWon: 0, fundingAdjustment: 0 };
     handsWonRef.current = 0;
     biggestPotRef.current = 0;
-    peakStackRef.current = 0;
+    peakStackRef.current = initialStack;
     sessionPLRef.current = 0;
-    totalBuyInRef.current = 0;
+    totalBuyInRef.current = initialStack;
     totalRebuysRef.current = 0;
     bustPromptFiredRef.current = false;
     heroWonCurrentHandRef.current = false;
     hadShowdownRef.current = false;
+    if (tableId && userId) bindTableSessionState(tableId, userId, refs);
   };
-  resetSessionRef.current = resetSession;
-
-  /**
-   * A new table is a new session.
-   *
-   * The counters live in refs, which survive a prop change; only an unmount
-   * clears them. TablePage is not always remounted when the table changes (the
-   * multi-table view swaps the active table under one page, and /table/:id can
-   * navigate between tables), so without this the first table's hands, pot and
-   * peak followed the player to the second one and were reported as its
-   * session. Skips the very first run, where the refs are already fresh.
-   */
-  const scopedTableRef = useRef<string | null | undefined>(tableId);
-  useEffect(() => {
-    if (scopedTableRef.current === tableId) return;
-    scopedTableRef.current = tableId;
-    resetSessionRef.current();
-  }, [tableId]);
 
   return {
+    vpipCountRef,
+    sessionCarryRef,
     sessionStartRef,
     handsPlayedRef,
     handsWonRef,

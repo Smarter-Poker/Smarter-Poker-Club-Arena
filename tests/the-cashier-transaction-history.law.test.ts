@@ -150,12 +150,12 @@ describe('the cashier transaction history', () => {
 
   it('lets only owners, co-owners and admins choose All Club Transactions', () => {
     expect(page).toContain("return role === 'owner' || role === 'co_owner' || role === 'admin';");
-    expect(page).toContain("['club', 'All Club Transactions'],");
+    expect(page).toContain("['club', 'Club Transactions'],");
     expect(page).toContain("['mine', 'My Transactions'],");
     // Staff choose between the club and their own; agents between their own
     // and their downline (Dan's Club Data rule); a player has one book.
     expect(page).toMatch(
-      /isClubStaffRole\(myRole\)\s*\?\s*\[\s*\['club', 'All Club Transactions'\],\s*\['mine', 'My Transactions'\],?\s*\]/
+      /isClubStaffRole\(myRole\)\s*\?\s*\[\s*\['club', 'Club Transactions'\],\s*\['mine', 'My Transactions'\],?\s*\]/
     );
     expect(page).toMatch(
       /isAgentRole\(myRole\)\s*\?\s*\[\s*\['mine', 'My Transactions'\],\s*\['downline', 'My Downline'\],?\s*\]/
@@ -200,9 +200,7 @@ describe('the cashier transaction history', () => {
     const page = read('src/pages/CashierTradePage.tsx');
     // Search runs over the whole history, debounced, never over the rows on screen.
     expect(page).toContain('p_search: historySearch || null,');
-    expect(page).toContain(
-      "setTimeout(() => setHistorySearch(typed.length >= 2 ? typed : ''), 350)"
-    );
+    expect(page).toContain('setTimeout(() => setHistorySearch(typed), 350)');
     // Older pages come from the last row on screen, never an offset.
     expect(page).not.toContain('p_offset');
     expect(page).toContain('p_before_at: last.createdAt,');

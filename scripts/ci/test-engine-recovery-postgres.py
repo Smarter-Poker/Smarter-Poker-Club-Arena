@@ -8,6 +8,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PG = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
+PRIVILEGE_MIGRATION = ROOT / 'supabase/migrations/20261028062855_recovery_contract_recognizes_the_exact_privilege_only_ddl_gu.sql'
 MIGRATION = ROOT / 'supabase/migrations/20260917190616_protect_event_owned_engine_recovery_windows_from_ddl.sql'
 
 
@@ -75,6 +76,29 @@ with tempfile.TemporaryDirectory(prefix='engine-recovery-pg-') as directory:
         sql("""CREATE EVENT TRIGGER ca_break_window_refuses_ddl ON ddl_command_end EXECUTE FUNCTION public.fn_ca_break_window_ddl_guard();
                CREATE EVENT TRIGGER ca_break_window_refuses_drops ON sql_drop EXECUTE FUNCTION public.fn_ca_break_window_ddl_guard();""")
         assert sql("SELECT public.fn_engine_recovery_window_contract()") == 'engine-recovery-window-v1'
+        # Reproduce production's drift using the exact new privilege-only body:
+        # the original capability refuses it, although every freeze/lock path
+        # is retained. Then apply the real migration, not a mocked capability.
+        sql(function(str(PRIVILEGE_MIGRATION.relative_to(ROOT)), 'fn_ca_break_window_ddl_guard'))
+        assert sql('SELECT public.fn_engine_recovery_window_contract() IS NULL') == 't'
+        exact_guard = function(str(PRIVILEGE_MIGRATION.relative_to(ROOT)), 'fn_ca_break_window_ddl_guard')
+        sql(exact_guard.replace('DECLARE', 'DECLARE /* unknown preimage */', 1))
+        sql(PRIVILEGE_MIGRATION.read_text(), error='recovery privilege guard preimage drift')
+        assert sql('SELECT public.fn_engine_recovery_window_contract() IS NULL') == 't'
+        sql(exact_guard)
+        sql(PRIVILEGE_MIGRATION.read_text())
+        assert sql("SELECT public.fn_engine_recovery_window_contract()") == 'engine-recovery-window-v1'
+        assert sql("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_ca_break_window_ddl_guard()'::regprocedure") == '4e3eef75bb738bc9edf42148ffbb84df'
+        # Privilege statements remain legal during the freeze; actual DDL
+        # refusal, explicit override, owner lock and thaw are exercised below.
+        sql('GRANT SELECT ON engine_maintenance_break TO postgres WITH GRANT OPTION')
+        sql('GRANT SELECT ON engine_maintenance_break TO anon', role='postgres')
+        assert sql("SELECT has_table_privilege('anon','engine_maintenance_break','SELECT')") == 't'
+        sql('REVOKE SELECT ON engine_maintenance_break FROM anon', role='postgres')
+        assert sql("SELECT has_table_privilege('anon','engine_maintenance_break','SELECT')") == 'f'
+        drift = function(str(PRIVILEGE_MIGRATION.relative_to(ROOT)), 'fn_ca_break_window_ddl_guard').replace('DECLARE', 'DECLARE /* unqualified drift */', 1)
+        assert sql('BEGIN; ' + drift + ' SELECT public.fn_engine_recovery_window_contract() IS NULL; ROLLBACK;').splitlines()[-2] == 't'
+
         assert sql("SELECT public.fn_ca_break_window_refuses_migrations('2026-09-17 12:30Z') IS NOT NULL") == 't'
         for minute in ('00', '02', '50', '53', '59'):
             assert sql(f"SELECT public.fn_ca_break_window_refuses_migrations('2026-09-17 12:{minute}Z') IS NOT NULL") == 't'
@@ -109,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix='engine-recovery-pg-') as directory:
         holder = None
         sql('ALTER EVENT TRIGGER ca_break_window_refuses_drops DISABLE')
         assert sql('SELECT public.fn_engine_recovery_window_contract() IS NULL') == 't'
-        print('PASS: old gap reproduced; announcement/countdown/thaw, DDL rollback, role ACLs, explicit override, concurrent owner lock and capability drift verified on PostgreSQL 17')
+        print('PASS: privilege-contract NULL reproduced and repaired; unqualified preimage refused; old gap reproduced; announcement/countdown/thaw, DDL rollback, role ACLs, explicit override, concurrent owner lock and capability drift verified on PostgreSQL 17')
     finally:
         if holder is not None:
             holder.kill()

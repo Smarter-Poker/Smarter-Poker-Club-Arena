@@ -60,7 +60,12 @@ describe('Horse strength demand leaves hosted capacity for required checks and p
   });
 
   it('does not put client publication or required CI behind the league queue', () => {
-    for (const file of ['ci.yml', 'publish-club-arena.yml', 'post-deploy-e2e.yml']) {
+    for (const file of [
+      'ci.yml',
+      'publish-club-arena.yml',
+      'publish-club-arena-transaction.yml',
+      'post-deploy-e2e.yml',
+    ]) {
       const workflow = read(file);
       expect(JSON.stringify(workflow.concurrency) || '', file).not.toContain(capacityGroup);
       for (const job of Object.values(workflow.jobs) as { concurrency?: unknown }[]) {

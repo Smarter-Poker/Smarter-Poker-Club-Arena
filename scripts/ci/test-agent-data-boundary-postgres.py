@@ -154,6 +154,7 @@ try:
  print('PASS: baseline bank/statement/player-data flaws reproduced; exact migration rollback, replay refusal, role/RLS boundaries, private columns, assignment authorization, immediate scope change, idempotency conflict, source CAS, cycles, atomic refusal, agent subtree and audit verified')
  exec(compile((F/'transfer-controls-contract.py').read_text(),str(F/'transfer-controls-contract.py'),'exec'))
  exec(compile((F/'helper-oracle-contract.py').read_text(),str(F/'helper-oracle-contract.py'),'exec'))
+ exec(compile((F/'data-player-search-contract.py').read_text(),str(F/'data-player-search-contract.py'),'exec'))
 finally:
  if (data/'postmaster.pid').exists():run([PG/'pg_ctl','-D',data,'-m','fast','-w','stop'])
  shutil.rmtree(w)

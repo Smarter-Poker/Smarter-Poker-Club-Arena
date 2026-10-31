@@ -55,6 +55,7 @@
  *     hold, or four to a straight on the board.
  */
 import type { Card, CardRank, SeatPlayer } from '../types.js';
+import { nlhNutStatus, scoreHoldem } from './HorseEval.js';
 
 const RANK_VALUE: Readonly<Record<CardRank, number>> = {
   '2': 2,
@@ -189,6 +190,12 @@ export function isDominatedVersus3Bet(h: HoleShape, coldCaller: boolean): boolea
 export function isPremiumMadeHand(cards: Card[] | undefined, board: Card[]): boolean {
   const h = holeShape(cards);
   if (!h || !isPremium(h) || board.length < 3) return false;
+  const all = [...(cards ?? []), ...board];
+  const score = scoreHoldem(all, all.length, false);
+  // Starting cards do not create value when the best five play the board.
+  if (board.length === 5 && score <= scoreHoldem(board, 5, false)) return false;
+  // "Top pair or better" includes AK making Broadway without pairing.
+  if (Math.floor(score / 0x100000) >= 5) return true;
   const boardTop = Math.max(...board.map(rv));
   if (h.pair) return h.hi > boardTop || board.some((c) => rv(c) === h.hi);
   return board.some((c) => c.rank === 'A') || boardTop === 13;
@@ -196,6 +203,10 @@ export function isPremiumMadeHand(cards: Card[] | undefined, board: Card[]): boo
 
 /** Four to a flush the hero holds none of, or four to a straight on board. */
 export function boardHasPassedPremium(cards: Card[], board: Card[]): boolean {
+  const made = nlhNutStatus(cards, board, false);
+  // A made flush or better is not passed by four connected board ranks.
+  // The existing four-flush exception below still protects hands without that suit.
+  if (made.cat >= 6) return false;
   const suitCount = new Map<string, number>();
   for (const c of board) suitCount.set(c.suit, (suitCount.get(c.suit) ?? 0) + 1);
   for (const [suit, n] of suitCount) {
@@ -206,7 +217,10 @@ export function boardHasPassedPremium(cards: Card[], board: Card[]): boolean {
   for (let low = 1; low <= 10; low++) {
     let n = 0;
     for (let r = low; r < low + 5; r++) if (ranks.has(r)) n++;
-    if (n >= 4) return true;
+    if (n >= 4) {
+      // Nut straights stay value; lesser hands defer to the range-aware brain.
+      return !(made.cat >= 5 && made.heroStraightTop >= made.maxStraightTop);
+    }
   }
   return false;
 }

@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { transpileModule } from 'typescript';
+import { openLobbyGameSection } from '../e2e/support/lobbyGameSections';
+import {
+  scopedStalledTables,
+  classifyMissingTournamentSubject,
+} from '../e2e/support/certifiableSubject';
 import {
   eligibleHudClock,
   hudCandidateTableIdBatches,
@@ -37,13 +42,100 @@ const running = {
   current_level: 3,
   level_started_at: '2026-09-29T05:43:00Z',
   on_break: false,
+  // These baseline fixtures isolate add-on, occupancy and schedule behavior.
+  synchronized_breaks: false,
   accelerated_mtt: false,
   addon_period_started_at: null,
   addon_period_ends_at: null,
   blind_structure: [level(10), level(10), level(10), level(10), level(10), level(10), level(10)],
 };
 
+it('opens Cash Games before the Lightning lobby readiness assertion', async () => {
+  const source = readFileSync(
+    join(__dirname, '../e2e/production-lightning-lobby-join.spec.ts'),
+    'utf8'
+  );
+  const start = source.indexOf('    const offer = diamondEntryRead(page);');
+  const end = source.indexOf('    await settleDiamondSpinsOffer(page, offer);', start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  const readiness: string[] = [];
+  let cashSectionOpen = false;
+  const page = {
+    goto: async () => {},
+    locator: () => ({ first: () => ({ cashCards: true }) }),
+    getByRole: (role: string, { name }: { name: string }) => ({
+      waitFor: async () => {
+        if (role !== 'button' || name !== 'Cash Games')
+          throw new Error(`Unexpected section control: ${role} ${name}`);
+      },
+      getAttribute: async () => (cashSectionOpen ? 'true' : 'false'),
+      click: async () => {
+        if (role !== 'button' || name !== 'Cash Games')
+          throw new Error(`Unexpected browse action: ${role} ${name}`);
+        cashSectionOpen = true;
+        readiness.push('cash-section-open');
+      },
+    }),
+  };
+  const runReadiness = new Function(
+    'page',
+    'club',
+    'expect',
+    'prepareCashLobbyActions',
+    'diamondEntryRead',
+    'openLobbyGameSection',
+    transpileModule(`async function run() {${source.slice(start, end)}}`, {}).outputText +
+      '\nreturn run();'
+  );
+  await runReadiness(
+    page,
+    'fixture',
+    (target: unknown) => ({
+      not: { toHaveURL: async () => {} },
+      toBeVisible: async () => {
+        if (!(target as { cashCards?: boolean }).cashCards || !cashSectionOpen)
+          throw new Error('Cash Games must open before Lightning cash rows are ready');
+        readiness.push('cash-rows-ready');
+      },
+    }),
+    async () => {},
+    () => ({}),
+    openLobbyGameSection
+  );
+  expect(readiness).toEqual(['cash-section-open', 'cash-rows-ready']);
+});
+
 describe('an MTT table is selected only if its tournament can yield an eligible HUD clock', () => {
+  it('excludes a currently eligible synchronized clock whose recovery look-ahead reaches the break', () => {
+    const synchronized = { ...running, synchronized_breaks: true };
+    expect(eligibleHudClock(synchronized, now)).not.toBeNull();
+    const qualifications = qualifyHudTournamentRows([synchronized], now);
+    expect(qualifications[0].category).toBe('selection_lookahead_ineligible');
+    expect(qualifications[0].clock).toBeNull();
+    expect(
+      selectHudTableCandidatesRoundRobin(qualifications, [
+        {
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          tournament_id: id,
+          status: 'running',
+          current_players: 9,
+        },
+      ])
+    ).toEqual([]);
+    const breakFree = qualifyHudTournamentRows([running], now);
+    expect(
+      selectHudTableCandidatesRoundRobin(breakFree, [
+        {
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          tournament_id: id,
+          status: 'running',
+          current_players: 9,
+        },
+      ])
+    ).toEqual(['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']);
+  });
+
   it('refuses the field whose add-on period is open, the exact production refusal', () => {
     const addOnOpen = {
       ...running,
@@ -211,7 +303,7 @@ describe('the certificate spec applies that selection and a cash budget sized fr
     expect(selection).toContain('options.hudReader.discoverSelectableTableIds(');
     expect(selection).toContain('mergeHudCandidateTableIds(');
     expect(selection).toContain('scanHudCandidateBatches({');
-    expect(selection).toContain('readEngineHealth(request, { tableIds: batch }');
+    expect(selection).toContain('readEngineHealth(request, { candidateTableIds: batch }');
     expect(selection).toContain('operationalPollFailure.rethrowIfPresent();');
     expect(selection).toContain('options.hudReader.clocks(');
     expect(selection).toContain('selectableHudClock');
@@ -262,6 +354,8 @@ describe('the actual cash selector scans across lobby tabs', () => {
   );
   async function select(rows: Record<string, string[]>, removed: string[] = []) {
     let active = 'default';
+    let cashSectionOpen = false;
+    const readiness: string[] = [];
     const navigation = source.slice(
       source.indexOf('    // The engine-progress wait above can outlast'),
       source.indexOf('    const navigationStartedAt = Date.now();')
@@ -272,15 +366,34 @@ describe('the actual cash selector scans across lobby tabs', () => {
       goto: async () => {},
       url: () => 'https://example.invalid/clubs/fixture',
       locator: (selector: string) => ({
-        first: () => ({ waitFor: async () => {} }),
+        first: () => ({
+          waitFor: async () => {
+            if (!cashSectionOpen)
+              throw new Error('Cash Games must open before cash cards are ready');
+            readiness.push('cards-ready');
+          },
+        }),
         // Exercise the real card branch; a hidden off-tab row is not visible.
         isVisible: async () => false,
         getByRole: () => ({
           viewId: /data-id="([^"]+)"/.exec(selector)?.[1],
         }),
       }),
-      getByRole: (_: string, { name }: { name: string }) => ({
+      getByRole: (role: string, { name }: { name: string }) => ({
+        requiresCashSection: role === 'tab',
+        waitFor: async () => {
+          if (role !== 'button' || name !== 'Cash Games')
+            throw new Error(`Unexpected section control: ${role} ${name}`);
+        },
+        getAttribute: async () => (cashSectionOpen ? 'true' : 'false'),
         click: async () => {
+          if (role === 'button') {
+            if (name !== 'Cash Games') throw new Error(`Unexpected browse action: ${name}`);
+            cashSectionOpen = true;
+            readiness.push('cash-section-open');
+            return;
+          }
+          if (!cashSectionOpen) throw new Error('Cash Games must open before selecting a cash tab');
           active = name;
         },
       }),
@@ -291,6 +404,7 @@ describe('the actual cash selector scans across lobby tabs', () => {
       'CASH_PROGRESS_CANDIDATES',
       'expect',
       'prepareCashLobbyActions',
+      'openLobbyGameSection',
       'visibleRunningCashCandidates',
       'readEngineHealth',
       'healthyRunningTable',
@@ -309,19 +423,23 @@ describe('the actual cash selector scans across lobby tabs', () => {
     )(
       'https://example.invalid/clubs/fixture',
       8,
-      (locator: { viewId?: string }) => ({
+      (locator: { viewId?: string; requiresCashSection?: boolean }) => ({
         toBeVisible: async () => {
+          if (locator.requiresCashSection && !cashSectionOpen)
+            throw new Error('Cash Games must open before cash tabs are visible');
           if (locator.viewId && !(rows[active] ?? []).includes(locator.viewId))
             throw new Error(`View ${locator.viewId} is hidden on ${active}`);
         },
         toHaveAttribute: async () => {},
       }),
       async () => {},
+      openLobbyGameSection,
       async () => {
         visited.push(active);
         return (rows[active] ?? []).map((id) => ({ id, gameFormat: 'cash' }));
       },
-      async (_: unknown, { tableIds }: { tableIds: string[] }) => {
+      async (_: unknown, { candidateTableIds: tableIds }: { candidateTableIds: string[] }) => {
+        expect(tableIds).toBeDefined();
         reads.push(tableIds);
         return { sequence: reads.length, tableIds };
       },
@@ -335,10 +453,17 @@ describe('the actual cash selector scans across lobby tabs', () => {
       result: await selector.select(page, {}),
       visited,
       reads,
+      readiness,
       open: (selected: unknown) => selector.open(page, selected),
       active: () => active,
     };
   }
+
+  it('opens the Cash Games section before waiting for cash cards and scanning variants', async () => {
+    const { readiness, visited } = await select({ NLH: ['live'] });
+    expect(readiness).toEqual(['cash-section-open', 'cards-ready']);
+    expect(visited).toEqual(['NLH', 'PLO', 'LIMIT']);
+  });
 
   it('keeps the first NLH table and discovers PLO and LIMIT witnesses without duplicates', async () => {
     const { result, visited, reads } = await select({
@@ -390,7 +515,127 @@ describe('the actual cash selector scans across lobby tabs', () => {
     }
   );
 
+  it('excludes a stale contender without poisoning the healthy cash backup', async () => {
+    const { result } = await select({ NLH: ['stale', 'healthy'] }, ['stale']);
+    expect(result.tables.map((row: any) => row.candidate.id)).toEqual(['healthy']);
+  });
+  it('refuses cash discovery when every contender is stale', async () => {
+    await expect(
+      select({ NLH: ['stale-one', 'stale-two'] }, ['stale-one', 'stale-two'])
+    ).rejects.toThrow('no occupied');
+  });
+  it('uses discovery scope throughout pre-navigation races and retains strict chosen subjects', () => {
+    expect(source).toContain(
+      'candidateTableIds: contenders.map((contender) => contender.candidate.id)'
+    );
+    expect(source).toContain('candidateTableIds: baselines.map((t) => t.tableId)');
+    expect(source).toContain('tableIds: [candidate.id]');
+    expect(source).toContain('tableIds: subjects.map((entry) => entry.candidate.id)');
+  });
   it('refuses a lobby without any healthy occupied witness', async () => {
     await expect(select({})).rejects.toThrow('no occupied');
+  });
+});
+
+describe('exact candidate health is discovery, selected health is strict', () => {
+  const source = readFileSync(
+    join(__dirname, '..', 'e2e', 'production-live-table-realtime.spec.ts'),
+    'utf8'
+  );
+  const body = source.slice(
+    source.indexOf('async function readEngineHealth('),
+    source.indexOf('/**\n * Say the fleet')
+  );
+  const sha = 'a'.repeat(40);
+  const readHealth = new Function(
+    'expect',
+    'scopedStalledTables',
+    'reportStallsThisCertificateIsNotJudging',
+    'ENGINE_HEALTH_URL',
+    'EXPECTED_ENGINE_SHA',
+    'CLUB_ID',
+    'UNION_ID',
+    transpileModule(body, {}).outputText + ';return readEngineHealth;'
+  )(
+    expect,
+    scopedStalledTables,
+    () => {},
+    'https://engine.smarter.poker/health',
+    sha,
+    'club',
+    'union'
+  );
+  const admitted = new Function(
+    'MAX_GAMEPLAY_SILENCE_MS',
+    transpileModule(
+      source.slice(
+        source.indexOf('function healthyRunningTable('),
+        source.indexOf('async function visibleRunningCashCandidates(')
+      ),
+      {}
+    ).outputText + ';return healthyRunningTable;'
+  )(45000);
+  const stale = {
+    tableId: '8a3c1b31-1111-4111-8111-111111111111',
+    gameFormat: 'mtt',
+    clubId: 'club',
+    seated: 8,
+    dealable: 8,
+    handCount: 3,
+    msSinceProgress: 821000,
+    paused: false,
+    loopPhase: 'playing',
+  };
+  const healthy = {
+    ...stale,
+    tableId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    msSinceProgress: 1000,
+  };
+  const request = (rows: unknown[]) => ({
+    get: async () => ({
+      status: () => 200,
+      json: async () => ({
+        liveness: 'ok',
+        wholeFleetStalled: false,
+        releaseSha: sha,
+        tableLiveness: rows,
+      }),
+    }),
+  });
+  it('allows stale candidates to be excluded while a healthy backup remains readable', async () => {
+    const health = await readHealth(request([stale, healthy]), {
+      candidateTableIds: [stale.tableId, healthy.tableId],
+    });
+    expect(scopedStalledTables(health.tableLiveness).map((row) => row.tableId)).toEqual([
+      stale.tableId,
+    ]);
+    expect(
+      health.tableLiveness
+        .filter((row: typeof stale) => admitted(health, row.tableId, 'mtt') !== null)
+        .map((row: typeof stale) => row.tableId)
+    ).toEqual([healthy.tableId]);
+  });
+  it('still refuses a selected table that stalled', async () => {
+    await expect(readHealth(request([stale]), { tableIds: [stale.tableId] })).rejects.toThrow();
+  });
+  it('still names the real failure when every discovered candidate is stale', async () => {
+    const health = await readHealth(request([stale]), { candidateTableIds: [stale.tableId] });
+    expect(scopedStalledTables(health.tableLiveness).map((row) => row.tableId)).toEqual([
+      stale.tableId,
+    ]);
+    expect(
+      health.tableLiveness.filter(
+        (row: typeof stale) => admitted(health, row.tableId, 'mtt') !== null
+      )
+    ).toEqual([]);
+    const verdict = classifyMissingTournamentSubject({
+      rows: health.tableLiveness,
+      gameFormat: 'mtt',
+      clubIds: ['club'],
+      minimumStableSeats: 3,
+      maxGameplaySilenceMs: 45000,
+    });
+    expect(verdict.verdict).toBe('stalled');
+    expect(verdict.stalled.map((row) => row.tableId)).toEqual([stale.tableId]);
   });
 });

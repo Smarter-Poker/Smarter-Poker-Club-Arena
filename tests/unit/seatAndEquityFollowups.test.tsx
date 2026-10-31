@@ -230,6 +230,24 @@ describe('2. the badges are re-measured when the felt says something moved', () 
     expect(FakeMutationObserver.made[0].disconnected).toBe(true);
   });
 
+  it('moves a percentage off a winning card as it rises without a row reveal', () => {
+    world.card = { left: 180, top: 284, width: 30, height: 40 };
+    const { container } = render(<Felt revealed badges={BADGES} />);
+    const card = container.querySelector('.seat__card') as HTMLElement;
+    const mo = FakeMutationObserver.made[0];
+    expect(slotOf(container).getAttribute('data-equity-spot')).toBe('above');
+    // Only the card gains the winning class. Its raised top now reaches the
+    // badge at y222..278; the already-revealed row has not changed class.
+    world.card = { ...world.card, top: 276 };
+    card.classList.add('seat__card--winner');
+    act(() => mo.cb([{ target: card }]));
+    expect(slotOf(container).getAttribute('data-equity-spot')).not.toBe('above');
+    world.card = { ...world.card, top: 284 };
+    card.classList.remove('seat__card--winner');
+    act(() => mo.cb([{ target: card }]));
+    expect(slotOf(container).getAttribute('data-equity-spot')).toBe('above');
+  });
+
   it('a hand being tabled moves the badge off it; the settled size is the one avoided', () => {
     const { container } = render(<Felt badges={BADGES} />);
     const row = container.querySelector('.seat__cards') as HTMLElement;
@@ -356,35 +374,12 @@ describe('3. the last-five-seconds pulse rests at 0%/100% and flares at 50%', ()
   });
 });
 
-describe('4. the border-linear ring is gated on the construct it uses', () => {
-  const dAt = SEAT_CSS.indexOf('--sp-ring-d:');
-  const gateAt = SEAT_CSS.lastIndexOf('@supports', dAt);
-  const condition = SEAT_CSS.slice(gateAt, SEAT_CSS.indexOf('{', gateAt)).replace(/\s+/g, ' ');
-
-  it('asks for atan2() of container units as a conic-gradient stop, in a var-free declaration', () => {
-    expect(dAt).toBeGreaterThan(-1);
-    expect(gateAt).toBeGreaterThan(-1);
-    expect(condition).toMatch(/\(\s*background:\s*conic-gradient\(/);
-    expect(condition).toMatch(/atan2\([^;]*cqw[^;]*cqh/);
-    expect(condition).toMatch(/clamp\(/);
-    expect(condition).toMatch(/container-type:\s*size/);
-    // A var() would make the test declaration valid at parse time whatever
-    // the engine thinks of the stop - the exact hole being closed.
-    expect(condition).not.toMatch(/var\(/);
-    // The two unrelated questions it used to ask.
-    expect(condition).not.toMatch(/rotate:\s*atan2\(1px, 1px\)/);
-    expect(condition).not.toMatch(/\(width:\s*1cqw\)/);
-  });
-
-  it('a browser that fails the gate keeps the angle-linear ring, declared before it', () => {
-    const arcAt = SEAT_CSS.indexOf('.seat--active .seat__timer-ring-arc {');
-    expect(arcAt).toBeGreaterThan(-1);
-    expect(arcAt).toBeLessThan(gateAt);
-    const arc = sliceCssRule(SEAT_CSS, '.seat--active .seat__timer-ring-arc {');
-    expect(arc).toMatch(/--sp-ring-edge:\s*calc\(100% - var\(--timer-progress, 100%\)\)/);
-    expect(arc).toMatch(/conic-gradient\(/);
-    // ...and that fallback empties at the deadline: the one keyframe drives it.
-    expect(SEAT_CSS).toMatch(/@keyframes spTimerRingShrink \{[^@]*to \{\s*--timer-progress: 0%;/);
+describe('4. the border-linear ring avoids Safari gradient interpolation', () => {
+  it('uses native transforms rather than custom properties and container trig', () => {
+    expect(SEAT_CSS).not.toMatch(/--sp-ring-d:|@property --sp-timer-spent|atan2\(/);
+    expect(SEAT_CSS).toMatch(/@keyframes spTimerRingShrink/);
+    expect(SEAT_CSS).toMatch(/@keyframes spTimerRingCounterWipe/);
+    expect(SEAT_CSS).toMatch(/border: 3px solid #00e5ff/);
   });
 });
 
@@ -546,5 +541,36 @@ describe('6. the connection banner is never cut off (Dan 2026-10-04)', () => {
     expect(rule).toMatch(/border-bottom:\s*1px solid #000/);
     expect(rule).toMatch(/pointer-events:\s*none/);
     expect(rule).toMatch(/top:\s*calc\(var\(--sp-brand-top,\s*56%\)\s*-\s*0\.5%\)/);
+  });
+});
+
+describe('exact equity reaches the rendered badge without inventing endpoints', () => {
+  it.each([
+    [0.001, '<0.1%'],
+    [99.999, '>99.9%'],
+    [0, '0%'],
+    [100, '100%'],
+  ])('renders %f as %s', (equity, label) => {
+    installLayout();
+    const { container } = render(<Felt badges={[{ ...BADGES[0], equity }]} />);
+    expect(container.querySelector('.equity-overlay')?.textContent).toBe(label);
+  });
+  it('refuses to call a legacy sampled zero a dead hand', () => {
+    installLayout();
+    const { container } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
+    expect(container.querySelector('.equity-overlay')).toBeNull();
+    expect(container.textContent).not.toContain('Unknown');
+  });
+  it('remeasures when a percentage changes the badge width class', () => {
+    installLayout();
+    const { rerender } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: true }]} />);
+    const before = world.layerReads;
+    rerender(<Felt badges={[{ ...BADGES[0], equity: 100, exact: true }]} />);
+    expect(world.layerReads).toBeGreaterThan(before);
+  });
+  it('does not render a malformed percentage', () => {
+    installLayout();
+    const { container } = render(<Felt badges={[{ ...BADGES[0], equity: NaN }]} />);
+    expect(container.querySelector('.equity-overlay')).toBeNull();
   });
 });

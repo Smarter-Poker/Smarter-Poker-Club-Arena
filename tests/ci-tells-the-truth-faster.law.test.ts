@@ -139,7 +139,7 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
   it('is a four-way matrix that lets every shard finish', () => {
     expect(job.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4] } });
     expect(job.name).toBe('Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4');
-    expect(job['timeout-minutes']).toBe(40);
+    expect(job['timeout-minutes']).toBe(50);
   });
 
   it('gives every suite step exactly one shard, and every shard some suites', () => {
@@ -168,7 +168,7 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
       expect(step.env?.PG_BIN, step.name).toBe('/usr/lib/postgresql/17/bin');
       expect(step.run, step.name).toMatch(/^bash scripts\/dev\/test-lightning-/);
     }
-    expect(job['timeout-minutes']).toBe(40);
+    expect(job['timeout-minutes']).toBe(50);
   });
 
   it('builds the isolation tester in every shard whose suites use it', () => {
@@ -369,4 +369,18 @@ describe('the Diamond games visual baseline informs and never gates', () => {
       ).problems
     ).toEqual([]);
   });
+});
+
+it('the metadata-only classifier checks out its scripts and workflow without the full asset tree', () => {
+  const workflow = parse(read('.github/workflows/ci.yml'));
+  const checkout = workflow.jobs.changes.steps[0];
+  expect(checkout.with['fetch-depth']).toBe(0);
+  expect(checkout.with.filter).toBe('blob:none');
+  expect(checkout.with['sparse-checkout'].trim().split(/\s+/)).toEqual(['scripts', '.github']);
+  expect(checkout.with['sparse-checkout-cone-mode']).not.toBe(false);
+  expect(
+    workflow.jobs.changes.steps.some(
+      (step: Step) => step.run === 'node scripts/ci/classify-ci-changes.mjs'
+    )
+  ).toBe(true);
 });

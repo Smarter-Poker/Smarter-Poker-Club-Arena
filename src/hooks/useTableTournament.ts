@@ -8,7 +8,9 @@
  * and winner overlay state.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
+import { serverNow } from '../utils/serverClock';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -96,6 +98,7 @@ export interface UseTableTournamentReturn {
   // Break
   tournamentBreak: TournamentBreakState;
   setTournamentBreak: React.Dispatch<React.SetStateAction<TournamentBreakState>>;
+  refreshTournamentBreak: () => Promise<void>;
   breakChannelRef: React.MutableRefObject<any>;
 
   // Announcement
@@ -117,17 +120,113 @@ export interface UseTableTournamentReturn {
 // HOOK
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function useTableTournament(): UseTableTournamentReturn {
+export function useTableTournament(options?: {
+  tournamentId?: string | null;
+  engineStatus?: string;
+}): UseTableTournamentReturn {
+  const tournamentId = options?.tournamentId ?? null;
+  const engineStatus = options?.engineStatus;
+
   // Rebuy
   const [rebuyProcessing, setRebuyProcessing] = useState(false);
   const [showRebuyModal, setShowRebuyModal] = useState(false);
   const [rebuyData, setRebuyData] = useState<RebuyData | null>(null);
 
   // Break
-  const [tournamentBreak, setTournamentBreak] = useState<TournamentBreakState>({
+  const [tournamentBreak, writeTournamentBreak] = useState<TournamentBreakState>({
     active: false,
     timeRemaining: 0,
   });
+  // A live event or newer read invalidates older in-flight row responses.
+  // Each tournament/mount owns its callbacks, including a rapid A -> B -> A.
+  const ownerRef = useRef({ id: tournamentId, revision: 0, active: true });
+  if (ownerRef.current.id !== tournamentId) {
+    ownerRef.current = { id: tournamentId, revision: 0, active: true };
+  }
+  const owner = ownerRef.current;
+  const setTournamentBreak = useCallback<
+    React.Dispatch<React.SetStateAction<TournamentBreakState>>
+  >((update) => {
+    const liveOwner = ownerRef.current;
+    if (!liveOwner.active) return;
+    liveOwner.revision += 1;
+    writeTournamentBreak(update);
+  }, []);
+  const refreshTournamentBreak = useCallback(async () => {
+    if (!tournamentId || !owner.active || ownerRef.current !== owner) return;
+    const revision = ++owner.revision;
+    try {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select('id, on_break, break_ends_at, current_level')
+        .eq('id', tournamentId)
+        .maybeSingle();
+      if (!owner.active || ownerRef.current !== owner || revision !== owner.revision) return;
+      if (error) {
+        reportError(error, 'useTableTournament.break_recovery_unreadable', { tournamentId });
+        return;
+      }
+      // Missing/incomplete data is unknown, never permission to clear a break.
+      if (!data || data.id !== tournamentId || typeof data.on_break !== 'boolean') return;
+      if (!data.on_break) {
+        writeTournamentBreak({
+          active: false,
+          timeRemaining: 0,
+          phase: 'counting_down',
+          breakEndsAtMs: null,
+        });
+        return;
+      }
+      const endsAt = data.break_ends_at == null ? null : Date.parse(data.break_ends_at);
+      if (endsAt !== null && !Number.isFinite(endsAt)) return;
+      writeTournamentBreak((previous) => ({
+        ...previous,
+        active: true,
+        phase: endsAt === null ? 'last_hand' : 'counting_down',
+        breakEndsAtMs: endsAt,
+        timeRemaining: endsAt === null ? 0 : Math.max(0, Math.ceil((endsAt - serverNow()) / 1000)),
+        level: typeof data.current_level === 'number' ? data.current_level : previous.level,
+      }));
+    } catch (error) {
+      if (owner.active && ownerRef.current === owner && revision === owner.revision)
+        reportError(error, 'useTableTournament.break_recovery_unreadable', { tournamentId });
+    }
+  }, [tournamentId, owner]);
+  useEffect(() => {
+    owner.active = true;
+    writeTournamentBreak({ active: false, timeRemaining: 0 });
+    void refreshTournamentBreak();
+    return () => {
+      owner.active = false;
+      owner.revision += 1;
+    };
+  }, [owner, refreshTournamentBreak]);
+  // One read at the announced boundary covers a lost end broadcast even
+  // while the socket stays connected. This never resumes a dealer.
+  useEffect(() => {
+    const end = tournamentBreak.breakEndsAtMs;
+    if (!tournamentBreak.active || tournamentBreak.phase !== 'counting_down' || !end) return;
+    const timer = setTimeout(() => void refreshTournamentBreak(), Math.max(0, end - serverNow()));
+    return () => clearTimeout(timer);
+  }, [
+    tournamentBreak.active,
+    tournamentBreak.phase,
+    tournamentBreak.breakEndsAtMs,
+    refreshTournamentBreak,
+  ]);
+  useEffect(() => {
+    const recover = () => {
+      if (document.visibilityState === 'visible') void refreshTournamentBreak();
+    };
+    document.addEventListener('visibilitychange', recover);
+    return () => document.removeEventListener('visibilitychange', recover);
+  }, [refreshTournamentBreak]);
+  const previousEngineStatus = useRef(engineStatus);
+  useEffect(() => {
+    const previous = previousEngineStatus.current;
+    previousEngineStatus.current = engineStatus;
+    if (engineStatus === 'connected' && previous !== 'connected') void refreshTournamentBreak();
+  }, [engineStatus, refreshTournamentBreak]);
   const breakChannelRef = useRef<any>(null);
 
   // Announcement
@@ -198,6 +297,7 @@ export function useTableTournament(): UseTableTournamentReturn {
     setRebuyData,
     tournamentBreak,
     setTournamentBreak,
+    refreshTournamentBreak,
     breakChannelRef,
     announcement,
     setAnnouncement,

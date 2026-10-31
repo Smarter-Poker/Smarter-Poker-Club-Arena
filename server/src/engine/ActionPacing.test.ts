@@ -79,7 +79,9 @@ describe('a queued pre-action is still a visible turn', () => {
   const turns = read('ServerTableEngineTurns.ts');
 
   it('holds a readable beat instead of firing at 0ms', () => {
-    expect(turns).toContain('await this.sleep(this.preActionVisibleMs)');
+    expect(turns).toContain(
+      'await this.weeklyPayoutContinuation(this.sleepHand(this.preActionVisibleMs))'
+    );
   });
 
   it('the beat is never zero', () => {

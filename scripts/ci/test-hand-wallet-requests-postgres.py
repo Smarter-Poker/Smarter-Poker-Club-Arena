@@ -53,6 +53,21 @@ try:
  assert not send(2000,op='44444444-4444-4444-8444-444444444444')['success']
  assert not send(1,op='55555555-5555-4555-8555-555555555555',target='00000000-0000-0000-0000-000000000002')['success']
  assert q("SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',false); SELECT count(*)=3 FROM fn_club_cashier_members('00000000-0000-0000-0000-000000000001');").splitlines()[-1]=='t'
+ # Every agent tier takes the same public send chain, not just the agent fixture.
+ import uuid
+ from decimal import Decimal
+ for tier in ['super_agent','agent','sub_agent']:
+  q("UPDATE club_members SET role='%s' WHERE user_id='00000000-0000-0000-0000-000000000003';"%tier)
+  before=q("SELECT chip_balance+agent_wallet_balance FROM club_members m JOIN agents a USING(club_id,user_id) WHERE user_id='00000000-0000-0000-0000-000000000003';")
+  op=str(uuid.uuid4()); result=send(0.01,op=op)
+  assert result['success'],(tier,result)
+  assert send(0.01,op=op)['replayed'],tier
+  assert Decimal(q("SELECT chip_balance+agent_wallet_balance FROM club_members m JOIN agents a USING(club_id,user_id) WHERE user_id='00000000-0000-0000-0000-000000000003';"))==Decimal(before),tier
+  assert not send(0.001,op=str(uuid.uuid4()))['success'],tier
+  assert not send(0.01,'promo_wallet',str(uuid.uuid4()))['success'],tier
+  assert not send(0.01,'agent_wallet',str(uuid.uuid4()))['success'],tier
+ q("UPDATE club_members SET role='agent' WHERE user_id='00000000-0000-0000-0000-000000000003';")
+ print('PASS: all three agent tiers public self-send, cent conservation, exact replay, precision, self-promo and same-wallet refusal')
  q(f('supabase/migrations/20261021172727_union_wallet_intents_survive_unavailable_browser_storage.sql'))
  reserve="SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',false); SELECT fn_union_wallet_reserve_intent('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','chips','exact intent',NULL);"
  with ThreadPoolExecutor(max_workers=4) as pool:

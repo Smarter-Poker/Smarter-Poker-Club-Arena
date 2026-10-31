@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  FIND A PLAYER - the network locator, on the spade console (#ClubArenaConsole)
@@ -114,7 +115,7 @@ export default function FindPlayerModal({
 }: FindPlayerModalProps) {
   const navigate = useNavigate();
   const trapRef = useFocusTrap(isOpen);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePlayerPreference('findPlayer.search', '', 'global');
   const [results, setResults] = useState<PlayerSearchResult[]>([]);
   const [suggestions, setSuggestions] = useState<PlayerSearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -125,9 +126,21 @@ export default function FindPlayerModal({
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [scope, setScope] = useState<PlayerSearchScope>('all');
-  const [presence, setPresence] = useState<PlayerPresenceFilter>('all');
-  const [sort, setSort] = useState<PlayerSearchSort>('relevance');
+  const [scope, setScope] = usePlayerPreference<PlayerSearchScope>(
+    'findPlayer.scope',
+    'all',
+    'global'
+  );
+  const [presence, setPresence] = usePlayerPreference<PlayerPresenceFilter>(
+    'findPlayer.presence',
+    'all',
+    'global'
+  );
+  const [sort, setSort] = usePlayerPreference<PlayerSearchSort>(
+    'findPlayer.sort',
+    'relevance',
+    'global'
+  );
   const [showAccessRules, setShowAccessRules] = useState(false);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
   const [verifyingTableId, setVerifyingTableId] = useState<string | null>(null);
@@ -393,7 +406,6 @@ export default function FindPlayerModal({
     haptic.light();
     searchAbortRef.current?.abort();
     suggestionAbortRef.current?.abort();
-    setSearchQuery('');
     setResults([]);
     setSuggestions([]);
     setError(null);

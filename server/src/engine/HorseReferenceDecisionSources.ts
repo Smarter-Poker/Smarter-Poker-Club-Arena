@@ -19,12 +19,36 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/HorseFeatureAuthority.ts':
+      'boundary: exact qualified feature composition and live economic domain derive reference options; missing selection never activates a candidate',
+    'src/engine/HorseMultiwayRiverRead.ts':
+      'bounded exact-context public river checkraise observations with canonical chip conservation for originally multiway hands',
+    'src/engine/horseDecision/riverNodeSidecar.ts':
+      'exact source and action-bound public node sidecar, preserving the original history on unavailable evidence',
+    'src/engine/horseDecision/ownPublicHistoryProvenance.ts':
+      'closed individual-history diagnostic validation bound to the original observer context, state and decision timestamp at the worker request boundary',
+    'src/engine/HorseNearNutRiverValue.ts':
+      'default-off small-pot near-nut value gate with physical blockers and settlement-owned unmatched contribution checks',
+    'src/engine/HorseBoardContact.ts':
+      'physical private river value consumed by board-conditioned equity and sampled continuation strength',
     'src/services/horseCorrectiveReview/liveKernel.ts':
       'boundary: the Phase 14 worker-local corrective consumer; absent a separately admitted functional capability it preserves action and RNG, and it never stacks on an applied prior candidate',
     'src/engine/HorseRiverNuts.ts':
       'the final river-nuts raise and full-pot near-pot wager invariants after all strategy owners',
     'src/engine/HorseTournamentShoveDiscipline.ts':
       'the final tournament preflop shove-depth wager rule (no deep open or re-raise shove) after all strategy owners',
+    'src/engine/HorseCallDeductions.ts':
+      'the projected call award deduction fraction, including capped rake, BBJ fees, side pots and returned unmatched contributions',
+    'src/engine/multiway/JointPotDistribution.ts':
+      'the settlement contribution and uncalled-return arithmetic used to project a canonical call before pricing deductions',
+    'src/domain/diamondCashFeeSnapshot.ts':
+      'the hand-frozen Diamond fee schedule used for projected call award deductions',
+    'src/domain/diamondCashRakeSchedule.ts':
+      'the authoritative whole-Diamond rake arithmetic used for projected call pricing',
+    'src/domain/diamondCashJackpotSchedule.ts':
+      'the authoritative whole-Diamond jackpot collection used for projected call pricing',
+    'src/engine/HorseOmahaTournamentPressure.ts':
+      'the default-off Omaha tournament preflop action-risk ICM pricing candidate consumed by reference preflop bars',
     'src/engine/HorsePreflop.ts':
       'every preflop bar of the reference (open, 3-bet, 4-bet, call, isolation, push/fold) and the opponent-exploit preflop read',
     'src/engine/HorseTournamentPreflop.ts':
@@ -40,12 +64,28 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the tournament short all-in call floor (under 3BB shove, 20BB+ horse calls), the last action rule after every other layer (Dan 2026-10-26)',
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
+    'src/engine/HorseHeadsUpCommitment.ts':
+      'qualified cash NLH and pot-limit Omaha including PLO8 heads-up matchable physical exposure and bounded canonical commitment intent consumed by reference SPR and retained raise-plan pricing',
     'src/engine/HorseContinuation.ts':
       'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',
     'src/engine/GtoCharts.ts': 'the open-jam and big-blind-versus-small-blind jam charts',
     'src/engine/GtoPostflop.ts': 'the heads-up NLH postflop solver consult',
     'src/engine/GtoPostflopV31.ts': 'the V31 solver consult',
+    'src/engine/GtoPublicHist215BuildReceipt.ts':
+      'the immutable all-head Linux execution receipt required before a public215 solver program can answer',
+    'src/engine/GtoPublicHist215Features.ts':
+      'exact public ROOT range physics and chronological actor-card feature encoding consumed by the V31 model',
+    'src/engine/GtoPublicHist215FeatureSchema.ts':
+      'the frozen categorical and numeric feature ordering consumed by public215 inference',
+    'src/engine/GtoPublicHist215FeatureDescriptor.json':
+      'the full immutable public215 feature contract and predecessor graph identity',
+    'src/engine/GtoPublicHist215Model.ts':
+      'bounded numeric tree inference and whole-variant frequency/value normalization used by public215 decisions',
+    'native/public_hist215_wtl.cc':
+      'the receiving-platform exact integer ROOT opponent win/tie/loss kernel used by public215 features',
+    'scripts/build-public-hist215-native.mjs':
+      'the maintained receiving-platform native compilation flags for the public215 decision kernel',
     'src/engine/GtoDecisionContext.ts': 'the solver spot context the consults read',
     'src/engine/GtoFacingDefenseV32.ts': 'the facing-bet defense and realization factors',
     'src/engine/GtoBoardRelativeFeaturesV2.ts': 'the board features the V31 consult keys on',
@@ -54,6 +94,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'loads the solver chart artifact the charts answer from',
     'src/gto/SolverPolicyContract.ts': 'the solver policy contract the artifact is read through',
     'src/gto/SolverStoreIdentity.ts': 'the solver store identity the charts and consults check',
+    'src/engine/HorseTournamentCatastropheGuard.ts':
+      'the genuinely qualified Phase 8 catastrophe guard invoked at the tournament continuation graph node; its action predicates alter the baseline consumed by later owners',
     'src/engine/HorseTournamentPostflop.ts':
       'boundary: the Phase 8 tournament continuation owner HorseLogic invokes and legalizes; its continuation models decide only in Phase 8 candidate mode',
     'src/engine/HorseTournamentUtility.ts':
@@ -73,22 +115,40 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'validates original host coordinates and accepted action provenance used by hand-scoped learning',
     'src/engine/HorseObservationWindow.ts':
       'the original public observation time windows that qualify individual read history and cutoff coverage',
+    'src/services/horseDecisionJournal/record.ts':
+      'the bounded canonical original-request encoding and digest bound into producer-time range consumption evidence',
+    'src/engine/horseDecision/protocol.ts':
+      'the canonical original-request decision-key projection checked before plan getter evidence can be credited',
+    'src/engine/HorseDecisionReadFrame.ts':
+      'the bounded original read-frame codec and plan projection used to validate producer-time getter evidence',
+    'src/engine/HorsePlanReadReceipt.ts':
+      'bounded original plan getter consultations and exact returned values bound to the original request and read frame, without policy replay or causal claims',
+    'src/engine/HorseRangeConsumptionReceipt.ts':
+      'bounded producer-time public range inputs and actual sampler consumption masks bound to the original decision and read frame',
     'src/engine/HorseMind.ts':
       'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
+    'src/engine/HorseRiverPositionRead.ts':
+      'the original public-action last-to-act river opportunity, check-back and confidence evidence consumed by conditional river defense',
     'src/engine/HorseRiverCallEvidence.ts':
       'the public river-call category eligibility and confidence boundary used by the reference opponent read',
     'src/engine/HorseObserverReadContext.ts':
       'the exact individual, variant, explicit format and dealt-size partition for public observation history',
     'src/engine/horseDecision/ownPublicHistory.ts':
       'the closed individual public-history schema, original availability cutoff, bounded cache and payload acknowledgement',
+    'src/engine/horseDecision/ownPublicHistoryBudget.ts':
+      'the shared main-isolate byte reservations and heap-headroom admission that determine individual public-history availability',
     'src/engine/horseDecision/observerParticipants.ts':
       'the original validated FAST participant registry and exact same-observer cross-shard completion admission',
     'src/engine/horseDecision/completedHandActions.ts':
       'the canonical public-action projection used by individual historical and live completed-hand learning',
     'src/engine/horseDecision/lane.ts':
       'boundary: actual pool wiring admits original validated observers and propagates public completions only to the same observer; read owners are separately hashed',
+    'src/services/HorsePooledPublicBootstrap.ts':
+      'boundary: bounded saved-only service bootstrap with closed public profile schema and original resolved availability before worker READY; no turn query or private history',
     'src/services/HorseOwnPublicHistory.ts':
       'boundary: the individual service-only public reader pins its exact native-qualified database definition, context and bounded query; provider transport is not strategy authority',
+    'src/engine/horseDecision/pooledPublicProfiles.ts':
+      'owner-authorized shared public aggregate admission, saved bootstrap, context/version/cutoff and detached read projection consumed by reference decisions',
     'src/engine/horseDecision/observerReads.ts':
       'the individual observation admission, cutoff, completion and read-state ownership used by FAST decisions',
     'src/engine/horseDecision/client.ts':
@@ -117,6 +177,7 @@ export const HORSE_REFERENCE_DECISION_SOURCE_FILES: readonly string[] = Object.f
 
 /** Hashed, imports not followed (the reasons above say why). */
 export const HORSE_REFERENCE_DECISION_BOUNDARY: readonly string[] = Object.freeze([
+  'src/engine/HorseFeatureAuthority.ts',
   'src/services/horseCorrectiveReview/liveKernel.ts',
   'src/engine/HorseTournamentPostflop.ts',
   'src/engine/HorseTournamentUtility.ts',
@@ -124,6 +185,7 @@ export const HORSE_REFERENCE_DECISION_BOUNDARY: readonly string[] = Object.freez
   'src/engine/horseDecision/client.ts',
   'src/engine/horseDecision/lane.ts',
   'src/services/HorseOwnPublicHistory.ts',
+  'src/services/HorsePooledPublicBootstrap.ts',
 ]);
 
 /**

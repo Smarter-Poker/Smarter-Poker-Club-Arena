@@ -1,14 +1,19 @@
 /** Paired whole tournaments through the real controller, inside the league process. */
+import {
+  CATASTROPHE_GUARD_VERSION,
+  type HorseTournamentCatastropheGuardLedger,
+} from '../engine/HorseTournamentCatastropheGuard.js';
 import { HandController } from '../engine/HandController.js';
-import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
+import { HorseLogic, type HorseGameStateV2, type HorseDecideOpts } from '../engine/HorseLogic.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from '../engine/HorseEval.js';
 import { calculateContestablePot, RANKS, SUITS } from '../engine/PokerEngine.js';
-import { horseVariantRulesFor } from '../engine/VariantRules.js';
+import { holeCardCount, horseVariantRulesFor } from '../engine/VariantRules.js';
 import { buildTournamentMState } from '../engine/HorseTournamentPreflop.js';
 import { attributeKnockout, type KnockoutClaimant } from '../tournament/knockoutAttribution.js';
 import {
   deepOnePairCommitment,
+  futureHandSeats,
   PHASE8_POLICY,
   type Phase8Mode,
   type HorseTournamentPostflopLedger,
@@ -19,6 +24,13 @@ import {
   humanCalibratedDecide,
   type HumanCalibratedSpot,
 } from './HumanCalibratedPopulation.js';
+
+import {
+  tournamentFlagCard,
+  validateTournamentFlagRequest,
+  type TournamentFlagVariant,
+  type TournamentFlagAdmission,
+} from './HorseTournamentFlagContract.js';
 
 export const TOURNAMENT_LEAGUE_OBJECTIVES = [
   'mtt',
@@ -35,6 +47,18 @@ const MAX_HANDS = 96;
 const MAX_ACTIONS = 256;
 export function tournamentLeagueEntrants(objective: TournamentLeagueObjective): number {
   return objective === 'spin' ? 3 : objective === 'sng' ? 6 : 18;
+}
+
+/** The league forecast must describe the same schedule that deals its next level. */
+export function tournamentLeagueBlindLevels(level: number) {
+  const at = (index: number) => {
+    const bigBlind = 10 * 2 ** index;
+    return { smallBlind: bigBlind / 2, bigBlind, ante: index >= 2 ? Math.round(bigBlind / 10) : 0 };
+  };
+  const current = at(level);
+  const next = at(level + 1);
+  const anteType = current.ante > 0 || next.ante > 0 ? ('per_player' as const) : ('none' as const);
+  return { current, next, anteType };
 }
 
 /** A dead heat can split the last satellite award. Counting every nonzero
@@ -88,8 +112,28 @@ export function knockoutBountyShares(
   });
 }
 
+export const TOURNAMENT_POLICY_FAMILIES = ['continuation_v2', 'catastrophe_guard_v1'] as const;
+export type TournamentPolicyFamily = (typeof TOURNAMENT_POLICY_FAMILIES)[number];
+export function tournamentPolicyFamily(value?: unknown): TournamentPolicyFamily {
+  if (value === undefined) return 'continuation_v2';
+  if (value === 'continuation_v2' || value === 'catastrophe_guard_v1') return value;
+  throw new Error('Unknown tournament policy family');
+}
+export function tournamentPolicyVersion(family: TournamentPolicyFamily) {
+  return family === 'catastrophe_guard_v1' ? CATASTROPHE_GUARD_VERSION : PHASE8_POLICY.version;
+}
+export function tournamentPolicyWorkKind(family: TournamentPolicyFamily) {
+  return family === 'catastrophe_guard_v1'
+    ? ('phase7_candidate_guard' as const)
+    : ('future_hand_continuation' as const);
+}
+
 export interface TournamentLeagueRequest {
+  flagCard?: string;
+  firstPair?: number;
+  flagQualification?: TournamentFlagAdmission;
   objective: TournamentLeagueObjective;
+  phase8PolicyFamily?: TournamentPolicyFamily;
   pairs: number;
   seed: number;
   /** Test mirror; production promotion always compares candidate with off. */
@@ -105,6 +149,8 @@ export interface TournamentLeagueRequest {
 }
 export const MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS = 256;
 export interface TournamentCompletionDiagnostic {
+  workKind?: ReturnType<typeof tournamentPolicyWorkKind>;
+  guardWork?: HorseTournamentCatastropheGuardLedger['guardWork'];
   street: string;
   localPlayers: number;
   fieldPlayers: number;
@@ -114,11 +160,125 @@ export interface TournamentCompletionDiagnostic {
   work: HorseTournamentPostflopLedger['work'];
 }
 export interface TournamentCompletionCounts {
+  /** Optional observational counters for the evaluated arm only; absent in older receipts. */
+  opportunityDiagnostics?: TournamentOpportunityDiagnostics;
   completionSchemaVersion: 1;
   completed: number;
   completionRefusals: Record<string, number>;
   completionDiagnostics: TournamentCompletionDiagnostic[];
   completionDiagnosticsDropped: number;
+}
+export const TOURNAMENT_PRE_ELIGIBILITY_REASONS = [
+  'not_postflop',
+  'unsupported_variant',
+  'context_incomplete',
+  'multiple_boards',
+  'utility_unavailable',
+  'objective_conflict',
+  'mystery_value_unavailable',
+  'private_state_rejected',
+  'candidate_budget',
+  'baseline_not_modeled',
+  'future_context_unavailable',
+  'phase7_choice_retained',
+  'position_unavailable',
+  'future_hand_seats_outside_work_budget',
+  'unknown_preeligibility_refusal',
+] as const;
+type TournamentPreEligibilityReason = (typeof TOURNAMENT_PRE_ELIGIBILITY_REASONS)[number];
+export interface TournamentOpportunityDiagnostics {
+  version: 1;
+  arm: 'evaluated';
+  decisions: number;
+  designatedHeroDecisions: number;
+  otherActorDecisions: number;
+  heroPreflopDecisions: number;
+  heroPostflopDecisions: number;
+  heroOtherStreetDecisions: number;
+  /** Geometry only: this does not assert that earlier context/utility gates passed. */
+  heroPostflopWithinSeatBudget: number;
+  heroPostflopLedgerMissing: number;
+  heroPostflopEligible: number;
+  preEligibleRefusals: Partial<Record<TournamentPreEligibilityReason, number>>;
+}
+function emptyTournamentOpportunities(): TournamentOpportunityDiagnostics {
+  return {
+    version: 1,
+    arm: 'evaluated',
+    decisions: 0,
+    designatedHeroDecisions: 0,
+    otherActorDecisions: 0,
+    heroPreflopDecisions: 0,
+    heroPostflopDecisions: 0,
+    heroOtherStreetDecisions: 0,
+    heroPostflopWithinSeatBudget: 0,
+    heroPostflopLedgerMissing: 0,
+    heroPostflopEligible: 0,
+    preEligibleRefusals: {},
+  };
+}
+/** Observe only AFTER the chooser has returned its finalized measured ledger.
+ * This public aggregate never changes a ledger, sampling, clock or promotion gate. */
+export function recordTournamentOpportunity(
+  target: TournamentCompletionCounts,
+  designatedHero: boolean,
+  state: Pick<HorseGameStateV2, 'stage' | 'players'>,
+  layer: HorseTournamentPostflopLedger | HorseTournamentCatastropheGuardLedger | undefined
+): void {
+  const d = (target.opportunityDiagnostics ??= emptyTournamentOpportunities());
+  d.decisions++;
+  if (!designatedHero) {
+    d.otherActorDecisions++;
+    return;
+  }
+  d.designatedHeroDecisions++;
+  if (state.stage === 'preflop') {
+    d.heroPreflopDecisions++;
+    return;
+  }
+  if (!['flop', 'turn', 'river'].includes(state.stage)) {
+    d.heroOtherStreetDecisions++;
+    return;
+  }
+  d.heroPostflopDecisions++;
+  if (futureHandSeats(state as HorseGameStateV2) <= PHASE8_POLICY.maxFutureHandSeats)
+    d.heroPostflopWithinSeatBudget++;
+  if (!layer) {
+    d.heroPostflopLedgerMissing++;
+    return;
+  }
+  if (layer.eligible) {
+    d.heroPostflopEligible++;
+    return;
+  }
+  const reason =
+    TOURNAMENT_PRE_ELIGIBILITY_REASONS.find((r) => r === layer.reason) ??
+    'unknown_preeligibility_refusal';
+  d.preEligibleRefusals[reason] = (d.preEligibleRefusals[reason] ?? 0) + 1;
+}
+function mergeTournamentOpportunities(
+  target: TournamentCompletionCounts,
+  source: TournamentCompletionCounts
+): void {
+  const from = source.opportunityDiagnostics;
+  if (!from) return;
+  const into = (target.opportunityDiagnostics ??= emptyTournamentOpportunities());
+  for (const key of [
+    'decisions',
+    'designatedHeroDecisions',
+    'otherActorDecisions',
+    'heroPreflopDecisions',
+    'heroPostflopDecisions',
+    'heroOtherStreetDecisions',
+    'heroPostflopWithinSeatBudget',
+    'heroPostflopLedgerMissing',
+    'heroPostflopEligible',
+  ] as const)
+    into[key] += from[key];
+  for (const reason of TOURNAMENT_PRE_ELIGIBILITY_REASONS)
+    if (from.preEligibleRefusals[reason] !== undefined)
+      into.preEligibleRefusals[reason] =
+        (into.preEligibleRefusals[reason] ?? 0) + from.preEligibleRefusals[reason]!;
 }
 export function emptyTournamentCompletionCounts(): TournamentCompletionCounts {
   return {
@@ -132,7 +292,7 @@ export function emptyTournamentCompletionCounts(): TournamentCompletionCounts {
 /** Called only after HorseLogic has returned its final, legalized ledger. */
 export function recordTournamentCompletion(
   target: TournamentCompletionCounts,
-  layer: HorseTournamentPostflopLedger,
+  layer: HorseTournamentPostflopLedger | HorseTournamentCatastropheGuardLedger,
   state: Pick<HorseGameStateV2, 'stage' | 'players' | 'tournament'>
 ): void {
   if (!layer.eligible) return;
@@ -143,6 +303,9 @@ export function recordTournamentCompletion(
     return;
   }
   target.completionDiagnostics.push({
+    ...('policyFamily' in layer && layer.policyFamily === 'catastrophe_guard_v1'
+      ? { workKind: 'phase7_candidate_guard' as const, guardWork: { ...layer.guardWork } }
+      : {}),
     street: state.stage,
     localPlayers: state.players.length,
     fieldPlayers: state.tournament?.playersLeft ?? 0,
@@ -154,7 +317,16 @@ export function recordTournamentCompletion(
 }
 
 export interface TournamentLeagueResult extends TournamentCompletionCounts {
-  version: typeof PHASE8_POLICY.version;
+  flagCard?: string;
+  gameVariant?: TournamentFlagVariant;
+  firstPair?: number;
+  cardDecisions?: number;
+  cardChanged?: number;
+  cardPairs?: Array<{ index: number; candidate: number; reference: number }>;
+
+  version: ReturnType<typeof tournamentPolicyVersion>;
+  phase8PolicyFamily?: TournamentPolicyFamily;
+  workKind?: ReturnType<typeof tournamentPolicyWorkKind>;
   /** Present only for a human-calibrated field (absent: the Phase 8 horse field). */
   opponentPopulation?: typeof HUMAN_CALIBRATED_POPULATION_ID;
   /** Human-calibrated entrants only: response counts per decision node, both arms. */
@@ -248,6 +420,8 @@ interface Receipt extends TournamentCompletionCounts {
   regret: number;
   latency: number[];
   humanResponses: Record<string, Record<string, number>>;
+  cardDecisions?: number;
+  cardChanged?: number;
 }
 
 /** A human-calibrated entrant's decision from the authoritative menu and public state. */
@@ -255,10 +429,11 @@ function humanCalibratedEntrantDecision(
   seatPlayer: SeatPlayer,
   state: ReturnType<HandController['getState']>,
   menu: NonNullable<ReturnType<HandController['getAuthoritativeActionState']>>,
-  receipt: Receipt
+  receipt: Receipt,
+  variant: string = 'nlh'
 ): HorseDecision {
   const spot: HumanCalibratedSpot = {
-    variant: 'nlh',
+    variant,
     stage: state.stage,
     cards: seatPlayer.cards,
     board: state.communityCards,
@@ -291,8 +466,16 @@ async function playTournament(
   heroSeat: number,
   mode: Phase8Mode,
   shouldContinue: () => boolean,
-  opponentPopulation: typeof HUMAN_CALIBRATED_POPULATION_ID | null = null
+  opponentPopulation: typeof HUMAN_CALIBRATED_POPULATION_ID | null = null,
+  family: TournamentPolicyFamily = 'continuation_v2',
+  flag: {
+    variant: TournamentFlagVariant;
+    hero: HorseDecideOpts;
+    counterfactual: HorseDecideOpts | null;
+  } | null = null
 ): Promise<Receipt> {
+  const variant: TournamentFlagVariant | 'nlh' = flag?.variant ?? 'nlh';
+  const holeCount = holeCardCount(variant);
   const count = tournamentLeagueEntrants(objective);
   const startStack = 2000;
   const players = Array.from({ length: count }, (_, i) =>
@@ -333,6 +516,7 @@ async function playTournament(
     regret: 0,
     latency: [],
     humanResponses: {},
+    ...(flag ? { cardDecisions: 0, cardChanged: 0 } : {}),
   };
   let alive = players;
   const buttons = new Map<number, number>();
@@ -351,32 +535,36 @@ async function playTournament(
       .map((p, index) => ({ ...p, seat: index + 1 }));
     const dealerSeat = Math.min(buttons.get(tableIndex) ?? 1, tablePlayers.length);
     const level = Math.floor(hand / 6);
-    const bigBlind = 10 * 2 ** level;
-    const ante = level >= 2 ? Math.round(bigBlind / 10) : 0;
+    const { current, next, anteType } = tournamentLeagueBlindLevels(level);
+    const { bigBlind, ante } = current;
     const starts = new Map(alive.map((p) => [p.user_id, p.stack]));
     const totalBefore = alive.reduce((sum, p) => sum + p.stack, 0);
     const config = {
       tableId: 'phase8-tournament-league',
       handNumber: hand + 1,
-      gameVariant: 'nlh' as const,
+      gameVariant: variant,
       isTournament: true,
-      smallBlind: bigBlind / 2,
+      smallBlind: current.smallBlind,
       bigBlind,
       ante,
       rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
     };
     const controller = new HandController(config, tablePlayers, dealerSeat);
     // Replace methods only on this isolated controller's deck instance. No
-    // production shuffle, prototype, flag or live object is changed. Every
-    // original seat retains identical holes and board even after paths diverge.
+    // production shuffle, prototype, flag or live object is changed. NLH keeps
+    // original entrant holes across divergent arms; Omaha keeps table-slot draws
+    // under the same per-hand seed, not entrant holes after membership changes.
     const full = cardsFor((seed ^ Math.imul(hand + 1, 2654435761)) >>> 0);
-    const fixedBoard = full.slice(count * 2, count * 2 + 5);
+    // Preserve the NLH entrant assignment exactly. Omaha uses six table slots:
+    // eighteen PLO6 entrants cannot each reserve six cards from one deck.
+    const boardStart = flag ? 6 * holeCount : count * 2;
+    const fixedBoard = full.slice(boardStart, boardStart + 5);
     const deck = tablePlayers
-      .flatMap((p) => {
-        const i = originalIds.indexOf(p.user_id);
-        return full.slice(i * 2, i * 2 + 2);
+      .flatMap((p, slot) => {
+        const i = flag ? slot : originalIds.indexOf(p.user_id);
+        return full.slice(i * holeCount, i * holeCount + holeCount);
       })
-      .concat(fixedBoard, full.slice(count * 2 + 5));
+      .concat(fixedBoard, full.slice(boardStart + 5));
     const instance = controller.getState().deck as unknown as {
       deal: (n?: number) => Card[];
       dealOne: () => Card;
@@ -438,15 +626,15 @@ async function playTournament(
         stackByUser: Object.fromEntries(
           state.players.map((p) => [p.user_id, p.stack + p.totalInvested])
         ),
-        currentSmallBlind: bigBlind / 2,
+        currentSmallBlind: current.smallBlind,
         currentBigBlind: bigBlind,
         currentAnte: ante,
-        anteType: ante > 0 ? 'per_player' : 'none',
+        anteType,
         playersAtTable: state.players.length,
         seatsPerTable: 6,
-        nextSmallBlind: bigBlind,
-        nextBigBlind: bigBlind * 2,
-        nextAnte: Math.round(bigBlind / 5),
+        nextSmallBlind: next.smallBlind,
+        nextBigBlind: next.bigBlind,
+        nextAnte: next.ante,
         nextBlindInMin: (6 - (hand % 6)) / 2,
         currentLevel: level,
         levelDurationMin: 3,
@@ -475,14 +663,14 @@ async function playTournament(
       };
       tournament.m = buildTournamentMState({
         stackChips: hero.stack,
-        smallBlind: bigBlind / 2,
+        smallBlind: current.smallBlind,
         bigBlind,
         ante,
         anteType: tournament.anteType!,
         playersAtTable: state.players.length,
-        nextSmallBlind: bigBlind,
-        nextBigBlind: bigBlind * 2,
-        nextAnte: Math.round(bigBlind / 5),
+        nextSmallBlind: next.smallBlind,
+        nextBigBlind: next.bigBlind,
+        nextAnte: next.ante,
         minutesToNextLevel: tournament.nextBlindInMin,
       });
       const gs: HorseGameStateV2 = {
@@ -499,7 +687,7 @@ async function playTournament(
         currentPlayerSeat: hero.seat,
         gameMode: 'tournament',
         format: objective === 'spin' ? 'spin' : objective === 'sng' ? 'sng' : 'mtt',
-        gameVariant: 'nlh',
+        gameVariant: variant,
         bigBlind,
         ante,
         boardCount: 1,
@@ -510,7 +698,7 @@ async function playTournament(
         bettingStructure: menu.structure,
         pots: controller.computeLivePots(),
         contestablePot: calculateContestablePot(state.players, hero.user_id, menu.toCall),
-        variantRules: horseVariantRulesFor('nlh'),
+        variantRules: horseVariantRulesFor(variant),
         rakeConfig: config.rakeConfig,
         tournament,
         actionHistory: state.actionHistory.map((a, i) => ({
@@ -521,25 +709,44 @@ async function playTournament(
       seedFastRandom(
         (seed ^ Math.imul(hand + 1, 104729) ^ Math.imul(action + 1, 1009) ^ hero.seat) >>> 0
       );
-      const decision: HorseDecision =
+      const decideWith = (extra: HorseDecideOpts): HorseDecision =>
+        HorseMind.runInSandbox(sandbox, () =>
+          HorseLogic.decide(
+            hero,
+            gs,
+            'balanced',
+            {},
+            {
+              ...extra,
+              phase8Postflop: flag ? 'off' : hero.user_id === heroId ? mode : 'off',
+              phase8PolicyFamily: family,
+              mind: false,
+              telemetry: false,
+              decisionTimeMs: 0,
+            }
+          )
+        );
+      let decision: HorseDecision =
         opponentPopulation !== null && hero.user_id !== heroId
-          ? humanCalibratedEntrantDecision(hero, state, menu, receipt)
-          : HorseMind.runInSandbox(sandbox, () =>
-              HorseLogic.decide(
-                hero,
-                gs,
-                'balanced',
-                {},
-                {
-                  phase8Postflop: hero.user_id === heroId ? mode : 'off',
-                  mind: false,
-                  telemetry: false,
-                  decisionTimeMs: 0,
-                }
-              )
-            );
+          ? humanCalibratedEntrantDecision(hero, state, menu, receipt, variant)
+          : decideWith(hero.user_id === heroId && flag ? flag.hero : {});
+      if (flag?.counterfactual && hero.user_id === heroId) {
+        const live = saveFastRandom();
+        seedFastRandom(
+          (seed ^ Math.imul(hand + 1, 104729) ^ Math.imul(action + 1, 1009) ^ hero.seat) >>> 0
+        );
+        const other = decideWith(flag.counterfactual);
+        restoreFastRandom(live);
+        receipt.cardDecisions!++;
+        if (
+          other.action !== decision.action ||
+          (other.amount ?? null) !== (decision.amount ?? null)
+        )
+          receipt.cardChanged!++;
+      }
       receipt.decisions++;
-      const layer = decision.tournamentPostflop;
+      const layer = decision.tournamentCatastropheGuard ?? decision.tournamentPostflop;
+      recordTournamentOpportunity(receipt, hero.user_id === heroId, gs, layer);
       if (layer) {
         recordTournamentCompletion(receipt, layer, gs);
         receipt.eligible += Number(layer.eligible);
@@ -673,11 +880,31 @@ export async function runTournamentLeague(
     request.seed <= 0
   )
     throw new Error('Invalid tournament league request');
+  const card = validateTournamentFlagRequest(request);
+  if (request.flagQualification) {
+    const { authenticateTournamentFlagExecution } =
+      await import('./HorseTournamentFlagQualification.js');
+    await authenticateTournamentFlagExecution(request);
+  }
+  const firstPair = request.firstPair ?? 0;
+  const family = tournamentPolicyFamily(request.phase8PolicyFamily);
   const started = performance.now();
   const saved = saveFastRandom();
   const result: TournamentLeagueResult = {
     ...emptyTournamentCompletionCounts(),
-    version: PHASE8_POLICY.version,
+    ...(card
+      ? {
+          flagCard: card.name,
+          gameVariant: card.variant,
+          firstPair,
+          cardDecisions: 0,
+          cardChanged: 0,
+          cardPairs: [],
+        }
+      : {}),
+    version: tournamentPolicyVersion(family),
+    phase8PolicyFamily: family,
+    workKind: tournamentPolicyWorkKind(family),
     ...(request.opponentPopulation
       ? { opponentPopulation: request.opponentPopulation, humanResponses: {} }
       : {}),
@@ -723,15 +950,17 @@ export async function runTournamentLeague(
   try {
     for (let pair = 0; pair < request.pairs; pair++) {
       if (!shouldContinue()) break;
-      const seed = (request.seed ^ Math.imul(pair + 1, 2654435761)) >>> 0 || 1;
-      const hero = pair % tournamentLeagueEntrants(request.objective);
+      const seed = (request.seed ^ Math.imul(firstPair + pair + 1, 2654435761)) >>> 0 || 1;
+      const hero = (firstPair + pair) % tournamentLeagueEntrants(request.objective);
       const a = await playTournament(
         seed,
         request.objective,
         hero,
         request.candidateMode ?? 'candidate',
         shouldContinue,
-        request.opponentPopulation ?? null
+        request.opponentPopulation ?? null,
+        family,
+        card ? { variant: card.variant, hero: card.a, counterfactual: card.b } : null
       );
       const b = await playTournament(
         seed,
@@ -739,7 +968,9 @@ export async function runTournamentLeague(
         hero,
         'off',
         shouldContinue,
-        request.opponentPopulation ?? null
+        request.opponentPopulation ?? null,
+        family,
+        card ? { variant: card.variant, hero: card.b, counterfactual: null } : null
       );
       for (const arm of [a, b])
         for (const [node, counts] of Object.entries(arm.humanResponses))
@@ -752,6 +983,15 @@ export async function runTournamentLeague(
       result.truncatedHands += a.truncated + b.truncated;
       if (!a.complete || !b.complete) break;
       result.pairs++;
+      if (card) {
+        result.cardDecisions! += a.cardDecisions ?? 0;
+        result.cardChanged! += a.cardChanged ?? 0;
+        result.cardPairs!.push({
+          index: firstPair + pair,
+          candidate: a.returned,
+          reference: b.returned,
+        });
+      }
       differences.push(a.returned - b.returned);
       result.candidateReturn += a.returned;
       result.baselineReturn += b.returned;
@@ -762,6 +1002,7 @@ export async function runTournamentLeague(
       result.candidateFinish[a.finish - 1]++;
       result.baselineFinish[b.finish - 1]++;
       result.decisions += a.decisions + b.decisions;
+      mergeTournamentOpportunities(result, a);
       result.eligible += a.eligible;
       result.fired += a.fired;
       result.completed += a.completed;
@@ -830,8 +1071,71 @@ export function pairedConfidence99(
   return [Math.max(-1, mean - width), Math.min(1, mean + width)];
 }
 
+/** Guard assessment has no partial continuation completion or work-budget refusal. */
+export function tournamentGuardCountsAreValid(r: {
+  phase8PolicyFamily?: unknown;
+  eligible?: unknown;
+  fired?: unknown;
+  completed?: unknown;
+  completionRefusals?: unknown;
+  completionDiagnostics?: unknown;
+  completionDiagnosticsDropped?: unknown;
+  budgetExhaustions?: unknown;
+}): boolean {
+  if (r.phase8PolicyFamily !== 'catastrophe_guard_v1') return true;
+  const rows = r.completionDiagnostics;
+  const refusals = r.completionRefusals;
+  if (
+    typeof r.eligible !== 'number' ||
+    !Number.isSafeInteger(r.eligible) ||
+    r.eligible < 0 ||
+    r.fired !== r.eligible ||
+    r.completed !== r.eligible ||
+    r.budgetExhaustions !== 0 ||
+    !refusals ||
+    typeof refusals !== 'object' ||
+    Array.isArray(refusals) ||
+    Object.keys(refusals).length !== 0 ||
+    !Array.isArray(rows) ||
+    typeof r.completionDiagnosticsDropped !== 'number' ||
+    !Number.isSafeInteger(r.completionDiagnosticsDropped) ||
+    r.completionDiagnosticsDropped < 0 ||
+    rows.length + r.completionDiagnosticsDropped !== r.eligible
+  )
+    return false;
+  return rows.every((row) => {
+    if (
+      !row ||
+      typeof row !== 'object' ||
+      row.completed !== true ||
+      row.workKind !== 'phase7_candidate_guard'
+    )
+      return false;
+    const work = row.guardWork;
+    return (
+      work &&
+      typeof work === 'object' &&
+      work.assessmentCompleted === true &&
+      typeof work.candidateCount === 'number' &&
+      Number.isSafeInteger(work.candidateCount) &&
+      work.candidateCount >= 1 &&
+      work.candidateCount <= 16
+    );
+  });
+}
+
 export function tournamentRunCanPromote(r: TournamentLeagueResult): boolean {
+  if (r.flagCard !== undefined) return false; // separate immutable flag-card qualification only
+  if (!tournamentGuardCountsAreValid(r)) return false;
+  if (
+    r.phase8PolicyFamily !== undefined &&
+    !TOURNAMENT_POLICY_FAMILIES.includes(r.phase8PolicyFamily)
+  )
+    return false;
+  if (r.phase8PolicyFamily === 'catastrophe_guard_v1' && r.workKind !== 'phase7_candidate_guard')
+    return false;
   return (
+    r.version === tournamentPolicyVersion(tournamentPolicyFamily(r.phase8PolicyFamily)) &&
     r.evidenceMode === 'promotion' &&
     r.candidateMode === 'candidate' &&
     r.complete &&
@@ -865,7 +1169,10 @@ export function tournamentRunCanPromote(r: TournamentLeagueResult): boolean {
 }
 
 export function summarizeTournamentPromotion(runs: TournamentLeagueResult[]) {
+  const families = new Set(runs.map((r) => tournamentPolicyFamily(r.phase8PolicyFamily)));
+
   const reasons: string[] = [];
+  if (families.size > 1) reasons.push('mixed_policy_families');
   const buckets = TOURNAMENT_LEAGUE_OBJECTIVES.map((objective) => {
     const group = runs.filter((r) => r.objective === objective);
     const seeds = group.map((r) => r.seed);
@@ -897,12 +1204,20 @@ export function summarizeTournamentPromotion(runs: TournamentLeagueResult[]) {
   });
   if (runs.length !== TOURNAMENT_LEAGUE_OBJECTIVES.length * TOURNAMENT_PROMOTION_SEEDS.length)
     reasons.push('incomplete_run_matrix');
-  return { promoted: reasons.length === 0, reasons, buckets };
+  return {
+    ...(runs.some((r) => r.phase8PolicyFamily !== undefined)
+      ? { phase8PolicyFamily: families.size === 1 ? [...families][0] : 'mixed' }
+      : {}),
+    promoted: reasons.length === 0,
+    reasons,
+    buckets,
+  };
 }
 
 /** Software liveness is separate from strength promotion. A safe but entirely
  * silent candidate cannot pass the first-round baseline gate. */
 export function tournamentBaselineRunVerified(run: TournamentLeagueResult): boolean {
+  if (!tournamentGuardCountsAreValid(run)) return false;
   return (
     run.complete &&
     run.pairs === run.requestedPairs &&

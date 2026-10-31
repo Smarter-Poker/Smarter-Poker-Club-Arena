@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "source_sha256": {
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/README.md": "c4bb3c8b8c5339159c9f10e9effe82ff2d12222853ce01f2b554fbd963a0298c",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/actual-connected-owners.json": "460de22b968b2091566158214db56c0883f172725d483a6cd775b7315dc898da",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/actual-shaped-owner.json": "365f2c1b395c1834a512b394e38b75581d4e23201061556851598689af72743a",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/actual-table-authority.json": "0544c0b29dce1c42aebfa7ef75d0a873e2e5441d152e369198f99b114182c006",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/meaningful-table-contract.json": "d497b7b64f9bf66ccd7867501e06f7298904b5b9d7fbdd67c38f0ffe298e0a7a",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/native-exploration.json": "84937966b37410332ac68a01aa32feb6368bd5a0977c3746f2b4dd32345ba626",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/original-shaped-hands.sql": "38b827948955b4d46ab780a5c7bfa8e6ac016e9f22892a3eadc38a189f5e8d29",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/original-touch-producers.sql": "20c1c0cffe6b6c46b359dc839c2e60045dd5491292d47b11e8da26132bef60c2",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/qualification-evidence.json": "4ebabebf667706c9e145c18b8549cf1414f6da7f886eaedff0932b345bf9f1c2",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/table-contract-projection.sql": "6034c042c1b18680c12aed804b7ffbee98daff6b01e45948e110296aa384f604",
+    "scripts/ci/test-original-shaped-cash-boolgate-postgres.py": "dea1efaa198958946b7648d4109e802086f4664ef9bf84f2db59822b76417a1c",
+    "supabase/migrations/20261029071236_original_shaped_cash_selects_the_stored_boolean_gate.sql": "7b29ac92bc3f68052c70d66166d1a4177c6de0118bee7d081190255c6c8cf658"
+  },
+  "qualification": "private-PG17-physical-only; bitmap recheck allowed; production capacity unqualified"
+}

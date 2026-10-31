@@ -42,7 +42,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  * FAILING OPEN
  * ─────────────────────────────────────────────────────────────────────────
- * An unreadable balance returns the legacy amount, never zero. `readClubChip
+ * An unreadable balance still requests the table maximum. `readClubChip
  * Balances` distinguishes "zero" from "could not read" by key ABSENCE for
  * exactly this reason, and the cost of the two mistakes is not symmetrical: a
  * wrong reload is one buy-in, a wrong stand-up empties a table that had a
@@ -50,6 +50,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { horseCashMinimum, horseMaximumBuyIn } from './HorseBehavior.js';
 import { bankrollPolicyFor, rebuyDecision, referenceBuyIn } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 
@@ -77,6 +78,8 @@ export interface HorseRebuyRequest {
   tableId?: string;
   userId: string;
   bigBlind: number;
+  smallBlind?: number;
+  variant?: string;
   minBuyIn?: number | null;
   maxBuyIn?: number | null;
   /** Reloads already taken this session. Buy-ins committed is this plus one. */
@@ -153,11 +156,22 @@ export async function horseRebuyAmount(req: HorseRebuyRequest): Promise<number> 
     return 0;
   }
 
-  const minB = Number(req.minBuyIn) > 0 ? Number(req.minBuyIn) : legacy;
-  const maxB = Number(req.maxBuyIn) > 0 ? Number(req.maxBuyIn) : legacy;
+  const minB = horseCashMinimum(
+    {
+      game_variant: req.variant,
+      small_blind: req.smallBlind,
+      big_blind: bigBlind,
+    },
+    Number(req.minBuyIn) > 0 ? Number(req.minBuyIn) : legacy
+  );
+  const maxB = horseMaximumBuyIn(
+    minB,
+    Number(req.maxBuyIn) > 0 ? Number(req.maxBuyIn) : bigBlind > 0 ? bigBlind * 200 : 400
+  );
+  if (maxB <= 0) return 0;
   const ref = referenceBuyIn(bigBlind, minB, maxB);
 
-  if (!clubId || !userId) return legacy; // unknown club -> fail open
+  if (!clubId || !userId) return maxB; // unknown club -> fail open
 
   let roll: number | undefined;
   try {
@@ -168,19 +182,22 @@ export async function horseRebuyAmount(req: HorseRebuyRequest): Promise<number> 
     const balances = await readClubChipBalances(walletClub, [userId]);
     roll = balances.get(userId);
   } catch {
-    return legacy; // a thrown read is an unknown balance, not a poor one
+    return maxB; // a thrown read is an unknown balance, not a poor one
   }
-  if (roll === undefined) return legacy; // ABSENT means unread. Fail open.
+  if (roll === undefined) return maxB; // ABSENT means unread. Fail open.
 
   const amount = rebuyDecision({
     bankroll: roll,
     refBuyIn: ref,
     minBuyIn: minB,
     maxBuyIn: maxB,
-    desired: legacy,
+    desired: maxB,
     rebuysTaken,
     policy,
   });
-  if (amount <= 0) bankrollEvent('rebuy_refused_underrolled');
-  return amount;
+  if (amount < maxB) {
+    bankrollEvent('rebuy_refused_underrolled');
+    return 0;
+  }
+  return maxB;
 }

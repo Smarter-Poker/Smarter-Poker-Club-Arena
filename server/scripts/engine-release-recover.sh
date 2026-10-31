@@ -9,6 +9,8 @@ LEASE_ROOT="${ENGINE_RELEASE_IMAGE_LEASE_ROOT:-/var/lib/club-arena/engine-image-
 ENGINE_LOCK="${ENGINE_LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
 CONTAINER="${CONTAINER:-club-arena-engine}"
 PUBLIC_URL="${ENGINE_URL:-https://engine.smarter.poker}"
+ENV_FILE="${ENV_FILE:-/opt/club-arena/server/.env}"
+LIGHTNING_HOLD="$CONTROL_DIR/engine-release-lightning-hold.py"
 RECOVERY_MAX_SECONDS=300
 
 recovery_remaining() {
@@ -73,6 +75,30 @@ if [ -e "$BREAK_DEADLINE_FILE" ]; then
   fi
 fi
 
+# Only the exact new immutable capability can prove a request never entered.
+# Older generations keep their original recovery. Unknown/corrupt identity
+# refuses; absence alone is never sufficient without the pinned source proof.
+mapfile -t FLOOR_REQUEST < "$REQUEST_ROOT/$RUN_ID.request" \
+  || { echo '[engine-release-recover] floor request unreadable' >&2; exit 1; }
+[ "${#FLOOR_REQUEST[@]}" = 6 ] \
+  || { echo '[engine-release-recover] floor request malformed' >&2; exit 1; }
+[ "${FLOOR_REQUEST[3]}" = "$CONTROL_DIR" ] \
+  && [ "${FLOOR_REQUEST[4]}" = "$(tr -d '\r\n' < "$CONTROL_DIR/control-sha")" ] \
+  || { echo '[engine-release-recover] floor request belongs to another generation' >&2; exit 1; }
+FLOOR_DISPOSITION="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" disposition \
+  --repo "${REPO_DIR:-/opt/club-arena}" --target "${FLOOR_REQUEST[0]}" --control "${FLOOR_REQUEST[4]}" \
+  --deadline "${FLOOR_REQUEST[5]}" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID")" \
+  || { echo '[engine-release-recover] runtime entry disposition unknown; preserving state' >&2; exit 1; }
+case "$FLOOR_DISPOSITION" in
+  never-entered) ABORT_RC=0 ;;
+  announced)
+    # No checkpoint/prepare was entered. Preserve this exact request and fixed
+    # announcement after an unknown acknowledgment; never restart healthy play
+    # or certify completion from an announcement-only failure.
+    echo '[engine-release-recover] announcement-only owner retained; no runtime restoration or terminal certification' >&2
+    exit 75
+    ;;
+  entered|legacy)
 exec 9>"$ENGINE_LOCK"
 LOCK_WAIT="$(recovery_remaining)" \
   || { echo '[engine-release-recover] FATAL: recovery deadline expired before engine lock' >&2; exit 1; }
@@ -102,6 +128,10 @@ bounded_recovery_command "$SUPERVISOR_BUDGET" env \
   ENGINE_CONTROL_DIR="$CONTROL_DIR" CONTAINER="$CONTAINER" ENGINE_URL="$PUBLIC_URL" \
   "$CONTROL_DIR/engine-supervisor.sh" \
   || { echo '[engine-release-recover] FATAL: exact desired local and public health recovery failed' >&2; exit 1; }
+
+    ;;
+  *) echo '[engine-release-recover] invalid runtime entry disposition' >&2; exit 1 ;;
+esac
 
 if [ "$RECOVERY_MODE" = retryable ]; then
   [ "$ABORT_RC" -eq 0 ] \
@@ -138,6 +168,20 @@ bounded_recovery_command 15 "$CONTROL_DIR/engine-release-seal.py" attest-termina
   --control-sha "${TERMINAL_REQUEST_LINES[4]}" >/dev/null \
   || { echo '[engine-release-recover] FATAL: exact terminal receipt is absent; durable release state retained' >&2; exit 1; }
 
+# A Lightning hold the transaction placed for this run and could not release
+# (engine-release-transaction.sh release_lightning_hold) is this fence's second
+# reader. Resume is idempotent through its own request ids; a refusal is loud
+# and leaves the hold file on disk, it never blocks terminal retirement.
+LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
+if [ -e "$LIGHTNING_HOLD_FILE" ]; then
+  if bounded_recovery_command 60 "$LIGHTNING_HOLD" resume \
+    --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5; then
+    echo '[engine-release-recover] released the Lightning hold the transaction left behind'
+  else
+    echo "[engine-release-recover] FATAL: the Lightning hold for run $RUN_ID is still not released; $LIGHTNING_HOLD_FILE retained for an operator" >&2
+  fi
+fi
+
 # Remove the generation pin first while intent, request, and the enabled boot
 # edge still exist. A crash here simply replays the request and recreates the
 # same validated pin; it can never strand a pin that blocks generation GC.
@@ -161,6 +205,11 @@ fi
 [[ "$BREAK_DEADLINE_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.break-deadline$ ]] \
   || { echo '[engine-release-recover] FATAL: refusing unsafe break-deadline cleanup' >&2; exit 1; }
 bounded_recovery_command 10 rm -f -- "$BREAK_DEADLINE_FILE"
+fsync_directory "$REQUEST_ROOT"
+
+# Exact terminal receipt above proves recovery/retirement before the entry
+# marker is removed. Request remains the final durable authority if interrupted.
+bounded_recovery_command 10 rm -f -- "$REQUEST_ROOT/$RUN_ID.activation-entry"
 fsync_directory "$REQUEST_ROOT"
 
 INTENT_FILE="$REQUEST_ROOT/$RUN_ID.intent"

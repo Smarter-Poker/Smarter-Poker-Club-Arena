@@ -153,6 +153,8 @@ const memberStats = {
 };
 
 beforeEach(() => {
+  // Each independent scenario starts with an account that has no saved preferences.
+  localStorage.clear();
   state.params = {
     clubId: 'shark-club',
     userId: '11111111-1111-4111-8111-111111111111',
@@ -342,6 +344,28 @@ describe('Players detail surfaces', () => {
     expect(name).toHaveValue('Newer Draft');
   });
 
+  it('scopes downline fees to the applied range and withdraws old rows while it loads', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    let finish!: (rows: unknown[]) => void;
+    state.getDownline.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }));
+    await waitFor(() => expect(state.getDownline).toHaveBeenCalledTimes(2));
+    const range = state.getMemberDetail.mock.calls.at(-1)![2];
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual(range);
+    expect(range.from).not.toBeNull();
+    expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
+    await act(async () =>
+      finish([{ user_id: 'child', alias: 'Ranged Child', role: 'player', total_fees: 7.22 }])
+    );
+    expect(await screen.findByText('Ranged Child')).toBeVisible();
+  });
+
   it('does not label old ledger figures with a failed new range', async () => {
     render(<MemberManagementPage />);
     await screen.findByRole('heading', { name: 'River Shark' });
@@ -407,9 +431,9 @@ describe('Players detail surfaces', () => {
     // Each figure prints once, on its card.
     // Net is a signed result (winLossChips), Fees a fee figure (feeFigure).
     expect(screen.getAllByText('+120')).toHaveLength(1);
-    expect(screen.getByText('18')).toBeVisible();
+    expect(screen.getByText('18.00')).toBeVisible();
     expect(screen.queryByText('120.00')).not.toBeInTheDocument();
-    expect(screen.queryByText('18.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('18')).not.toBeInTheDocument();
   });
 
   it('keeps the last verified figures visible and names a failed range refresh', async () => {
@@ -564,13 +588,37 @@ it('keeps a local draft and original note receipt through a failed range read an
 });
 
 describe('the member record survives a failed background refresh', () => {
+  const authorityEvent = async () => {
+    const { useMasterBusBroadcastChannel } =
+      await import('../../src/hooks/useMasterBusBroadcastChannel');
+    const options = vi
+      .mocked(useMasterBusBroadcastChannel)
+      .mock.calls.map(([options]) => options)
+      .filter((options) => options.event === 'record_changed')
+      .at(-1)!;
+    await act(async () => options.onPayload?.({}));
+  };
   it('keeps the record on screen with a stale banner and no toast', async () => {
-    render(<MemberManagementPage />);
-    expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
-    state.getMemberDetail.mockRejectedValueOnce(new Error('offline'));
+    // Finish initial scope effects before delivering the authority event. The
+    // heading can paint before the passive effect installs its refresh ref.
     await act(async () => {
-      window.dispatchEvent(new Event('focus'));
+      render(<MemberManagementPage />);
     });
+    expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    // The heading can paint before the resolved-club authority effect settles.
+    // Flush pending passive effects before delivering the one-shot event.
+    await act(async () => {});
+    // Own the authority read explicitly: rendering the heading alone does not
+    // finish every initial read. A range read must not consume this failure.
+    let failAuthority!: (error: Error) => void;
+    const authorityRead = new Promise<never>((_, reject) => {
+      failAuthority = reject;
+    });
+    state.getMemberDetail.mockReturnValue(authorityRead);
+    await authorityEvent();
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
+    expect(state.getMemberDetail.mock.calls[1][2]).toEqual(state.getMemberDetail.mock.calls[0][2]);
+    await act(async () => failAuthority(new Error('offline')));
     const banner = await screen.findByRole('alert');
     expect(banner).toHaveTextContent('Member Connection Interrupted');
     expect(banner).toHaveTextContent('The Record Below Is From The Previous Successful Read.');
@@ -580,14 +628,13 @@ describe('the member record survives a failed background refresh', () => {
     expect(state.toast.error).not.toHaveBeenCalled();
 
     // A second failed background read still does not toast.
-    state.getMemberDetail.mockRejectedValueOnce(new Error('still offline'));
-    await act(async () => {
-      window.dispatchEvent(new Event('online'));
-    });
+    state.getMemberDetail.mockRejectedValue(new Error('still offline'));
+    await authorityEvent();
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(3));
     expect(state.toast.error).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'River Shark' })).toBeVisible();
 
+    state.getMemberDetail.mockResolvedValue(memberDetail);
     fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
     await waitFor(() =>
       expect(screen.queryByText('Member Connection Interrupted')).not.toBeInTheDocument()
@@ -605,13 +652,58 @@ describe('the member record survives a failed background refresh', () => {
     expect(state.toast.error).not.toHaveBeenCalled();
   });
 
-  it('keeps a shown downline when only its refresh fails', async () => {
-    render(<MemberManagementPage />);
-    expect(await screen.findByText('Cyan Rail')).toBeVisible();
-    state.getDownline.mockRejectedValueOnce(new Error('downline down'));
+  it('refreshes downline fee rows on the committed record event without a range change', async () => {
+    // The row may paint before the resolved-club passive effect installs its
+    // authority refresh owner. Deliver the one-shot event after that owner is ready.
     await act(async () => {
-      window.dispatchEvent(new Event('focus'));
+      render(<MemberManagementPage />);
     });
+    expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    await act(async () => {});
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(1);
+    expect(state.getDownline).toHaveBeenCalledTimes(1);
+    state.getDownline.mockResolvedValueOnce([
+      { user_id: 'child', alias: 'Updated Downline', role: 'player', total_fees: 7.22 },
+    ]);
+    await authorityEvent();
+    expect(await screen.findByText('Updated Downline')).toBeVisible();
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(2);
+    expect(state.getDownline).toHaveBeenCalledTimes(2);
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual({ from: null, to: null });
+  });
+
+  it('keeps a shown downline when only its refresh fails', async () => {
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
+    expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    await act(async () => {});
+    const detailReads = state.getMemberDetail.mock.calls.length;
+    const downlineReads = state.getDownline.mock.calls.length;
+    const activeRange = state.getDownline.mock.calls.at(-1)![3];
+    let resolveAuthority!: (value: typeof memberDetail) => void;
+    const authorityRead = new Promise<typeof memberDetail>((resolve) => {
+      resolveAuthority = resolve;
+    });
+    let failDownline!: (error: Error) => void;
+    const downlineRead = new Promise<never>((_, reject) => {
+      failDownline = reject;
+    });
+    // The committed event first validates this record's authority. Own both
+    // reads so only its subsequent downline refresh can consume the failure.
+    state.getMemberDetail.mockReturnValueOnce(authorityRead);
+    state.getDownline.mockReturnValueOnce(downlineRead);
+    await authorityEvent();
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(detailReads + 1));
+    expect(state.getMemberDetail.mock.calls.at(-1)![2]).toEqual(activeRange);
+    expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+    expect(screen.getByText('Cyan Rail')).toBeVisible();
+    await act(async () => resolveAuthority(memberDetail));
+    await waitFor(() => expect(state.getDownline).toHaveBeenCalledTimes(downlineReads + 1));
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual(activeRange);
+    expect(screen.getByText('Cyan Rail')).toBeVisible();
+    expect(screen.queryByText('Member Connection Interrupted')).not.toBeInTheDocument();
+    await act(async () => failDownline(new Error('downline down')));
     expect(
       await screen.findByText(
         'Could Not Refresh The Downline. Showing The Previous Successful Read.'
@@ -619,6 +711,7 @@ describe('the member record survives a failed background refresh', () => {
     ).toBeVisible();
     expect(screen.getByText('Cyan Rail')).toBeVisible();
     expect(screen.queryByText('Member Connection Interrupted')).not.toBeInTheDocument();
+    expect(state.toast.error).not.toHaveBeenCalled();
   });
 
   it('subscribes to the lower-case record topic for an upper-case URL id', async () => {
@@ -638,17 +731,24 @@ describe('the member record survives a failed background refresh', () => {
     expect(topics.every((name) => name === name.toLowerCase())).toBe(true);
   });
 
-  it('formats record figures with the shared Player Management formatters', async () => {
+  it('prints record monetary stats to the penny without compact rounding', async () => {
+    state.getMemberDetail.mockResolvedValueOnce({
+      ...memberDetail,
+      stats: {
+        ...memberDetail.stats,
+        total_fee: 12345.67,
+        total_winnings: -1250.75,
+        mtt_winnings: -0.4,
+      },
+    });
     render(<MemberManagementPage />);
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
-    // Wallets: formatWalletChips, exactly two decimals (Dan, 2026-10-18).
     expect(screen.getAllByText('500.00').length).toBeGreaterThan(0);
     expect(screen.getByText('25.00')).toBeVisible();
-    // Signed winnings: winLossChips (Dan 2026-10-16). Fees: feeFigure (Dan, 2026-10-14).
-    expect(screen.getByText('+120')).toBeVisible();
-    expect(screen.getByText('+40')).toBeVisible();
-    expect(screen.getByText('18')).toBeVisible();
-    expect(screen.queryByText('18.00')).not.toBeInTheDocument();
+    expect(screen.getByText('-1,250.75')).toBeVisible();
+    expect(screen.getByText('-0.40')).toBeVisible();
+    expect(screen.getByText('12,345.67')).toBeVisible();
+    expect(screen.getByText('MTT Fees').closest('.mm-stat')).toHaveTextContent('4.00');
   });
 });
 

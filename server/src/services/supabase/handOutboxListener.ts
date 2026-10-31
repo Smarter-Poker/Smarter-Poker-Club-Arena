@@ -24,10 +24,8 @@
  * hands flowing. The connection string is never logged.
  */
 
-import pg from 'pg';
 import {
   enginePgConnectionString,
-  enginePgSsl,
   reconnectDelayMs,
   RECONNECT_BASE_MS,
   RECONNECT_MAX_MS,
@@ -40,23 +38,13 @@ export const HAND_OUTBOX_CHANNEL = 'hand_projection_outbox';
 // The session configuration is shared with the lease heartbeat session.
 export { reconnectDelayMs, RECONNECT_BASE_MS, RECONNECT_MAX_MS };
 export const HEARTBEAT_MS = 30_000;
-const CONNECT_TIMEOUT_MS = 10_000;
 
-export type OutboxNotification = { channel: string; payload?: string };
-
-/**
- * The slice of pg.Client this service uses. Narrow on purpose so a test can
- * hand in a plain EventEmitter and so a future driver swap is one factory.
- */
-export interface OutboxListenerClient {
-  connect(): Promise<unknown>;
-  query(text: string): Promise<unknown>;
-  end(): Promise<void>;
-  on(event: 'notification', listener: (msg: OutboxNotification) => void): unknown;
-  on(event: 'error', listener: (err: Error) => void): unknown;
-  on(event: 'end', listener: () => void): unknown;
-  removeAllListeners(event?: string): unknown;
-}
+import { defaultOpenSession, type OutboxListenerClient } from './pgListenSession.js';
+export {
+  defaultOpenSession,
+  type OutboxNotification,
+  type OutboxListenerClient,
+} from './pgListenSession.js';
 
 export type HandOutboxListenerOptions = {
   /** Defaults to process.env.ENGINE_PG_LISTEN_URL. Empty disables the service. */
@@ -74,19 +62,6 @@ export type HandOutboxListenerOptions = {
   /** Jitter source in [0, 1). Defaults to Math.random. */
   random?: () => number;
 };
-
-export function defaultOpenSession(
-  connectionString: string,
-  applicationName = `club-arena-engine-outbox-listener:${process.pid}`
-): OutboxListenerClient {
-  return new pg.Client({
-    connectionString,
-    application_name: applicationName,
-    keepAlive: true,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    ssl: enginePgSsl(),
-  });
-}
 
 export class HandOutboxListener {
   private readonly connectionString: string;

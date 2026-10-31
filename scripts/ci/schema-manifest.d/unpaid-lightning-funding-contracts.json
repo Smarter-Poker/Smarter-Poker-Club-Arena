@@ -1,0 +1,19 @@
+{
+  "_owner": "rakeback incident 01a17898 - migration 20261026161532",
+  "_comment": "Candidate only, not installed. Explicit original unpaid Lightning accrual restart with immutable funding and contract witnesses. No wallet payment or schedule. Native qualification and protected delivery are required.",
+  "functions": ["smarter_private.admit_cash_funding_contracts"],
+  "tables": ["accounting_cash_funding_contract_admissions"],
+  "columns": {
+    "accounting_cash_funding_contract_admissions": [
+      "source_id",
+      "original_contract",
+      "admitted_contract",
+      "original_club_id",
+      "funding_club_id",
+      "original_chair",
+      "buyin_ledger",
+      "wallet_debit",
+      "admitted_at"
+    ]
+  }
+}

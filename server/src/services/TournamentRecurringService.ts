@@ -1,5 +1,8 @@
+import { mttPlannedField, mttPrestartPlan, mttPrizeShare } from './mttHorseArrivalPlan.js';
 import { projectTournamentAdmission } from '../tournament/tournamentAdmission.js';
+import { fixedSngHorseCount } from './FixedSngHorsePlan.js';
 import {
+  isFixedSngSatellite,
   isPersistedUnlimitedMtt,
   isPersistedSeatFirst,
   readPersistedTournamentFormatContract,
@@ -57,6 +60,7 @@ import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  nonMttPayoutPercent,
   mttPayoutDepthPercent,
   mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
@@ -392,6 +396,7 @@ import {
 } from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import { HorseEntryRefusalBackoff, databaseDidNotAnswer } from './horseEntryRefusalBackoff.js';
+import { horseEntryCapRefusalContext } from './horseEntryCapRefusalContext.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 
 /**
@@ -1379,46 +1384,11 @@ export function automatedRegistrationIsPermitted(
  * Returns the number of registered entrants the field SHOULD have right now.
  * The caller tops up toward it and never removes anybody.
  */
-/**
- * How far ahead of the gun the field starts building.
- *
- * WAS ONE HOUR, AND THAT IS WHY THE BOARD WAS DEAD (Dan 2026-08-26: "horses
- * should be registering and playing the tournaments anyways").
- *
- * Measured on production the day this changed: of 37 REGISTERING MTTs, THIRTY
- * SIX had a field of exactly ZERO, and the nearest one to the gun was 86
- * minutes out - just outside the window. So the entire tournament board read
- * "0 entered" at every moment except the final hour of each event. A lobby
- * full of empty games is not a lobby anybody joins; the one thing that makes a
- * player enter a tournament is other players already in it.
- *
- * 72 hours matches the lobby's own publish window exactly
- * (tournamentScheduleWindow). The rule is now simply: IF IT IS ON THE BOARD,
- * IT LOOKS LIKE A REAL EVENT. Nothing is announced that is not also populated.
- *
- * WHY THIS IS AFFORDABLE, measured rather than assumed. The old note below
- * said the pool was finite and "most of them already dealing cash". That was
- * true when a seated horse was invisible to every tournament; it stopped being
- * true when horses learned to multi-table. Live at the time of writing:
- *
- *   584 horses x 4 games each   = 2,336 slots
- *   in use (seats + pre-starts) =   664
- *   FREE                        = 1,672
- *   this change costs           =   296  (17.7% of what is free)
- *
- * and 209 horses are completely idle. The squared curve does the shaping: an
- * event three days out gets the `Math.max(1, ...)` floor of one entrant, and
- * the field builds toward MTT_PRESTART_MAX_HORSES as the gun approaches. Far
- * events look started, near events look busy, which is what a real room looks
- * like.
- *
- * NOTE THIS IS NO LONGER TIED TO HORSE_SEED_WITHIN_MS. Those two were aligned
- * on 2026-08-23 when both meant "about to start". They now mean different
- * things: this is the whole build, that is the head start given at SPAWN, and
- * a spawn-time seed three days early would put chips in a pool for an event
- * nobody can see yet. See the note on HORSE_SEED_WITHIN_MS.
+/** Owner October 28, 2026: horses begin scheduled MTT signups at T-10 minutes.
+ * Earlier publication does not authorize earlier horse purchases.
+ * Late arrivals retain their legal-window path in HorseOverlayGuard.
  */
-export const MTT_PRESTART_RAMP_MS = 72 * 60 * 60 * 1000;
+export const MTT_PRESTART_RAMP_MS = 10 * 60 * 1000;
 export const MTT_PRESTART_MAX_HORSES = 24;
 /**
  * Most entrants the ramp will add in a single tick.
@@ -2161,73 +2131,25 @@ export function mttPrestartHorseTarget(opts: {
   const seats = maxPlayers === null ? null : Number(maxPlayers);
   if (seats !== null && (!Number.isSafeInteger(seats) || seats <= 1)) return 0;
 
-  /* ── THE GUARANTEE DECIDES THE FIELD (Dan 2026-08-26) ──────────────────────
-     "the horses should fill any and all seats to insure that the guarantee is
-     always met."
-
-     MTT_PRESTART_MAX_HORSES is 24. That is the right default for an ordinary
-     event - enough to make a lobby row look like a game without spending the
-     club's chips on a field nobody asked for. It is nowhere near enough for a
-     GUARANTEED one: the Sunday $200 Deep Stack promises 20,000 and pays 180 of
-     every 200 entry into the pool, so covering it takes 112 entries. Ramping
-     to 24 would have left roughly 15,000 of overlay on an event the club had
-     already promised to cover.
-
-     A horse entry is a REAL entry. fn_register_horse_for_tournament first
-     commits an exact returned tournament ticket directly into escrow; only
-     when no ticket exists may it debit the horse's wallet through
-     atomic_deduct_wallet_and_log. Both paths write the rake evidence and add
-     `v_split.prize` to prize_pool - the same funded split a human makes. So
-     horses filling seats does not paper over the shortfall, it genuinely funds
-     it, and the guarantee stops being an overlay at all.
-
-     THE CAP IS STILL A CAP. `seats - 1` is untouched (safety property 1: the
-     table always leaves a chair for a human), and a guarantee can never ask
-     for more than the event's own field. What changes is only the FLOOR: an
-     event carrying a guarantee ramps to whatever covers it, an event without
-     one keeps the 24 it always had. */
-  const guarantee = Math.max(0, Number(opts.guaranteedPrize) || 0);
-  const pool = Math.max(0, Number(opts.prizePool) || 0);
-  const prizeShare = Math.max(0, Number(opts.buyInPrizeShare) || 0);
-  const shortfall = guarantee - pool;
-  const entriesToCover =
-    guarantee > 0 && shortfall > 0 && prizeShare > 0 ? Math.ceil(shortfall / prizeShare) : 0;
-
-  /* Entries needed ON TOP of the field that is already there. `current`
-     already paid into `pool`, so adding it back would double count them and
-     over-fill the event. */
-  const guaranteeGoal = entriesToCover > 0 ? current + entriesToCover : 0;
-
-  // Always leave a seat: see safety property 1.
-  const fundedGoal = Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal);
-  const fieldGoal = seats === null ? fundedGoal : Math.min(seats - 1, fundedGoal);
+  // Half the planned funded field arrives in the owner's ten-minute window.
+  // Reach that mark one tick before the gun, preserving scheduling margin.
+  const field = mttPlannedField(
+    Math.max(0, Number(opts.guaranteedPrize) || 0),
+    Math.max(0, Number(opts.buyInPrizeShare) || 0)
+  );
+  const fieldGoal = mttPrestartPlan(field, seats);
   if (fieldGoal < 1) return 0;
-
-  const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0
-  const curve = elapsed * elapsed; // slow early, steep near the close
-
-  // At least one entrant the moment the window opens: a lobby row reading 1
-  // is a game somebody is in, and 0 is a game nobody will join.
-  const onCurve = Math.max(1, Math.min(fieldGoal, Math.ceil(fieldGoal * curve)));
-
-  // Already there (or ahead, if humans turned up). Nothing to do.
+  const elapsed = Math.min(
+    1,
+    (MTT_PRESTART_RAMP_MS - msUntilStart) / (MTT_PRESTART_RAMP_MS - MTT_PRESTART_TICK_MS)
+  );
+  const onCurve = Math.max(1, Math.ceil(fieldGoal * elapsed));
   if (onCurve <= current) return 0;
-
-  /* Walk toward the curve rather than jumping to it. Still never past the
-     curve, so the leave-a-seat and pool-cap guarantees above still hold.
-
-     THE STEP IS NOT WHERE A GUARANTEE GETS COVERED (2026-09-02). An earlier
-     draft of the overlay fix let a guaranteed event step past
-     MTT_PRESTART_MAX_STEP once the clock ran short - "cover the promise, the
-     pacing matters less". The pinned test one screen up refused it, correctly:
-     at T-1s a 20,000 guarantee wants 107 entrants, and registerHorses buys in
-     ONE HORSE PER SEQUENTIAL RPC inside the same 5-second loop that decides
-     when every other tournament starts. That is the stall the cap was added to
-     prevent, and a guarantee is not worth re-introducing it.
-
-     A short clock is not something to out-run here. It is something not to
-     create: see MTT_PUBLISH_LEAD_MS. */
-  return Math.min(onCurve, current + MTT_PRESTART_MAX_STEP);
+  // A fixed six-per-45s ceiling cannot deliver half a large guarantee in ten
+  // minutes. Size the bounded slice from the actual goal and available ticks.
+  const ticks = Math.max(1, Math.floor(MTT_PRESTART_RAMP_MS / MTT_PRESTART_TICK_MS) - 1);
+  const step = Math.max(MTT_PRESTART_MAX_STEP, Math.ceil(fieldGoal / ticks));
+  return Math.min(onCurve, current + step);
 }
 
 function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
@@ -3905,7 +3827,54 @@ export class TournamentRecurringService {
       for (const owner of owners) {
         await this.ensureSatelliteHeadsUps(owner, satelliteShare);
       }
+      await this.fillFixedSngSatellites();
     });
+  }
+
+  /** Existing SNG tick, bounded paid attempts; the database owns union/day admission. */
+  private async fillFixedSngSatellites(): Promise<void> {
+    if (isMaintenanceFrozen() || this.stopOperation) return;
+    const result = await fetchAllRows<Record<string, unknown>>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournaments')
+          .select(
+            'id, union_id, current_players, format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_seats, satellite_target_id, satellite_target'
+          )
+          .eq('status', 'REGISTERING')
+          .eq('format_contract', 'sng-v1')
+          .eq('tournament_type', 'SNG')
+          .in('max_players', [6, 9])
+          .not('union_id', 'is', null)
+          .or('satellite_target_id.not.is.null,satellite_target.not.is.null')
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      {
+        label: 'TournamentRecurring.fixed_sng_fill_read',
+        maxRows: 50_000,
+        shouldContinue: () => !isMaintenanceFrozen() && !this.stopOperation,
+      }
+    );
+    if (!result.complete) return;
+    const boards = result.rows.filter(
+      (row) => row.union_id && row.format_contract === 'sng-v1' && isFixedSngSatellite(row)
+    );
+    // Paid fields must never compete with random new opportunities. The canonical
+    // registration transaction maintains this count. Unknown counts are treated
+    // as continuations; topUpWithHorses re-reads the actual roster before paying.
+    const empty = boards.filter((row) => row.current_players === 0);
+    const continuing = boards.filter((row) => row.current_players !== 0);
+    for (let i = empty.length - 1; i > 0; i--) {
+      const j = secureRandomInt(i + 1);
+      [empty[i], empty[j]] = [empty[j], empty[i]];
+    }
+    for (const board of [...continuing, ...empty.slice(0, 12)]) {
+      if (isMaintenanceFrozen() || this.stopOperation) return;
+      await this.topUpWithHorses(String(board.id), Number(board.max_players));
+    }
   }
 
   /**
@@ -3922,6 +3891,10 @@ export class TournamentRecurringService {
        was, all night. The Midway Union's and the Diamond Arena's satellites
        are tournament_schedules rows on the :15 and :45 now, so the feeder
        stands down for them; it still serves every other club. */
+    if (owner.clubId === MIDWAY_UNION_ID && owner.unionId === MIDWAY_UNION_ID) {
+      await this.ensureFixedSngSatellites(budgetLeft);
+      return;
+    }
     if (isFixedBoardClub(owner.clubId)) return;
     try {
       let q = supabase
@@ -3990,6 +3963,75 @@ export class TournamentRecurringService {
         new Error(`[TournamentRecurring] satellite heads-up board error: ${err?.message}`),
         'TournamentRecurring.satellite_board_error'
       );
+    }
+  }
+
+  /** The existing SNG product tick owns these fixed fields, with bounded creation. */
+  private async ensureFixedSngSatellites(budgetLeft: number): Promise<void> {
+    const earliest = new Date(Date.now() + 3 * 60 * 60_000).toISOString();
+    const latest = new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString();
+    const targets = await fetchAllRows<Record<string, unknown>>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournaments')
+          .select(
+            'id, game_type, buy_in_amount, buy_in_fee, schedule_id, satellite_target_id, satellite_target'
+          )
+          .eq('union_id', MIDWAY_UNION_ID)
+          .eq('club_id', MIDWAY_UNION_ID)
+          .in('status', ['ANNOUNCED', 'REGISTERING'])
+          .gt('start_time', earliest)
+          .lt('start_time', latest)
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      {
+        label: 'TournamentRecurring.sng_satellite_targets',
+        maxRows: 50_000,
+        shouldContinue: () => !this.stopOperation && !isMaintenanceFrozen(),
+      }
+    );
+    if (!targets.complete) return;
+    for (const target of targets.rows) {
+      if (budgetLeft <= 0 || isMaintenanceFrozen() || this.stopOperation) break;
+      const ticket = Number(target.buy_in_amount) + Number(target.buy_in_fee);
+      if (
+        target.satellite_target_id ||
+        target.satellite_target ||
+        !(
+          ticket > 25 ||
+          (ticket === 25 && target.schedule_id === 'a70c1028-1800-2500-9000-000000000001')
+        )
+      )
+        continue;
+      const seats = ['PLO5', 'PLO6'].includes(String(target.game_type).toUpperCase()) ? 6 : 9;
+      const result = await supabase.rpc('fn_ensure_fixed_sng_satellite', {
+        p_target_id: target.id,
+        p_seats: seats,
+      });
+      if (result.error) {
+        reportError(result.error, 'TournamentRecurring.sng_satellite_create', {
+          targetId: target.id,
+        });
+        return;
+      }
+      if (
+        result.data?.ok === true &&
+        typeof result.data?.tournament_id === 'string' &&
+        result.data.tournament_id.length > 0 &&
+        result.data?.target_id === target.id
+      ) {
+        if (result.data.created === true) budgetLeft--;
+      } else if (!['platform_frozen', 'target_unavailable'].includes(String(result.data?.reason))) {
+        reportError(
+          new Error(String(result.data?.reason ?? 'SNG satellite creation returned no receipt')),
+          'TournamentRecurring.sng_satellite_receipt',
+          { targetId: target.id }
+        );
+        return;
+      }
     }
   }
 
@@ -5067,8 +5109,8 @@ export class TournamentRecurringService {
         // Heads-up has a fixed payout contract; paid depth belongs to fields.
         ...(!seatFirstSng
           ? {
-              payout_percent: mttPayoutPercent(config.payoutPercent),
-              payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
+              payout_percent: nonMttPayoutPercent(config.payoutPercent),
+              payout_depth_percent: null,
             }
           : {}),
         start_time: startTime.toISOString(),
@@ -6688,7 +6730,7 @@ export class TournamentRecurringService {
            tournament side read it, so a club held in the console kept being
            handed a full field: the MTT pre-start ramp asks this function for
            one every 45 seconds, for every REGISTERING event inside
-           MTT_PRESTART_RAMP_MS (72 hours).
+           MTT_PRESTART_RAMP_MS (10 minutes).
 
            Measured on 2026-10-05, Deep Stack Society under an operator hold
            with `pause_new_seatings` true on its club row: cash was dark and no
@@ -7033,6 +7075,66 @@ export class TournamentRecurringService {
     try {
       if (isMaintenanceFrozen()) return 0;
       if (this.stopOperation) return 0;
+      // Every automated caller shares this clock and curve: creation,
+      // discovery, freerolls and overlay top-ups. The DB door rechecks time.
+      const { data: entryEvent, error: entryEventError } = await supabase
+        .from('tournaments')
+        .select(
+          'format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, status, start_time, current_players, guaranteed_prize, prize_pool, buy_in_amount, bounty_amount'
+        )
+        .eq('id', tournamentId)
+        .maybeSingle();
+      if (entryEventError || !entryEvent) {
+        reportError(
+          new Error(entryEventError?.message ?? 'Tournament not found'),
+          'TournamentRecurring.horse_entry_clock_unreadable'
+        );
+        return 0;
+      }
+      if (entryEvent.format_contract === 'sng-v1' && isFixedSngSatellite(entryEvent)) {
+        const { data: plan, error: planError } = await supabase.rpc(
+          'fn_sng_satellite_horse_fill_plan',
+          { p_tournament_id: tournamentId }
+        );
+        if (planError) {
+          reportError(planError, 'TournamentRecurring.fixed_sng_fill_plan');
+          return 0;
+        }
+        count = fixedSngHorseCount(
+          plan,
+          Number(entryEvent.max_players),
+          Number(entryEvent.current_players),
+          count
+        );
+        if (count <= 0 || isMaintenanceFrozen() || this.stopOperation) return 0;
+      }
+      if (
+        isPersistedUnlimitedMtt(entryEvent) &&
+        ['ANNOUNCED', 'REGISTERING'].includes(String(entryEvent.status).toUpperCase())
+      ) {
+        const startMs = Date.parse(String(entryEvent.start_time ?? ''));
+        const current = Math.max(0, Number(entryEvent.current_players) || 0);
+        const now = Date.now();
+        if (!Number.isFinite(startMs) || startMs - now > MTT_PRESTART_RAMP_MS) return 0;
+        // Discovery can still be completing the transition after the gun.
+        // Its existing past-start and late-entry paths retain that decision.
+        if (startMs > now) {
+          const target = mttPrestartHorseTarget({
+            msUntilStart: startMs - now,
+            maxPlayers: entryEvent.max_players,
+            format_contract: entryEvent.format_contract,
+            variant: entryEvent.variant,
+            currentPlayers: current,
+            guaranteedPrize: Number(entryEvent.guaranteed_prize),
+            prizePool: Number(entryEvent.prize_pool),
+            buyInPrizeShare: mttPrizeShare(entryEvent),
+          });
+          count = Math.min(count, Math.max(0, target - current));
+          // A paid award still uses the existing bounded ticket-only recovery
+          // after this clock opens, even when ordinary funding is already met.
+          if (count <= 0 && !redeemTickets) return 0;
+        }
+      }
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
       // another active tournament. The old query only checked horse_status
       // (never flipped by tournament play), so the overlapping MTT/SNG/Spin
@@ -7438,7 +7540,7 @@ export class TournamentRecurringService {
         ? recoveryTickets.concat(
             orderedWallets.slice(0, Math.max(0, count - recoveryTickets.length))
           )
-        : orderedTickets.concat(orderedWallets).slice(0, count);
+        : orderedTickets.concat(orderedWallets).slice(0, count * 4 + 6);
 
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is
@@ -7475,7 +7577,9 @@ export class TournamentRecurringService {
        */
       let registered = 0;
       const failures = new Map<string, number>();
+      const admissionLimit = redeemTickets ? Math.max(count, recoveryTickets.length) : count;
       for (const horse of horses) {
+        if (registered >= admissionLimit) break;
         // THE FREEZE IS TOTAL (Dan 2026-09-03): a registration is a buy-in. A ramp
         // that crosses :53 stops here and the next tick finishes it.
         if (isMaintenanceFrozen()) break;
@@ -7486,6 +7590,7 @@ export class TournamentRecurringService {
           failures.set('entry_refusal_backoff', (failures.get('entry_refusal_backoff') || 0) + 1);
           continue;
         }
+        const attemptedAt = new Date().toISOString();
         const { data: res, error: regError } = await supabase.rpc(
           'fn_register_horse_for_tournament',
           {
@@ -7499,6 +7604,13 @@ export class TournamentRecurringService {
         );
 
         if (regError) {
+          const capRefusal = horseEntryCapRefusalContext(
+            regError,
+            tournamentId,
+            horse.id,
+            attemptedAt
+          );
+          if (capRefusal) console.warn(capRefusal);
           failures.set(regError.message, (failures.get(regError.message) || 0) + 1);
           this.horseEntryBackoff.refused(tournamentId, horse.id);
           // The database did not answer: every further call would be one more
@@ -7517,6 +7629,15 @@ export class TournamentRecurringService {
           const reason = (res as { reason?: string } | null)?.reason || 'unknown';
           // 'tournament_full' / 'already_registered' are benign races.
           failures.set(reason, (failures.get(reason) || 0) + 1);
+          if (
+            [
+              'registration_closed',
+              'tournament_full',
+              'horse_registration_not_open',
+              'platform_frozen',
+            ].includes(reason)
+          )
+            break;
         }
       }
 

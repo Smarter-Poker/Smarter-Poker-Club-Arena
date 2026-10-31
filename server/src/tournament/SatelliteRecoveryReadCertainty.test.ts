@@ -12,38 +12,67 @@ const state = vi.hoisted(() => ({
   mutations: [] as string[],
   plain: false,
   status: 'COMPLETING',
+  candidates: 1,
+  scanFailure: false,
+  failAfterCursor: false,
+  fieldCursors: [] as (string | null)[],
 }));
 
 vi.mock('../services/supabase.js', () => ({
   supabase: {
     from(table: string) {
       const chain: Record<string, any> = {};
+      let cursor: string | null = null;
+      let limit = 1000;
       const answer = () => {
         if (table === 'tournaments') {
           return {
-            data: [
-              {
-                id: SATELLITE,
-                name: 'Daily Satellite',
-                status: state.status,
-                format_contract: null,
-                variant: state.plain ? 'spin' : 'satellite',
-                tournament_type: state.plain ? 'MTT' : 'SATELLITE',
-                satellite_target_id: state.plain ? null : '00000000-0000-4000-8000-000000000103',
-                started_at: new Date().toISOString(),
-                payout_structure: [{ place: 1, percentage: 100 }],
-              },
-            ],
-            error: null,
+            data: Array.from({ length: state.candidates }, (_, i) => ({
+              id:
+                state.candidates === 1
+                  ? SATELLITE
+                  : `00000000-0000-4000-9000-${i.toString(16).padStart(12, '0')}`,
+              name: 'Daily Satellite',
+              status: state.status,
+              format_contract: null,
+              variant: state.plain ? 'spin' : 'satellite',
+              tournament_type: state.plain ? 'MTT' : 'SATELLITE',
+              satellite_target_id: state.plain ? null : '00000000-0000-4000-8000-000000000103',
+              started_at: new Date().toISOString(),
+              payout_structure: [{ place: 1, percentage: 100 }],
+            }))
+              .filter((row) => cursor === null || row.id > cursor)
+              .slice(0, Math.min(limit, 1000)),
+            error: cursor && state.scanFailure ? { message: 'later event page failed' } : null,
           };
         }
-        if (table === 'tournament_players') return state.field;
+        if (table === 'tournament_players') {
+          state.fieldCursors.push(cursor);
+          if (cursor && state.failAfterCursor)
+            return { data: null, error: { message: 'later page unavailable' } };
+          if (!Array.isArray(state.field.data)) return state.field;
+          return {
+            ...state.field,
+            data: state.field.data
+              .filter((row: any) => cursor === null || row.id > cursor)
+              .sort((a: any, b: any) => a.id.localeCompare(b.id))
+              .slice(0, Math.min(limit, 1000)),
+          };
+        }
         if (table === 'hand_history') return state.hand;
         if (table === 'tournament_payouts' || table === 'tournament_obligations')
           return { data: [], error: null };
         throw new Error(`unexpected recovery read: ${table}`);
       };
-      for (const method of ['select', 'eq', 'in', 'limit']) chain[method] = () => chain;
+      for (const method of ['select', 'eq', 'in', 'order']) chain[method] = () => chain;
+      chain.limit = (value: number) => {
+        limit = value;
+        return chain;
+      };
+      chain.gt = (_key: string, value: string) => {
+        cursor = value;
+        return chain;
+      };
       for (const method of ['insert', 'update', 'delete']) {
         chain[method] = () => {
           state.mutations.push(`${table}.${method}`);
@@ -103,7 +132,88 @@ describe('satellite recovery requires readable result authority', () => {
     state.mutations = [];
     state.plain = false;
     state.status = 'COMPLETING';
+    state.candidates = 1;
+    state.scanFailure = false;
+    state.failAfterCursor = false;
+    state.fieldCursors = [];
     vi.clearAllMocks();
+  });
+
+  it('does not omit the 1001st completing tournament', async () => {
+    state.candidates = 1001;
+    await recoverStuckCompletingTournaments('whole-board');
+    expect(requestSatelliteSettlementReceipt).toHaveBeenCalledTimes(1001);
+  });
+
+  it('does not settle a prefix when a later board page fails', async () => {
+    state.candidates = 1001;
+    state.scanFailure = true;
+    await recoverStuckCompletingTournaments('whole-board');
+    expect(requestSatelliteSettlementReceipt).not.toHaveBeenCalled();
+  });
+
+  const field = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${(i + 1000).toString(16).padStart(12, '0')}`,
+      user_id: `00000000-0000-4000-8000-${(i + 10000).toString(16).padStart(12, '0')}`,
+      status: 'eliminated',
+      position: count - i,
+      chips: 0,
+      eliminated_at: '2026-10-29T00:00:00Z',
+      elimination_sequence: i + 1,
+    }));
+
+  it.each([false, true])(
+    'reads the true last winner beyond the first 1000 entrants (ordinary=%s)',
+    async (plain) => {
+      state.plain = plain;
+      const rows = field(1001);
+      state.field.data = rows;
+      await recoverStuckCompletingTournaments('complete-field');
+      const request = plain ? requestTournamentTerminalReceipt : requestSatelliteSettlementReceipt;
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledWith(
+        ...(plain ? [SATELLITE, 'places', rows[1000].user_id] : [SATELLITE, rows[1000].user_id])
+      );
+      expect(state.fieldCursors).toEqual([null, rows[999].id]);
+      expect(state.mutations).toEqual([]);
+    }
+  );
+
+  it.each([false, true])(
+    'does not settle when a second live entrant is on page two (ordinary=%s)',
+    async (plain) => {
+      state.plain = plain;
+      const rows = field(1001);
+      rows[0].status = rows[1000].status = 'playing';
+      rows[0].chips = rows[1000].chips = 100;
+      state.field.data = rows;
+      await recoverStuckCompletingTournaments('complete-field');
+      expect(requestSatelliteSettlementReceipt).not.toHaveBeenCalled();
+      expect(requestTournamentTerminalReceipt).not.toHaveBeenCalled();
+      expect(state.mutations).toEqual([]);
+    }
+  );
+
+  it.each([false, true])(
+    'rejects an incomplete later page before settlement (ordinary=%s)',
+    async (plain) => {
+      state.plain = plain;
+      state.field.data = field(1001);
+      state.failAfterCursor = true;
+      await recoverStuckCompletingTournaments('complete-field');
+      expect(requestSatelliteSettlementReceipt).not.toHaveBeenCalled();
+      expect(requestTournamentTerminalReceipt).not.toHaveBeenCalled();
+      expect(state.mutations).toEqual([]);
+    }
+  );
+
+  it('proves an exactly full page ends before choosing its winner', async () => {
+    const rows = field(1000);
+    state.field.data = rows;
+    await recoverStuckCompletingTournaments('complete-field');
+    expect(requestSatelliteSettlementReceipt).toHaveBeenCalledWith(SATELLITE, rows[999].user_id);
+    expect(state.fieldCursors).toEqual([null, rows[999].id]);
   });
 
   it('continues a historical NULL-format COMPLETING receipt using stored places only', async () => {

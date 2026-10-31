@@ -420,7 +420,7 @@ export class HorseSessionRotator {
           // table's own limits, which price the reload, the swing and the
           // session P&L - `bb * 100` is not the buy-in at a 0.50 game whose
           // minimum is 200.
-          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, auto_rebuy, tables!table_seats_table_id_fkey!inner(id, big_blind, game_variant, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, auto_rebuy, tables!table_seats_table_id_fkey!inner(id, big_blind, game_variant, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id))'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -992,9 +992,10 @@ export class HorseSessionRotator {
         const uid = String(seat.user_id ?? '');
         if (!uid || !horseIds.has(uid)) continue;
         if (HorseSessionRotator.isLeaving(seat) || this.isLeaveHeld(tableId, uid)) continue;
-        /* The Lightning pilot club is outside both roster rules (Dan 2026-10-23). */
+        /* Club cash selection cannot evict a Diamond cash horse. Disabled
+           profiles still leave either arena through the normal safe exit. */
         const exempt = rosterExemptClub((seat as { club_id?: unknown }).club_id);
-        const benched = benchedIds.has(uid) || (!exempt && cashRosterAllows(uid) === false);
+        const benched = benchedIds.has(uid) || (!exempt && cashRosterAllows(uid, t) === false);
         const offPlo = !exempt && ploRosterAllows(uid, t?.game_variant, t?.big_blind) === false;
         if (!benched && !offPlo && !offGame) continue;
         try {
@@ -1133,11 +1134,8 @@ export class HorseSessionRotator {
           stackNow < buyIn * TOPUP_STACK_FRAC &&
           Math.random() < TOPUP_PROB
         ) {
-          // V9: humans reload to ROUND figures (a fresh $200, "make it 150"),
-          // so the top-up TARGET snaps to a 10bb step before the delta is
-          // computed. The engine caps at the table max buy-in on its side.
-          const step = bb * 10;
-          const target = Math.round((buyIn * (0.85 + Math.random() * 0.3)) / step) * step;
+          // Owner October 26: Add Chips targets the table maximum.
+          const target = tableMax;
           let amount = Math.round((target - stackNow) * 100) / 100;
 
           /**
@@ -1175,6 +1173,7 @@ export class HorseSessionRotator {
               policy: bankrollPolicyFor(seat.user_id),
             });
           }
+          if (amount < desiredTopUp) amount = 0;
           if (amount >= bb) {
             try {
               await engine.addChips(seat.user_id, amount);

@@ -1,0 +1,7 @@
+# Capture continuation accounting once
+
+Each retained event batch previously called the full engine capture four times: once at the synchronous mutation, then three more times after the preceding consumers finished, selecting a different accounting field each time. Every call cloned all hand fields and captured every player's presence and time banks. This repeated work sits on the main thread, where live profiling also showed substantial cloning and garbage-collection cost.
+
+Keep both authoritative capture boundaries, but take one coherent accounting snapshot at the second boundary and use its fields, time-bank metadata and debit records together. Full engine captures fall from four to two per batch. Defensive copies, event ordering, durable retention, authority fences and acknowledgement behavior remain intact; animation and rest durations are unchanged.
+
+The coherence/capture-budget regression fails on the previous implementation. A second regression holds a preceding event consumer and proves that accounting is refreshed only after it completes. Both also preserve the earlier mutation's capture time, and retained accounting remains isolated from later mutation. All 62 focused continuation, original-controller, prepared-successor and payout-barrier cases passed on the final formatted source; root and server TypeScript compilation and all source bindings also passed. Live latency improvement still requires the qualified engine release and natural-play measurement.

@@ -8,6 +8,7 @@ import argparse
 import datetime
 import importlib.util
 import json
+import os
 import re
 import signal
 import subprocess
@@ -117,7 +118,7 @@ def main():
     (output/'source-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     for sig in native.CANCELLATION_SIGNALS:
         signal.signal(sig,native.interrupted)
-    e = native.Execution(root,output,args.pg_bin.resolve(),output,600)
+    e = native.Execution(root,output,args.pg_bin.resolve(),output,600,socket_parent=os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or output)
     e.report.update(fixture_identity='L04-v3-full-installed-preparation-and-L03',source_sha256=manifest['source_sha256'],historical_full_stage1=False,cohort_implemented=True)
     try:
         e.start()
@@ -232,6 +233,11 @@ def main():
             raise RuntimeError('exact cohort assertion count differs')
         qualify_concurrency(e,root,native,db,output,qualifier_probe)
         qualify_readers(e,root,native,db,output,qualifier_probe)
+        from fixed_sng_satellite_financial import qualify as qualify_fixed_sng
+        manifest['source_sha256'].update(qualify_fixed_sng(e,root,db,output))
+        from fixed_sng_horse_plan_native import qualify as qualify_horse_plan
+        manifest['source_sha256'].update(qualify_horse_plan(e,root,db,output))
+        (output/'source-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
         for path,digest in manifest['source_sha256'].items():
             if sha(root/path)!=digest:
                 raise RuntimeError('input changed during execution: '+path)

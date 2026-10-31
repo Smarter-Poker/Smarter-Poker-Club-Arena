@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  UNION DASHBOARD PAGE — Union Operations Center
@@ -24,10 +25,7 @@ import { confirmDialog } from '../components/common/confirmDialog';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, formatWalletChips, timeAgo } from '../utils/format';
-import {
-  UNION_DASHBOARD_CLUB_COLUMNS,
-  clubWithMoneyPanel,
-} from '../services/unionDashboardClubs';
+import { UNION_DASHBOARD_CLUB_COLUMNS, clubWithMoneyPanel } from '../services/unionDashboardClubs';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
 import UnionTreasuryDetailModal, {
   type TreasuryDetailMode,
@@ -272,7 +270,10 @@ export default function UnionDashboardPage() {
     }[]
   >([]);
   const [rosterLoading, setRosterLoading] = useState(false);
-  const [rosterSearch, setRosterSearch] = useState('');
+  const [rosterSearch, setRosterSearch] = usePlayerPreference(
+    'UnionDashboardPage:rosterSearch',
+    ''
+  );
   const [clubs, setClubs] = useState<EnrichedClub[]>([]);
 
   /* THE JACKPOT TILE FOLLOWS THE SHARED POLL (BBJ phase 3.2, 2026-09-06).
@@ -340,7 +341,10 @@ export default function UnionDashboardPage() {
 
   // Applications
   const [apps, setApps] = useState<UnionApp[]>([]);
-  const [appsFilter, setAppsFilter] = useState('pending');
+  const [appsFilter, setAppsFilter] = usePlayerPreference(
+    'UnionDashboardPage:appsFilter',
+    'pending'
+  );
   const [appsLoaded, setAppsLoaded] = useState(false);
 
   // Leave requests (IMPROVE 2026-07-21)
@@ -360,8 +364,8 @@ export default function UnionDashboardPage() {
   const [clawbackForm, setClawbackForm] = useState({ target: '', amount: '', reason: '' });
 
   // Search / Filter
-  const [clubSearch, setClubSearch] = useState('');
-  const [agentSearch, setAgentSearch] = useState('');
+  const [clubSearch, setClubSearch] = usePlayerPreference('UnionDashboardPage:clubSearch', '');
+  const [agentSearch, setAgentSearch] = usePlayerPreference('UnionDashboardPage:agentSearch', '');
 
   // Settings form
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
@@ -375,7 +379,7 @@ export default function UnionDashboardPage() {
   const [annClub, setAnnClub] = useState('');
 
   // Admin search
-  const [adminSearch, setAdminSearch] = useState('');
+  const [adminSearch, setAdminSearch] = usePlayerPreference('UnionDashboardPage:adminSearch', '');
   const [adminResults, setAdminResults] = useState<
     { id: string; display_name?: string; username?: string }[]
   >([]);
@@ -543,12 +547,10 @@ export default function UnionDashboardPage() {
     // undefined (shown as unknown), never a made-up 0.
     const panels = await Promise.all(
       baseClubs.map((c) =>
-        supabase
-          .rpc('fn_club_money_panel', { p_club_id: c.id })
-          .then(
-            (r) => (r.error ? null : Array.isArray(r.data) ? r.data[0] : r.data),
-            () => null
-          )
+        supabase.rpc('fn_club_money_panel', { p_club_id: c.id }).then(
+          (r) => (r.error ? null : Array.isArray(r.data) ? r.data[0] : r.data),
+          () => null
+        )
       )
     );
     const enrichedClubs = baseClubs.map((c, i) => clubWithMoneyPanel(c, panels[i]));

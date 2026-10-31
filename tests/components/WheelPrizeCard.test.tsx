@@ -34,6 +34,84 @@ afterAll(() => vi.unstubAllGlobals());
 afterEach(cleanup);
 
 describe('approved wheel prize cards', () => {
+  it.each(['image', 'renderer'] as const)(
+    'a failed %s is retried by the next mount, while success stays cached',
+    async (failure) => {
+      const OriginalImage = Image;
+      let imageLoads = 0;
+      let renderCalls = 0;
+      vi.stubGlobal(
+        'Image',
+        class {
+          onload = () => {};
+          onerror = () => {};
+          set src(_value: string) {
+            imageLoads++;
+            const fail = failure === 'image' && imageLoads === 1;
+            queueMicrotask(() => (fail ? this.onerror() : this.onload()));
+          }
+        }
+      );
+      const context = vi
+        .spyOn(HTMLCanvasElement.prototype, 'getContext')
+        .mockImplementation(function () {
+          renderCalls++;
+          if (failure === 'renderer' && renderCalls === 1) return null;
+          Object.defineProperty(this, 'toBlob', { value: undefined, configurable: true });
+          this.toDataURL = () => 'data:image/png;base64,AA==';
+          return Object.fromEntries(
+            [
+              'save',
+              'setTransform',
+              'beginPath',
+              'moveTo',
+              'lineTo',
+              'closePath',
+              'clip',
+              'transform',
+              'drawImage',
+              'restore',
+            ].map((name) => [name, vi.fn()])
+          ) as any;
+        });
+      const card = (
+        <svg>
+          <WheelPrizeCard
+            segment={main.segments[0]}
+            startAngle={0}
+            endAngle={30}
+            outerRadius={344}
+            innerRadius={88}
+            atlasUrl={`/test-wheel-${failure}-recovery.webp`}
+          />
+        </svg>
+      );
+      try {
+        const failed = render(card);
+        await waitFor(() =>
+          expect(failed.container.querySelector('[data-painted-band="fallback"]')).toBeTruthy()
+        );
+        failed.unmount();
+        const recovered = render(card);
+        await waitFor(() =>
+          expect(recovered.container.querySelector('[data-painted-band="cached"]')).toBeTruthy()
+        );
+        expect(imageLoads).toBe(failure === 'image' ? 2 : 1);
+        const loaded = imageLoads;
+        recovered.unmount();
+        const cached = render(card);
+        await waitFor(() =>
+          expect(cached.container.querySelector('[data-painted-band="cached"]')).toBeTruthy()
+        );
+        expect(imageLoads).toBe(loaded);
+      } finally {
+        cleanup();
+        context.mockRestore();
+        vi.stubGlobal('Image', OriginalImage);
+      }
+    }
+  );
+
   it.each([
     [false, main.segments, false],
     [true, upgrade.segments, false],

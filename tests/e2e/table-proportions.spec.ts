@@ -1,3 +1,4 @@
+import { AVATAR_CROWN_TOP } from '../../src/components/table/avatarCrownBounds';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  EVERYTHING ON THE FELT IS THE SAME FRACTION OF IT, ON EVERY DEVICE
@@ -39,7 +40,10 @@
  * here, add it to the `css-beats-e2e` command too or it cannot fail anything.
  */
 
-import { certifyMobileLiveTableLayout } from './support/mobileLiveTableLayout';
+import {
+  certifyMobileLiveTableLayout,
+  readMobileTableLayout,
+} from './support/mobileLiveTableLayout';
 import { test, expect } from '@playwright/test';
 import { chromium } from 'playwright';
 import { resolve, dirname } from 'node:path';
@@ -731,7 +735,7 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
       await page.setContent(`<style>*{box-sizing:border-box}body{margin:0}${styles}</style>
       <div class="multi-table-page" style="--sp-tabbar-inset:${inset}px;--mtt-ticker-h:24px">
         <div class="multi-table-page__tab-bar-wrapper multi-table-page__tab-bar-wrapper--with-lobby">
-          <div class="table-tab-bar"><div class="table-tab-bar__menu-container" style="width:34px;flex-shrink:0"></div><div class="table-tab-bar__tabs"><button class="table-tab-bar__tab">PLO5</button><button class="table-tab-bar__tab">PLO4</button></div></div>
+          <div class="table-tab-bar"><div class="table-tab-bar__menu-container" style="width:44px;flex-shrink:0"></div><div class="table-tab-bar__tabs"><button class="table-tab-bar__tab">PLO5</button><button class="table-tab-bar__tab">PLO4</button></div></div>
           <button class="multi-table-page__pnl-chip multi-table-page__pnl-chip--down">-170.37</button>
           <button class="mtp-lobby-btn">Lobby</button>
         </div>
@@ -754,7 +758,7 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
         };
       });
       expect(measured.width).toBe(width <= 480 ? 52 : 100);
-      expect(measured.height).toBe(width <= 480 ? 34 : 36);
+      expect(measured.height).toBe(52);
       expect(Math.abs(measured.pnlCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(Math.abs(measured.lobbyCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(measured.pnlRight).toBeLessThanOrEqual(measured.lobbyLeft);
@@ -839,9 +843,13 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 // 2026-10-24 they parked shown PLO5/PLO6 hands under the hero or in front of
 // another player. They are certified on the PLO5/PLO6 scenes this regime is
 // for; their seat pods keep the tablet ring (see `largePortrait` below).
-for (const width of [320, 375, 393, 430, 480, 600, 768])
-  for (const count of [6, 9])
-    test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px with ${count} seats`, async ({
+const occupiedViewports: Array<[number, number?]> = [
+  ...[320, 375, 393, 430, 480, 600, 768, 1024].map((width): [number] => [width]),
+  [600, 852],
+];
+for (const [width, heightOverride] of occupiedViewports)
+  for (const count of heightOverride || width === 1024 ? [6] : [6, 9])
+    test(`occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at ${width}px with ${count} seats${heightOverride ? ' (short portrait)' : ''}`, async ({
       page,
     }, testInfo) => {
       // Keep each ring independently bounded on hosted runners while retaining
@@ -990,13 +998,17 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
         [true, 'mini', 5, 'all-in'],
         [true, 'mini', 6, 'all-in'],
         [true, 'mini', 6, 'all-shown'],
+        [false, 'none', 2, 'scaled-phone'],
       ] as const) {
         // Both rings exercise every occupied state at every phone width.
-        if (width > 480 && villainCards < 5) continue;
+        const scaledPhone = state === 'scaled-phone';
+        if (scaledPhone && (width !== 600 || count !== 9)) continue;
+        if (width > 480 && villainCards < 5 && !scaledPhone) continue;
         await page.setViewportSize({
           width,
-          height:
-            width === 320
+          height: scaledPhone
+            ? 1065
+            : width === 320
               ? 568
               : width === 375
                 ? 667
@@ -1004,15 +1016,28 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
                   ? 960
                   : width === 768
                     ? 1024
-                    : 852,
+                    : width === 1024
+                      ? 2048
+                      : 852,
         });
-        await page.route('http://rail.fixture/', (route) =>
+        if (heightOverride) await page.setViewportSize({ width, height: heightOverride });
+        await page.route('https://smarter.poker/hub/club-arena/__isolated_rail_fixture', (route) =>
           route.fulfill({
             contentType: 'text/html',
             body: `<html data-seats="${count}" data-cards="${villainCards >= 5 ? villainCards : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
           })
         );
-        await page.goto('http://rail.fixture/', { waitUntil: 'domcontentloaded' });
+        await page.goto('https://smarter.poker/hub/club-arena/__isolated_rail_fixture', {
+          waitUntil: 'domcontentloaded',
+        });
+        // Same-origin pixels must not grant a synthetic renderer an inherited
+        // authenticated session from the browser job's isolated login fixture.
+        // This clears only this test context; it never signs out any session.
+        await page.evaluate(() => {
+          localStorage.clear();
+          sessionStorage.clear();
+        });
+        expect(await page.evaluate(() => localStorage.getItem('smarter-poker-auth'))).toBeNull();
         const runtimeErrors: string[] = [];
         page.on('pageerror', (error) => runtimeErrors.push(error.message));
         await page.addScriptTag({ content: bundle });
@@ -1067,6 +1092,14 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
             requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
           );
         });
+        if (scaledPhone) {
+          const proof = await page.evaluate(readMobileTableLayout, AVATAR_CROWN_TOP);
+          expect(proof.occupied).toBe(count);
+          expect(
+            proof.violations,
+            'Decoded crowns and plates clear the scaled phone board'
+          ).toEqual([]);
+        }
         // Dan 2026-10-23: shown cards never move once tabled, in every game.
         // Hold'em-sized shown hands get the same no-movement proof as PLO5/6.
         if (revealed) {
@@ -1127,6 +1160,111 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
             path: testInfo.outputPath(`${width}px-${count}-seats-PLO${villainCards}-${state}.png`),
           });
         }
+        if (count === 6 && width > 480) {
+          const crown = await page.evaluate((crowns) => {
+            const table = document.querySelector('.table-page')!;
+            const scaler = document.querySelector<HTMLElement>('.table-scaler')!;
+            const head = table.querySelector<HTMLImageElement>(
+              '.seat-wrapper--top .seat__avatar-img'
+            )!;
+            const source = head.currentSrc || head.src;
+            const file = /\/avatars\/table\/((?:free|vip)_[\w-]+(?:@2x)?\.webp)(?:[?#]|$)/.exec(
+              source
+            )?.[1];
+            return {
+              gap:
+                head.getBoundingClientRect().top +
+                head.getBoundingClientRect().height * ((file && crowns[file]) || 0) -
+                table.getBoundingClientRect().top,
+              scale: scaler.getBoundingClientRect().width / scaler.offsetWidth,
+            };
+          }, AVATAR_CROWN_TOP);
+          // Preserve breathing, tense and celebration poses around the
+          // two-pixel resting crop; only the crown may cross the bar.
+          expect(crown.gap).toBeGreaterThan(-12 * crown.scale);
+          // A mobile revealed hand now owns a full card-height lane above
+          // its plate. Only face-down and desktop crowns retain the crop.
+          if (!revealed || width > 768) expect(crown.gap).toBeLessThan(2 * crown.scale);
+          if (state === 'normal' && revealed && villainCards === 6 && jackpot === 'mini') {
+            // A reload/new hand used to cache the image box mid-gesture. When
+            // the avatar later folded it left a permanent gap under the bar.
+            // Use the real choreography and real SeatSlot, never hide motion.
+            const anchoring = await page.evaluate(async (crowns) => {
+              const pod = document.querySelector<HTMLElement>('.seat-wrapper--top')!;
+              const seat = pod.querySelector<HTMLElement>('.seat')!;
+              const wrap = pod.querySelector<HTMLElement>('.seat__avatar-wrap')!;
+              const head = pod.querySelector<HTMLImageElement>('.seat__avatar-img')!;
+              const frame = () =>
+                new Promise<void>((resolve) =>
+                  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+                );
+              const originalSeat = seat.className;
+              const originalWrap = wrap.className;
+              wrap.classList.add('seat__avatar-wrap--celebrate');
+              await frame();
+              const gesture = wrap
+                .getAnimations()
+                .find(
+                  (animation) =>
+                    animation instanceof CSSAnimation &&
+                    animation.animationName === 'spAvatarCelebrate'
+                );
+              if (!gesture) throw new Error('Real Celebration Animation Missing');
+              gesture.pause();
+              gesture.currentTime = Number(gesture.effect!.getTiming().duration) * 0.4;
+              document.dispatchEvent(new Event('fixture-next-hand'));
+              await frame();
+              const raisedShift = parseFloat(pod.style.getPropertyValue('--sp-top-seat-shift'));
+              // Complete the actual gesture, then let the ordinary folded
+              // resting pose settle. No production animation is cancelled.
+              gesture.finish();
+              wrap.className = originalWrap;
+              document.dispatchEvent(new Event('fixture-next-hand'));
+              await frame();
+              const restingShift = parseFloat(pod.style.getPropertyValue('--sp-top-seat-shift'));
+              seat.classList.remove('seat--active', 'seat--winner');
+              seat.classList.add('seat--folded');
+              await frame();
+              await Promise.all(wrap.getAnimations().map((animation) => animation.finished));
+              await frame();
+              const foldedShift = parseFloat(pod.style.getPropertyValue('--sp-top-seat-shift'));
+              const box = head.getBoundingClientRect();
+              const file = /\/avatars\/table\/([^/?#]+)/.exec(head.currentSrc || head.src)?.[1];
+              const gap =
+                box.top +
+                box.height * ((file && crowns[file]) || 0) -
+                document.querySelector('.table-page')!.getBoundingClientRect().top;
+              seat.className = originalSeat;
+              document.dispatchEvent(new Event('fixture-next-hand'));
+              await frame();
+              return { raisedShift, restingShift, foldedShift, gap };
+            }, AVATAR_CROWN_TOP);
+            expect(anchoring.restingShift).toBeCloseTo(anchoring.raisedShift, 1);
+            if (width > 768) {
+              expect(anchoring.foldedShift).toBeLessThan(anchoring.restingShift);
+              expect(anchoring.gap).toBeLessThan(0);
+            } else {
+              // Folding may reclaim crown space, but cannot consume the
+              // newly reserved revealed-hand lane.
+              expect(anchoring.foldedShift).toBeLessThanOrEqual(anchoring.restingShift + 0.05);
+              const shownTop = await page
+                .locator('.seat-wrapper--top .seat__cards--revealed')
+                .evaluate(
+                  (el) =>
+                    el.getBoundingClientRect().top -
+                    document.querySelector('.table-page')!.getBoundingClientRect().top
+                );
+              expect(shownTop).toBeGreaterThanOrEqual(7.5);
+            }
+            expect(anchoring.gap).toBeGreaterThan(-12 * crown.scale);
+          }
+        }
+        // The added desktop-width case owns the crown target. The
+        // pre-existing marker certification below owns portrait <=768px.
+        if (width === 1024) {
+          await page.screenshot({ path: testInfo.outputPath(`desktop-sixmax-${state}.png`) });
+          continue;
+        }
         const result = await page.evaluate(() => {
           const box = (e: Element) => e.getBoundingClientRect();
           const overlaps = (a: DOMRect, b: DOMRect) =>
@@ -1136,6 +1274,14 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
             a.bottom > b.top + 0.5;
           const board = box(document.querySelector('.community-area')!);
           const violations: string[] = [];
+          // Top all-in hands must stay below the visible mobile clipping edge.
+          const pageTop = box(document.querySelector('.table-page')!).top;
+          for (const row of document.querySelectorAll(
+            '.seat-wrapper--cap .seat__cards--revealed'
+          )) {
+            if (box(row).top < pageTop + 7.5)
+              violations.push('Top Revealed Hand Clips Mobile Header');
+          }
           // Above 480px the seat pods keep their tablet sizes and ring: the
           // phone-only pod rules (compact 7-9 max top pod, outboard lanes off
           // the painted felt, dense-ring pods clear of the board) are not
@@ -1311,25 +1457,45 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
           // ring's single top seat is full size ("CAN BE FULL SCREEN NOW THAT
           // THE BBJ IS REMOVED FROM ABOVE THEM"), so there it must match the
           // other villains instead.
-          const ringSeats = Number(document.documentElement.dataset.seats);
           const villainAvatars = [
             ...document.querySelectorAll(
               '.seat-wrapper:not(.seat-wrapper--top):not(.seat-wrapper--hero) .seat__avatar'
             ),
           ].map((e) => box(e).width);
-          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar-img'))
-            if (ringSeats >= 7 && !largePortrait && box(e).height > 40.5)
-              violations.push('Top Avatar Is Not Compact');
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar'))
             if (
-              ringSeats <= 6 &&
+              !largePortrait &&
               villainAvatars.length &&
               Math.abs(box(e).width - Math.max(...villainAvatars)) > 1.5
             )
               violations.push('Top Avatar Is Not Full Size');
-          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__info'))
-            if (ringSeats >= 7 && !largePortrait && box(e).width > 64.5)
-              violations.push('Top Plate Is Not Compact');
+          if (innerWidth <= 480) {
+            const plates = [
+              ...document.querySelectorAll(
+                '.seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top) .seat__info'
+              ),
+            ].map(box);
+            for (const plate of document.querySelectorAll('.seat-wrapper--top .seat__info')) {
+              const measured = box(plate);
+              if (
+                plates.length &&
+                (Math.abs(measured.width - plates[0].width) > 1.5 ||
+                  Math.abs(measured.height - plates[0].height) > 1.5)
+              )
+                violations.push('Top Name And Stack Plate Is Smaller Than Other Villains');
+            }
+          }
+          if (!largePortrait) {
+            const scales = [
+              ...document.querySelectorAll(
+                '.seat-wrapper:not(.seat-wrapper--hero) .seat__avatar-img'
+              ),
+            ].map(
+              (e) => parseFloat(getComputedStyle(e).getPropertyValue('--sp-bust-scale')) || 1.45
+            );
+            if (Math.max(...scales) - Math.min(...scales) > 0.01)
+              violations.push('Top Artwork Is Smaller Than Other Villains');
+          }
           const canvas = box(document.querySelector('.table-scaler')!);
           const felt = box(document.querySelector('.table-surface')!);
           // The browser's inverse homography maps a DOM rectangle to a
@@ -1435,8 +1601,11 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
           `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards ${state} canvas=${JSON.stringify(result.canvas)}}`
         ).toEqual([]);
         for (const tool of result.tools) {
-          expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);
-          expect(tool.height, tool.selector).toBeCloseTo(result.tools[0].height, 1);
+          // Every phone gameplay tool must have a visible 48px painted target.
+          const expected =
+            tool.selector === '.mtp-lobby-btn' ? (width === 320 ? 44 : 52) : width <= 480 ? 48 : 40;
+          expect(tool.width, tool.selector).toBeCloseTo(expected, 1);
+          expect(tool.height, tool.selector).toBeCloseTo(expected, 1);
         }
         for (const [selector, icon] of [
           ['.chat-collapsed', 'chat'],
@@ -1452,7 +1621,7 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
             };
           }, toolAlpha[icon]);
           expect(Math.max(painted.width, painted.height), `${icon} painted frame`).toBeCloseTo(
-            result.tools[0].width,
+            width <= 480 ? 48 : 40,
             0
           );
         }
@@ -1466,7 +1635,7 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
             contentType: 'application/json',
           });
         }
-        await page.unroute('http://rail.fixture/');
+        await page.unroute('https://smarter.poker/hub/club-arena/__isolated_rail_fixture');
       }
     });
 
@@ -1633,6 +1802,14 @@ for (const [width, height] of [
               const overlaps = (a: DOMRect, b: DOMRect) =>
                 a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
               return {
+                buttonHeights: [...document.querySelectorAll('.action-btn, .pre-action-btn')].map(
+                  (e) => e.getBoundingClientRect().height
+                ),
+                buttonBottom: Math.max(
+                  ...[...document.querySelectorAll('.action-btn, .pre-action-btn')].map(
+                    (e) => e.getBoundingClientRect().bottom
+                  )
+                ),
                 rowTop: row.top,
                 rowHeight: row.height,
                 rowBottom: row.bottom,
@@ -1663,9 +1840,12 @@ for (const [width, height] of [
               measured.rowTop,
               `${width}px inset${bottomInset} ticker${ticker} ${state}: hero cards`
             ).toBeGreaterThanOrEqual(measured.cardsBottom + 1);
-            expect(measured.rowHeight - bottomInset, `${state}: compact row`).toBeLessThanOrEqual(
-              50
-            );
+            for (const buttonHeight of measured.buttonHeights)
+              expect(buttonHeight, `${state}: readable button`).toBeCloseTo(52, 0);
+            expect(
+              height - measured.buttonBottom,
+              'Buttons Clear The Home Indicator'
+            ).toBeGreaterThanOrEqual(Math.max(12, bottomInset) - 1);
             expect(measured.rowBottom).toBeCloseTo(height, 0);
             if (
               width === 393 &&
@@ -1785,7 +1965,7 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
       [430, 932, 59, 34],
     ];
     const cases = viewports.map((viewport) => [spectatorSeats, ...viewport]);
-    if (spectatorSeats >= 8)
+    if (spectatorSeats === 6 || spectatorSeats >= 8)
       cases.push([spectatorSeats, 393, 852, 47, 34, 1], [spectatorSeats, 430, 932, 59, 34, 1]);
     for (const [seats, width, height, insetTop = 0, insetBottom = 0, tournament = 0] of cases) {
       await page.setViewportSize({ width, height });
@@ -2020,20 +2200,17 @@ for (const [paneWidth, paneHeight] of [
   });
 }
 
-test('full player style, run-it-twice and jackpot names wrap on a narrow phone', async ({
-  page,
-}) => {
+test('full run-it-twice and jackpot names wrap on a narrow phone', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 667 });
-  const css = ['SeatSlot', 'RunItTwice', 'BBJCelebration']
+  const css = ['RunItTwice', 'BBJCelebration']
     .map((file) =>
       readFileSync(`src/components/table/${file}.css`, 'utf8').replace(/@import\s+[^;]+;/g, '')
     )
     .join('\n');
   await page.setContent(`<style>body{font-family:Inter,sans-serif}${css}</style>
-    <div style="width:70px"><div class="seat__style-badge">Loose Aggressive</div></div>
     <div style="width:110px;display:flex"><span style="width:20px;flex-shrink:0">A</span><span class="rit-panel__player-name">Alexandria Championship</span><span style="width:20px;flex-shrink:0">50%</span></div>
     <div style="width:70px"><div class="bbj-breakdown-name">Alexandria Championship</div></div>`);
-  for (const selector of ['.seat__style-badge', '.rit-panel__player-name', '.bbj-breakdown-name']) {
+  for (const selector of ['.rit-panel__player-name', '.bbj-breakdown-name']) {
     await expect(page.locator(selector)).toBeVisible();
     const result = await page.locator(selector).evaluate((el) => {
       const range = document.createRange();
@@ -2049,4 +2226,270 @@ test('full player style, run-it-twice and jackpot names wrap on a narrow phone',
     expect(result.fits).toBe(true);
     expect(result.ellipsis).not.toBe('ellipsis');
   }
+});
+
+test('painted coverage rejects opaque avatar pixels through rotation and clipping, while transparent canvas stays clear', async ({
+  page,
+}) => {
+  await page.setContent(
+    `<div class="table-page" style="position:relative;width:200px;height:200px"><div class="community-area" style="position:absolute;left:70px;top:20px;width:20px;height:20px"></div><img class="seat__avatar-img" style="position:absolute;left:0;top:0;width:100px;height:100px;object-fit:contain;object-position:50% 50%"></div>`
+  );
+  const covered = async () =>
+    (await page.evaluate(readMobileTableLayout, {})).violations.some((value) =>
+      value.startsWith('Player Or Bet Covers Board')
+    );
+  const paint = async (x: number, y: number, width: number, height: number) =>
+    page.evaluate(
+      async ({ x, y, width, height }) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const context = canvas.getContext('2d')!;
+        context.fillStyle = '#ff0000';
+        context.fillRect(x, y, width, height);
+        const image = document.querySelector<HTMLImageElement>('.seat__avatar-img')!;
+        image.src = `${canvas.toDataURL()}#/avatars/table/vip_wolf.webp`;
+        await image.decode();
+      },
+      { x, y, width, height }
+    );
+  await paint(0, 0, 20, 100);
+  expect(await covered(), 'Transparent canvas is not a player').toBe(false);
+  await paint(70, 25, 5, 5);
+  expect(await covered(), 'Real opaque coverage is still refused').toBe(true);
+  expect(await page.locator('.seat__avatar-img').getAttribute('src')).toMatch(
+    /\/avatars\/table\/vip_wolf\.webp$/
+  );
+  const staleMetadata = await page.evaluate(readMobileTableLayout, { 'vip_wolf.webp': 0.95 });
+  expect(
+    staleMetadata.violations.some((value) => value.startsWith('Player Or Bet Covers Board')),
+    'Old crown metadata cannot hide newly painted pixels'
+  ).toBe(true);
+  await paint(0, 0, 20, 100);
+  await page.locator('.seat__avatar-img').evaluate((element) => {
+    element.style.transformOrigin = '0 0';
+    element.style.transform = 'translate(100px,0) rotate(90deg)';
+  });
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.left = '40px';
+    element.style.top = '60px';
+  });
+  expect(await covered(), 'Rotation must not fill transparent canvas').toBe(false);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.top = '5px';
+  });
+  expect(await covered(), 'Rotated opaque pixels remain protected').toBe(true);
+  await page.locator('.seat__avatar-img').evaluate((element) => {
+    element.style.transform = 'none';
+    element.style.clipPath = 'inset(0 0 60% 0)';
+  });
+  await paint(0, 0, 100, 100);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.top = '60px';
+  });
+  expect(await covered(), 'The clipped nameplate is not a visible player').toBe(false);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.top = '10px';
+  });
+  expect(await covered(), 'Visible pixels above the clip remain protected').toBe(true);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.top = '60px';
+  });
+  await page.locator('.seat__avatar-img').evaluate((element) => {
+    element.style.transform = 'perspective(300px) rotateY(20deg)';
+  });
+  expect(await covered(), 'Unsupported 3D geometry retains the conservative refusal').toBe(true);
+  await page.locator('.seat__avatar-img').evaluate((element) => {
+    element.style.transform = 'none';
+  });
+  await page.evaluate(() => {
+    HTMLCanvasElement.prototype.getContext = (() =>
+      null) as typeof HTMLCanvasElement.prototype.getContext;
+  });
+  expect(await covered(), 'Unreadable pixels fail closed under the original bounds').toBe(true);
+});
+
+test('painted action coverage protects the pill face without inventing paint in its rounded corners', async ({
+  page,
+}) => {
+  await page.setContent(
+    `<div class="table-page" style="position:relative;width:200px;height:100px"><div class="community-area" style="position:absolute;left:99px;top:0;width:20px;height:2px"></div><div class="seat__action" style="position:absolute;left:0;top:0;width:100px;height:20px;border-radius:999px;background:#fff"></div></div>`
+  );
+  const covered = async () =>
+    (await page.evaluate(readMobileTableLayout, {})).violations.some((value) =>
+      value.startsWith('Player Or Bet Covers Board')
+    );
+  expect(await covered(), 'An empty rounded corner does not cover a board').toBe(false);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.left = '80px';
+    element.style.top = '8px';
+    element.style.width = '10px';
+    element.style.height = '4px';
+  });
+  expect(await covered(), 'The opaque pill face still refuses coverage').toBe(true);
+});
+
+test('the phone action clock uses stationary ink and compositor clips at its real deadline', async ({
+  page,
+}) => {
+  const { buildSync } = await import('esbuild');
+  const built = buildSync({
+    stdin: {
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {ActionTimerRing} from './src/components/table/ActionTimerRing';const root=createRoot(document.getElementById('root'));window.clockRender=(seconds,delay)=>root.render(<div className="seat seat--active"><div className="seat__info" data-motion="keep" style={{width:120,height:60,position:'relative','--sp-timer-duration':seconds+'s','--sp-timer-delay':delay+'s'}}><ActionTimerRing timing={{'--sp-timer-duration':seconds+'s','--sp-timer-delay':delay+'s'}}/></div></div>);window.clockRender(15,0);`,
+      resolveDir: process.cwd(),
+      loader: 'tsx',
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    jsx: 'automatic',
+    // The fixture installs the real stylesheet below.
+    loader: { '.css': 'empty' },
+    define: { 'process.env.NODE_ENV': '"production"' },
+  });
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.setContent('<div id="root"></div>');
+  await page.addStyleTag({
+    content: readFileSync(resolve(ROOT, 'src/components/table/SeatSlot.css'), 'utf8'),
+  });
+  await page.addScriptTag({ content: built.outputFiles[0].text });
+  await expect(page.locator('.seat__timer-wipe')).toHaveCount(5);
+  await page.waitForFunction(
+    () => (document.querySelector('.seat__timer-wipe')?.getBoundingClientRect().width ?? 0) > 0
+  );
+  const sample = async (ms: number) =>
+    page.evaluate((ms) => {
+      for (const a of document.getAnimations()) {
+        a.pause();
+        a.currentTime = ms;
+      }
+      return [...document.querySelectorAll<HTMLElement>('.seat__timer-wipe')].map((w) => {
+        const ink = w.querySelector<HTMLElement>('.seat__timer-ink')!;
+        const wt = new DOMMatrixReadOnly(getComputedStyle(w).transform),
+          it = new DOMMatrixReadOnly(getComputedStyle(ink).transform);
+        const sector = w.parentElement!;
+        const endX = parseFloat(getComputedStyle(sector).getPropertyValue('--sp-wipe-x'));
+        const endY = parseFloat(getComputedStyle(sector).getPropertyValue('--sp-wipe-y'));
+        return {
+          spent: endX ? wt.m41 / endX : wt.m42 / endY,
+          xDrift: wt.m41 + it.m41,
+          yDrift: wt.m42 + it.m42,
+          duration: parseFloat(getComputedStyle(sector).getPropertyValue('--sp-segment-duration')),
+        };
+      });
+    }, ms);
+  for (const ms of [0, 1875, 3750, 7500, 10000, 14999, 15000]) {
+    const runs = await sample(ms);
+    expect(runs.reduce((n, r) => n + r.duration, 0)).toBeCloseTo(15, 5);
+    const spent = runs.reduce((n, r) => n + r.spent * r.duration, 0);
+    expect(spent, `clock at ${ms}ms`).toBeCloseTo(ms / 1000, 3);
+    for (const run of runs) {
+      expect(run.xDrift).toBeCloseTo(0, 4);
+      expect(run.yDrift).toBeCloseTo(0, 4);
+    }
+  }
+  const first = await page.locator('.seat__timer-wipe').first().elementHandle();
+  await page.evaluate(() => (window as any).clockRender(35, 0));
+  await expect(page.locator('.seat__info')).toHaveCSS('--sp-timer-duration', '35s');
+  expect(await first!.evaluate((el) => el === document.querySelector('.seat__timer-wipe'))).toBe(
+    true
+  );
+  expect((await sample(7500)).reduce((n, r) => n + r.spent * r.duration, 0)).toBeCloseTo(7.5, 3);
+  await page.evaluate(() =>
+    ['width', 'min-width', 'max-width'].forEach((p) =>
+      document.querySelector<HTMLElement>('.seat__info')!.style.setProperty(p, '180px', 'important')
+    )
+  );
+  await expect(page.locator('.seat__timer-ring')).toHaveCSS('width', '184px');
+  expect((await sample(10000)).reduce((n, r) => n + r.spent * r.duration, 0)).toBeCloseTo(10, 3);
+});
+
+test('the phone pot shine and on-turn avatar scan retain their paths without repainting backgrounds', async ({
+  page,
+}, testInfo) => {
+  const { buildSync } = await import('esbuild');
+  const built = buildSync({
+    stdin: {
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import SeatSlot from './src/components/table/SeatSlot';import PotDisplay from './src/components/table/PotDisplay';const now=Date.now();createRoot(document.getElementById('root')).render(<><SeatSlot seatNumber={1} position="BTN" player={{id:'energy',name:'Player',stack:100,status:'active',showCards:false,isHero:true,avatar:'https://smarter.poker/avatars/table/vip_wolf@2x.webp'}} isActive lastAction={null} turnStartTimeMs={now} turnDeadlineMs={now+15000}/><PotDisplay mainPot={82} bigBlind={2}/></>);`,
+      resolveDir: ROOT,
+      loader: 'tsx',
+    },
+    bundle: true,
+    write: false,
+    outfile: 'energy.js',
+    format: 'iife',
+    jsx: 'automatic',
+    loader: { '.css': 'empty', '.png': 'dataurl', '.webp': 'dataurl', '.svg': 'dataurl' },
+    define: {
+      'process.env.NODE_ENV': '"production"',
+      'import.meta.env': JSON.stringify({
+        DEV: false,
+        PROD: true,
+        VITE_SUPABASE_URL: 'https://dummy.supabase.co',
+        VITE_SUPABASE_ANON_KEY: 'fixture',
+      }),
+    },
+  });
+  await page.route('**/avatars/table/**', (route) =>
+    route.fulfill({ path: tableArtFixture('vip_wolf@2x.webp') })
+  );
+  await page.route('**/rest/v1/**', (route) => route.fulfill({ json: [] }));
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.setContent('<div id="root"></div>');
+  for (const file of ['SeatSlot.css', 'avatarChoreography.css', 'PotDisplay.css'])
+    await page.addStyleTag({
+      content: readFileSync(resolve(ROOT, 'src/components/table', file), 'utf8'),
+    });
+  await page.addStyleTag({
+    content:
+      'body{background:black;color:white}.seat{position:relative!important;left:0!important;top:0!important;margin:80px 100px;--table-w:366px}.pot-display{position:relative!important;left:0!important;top:0!important}',
+  });
+  await page.addScriptTag({ content: built.outputFiles[0].text });
+  await expect(page.locator('.seat__holo')).toHaveCount(1);
+  await expect(page.locator('.seat__avatar-img')).toBeVisible();
+  const result = await page.evaluate(() => {
+    const holo = document.querySelector<HTMLElement>('.seat__holo')!;
+    const pot = document.querySelector<HTMLElement>('.pot-display__main')!;
+    const animations = document.getAnimations();
+    const scan = animations.find((a) => (a as CSSAnimation).animationName === 'spAvatarHolo')!;
+    const shine = animations.find((a) => (a as CSSAnimation).animationName === 'pdGlassSweep')!;
+    const scanFrames = (scan.effect as KeyframeEffect).getKeyframes();
+    const shineFrames = (shine.effect as KeyframeEffect).getKeyframes();
+    for (const a of animations) {
+      a.pause();
+      a.currentTime = 3700;
+    }
+    const style = getComputedStyle(holo, '::after');
+    return {
+      mask: getComputedStyle(holo).maskImage,
+      scanDuration: scan.effect!.getTiming().duration,
+      scanDelay: scan.effect!.getTiming().delay,
+      shineDuration: shine.effect!.getTiming().duration,
+      scanTransforms: scanFrames.map((f) => f.transform).filter(Boolean),
+      shineTransforms: shineFrames.map((f) => f.transform).filter(Boolean),
+      scanPaintsBackground: scanFrames.some((f) => 'backgroundPosition' in f),
+      shineMovesLayout: shineFrames.some((f) => 'left' in f),
+      opacity: Number(style.opacity),
+      scanY: new DOMMatrixReadOnly(style.transform).m42,
+      stripHeight: parseFloat(style.height),
+      potWidth: pot.getBoundingClientRect().width,
+    };
+  });
+  expect(result.mask).toContain('vip_wolf');
+  expect(result.scanDuration).toBe(7000);
+  expect(result.scanDelay).toBeCloseTo(3000, -1);
+  expect(result.shineDuration).toBe(8000);
+  expect(result.scanTransforms).toContain('translateY(480%)');
+  expect(result.shineTransforms).toEqual([
+    'translateX(-200%)',
+    'translateX(400%)',
+    'translateX(-200%)',
+    'translateX(-200%)',
+  ]);
+  expect(result.scanPaintsBackground).toBe(false);
+  expect(result.shineMovesLayout).toBe(false);
+  expect(result.opacity).toBe(1);
+  expect(result.scanY / result.stripHeight).toBeCloseTo(2.4, 1);
+  expect(result.potWidth).toBeGreaterThan(0);
+  await page.screenshot({ path: testInfo.outputPath('phone-energy-cues.png') });
 });

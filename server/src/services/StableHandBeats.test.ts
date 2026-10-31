@@ -79,8 +79,8 @@ describe('a beat records what the floor IS and what the curve WANTS', () => {
     const u = rows.find((r) => r.host_id === MIDWAY_UNION_ID)!;
     expect(u.eligible_bodies).toBe(584);
     expect(u.unique_live).toBe(178);
-    // 03:00 is the night window, so the cap is the 5% one
-    expect(u.cap_max).toBe(29);
+    // October 26 halves the original night cap to 2.5%.
+    expect(u.cap_max).toBe(14);
     expect(u.tables_open).toBe(12);
   });
 

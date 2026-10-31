@@ -44,6 +44,24 @@ describe('the original command owns delayed and concurrent replies', () => {
     e.readCashAddonReceipt = vi.fn(async () => null);
     return e;
   }
+  it('keeps weekly admission until a queued top-up has settled', async () => {
+    const e = engine();
+    e.handController = {};
+    let finish!: (r: any) => void;
+    vi.spyOn(supabase, 'rpc').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }) as any
+    );
+    const operation = e.addChips('hero', 10, 'weekly-pending-top-up');
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    e.weeklyHandPause.hold('weekly-accounting-owner');
+    expect(e.weeklyHandPause.stable('weekly-accounting-owner')).toBe(false);
+    finish({ data: 90, error: null });
+    await operation;
+    expect(e.weeklyHandPause.stable('weekly-accounting-owner')).toBe(true);
+  });
   it('joins overlapping copies of one HTTP request', async () => {
     const e = engine();
     let finish!: (r: any) => void;

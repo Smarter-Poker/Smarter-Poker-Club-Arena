@@ -1,3 +1,5 @@
+import { WeeklyPauseClock } from './WeeklyPauseClock.js';
+import { CooperativeHandTimers } from './CooperativeHandTimers.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HAND CONTROLLER — Server-Side
@@ -47,6 +49,7 @@ import type {
   Card,
   HandStage,
   SeatPlayer,
+  AllInRunoutWitness,
   ActionType,
   GameVariant,
   HandConfig,
@@ -100,9 +103,26 @@ export interface HorseDiscardControllerReceipt {
 }
 
 export class HandController {
+  private weeklyClock = new WeeklyPauseClock();
+  private originalActuationAllowed: () => boolean = () => true;
+  private pineappleTimerCustody = new CooperativeHandTimers();
+
+  public pauseForWeeklyPayout(owner: string): void {
+    this.weeklyClock.hold('hand', owner);
+    this.pineappleTimerCustody.hold(owner);
+  }
+
+  public resumeFromWeeklyPayout(owner: string): void {
+    this.weeklyClock.release('hand', owner);
+    this.pineappleTimerCustody.release(owner);
+  }
+
+  public isParkedForWeeklyPayout(owner: string): boolean {
+    return this.weeklyClock.has('hand', owner);
+  }
+
   private config: HandConfig;
   private state: GameState;
-  private immediateFoldCount = 0;
   /**
    * CALLED HANDS ARE SHOWN (Dan 2026-10-25: "show the hand at call down").
    * Per seat, whether its LAST river decision was a call - a plain call, or an
@@ -203,6 +223,7 @@ export class HandController {
    * for exactly one hand, so no reset is needed.
    */
   private allInShowdownLocked = false;
+  private allInRunoutWitness: AllInRunoutWitness | null = null;
   /**
    * SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) award breakdown
    * collected by determineWinners for the WINNERS emit. Per-hand — a
@@ -401,6 +422,8 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
 
   start(): void {
+    if (this.handStarted) throw new Error('Hand Has Already Started');
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return;
     /* ═══ A HAND THAT IS STARTING MUST BE A BLANK HAND (2026-08-31) ════════
        The rake-law alarm's no_flop_no_drop criticals were hands played inside
        a controller that a STALE runout continuation from the PREVIOUS hand
@@ -1131,27 +1154,22 @@ export class HandController {
     origin: AcceptedActionOrigin = 'unknown',
     onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return false;
     return this.performBettingAction(seat, action, amount, origin, onAccepted);
   }
 
-  /** Early folds do not replace the current actor's still-owed decision. */
+  /** Only ordered actions advance the current decision identity. */
   getDecisionActionCount(): number {
-    return this.state.actionHistory.length - this.immediateFoldCount;
+    return this.state.actionHistory.length;
   }
 
-  /** Explicit Lightning fold: final now, even while another player owes a decision. */
-  /**
-   * An early (Lightning) fold. `origin` labels the record exactly as the
-   * turn door does: 'player' for a person's request, 'horse_policy' for a
-   * horse's own decision (Dan 2026-10-24, "HORSES SHOULD FOLD RIGHT AWAY IF
-   * THEY WERE ALREADY FOLDING"). The rules are the same for both.
-   */
+  /** Compatibility door: a fold always belongs to the current actor. */
   performImmediateFold(
     seat: number,
     origin: AcceptedActionOrigin = 'player',
     onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
-    return this.performBettingAction(seat, 'fold', undefined, origin, onAccepted, true);
+    return this.performAction(seat, 'fold', undefined, origin, onAccepted);
   }
 
   private performBettingAction(
@@ -1159,8 +1177,7 @@ export class HandController {
     action: ActionType,
     amount?: number,
     origin: AcceptedActionOrigin = 'unknown',
-    onAccepted?: (record: Readonly<ActionRecord>) => void,
-    immediateFold = false
+    onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
     /* A TOURNAMENT CHIP IS WHOLE, LIKE A DIAMOND (launch audit 2026-10-05).
        Every place this controller splits or rounds already treats a
@@ -1181,9 +1198,7 @@ export class HandController {
     // or advance the hand with a live seat still holding three cards.
     if (this.state.stage === 'pineapple_discard') return false;
     const player = this.state.players.find((p) => p.seat === seat);
-    const earlyFold = immediateFold && action === 'fold' && seat !== this.state.currentPlayerSeat;
-    if (earlyFold && !['preflop', 'flop', 'turn', 'river'].includes(this.state.stage)) return false;
-    if (!player || (!earlyFold && seat !== this.state.currentPlayerSeat)) return false;
+    if (!player || seat !== this.state.currentPlayerSeat) return false;
     // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
     // whatever currentPlayerSeat claims. Without this, any stale turn pointer
     // lets an automated path (watchdog force-action, disconnect auto-action, a
@@ -1271,8 +1286,8 @@ export class HandController {
     try {
       publicNode = captureHorsePublicActionNode(
         this.config,
-        earlyFold ? { ...this.state, currentPlayerSeat: player.seat } : this.state,
-        this.getAuthoritativeActionState(player.user_id, { asIfToAct: earlyFold }),
+        this.state,
+        this.getAuthoritativeActionState(player.user_id),
         this.getActiveBoardCount(),
         this.readPublicTournamentStage
       );
@@ -1374,7 +1389,6 @@ export class HandController {
       publicNode,
     });
     this.state.actionHistory.push(record);
-    if (earlyFold) this.immediateFoldCount++;
 
     // Observe the exact clamped, validated and cent-snapped action before
     // broadcasts/advanceGame can change the current street or turn. A receipt
@@ -1401,11 +1415,7 @@ export class HandController {
         : 'unknown',
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
-    if (!earlyFold) this.advanceGame();
-    else if (this.getActivePlayers().length === 1) this.completeHand();
-    else if (this.isBettingRoundComplete()) this.advanceStage();
-    // Otherwise the same current actor still owes the same decision. Do not
-    // call advanceGame(), which would move past that player's live clock.
+    this.advanceGame();
     return true;
   }
 
@@ -1417,6 +1427,7 @@ export class HandController {
    * @returns true if discard was accepted
    */
   performDiscard(seat: number, cardIndex: number): boolean {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return false;
     if (this.state.stage !== 'pineapple_discard') {
       return false; // Not in discard phase
     }
@@ -1526,6 +1537,7 @@ export class HandController {
    * the live expiry path calls foldForMissedDiscard().
    */
   autoDiscard(seat: number): boolean {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return false;
     return this.performDiscard(seat, 2); // Discard last card
   }
 
@@ -1543,6 +1555,7 @@ export class HandController {
    * Returns true when this call folded the seat.
    */
   foldForMissedDiscard(seat: number): boolean {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return false;
     if (this.state.stage !== 'pineapple_discard') return false;
     if (!this.pineappleDiscardsRemaining.has(seat)) return false;
     const player = this.state.players.find((p) => p.seat === seat);
@@ -1645,7 +1658,7 @@ export class HandController {
    */
   public cancelPineappleSettle(): void {
     if (this.pineappleSettleTimer) {
-      clearTimeout(this.pineappleSettleTimer);
+      this.pineappleTimerCustody.clear(this.pineappleSettleTimer);
       this.pineappleSettleTimer = null;
     }
   }
@@ -1664,6 +1677,7 @@ export class HandController {
    * Returns true when there was a beat to collapse.
    */
   public flushPineappleSettle(): boolean {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return false;
     if (!this.pineappleSettleTimer) return false;
     this.cancelPineappleSettle();
     if (this.state.stage !== 'pineapple_discard') return false;
@@ -1697,7 +1711,7 @@ export class HandController {
       return;
     }
 
-    this.pineappleSettleTimer = setTimeout(() => {
+    this.pineappleSettleTimer = this.pineappleTimerCustody.set(() => {
       this.pineappleSettleTimer = null;
       // Anything else that moved the hand on (a fold that ended it, a runout)
       // has already done this job.
@@ -1848,6 +1862,14 @@ export class HandController {
         // preset) in the same stroke. Idempotent: completeHand/RIT call it
         // again later and get 0.
         this.returnUncalledBet();
+        // Capture the original obligation before async equity or further cards.
+        // Includes callers and covering stacks, independently of equity success.
+        if (!this.allInRunoutWitness) {
+          this.allInRunoutWitness = Object.freeze({
+            street: this.state.stage as 'preflop' | 'flop' | 'turn',
+            playerIds: Object.freeze(this.getActivePlayers().map((p) => p.user_id)),
+          });
+        }
         this.emit({
           type: 'ALL_IN_RUNOUT',
           board: [...this.state.communityCards],
@@ -2158,6 +2180,7 @@ export class HandController {
    * dealt. The engine calls this before computing rake for a RIT hand.
    */
   public markFlopSeen(): void {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return;
     if (this.refuseUnlessRunout('markFlopSeen')) return;
     this.state.sawFlop = true;
     this.boardDealtOutsideState = true;
@@ -2189,6 +2212,7 @@ export class HandController {
    * call must be refused.
    */
   private refuseUnlessRunout(op: string): boolean {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return true;
     if (this.handCompleted) return true;
     const live = this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);
     const canStillBet = live.filter((p) => !p.is_all_in);
@@ -2243,6 +2267,7 @@ export class HandController {
   }
 
   public creditRunoutWinnings(distribution: Map<string, number>): void {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return;
     this.applyStackDeltas(distribution);
   }
 
@@ -2265,6 +2290,7 @@ export class HandController {
    * the database move by the same number and cannot drift apart.
    */
   public applyStackDeltas(deltas: Map<string, number>): void {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return;
     if (this.config.asset === 'diamonds') {
       for (const [userId, amount] of deltas) {
         const player = this.state.players.find((p) => p.user_id === userId);
@@ -2430,6 +2456,7 @@ export class HandController {
    * must not deal another street or settle until the live worker answers.
    */
   public commitPreparedPineappleRunoutDiscards(flop: readonly Card[]): boolean {
+    if (this.weeklyClock.has('hand') || !this.originalActuationAllowed()) return false;
     if (this.config.gameVariant !== 'pineapple') return true;
     const pending = this.state.players.filter(
       (player) => !player.is_folded && player.cards.length === 3
@@ -3905,6 +3932,335 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
   // Getters
   // ─────────────────────────────────────────────────────────────────────────
+
+  /** Private stats input owned by this controller, never a reconstructed action. */
+  getAllInRunoutWitness(): AllInRunoutWitness | null {
+    return this.allInRunoutWitness;
+  }
+
+  /** Private durable continuation. Never attach this string to a public frame. */
+  private riverRecoveryWithoutDeck = false;
+
+  serializeRecoveryState(): string {
+    if (this.boardDealtOutsideState)
+      throw new Error('Hand Recovery Requires The External Runout Original');
+    const { deck: _deck, ...state } = this.state;
+    return JSON.stringify(
+      {
+        version: 1,
+        handStarted: this.handStarted,
+        handCompleted: this.handCompleted,
+        config: this.config,
+        state,
+        deck: this.getRemainingDeck(),
+        deckAvailability: this.riverRecoveryWithoutDeck ? 'unused_after_river' : 'complete',
+        riverCalled: [...this.riverCalled],
+        pineappleDiscardsRemaining: [...this.pineappleDiscardsRemaining],
+        pineappleKnownDeadCards: [...this.pineappleKnownDeadCards],
+        preparedPineappleRunoutDiscards: this.preparedPineappleRunoutDiscards
+          ? {
+              flopKey: this.preparedPineappleRunoutDiscards.flopKey,
+              decisions: [...this.preparedPineappleRunoutDiscards.decisions],
+            }
+          : null,
+        activeBoardCount: this.activeBoardCount,
+        allInShowdownLocked: this.allInShowdownLocked,
+        allInRunoutWitness: this.allInRunoutWitness,
+        postedBlindSeats: this.postedBlindSeats,
+        pendingWinnersByBoard: this.pendingWinnersByBoard,
+        pendingPerPotAwards: this.pendingPerPotAwards,
+        handFsm: this.handFSM.state,
+      },
+      (_key, value) => (typeof value === 'bigint' ? { recoveryBigInt: value.toString() } : value)
+    );
+  }
+
+  static fromRecoveryState(
+    encoded: string,
+    tableId: string,
+    handNumber: number,
+    readPublicTournamentStage?: import('./HorsePublicTournamentStage.js').HorsePublicTournamentReader,
+    originalActuationAllowed: () => boolean = () => true
+  ): HandController {
+    const refuse = (): never => {
+      throw new Error('Hand Recovery State Is Invalid');
+    };
+    if (typeof encoded !== 'string' || Buffer.byteLength(encoded) > 262144) refuse();
+    const input = JSON.parse(encoded, (_key, value) => {
+      if (value && typeof value === 'object' && 'recoveryBigInt' in value) {
+        if (
+          Object.keys(value).length !== 1 ||
+          typeof value.recoveryBigInt !== 'string' ||
+          !/^(0|[1-9][0-9]{0,30})$/.test(value.recoveryBigInt)
+        )
+          refuse();
+        return BigInt(value.recoveryBigInt);
+      }
+      return value;
+    });
+    if (
+      !input ||
+      input.version !== 1 ||
+      input.config?.tableId !== tableId ||
+      input.config?.handNumber !== handNumber ||
+      !Number.isSafeInteger(handNumber) ||
+      handNumber < 1 ||
+      !input.state ||
+      !Array.isArray(input.deck)
+    )
+      refuse();
+    const state = input.state as Omit<GameState, 'deck'>;
+    if (
+      !['preflop', 'flop', 'pineapple_discard', 'turn', 'river', 'showdown'].includes(
+        state.stage
+      ) ||
+      typeof input.handStarted !== 'boolean' ||
+      typeof input.handCompleted !== 'boolean' ||
+      (input.handCompleted && !input.handStarted) ||
+      (!input.handStarted && (state.stage !== 'preflop' || input.handFsm !== 'idle')) ||
+      !Array.isArray(state.players) ||
+      state.players.length < 2 ||
+      state.players.length > 9 ||
+      !Array.isArray(state.actionHistory) ||
+      state.actionHistory.length > 1000 ||
+      !Array.isArray(state.pots) ||
+      state.pots.length > 30 ||
+      typeof state.sawFlop !== 'boolean' ||
+      !Number.isInteger(state.currentPlayerSeat) ||
+      !Number.isInteger(state.dealerSeat) ||
+      !Number.isInteger(state.lastAggressorSeat) ||
+      'deck' in state ||
+      ![1, 2, 3].includes(input.activeBoardCount) ||
+      typeof input.allInShowdownLocked !== 'boolean' ||
+      (input.handStarted && !input.handCompleted && input.handFsm !== state.stage) ||
+      (input.handCompleted && input.handFsm !== 'idle' && input.handFsm !== 'settlement')
+    )
+      refuse();
+    const nonnegative = (value: unknown) =>
+      typeof value === 'number' &&
+      Number.isFinite(value) &&
+      value >= 0 &&
+      value <= Number.MAX_SAFE_INTEGER;
+    for (const amount of [
+      state.pot,
+      state.currentBet,
+      state.lastRaise,
+      state.minRaise,
+      input.config.smallBlind,
+      input.config.bigBlind,
+    ])
+      if (!nonnegative(amount)) refuse();
+    const seats = new Set<number>(),
+      users = new Set<string>();
+    for (const p of state.players) {
+      if (
+        !p ||
+        !Number.isInteger(p.seat) ||
+        p.seat < 1 ||
+        p.seat > 9 ||
+        seats.has(p.seat) ||
+        typeof p.user_id !== 'string' ||
+        !p.user_id ||
+        users.has(p.user_id) ||
+        !Array.isArray(p.cards) ||
+        p.cards.length > 6 ||
+        ![p.stack, p.bet, p.totalInvested, p.deadInvested ?? 0, p.returnedUncalled ?? 0].every(
+          nonnegative
+        ) ||
+        ![p.is_all_in, p.is_folded, p.is_sitting_out].every((v) => typeof v === 'boolean')
+      )
+        refuse();
+      seats.add(p.seat);
+      users.add(p.user_id);
+    }
+    if (state.currentPlayerSeat !== -1 && !seats.has(state.currentPlayerSeat)) refuse();
+    const seatEntries = (value: unknown): value is Array<[number, unknown]> =>
+      Array.isArray(value) &&
+      value.length <= 9 &&
+      value.every((e) => Array.isArray(e) && e.length === 2 && seats.has(e[0])) &&
+      new Set(value.map((e) => e[0])).size === value.length;
+    if (
+      !seatEntries(input.riverCalled) ||
+      input.riverCalled.some((e: [number, unknown]) => typeof e[1] !== 'boolean') ||
+      !seatEntries(input.pineappleKnownDeadCards) ||
+      !Array.isArray(input.pineappleDiscardsRemaining) ||
+      input.pineappleDiscardsRemaining.length > 9 ||
+      input.pineappleDiscardsRemaining.some((s: number) => !seats.has(s))
+    )
+      refuse();
+    const prepared = input.preparedPineappleRunoutDiscards;
+    if (
+      prepared !== null &&
+      (!prepared ||
+        typeof prepared.flopKey !== 'string' ||
+        prepared.flopKey.length > 100 ||
+        !seatEntries(prepared.decisions) ||
+        prepared.decisions.some(
+          (e: [number, unknown]) => !Number.isInteger(e[1]) || Number(e[1]) < 0 || Number(e[1]) > 2
+        ))
+    )
+      refuse();
+    const boards = [state.communityCards, state.communityCards2, state.communityCards3];
+    if (boards.some((b) => !Array.isArray(b) || b.length > 5)) refuse();
+    const allCards = [
+      ...input.deck,
+      ...state.players.flatMap((p) => p.cards),
+      ...boards.flat(),
+      ...input.pineappleKnownDeadCards.map((e: [number, Card]) => e[1]),
+    ];
+    // Validates every card and every duplicate, including across private holes
+    // and the future deck. No reshuffle can repair missing original evidence.
+    new Deck(allCards);
+    const unusedAfterRiver = input.deckAvailability === 'unused_after_river';
+    if (unusedAfterRiver) {
+      // A legacy single-board tournament river never draws another card.
+      // Missing unused cards stay missing: an empty deck cannot manufacture
+      // a later street or a second board, and is never shuffled on recovery.
+      if (
+        input.config.isTournament !== true ||
+        input.deck.length !== 0 ||
+        (state.stage !== 'river' && !(input.handCompleted && state.stage === 'showdown')) ||
+        state.communityCards.length !== 5 ||
+        state.communityCards2.length !== 0 ||
+        state.communityCards3.length !== 0 ||
+        input.activeBoardCount !== 1 ||
+        input.config.bombPot ||
+        input.config.insuranceEnabled
+      )
+        refuse();
+    } else if (
+      (input.deckAvailability !== undefined && input.deckAvailability !== 'complete') ||
+      allCards.length !== deckSizeFor(input.config.gameVariant)
+    )
+      refuse();
+    if (Math.abs(state.players.reduce((n, p) => n + p.totalInvested, 0) - state.pot) > 0.005)
+      refuse();
+    const controller = new HandController(
+      input.config,
+      state.players,
+      state.dealerSeat,
+      readPublicTournamentStage
+    );
+    controller.state = { ...structuredClone(state), deck: new Deck(input.deck) };
+    controller.handStarted = input.handStarted;
+    controller.handCompleted = input.handCompleted;
+    controller.handFSM = createHandStateMachine(input.handFsm);
+    for (const [seat, called] of input.riverCalled) controller.riverCalled.set(seat, called);
+    controller.pineappleDiscardsRemaining = new Set(input.pineappleDiscardsRemaining);
+    controller.pineappleKnownDeadCards = new Map(input.pineappleKnownDeadCards);
+    controller.preparedPineappleRunoutDiscards = prepared
+      ? { flopKey: prepared.flopKey, decisions: new Map(prepared.decisions) }
+      : null;
+    controller.activeBoardCount = input.activeBoardCount;
+    controller.allInShowdownLocked = input.allInShowdownLocked;
+    controller.allInRunoutWitness = input.allInRunoutWitness;
+    controller.postedBlindSeats = input.postedBlindSeats;
+    controller.riverRecoveryWithoutDeck = unusedAfterRiver;
+    controller.pendingWinnersByBoard = input.pendingWinnersByBoard;
+    controller.pendingPerPotAwards = input.pendingPerPotAwards;
+    controller.originalActuationAllowed = originalActuationAllowed;
+    controller.recoveryAwaitingResume = true;
+    return controller;
+  }
+
+  /**
+   * Narrow legacy admission: the full board is durable and river betting has
+   * not begun. Call only after SQL proves the exact reserved original, current
+   * lease, unchanged seat generations, stakes and original table contract.
+   * A pre-river snapshot cannot enter this path without its missing deck.
+   */
+  static fromLegacyUnactedRiver(
+    config: HandConfig,
+    saved: Omit<GameState, 'deck'>,
+    postedBlinds: { smallBlind: number | null; bigBlind: number },
+    readPublicTournamentStage?: import('./HorsePublicTournamentStage.js').HorsePublicTournamentReader
+  ): HandController {
+    const refuse = (): never => {
+      throw new Error('Legacy River Original Is Unproven');
+    };
+    if (
+      config.isTournament !== true ||
+      config.gameVariant === 'pineapple' ||
+      config.bombPot ||
+      config.killPot ||
+      config.allInOrFold ||
+      config.insuranceEnabled ||
+      config.rakeConfig.percent !== 0 ||
+      config.rakeConfig.cap !== 0 ||
+      config.bbjConfig?.enabled ||
+      saved.stage !== 'river' ||
+      saved.currentBet !== 0 ||
+      saved.communityCards.length !== 5 ||
+      saved.communityCards2.length !== 0 ||
+      saved.communityCards3.length !== 0 ||
+      !saved.sawFlop ||
+      saved.actionHistory.some((a) => a.stage === 'river') ||
+      saved.players.some((p) => p.bet !== 0 || p.is_all_in) ||
+      saved.players.filter((p) => !p.is_folded && !p.is_sitting_out).length !== 2 ||
+      !saved.players.some(
+        (p) => p.seat === saved.currentPlayerSeat && !p.is_folded && !p.is_sitting_out
+      )
+    )
+      refuse();
+    const payload = JSON.stringify({
+      version: 1,
+      config,
+      state: saved,
+      deck: [],
+      deckAvailability: 'unused_after_river',
+      handStarted: true,
+      handCompleted: false,
+      riverCalled: [],
+      pineappleDiscardsRemaining: [],
+      pineappleKnownDeadCards: [],
+      preparedPineappleRunoutDiscards: null,
+      activeBoardCount: 1,
+      allInShowdownLocked: false,
+      allInRunoutWitness: null,
+      postedBlindSeats: postedBlinds,
+      pendingPerPotAwards: [],
+      handFsm: 'river',
+    });
+    return HandController.fromRecoveryState(
+      payload,
+      config.tableId,
+      config.handNumber,
+      readPublicTournamentStage
+    );
+  }
+
+  private recoveryAwaitingResume = false;
+
+  /** The owner wires the normal event sink before opening this continuation. */
+  resumeRecoveredHand(): void {
+    if (!this.originalActuationAllowed()) return;
+    if (!this.recoveryAwaitingResume) return;
+    this.recoveryAwaitingResume = false;
+    // Terminal events belong to the durable outbox; replaying them is the
+    // engine's job. Never evaluate or credit this controller a second time.
+    if (this.handCompleted) return;
+    if (!this.handStarted) {
+      this.start();
+      return;
+    }
+    if (this.state.stage === 'pineapple_discard') {
+      if (this.pineappleDiscardsRemaining.size === 0) this.checkPineappleDiscardsComplete();
+      else
+        this.emit({
+          type: 'PINEAPPLE_DISCARD_REQUIRED',
+          seats: [...this.pineappleDiscardsRemaining],
+        });
+    } else if (this.state.currentPlayerSeat >= 0) this.emitTurnChange();
+    else
+      this.emit({
+        type: 'ALL_IN_RUNOUT',
+        board: [...this.state.communityCards],
+        board2: this.multiBoardActive ? [...this.state.communityCards2] : undefined,
+        board3: this.activeBoardCount >= 3 ? [...this.state.communityCards3] : undefined,
+        pot: this.state.pot,
+        players: this.getActivePlayers().map((p) => ({ ...p })),
+      });
+  }
 
   getState(): GameState {
     return {

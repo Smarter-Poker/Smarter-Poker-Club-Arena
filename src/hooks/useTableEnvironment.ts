@@ -114,12 +114,86 @@ export function tableViewportContent(phoneWidth: number | null, desktopLayout: b
   return `width=${PHONE_TABLE_LAYOUT_WIDTH_PX}, initial-scale=${scale}, minimum-scale=${scale}, maximum-scale=${scale}, user-scalable=no, viewport-fit=cover`;
 }
 
+// WebKit can keep svh at the pre-meta physical layout height after the phone
+// switches to its scaled desktop width. Capture that stable dimension before
+// switching, then express it in the desktop layout's CSS pixels. Keep one
+// capture for all mounted tables; browser chrome and hand state cannot resize it.
+let phoneStableViewportHeight: number | null = null;
+let phoneSmallHeightBeforeScale: number | null = null;
+let phoneStableUnitsFollowLayout: boolean | null = null;
+function readSmallViewportHeight(): number {
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;pointer-events:none;width:0;height:100svh';
+  document.documentElement.appendChild(probe);
+  const height = probe.getBoundingClientRect().height;
+  probe.remove();
+  return height;
+}
+function refreshStableTableViewport() {
+  if (
+    !desktopLayoutHolders ||
+    !devicePortraitPhoneWidth() ||
+    phoneStableViewportHeight === null ||
+    phoneSmallHeightBeforeScale === null ||
+    Math.abs(document.documentElement.clientWidth - PHONE_TABLE_LAYOUT_WIDTH_PX) > 2
+  )
+    return;
+  const height = readSmallViewportHeight();
+  if (!(height > 0)) return;
+  // Identify the browser's unit behavior after the meta resize, rather than
+  // assuming every browser shares WebKit's stale-scale behavior.
+  if (phoneStableUnitsFollowLayout === null) {
+    if (Math.abs(height - phoneStableViewportHeight) < 1) phoneStableUnitsFollowLayout = true;
+    else if (Math.abs(height - phoneSmallHeightBeforeScale) < 1)
+      phoneStableUnitsFollowLayout = false;
+    else return;
+  }
+  const visual = window.visualViewport;
+  const physicalWidth = visual ? visual.width * visual.scale : devicePortraitPhoneWidth();
+  if (!(physicalWidth && physicalWidth > 0)) return;
+  const next = Math.round(
+    phoneStableUnitsFollowLayout ? height : (height * PHONE_TABLE_LAYOUT_WIDTH_PX) / physicalWidth
+  );
+  if (Math.abs(next - phoneStableViewportHeight) < 0.5) return;
+  phoneStableViewportHeight = next;
+  document.documentElement.style.setProperty(STABLE_TABLE_VIEWPORT_HEIGHT, `${next}px`);
+}
+const STABLE_TABLE_VIEWPORT_HEIGHT = '--sp-table-stable-viewport-h';
 function writeTableViewport() {
-  if (viewportHolders === 0 || typeof document === 'undefined') return;
+  if (typeof document === 'undefined') return;
+  if (viewportHolders === 0) {
+    phoneStableViewportHeight = null;
+    phoneSmallHeightBeforeScale = null;
+    phoneStableUnitsFollowLayout = null;
+    document.documentElement.style.removeProperty(STABLE_TABLE_VIEWPORT_HEIGHT);
+    return;
+  }
   const meta = document.querySelector('meta[name="viewport"]');
   if (!meta) return;
-  const next = tableViewportContent(devicePortraitPhoneWidth(), desktopLayoutHolders > 0);
-  if (meta.getAttribute('content') !== next) meta.setAttribute('content', next);
+  const phoneWidth = devicePortraitPhoneWidth();
+  if (phoneWidth && desktopLayoutHolders > 0) {
+    if (phoneStableViewportHeight === null) {
+      const width = document.documentElement.clientWidth;
+      const height = readSmallViewportHeight();
+      phoneSmallHeightBeforeScale = height;
+      if (width > 0 && height > 0)
+        phoneStableViewportHeight =
+          Math.round(((height * PHONE_TABLE_LAYOUT_WIDTH_PX) / width) * 1000) / 1000;
+    }
+    if (phoneStableViewportHeight !== null)
+      document.documentElement.style.setProperty(
+        STABLE_TABLE_VIEWPORT_HEIGHT,
+        `${phoneStableViewportHeight}px`
+      );
+  } else {
+    document.documentElement.style.removeProperty(STABLE_TABLE_VIEWPORT_HEIGHT);
+  }
+  const next = tableViewportContent(phoneWidth, desktopLayoutHolders > 0);
+  if (meta.getAttribute('content') !== next) {
+    meta.setAttribute('content', next);
+    requestAnimationFrame(refreshStableTableViewport);
+  }
 }
 
 /**
@@ -332,10 +406,12 @@ export function useTableEnvironment(
     desktopLayoutHolders += 1;
     writeTableViewport();
     const rewrite = () => writeTableViewport();
+    window.addEventListener('resize', refreshStableTableViewport);
     window.addEventListener('orientationchange', rewrite);
     screen.orientation?.addEventListener?.('change', rewrite);
     return () => {
       desktopLayoutHolders -= 1;
+      window.removeEventListener('resize', refreshStableTableViewport);
       window.removeEventListener('orientationchange', rewrite);
       screen.orientation?.removeEventListener?.('change', rewrite);
       writeTableViewport();
@@ -370,6 +446,9 @@ export function useTableEnvironment(
       }
     };
 
+    // A table can mount after the document was already backgrounded.
+    // Do not wait for a second visibility event to pause its animations.
+    handleVisibility();
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);

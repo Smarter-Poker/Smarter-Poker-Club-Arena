@@ -390,6 +390,46 @@ describe('7. "Next Hand..." after 1.2 s, fading in and out, in the same words', 
     expect(LIGHTNING_NEXT_HAND_TEXT).toBe('Next Hand...');
   });
 
+  it('a completed winner waits for the next deal even while its last snapshot retains the hand', async () => {
+    vi.useFakeTimers();
+    // The completed hand can remain the latest snapshot until another deal.
+    // Its result hold is still playing, so an in-progress roster alone must
+    // not start a waiting notice before the existing completion latch fires.
+    const { rerender } = render(<LightningNextHand handInProgress handComplete={false} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(screen.queryByTestId('lightning-next-hand')).toBeNull();
+
+    rerender(<LightningNextHand handInProgress handComplete />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIGHTNING_NEXT_HAND_NOTICE_MS - 1);
+    });
+    expect(screen.queryByTestId('lightning-next-hand')).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    const notice = screen.getByTestId('lightning-next-hand');
+    expect(notice.textContent).toBe('Next Hand...');
+
+    // The next hand has its own completion identity; its full fade is kept.
+    rerender(<LightningNextHand handInProgress handComplete={false} />);
+    expect(notice.getAttribute('data-leaving')).toBe('true');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIGHTNING_NEXT_HAND_FADE_MS + 1);
+    });
+    expect(screen.queryByTestId('lightning-next-hand')).toBeNull();
+  });
+
+  it('the completed winner notice uses the hand-bound latch after the full award hold', () => {
+    const block = sliceEnclosingBlock(PAGE, 'className="lightning-felt-notices"');
+    expect(block).toContain('handComplete={tableHandIsOver}');
+    const reset = sliceEnclosingBlock(PAGE, 'handCompleteResetFnRef.current = () => {');
+    expect(reset).toContain(
+      'setFinishedHand({ handNumber: completedHandNumber, heroSig: completedHeroSig })'
+    );
+  });
+
   it('appears after the threshold and fades out when the next deal starts', async () => {
     vi.useFakeTimers();
     const { rerender } = render(<LightningNextHand handInProgress={false} />);

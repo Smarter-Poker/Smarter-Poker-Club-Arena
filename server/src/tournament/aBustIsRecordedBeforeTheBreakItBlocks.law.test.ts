@@ -245,6 +245,7 @@ describe('the continuation cursor gives an earlier stage its turn back, never tw
 
 function balanceStageManager() {
   const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+  manager.recoveredOriginalAdmissions = new Map();
   Object.assign(manager, {
     tournamentId: 'aaaaaaaa-0000-4000-8000-000000000001',
     running: true,
@@ -272,21 +273,35 @@ function balanceStageManager() {
 /** A bust read the test can see; answering an error ends the pass there. */
 function watchBustReads() {
   const bustRead = vi.fn().mockResolvedValue({ data: null, error: { message: 'bust stage' } });
-  const query: any = { select: vi.fn(() => query), eq: vi.fn(() => query), lte: bustRead };
+  const query: any = {
+    select: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    lte: vi.fn((...args: unknown[]) => {
+      query.answer = bustRead(...args);
+      return query;
+    }),
+    order: () => query,
+    limit: () => query,
+    gt: () => query,
+    then: (resolve: any, reject: any) => query.answer.then(resolve, reject),
+  };
   vi.spyOn(supabase, 'from').mockReturnValue(query as never);
   return bustRead;
 }
 
 describe('a bust is not held behind a balance stage that spends every budget', () => {
-  it('without a bust, the balance stage keeps its continuation (unchanged)', async () => {
+  it('without a reported bust, slow balancing still yields to a fresh bust read', async () => {
     vi.useFakeTimers();
     const manager = balanceStageManager();
     const bustRead = watchBustReads();
     await manager.runEliminationSweep(new AbortController().signal);
     await manager.runEliminationSweep(new AbortController().signal);
-    expect(manager.checkTableBalance).toHaveBeenCalledTimes(2);
+    expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
     expect(bustRead).not.toHaveBeenCalled();
-    expect(manager.eliminationSweepCursor.nextStage).toBe(5);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(0);
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(bustRead).toHaveBeenCalledWith('chips', 0);
+    expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
   });
 
   it('a bust observed while balance holds the cursor is read on the very next admission', async () => {
@@ -307,11 +322,22 @@ describe('a bust is not held behind a balance stage that spends every budget', (
     vi.useFakeTimers();
     const manager = balanceStageManager();
     // The bust stage now completes and the pass yields on the budget before balance.
-    const bustRead = vi.fn(async () => {
+    const bustRead = vi.fn(async (..._args: unknown[]) => {
       vi.setSystemTime(Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS + 1);
       return { data: [], error: null };
     });
-    const query: any = { select: vi.fn(() => query), eq: vi.fn(() => query), lte: bustRead };
+    const query: any = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      lte: vi.fn((...args: unknown[]) => {
+        query.answer = bustRead(...args);
+        return query;
+      }),
+      order: () => query,
+      limit: () => query,
+      gt: () => query,
+      then: (resolve: any, reject: any) => query.answer.then(resolve, reject),
+    };
     vi.spyOn(supabase, 'from').mockReturnValue(query as never);
     const order: string[] = [];
     manager.checkTableBalance.mockImplementation(async () => {
@@ -536,4 +562,116 @@ describe('a break whose source still holds an unrecorded bust asks for the bust 
     expect(begins).toHaveLength(1);
     expect(begins[0].map((x: any) => x.user_id)).toEqual([id(4)]);
   });
+});
+
+// October 23 Coffee Break sources, represented by eleven independent hand
+// callbacks. The manager/cursor/stage execution is real; transport and the
+// financial write are isolated (the PostgreSQL suites own their proof).
+describe('every table records busts behind a blocked later-stage rewind', () => {
+  it.each([6, 7, 8])(
+    'serves eleven sources before interrupted stage %i can advance',
+    async (stage) => {
+      vi.useFakeTimers();
+      const m = balanceStageManager();
+      const pending = new Set<string>();
+      const placed = new Map<string, number>();
+      const callbacks: Array<(id: string, stacks: any[]) => void> = [];
+      Object.assign(m, {
+        tournamentCache: { tournament_type: 'MTT', variant: 'plo4', is_rebuy: false },
+        bustRefusalStreak: new Map(),
+        isCohortSatellite: () => false,
+        mysteryActivationMayOpenOnBust: () => false,
+        declareFieldDecidedIfOneStackRemains: vi.fn(),
+        horseRebuyOfferMayHaveOpened: vi.fn(),
+        tryTournamentRebuys: vi.fn(async () => ({ rebought: new Set(), deferredUntil: new Map() })),
+        eliminatePlayer: vi.fn(async (uid: string, position: number) => {
+          expect(pending.has(uid)).toBe(true);
+          expect(placed.has(uid)).toBe(false);
+          pending.delete(uid);
+          placed.set(uid, position);
+          return true;
+        }),
+        finishTournament: vi.fn(),
+        gameServer: { handTournamentToSuccessorGeneration: vi.fn() },
+      });
+      for (let i = 0; i < 11; i++) {
+        const engine = {
+          onHandComplete: (callback: (id: string, stacks: any[]) => void) =>
+            callbacks.push(callback),
+          onPauseReady: vi.fn(),
+          onRestartRequired: vi.fn(),
+        };
+        m.tableEngines.set(id(i + 20), engine);
+        m.wireEliminationWake(engine);
+      }
+      vi.spyOn(supabase, 'from').mockImplementation((table: string) => {
+        let columns = '';
+        let head = false;
+        const q: any = {
+          select: (s: string, o?: { head?: boolean }) => {
+            columns = s;
+            head = o?.head === true;
+            return q;
+          },
+          eq: () => q,
+          lte: () => q,
+          in: () => q,
+          is: () => q,
+          not: () => q,
+          order: () => q,
+          limit: () => q,
+          gt: () => q,
+          then: (resolve: (answer: unknown) => unknown, reject: (error: unknown) => unknown) => {
+            let data: unknown = null;
+            let count: number | null = null;
+            if (table === 'tournament_players') {
+              if (head) count = 100 - placed.size;
+              else if (columns === 'id, user_id, chips')
+                data = [...pending].map((user_id) => ({ user_id, chips: 0 }));
+              else if (columns === 'id, position')
+                data = [...placed.values()].map((position) => ({ position }));
+              else throw new Error(`Unexpected player read: ${columns}`);
+            } else if (table === 'tournament_knockout_candidates') {
+              data = [...pending].map((uid) => ({
+                id: uid,
+                eliminated_user_id: uid,
+                hand_number: 1,
+                stack_before: 100,
+                state: 'pending',
+              }));
+              count = pending.size;
+            } else throw new Error(`Unexpected table: ${table}`);
+            return Promise.resolve({ data, count, error: null }).then(resolve, reject);
+          },
+        };
+        return q;
+      });
+      vi.spyOn(supabase, 'rpc').mockImplementation((name: string) => {
+        if (name !== 'fn_open_tournament_rebuy_decisions')
+          throw new Error(`Unexpected RPC: ${name}`);
+        return Promise.resolve({
+          data: [...pending].map((user_id) => ({ user_id, decision_open: false })),
+          error: null,
+        }) as any;
+      });
+      m.eliminationSweepCursor.advanceTo(stage);
+      for (let source = 0; source < 11; source++) {
+        const uid = id(source + 40);
+        pending.add(uid);
+        callbacks[source](id(source + 20), [{ userId: uid, stack: 0 }]);
+        // No maintenance, manager replacement or break expiry: a fresh hand
+        // callback must get its own elimination stage within bounded admissions.
+        for (let pass = 0; pass < 4 && pending.size; pass++)
+          await m.runEliminationSweep(new AbortController().signal);
+        expect(placed.size, `source ${source} waits for the break it blocks`).toBe(source + 1);
+        expect(pending.size).toBe(0);
+      }
+      expect(m.eliminatePlayer).toHaveBeenCalledTimes(11);
+      expect(new Set(placed.values()).size).toBe(11);
+      expect(Math.min(...placed.values())).toBeGreaterThan(1);
+      expect(m.checkTableBalance.mock.calls.length).toBeGreaterThanOrEqual(10);
+      expect(m.gameServer.handTournamentToSuccessorGeneration).not.toHaveBeenCalled();
+      expect(m.finishTournament).not.toHaveBeenCalled();
+    }
+  );
 });

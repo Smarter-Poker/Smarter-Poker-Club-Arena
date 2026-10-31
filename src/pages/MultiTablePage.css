@@ -249,11 +249,21 @@
   height: 100%;
   overflow: hidden;
   position: relative;
+  /* Containment isolates layout recalculations and repaint passes to the slot */
+  contain: layout paint;
 }
 
-/* Slightly dim inactive tables for visual clarity */
+/* Inactive tables are pointer-inert and pause CSS animation churn */
 .multi-table-page__table-slot:not(.multi-table-page__table-slot--active) {
   pointer-events: none;
+}
+
+.multi-table-page__table-slot:not(.multi-table-page__table-slot--active) .table-page {
+  animation-play-state: paused !important;
+}
+
+.multi-table-page__table-slot:not(.multi-table-page__table-slot--active) .table-page * {
+  animation-play-state: paused !important;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -324,7 +334,7 @@
   align-items: center;
   --mtp-profit-width: 100px;
   --mtp-profit-font: 0.8125rem;
-  --mtp-profit-height: 36px;
+  --mtp-profit-height: var(--sp-tabbar-control);
   gap: 0;
   padding: 0;
   /* Dan 2026-08-28: the strip either side of the P&L chip / tile toggle
@@ -355,23 +365,24 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-/* Static reserve: 49px tab bar plus the 1px wrapper border; on phones
-   43px plus 1px. Tracker visibility never resizes the felt. */
+/* Static reserve: shared control and padding band plus both black borders;
+   phones omit both separator borders. Tracker visibility never resizes the felt. */
 .multi-table-page {
-  --sp-tabbar-h: calc(50px + env(safe-area-inset-top, 0px));
+  --sp-tabbar-h: calc(var(--sp-tabbar-band) + 2px + var(--sp-tabbar-safe-top));
 }
 @media (max-width: 480px) {
   .multi-table-page__tab-bar-wrapper {
+    border-bottom: 0;
     --mtp-profit-width: 52px;
     --mtp-profit-font: 0.8125rem;
-    --mtp-profit-height: 34px;
+    --mtp-profit-height: var(--sp-tabbar-control);
   }
   .multi-table-page__tab-bar-wrapper > .multi-table-page__pnl-chip {
     /* Keep a signed cents total legible inside the compact phone pill. */
     padding-inline: 1px;
   }
   .multi-table-page {
-    --sp-tabbar-h: calc(44px + env(safe-area-inset-top, 0px));
+    --sp-tabbar-h: calc(var(--sp-tabbar-band) + var(--sp-tabbar-safe-top));
   }
 }
 
@@ -562,14 +573,18 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
 .multi-table-page__tab-bar-wrapper,
 .mtp-lobby-btn {
   --mtp-edge: 6px;
-  --mtp-lobby-w: 40px;
+  --mtp-lobby-w: var(--sp-tabbar-control);
 }
 
 .mtp-lobby-btn {
   position: relative;
   top: auto;
   right: auto;
-  margin: var(--sp-tabbar-inset, env(safe-area-inset-top, 0px)) var(--mtp-edge) 0;
+  margin: calc(
+      var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)) + var(--sp-tabbar-pad-top) -
+        var(--sp-tabbar-pad-bottom)
+    )
+    var(--mtp-edge) 0;
   z-index: 210;
   display: flex;
   align-items: center;
@@ -651,13 +666,10 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     min-height: 44px;
   }
 
-  /* TRACK THE HAMBURGER DOWN TO 34px (Dan 2026-09-07, item 2). TableTabBar.css
-     shrinks `.table-menu__trigger` to 34px / radius 8 at this exact breakpoint;
-     "the same size and shape" has to mean the same size at every width, not
-     just the one a desktop shows. */
+  /* Lobby and hamburger share the same control dimension at every width. */
   .multi-table-page__tab-bar-wrapper,
   .mtp-lobby-btn {
-    --mtp-lobby-w: 34px;
+    --mtp-lobby-w: var(--sp-tabbar-control);
   }
 
   .mtp-lobby-btn {
@@ -1231,7 +1243,10 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   width: var(--mtp-profit-width);
   max-width: var(--mtp-profit-width);
   height: var(--mtp-profit-height);
-  margin-top: var(--sp-tabbar-inset, env(safe-area-inset-top, 0px));
+  margin-top: calc(
+    var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)) + var(--sp-tabbar-pad-top) -
+      var(--sp-tabbar-pad-bottom)
+  );
   margin-left: auto;
   line-height: 1;
   overflow: hidden;
@@ -1480,6 +1495,41 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
 }
 @media (max-width: 480px) {
   .multi-table-page {
-    --sp-game-tool-size: 34px;
+    --sp-game-tool-size: 48px;
   }
+}
+
+@media (max-width: 480px) {
+  body[data-ca-pinned-bar='1'] {
+    --ca-pinned-bar-offset: calc(44px + var(--mtt-ticker-h, 0px));
+  }
+}
+
+/* Player watch stays on the existing black ground; the action is a lit word. */
+.mtp-player-follow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px;
+  color: #e4e7ec;
+  font-size: 12px;
+}
+.mtp-player-follow span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mtp-player-follow button {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  color: #45adff;
+  font: inherit;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.mtp-player-follow button:focus-visible {
+  outline: 1px solid #45adff;
 }

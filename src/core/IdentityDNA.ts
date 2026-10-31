@@ -509,6 +509,8 @@ class IdentityDNACore {
           data: { session },
         } = await supabase.auth.getSession();
         if (session?.user?.id) {
+          const { flushPreferencesBeforeLogout } = await import('../lib/tableSettingIntents');
+          await flushPreferencesBeforeLogout(session.user.id);
           // Lazy: sign-out is rare, and the entry chunk is every player's first paint.
           const { signalOffline } = await import('../lib/presenceHeartbeat');
           await signalOffline(session.user.id);

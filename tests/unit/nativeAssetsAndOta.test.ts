@@ -51,7 +51,7 @@ describe('one native version, everywhere the binary and its OTA bundles state it
   });
 
   it('the publisher uploads the app bundle to Capgo after the origin is verified, only when the switch is on', () => {
-    const wf = read('.github/workflows/publish-club-arena.yml');
+    const wf = read('.github/workflows/publish-club-arena-transaction.yml');
     const job = wf.indexOf('\n  publish-to-app:');
     expect(job).toBeGreaterThan(-1);
     // the job body: up to the next top-level job key
@@ -60,9 +60,7 @@ describe('one native version, everywhere the binary and its OTA bundles state it
     const body = next === -1 ? rest : rest.slice(0, next);
     // execution order is by `needs`, not file position: the app bundle ships
     // only after the origin publish succeeded
-    expect(body).toMatch(
-      /needs: \[publish-needed, build-and-store, client-tests, publish-to-origin\]/
-    );
+    expect(body).toMatch(/needs: publish-to-origin/);
     expect(body).toContain("needs.publish-to-origin.result == 'success'");
     expect(body).toContain("vars.CAPGO_OTA_ENABLED == 'true'");
     expect(body).toContain('CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}');

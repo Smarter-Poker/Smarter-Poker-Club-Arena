@@ -78,7 +78,10 @@ export const HORSE_OPTIONAL_OWNER_OPTIONS = [
   'phase13Joint',
 ] as const;
 export type HorseOptionalOwnerOption = (typeof HORSE_OPTIONAL_OWNER_OPTIONS)[number];
-export type HorseDecisionReplayAdmission = Record<HorseOptionalOwnerOption, HorseOptionalOwnerMode>;
+export type HorseDecisionReplayAdmission = Record<
+  HorseOptionalOwnerOption,
+  HorseOptionalOwnerMode
+> & { phase8CatastropheGuard?: HorseOptionalOwnerMode };
 
 /** The JavaScript runtime a decision ran on. */
 export interface HorseDecisionRuntimeIdentity {
@@ -119,13 +122,20 @@ const MODES = new Set<unknown>(['off', 'shadow', 'candidate']);
 
 /** The admitted modes, read from the options the worker passed to decide. */
 export function horseDecisionReplayAdmission(
-  opts: Partial<Record<HorseOptionalOwnerOption, unknown>> | null | undefined
+  opts:
+    | Partial<Record<HorseOptionalOwnerOption | 'phase8CatastropheGuard', unknown>>
+    | null
+    | undefined
 ): HorseDecisionReplayAdmission | null {
   const out = {} as HorseDecisionReplayAdmission;
   for (const key of HORSE_OPTIONAL_OWNER_OPTIONS) {
     const mode = opts?.[key];
     if (!MODES.has(mode)) return null;
     out[key] = mode as HorseOptionalOwnerMode;
+  }
+  if (opts && Object.hasOwn(opts, 'phase8CatastropheGuard')) {
+    if (!MODES.has(opts.phase8CatastropheGuard)) return null;
+    out.phase8CatastropheGuard = opts.phase8CatastropheGuard as HorseOptionalOwnerMode;
   }
   return out;
 }
@@ -177,7 +187,30 @@ function validStateFields(v: Record<string, unknown>): boolean {
     !!admission &&
     typeof admission === 'object' &&
     !Array.isArray(admission) &&
-    Object.keys(admission).length === HORSE_OPTIONAL_OWNER_OPTIONS.length &&
+    Object.keys(admission).every(
+      (key) =>
+        (HORSE_OPTIONAL_OWNER_OPTIONS as readonly string[]).includes(key) ||
+        key === 'phase8CatastropheGuard'
+    ) &&
+    Object.keys(admission).length ===
+      HORSE_OPTIONAL_OWNER_OPTIONS.length +
+        Number(Object.hasOwn(admission, 'phase8CatastropheGuard')) &&
     horseDecisionReplayAdmission(admission) !== null
   );
+}
+
+/** Exact modes and own-key presence; legacy absence is not a guard-off claim. */
+export function horseDecisionReplayAdmissionMismatch(
+  actual: HorseDecisionReplayAdmission | null,
+  expected: HorseDecisionReplayAdmission
+): HorseOptionalOwnerOption | 'phase8CatastropheGuard' | null {
+  for (const key of HORSE_OPTIONAL_OWNER_OPTIONS) if (actual?.[key] !== expected[key]) return key;
+  if (
+    !actual ||
+    Object.hasOwn(actual, 'phase8CatastropheGuard') !==
+      Object.hasOwn(expected, 'phase8CatastropheGuard') ||
+    actual.phase8CatastropheGuard !== expected.phase8CatastropheGuard
+  )
+    return 'phase8CatastropheGuard';
+  return null;
 }

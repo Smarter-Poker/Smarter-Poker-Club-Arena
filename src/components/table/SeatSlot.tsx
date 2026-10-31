@@ -14,7 +14,7 @@
  *         (D)       ← Position chip near avatar
  *
  * Active player: neon yellow glowing border around the info box
- * that DISAPPEARS as the clock counts down (CSS conic-gradient mask).
+ * that DISAPPEARS as the clock counts down (compositor-clipped static ink).
  */
 
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
@@ -23,9 +23,7 @@ import { serverNow } from '../../utils/serverClock';
 import '../../styles/table-design-tokens.css';
 import './SeatSlot.css';
 import { CardImage, CardBack, SUIT_COLOR } from './CardImage';
-import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import { SitOutBadge } from './SitOutBadge';
-import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
@@ -36,6 +34,7 @@ import {
 } from '../../hooks/actionClockStore';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import RiveAvatar from './RiveAvatar';
+import { ActionTimerRing } from './ActionTimerRing';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
@@ -385,9 +384,6 @@ export interface SeatSlotProps {
    * chips landed. Cleared by TablePage a few seconds after the payout.
    */
   bbjCreditAmount?: number;
-  hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
-  showHUD?: boolean; // Whether to show the HUD overlay
-  playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
   /**
    * Actual seconds remaining, for the disconnected-player countdown overlay.
    * Same story as `timerProgress`: TablePage stopped passing it on 2026-08-25
@@ -879,8 +875,8 @@ function seatWrapperPercent(wrap: HTMLElement): { x: number; y: number } {
 //
 // The info box border glows neon blue and the border progressively disappears
 // as the clock counts down, at a constant rate along the border, reaching
-// empty at the engine's deadline. It is a conic-gradient on `.seat__timer-ring`
-// driven by a pure-CSS animation (`spTimerRingShrink`) that SeatSlot only
+// empty at the engine's deadline. Native transforms clip static rounded ink
+// in ActionTimerRing; the timing (`spTimerRingShrink`) is still only
 // SEEDS, once per turn - see "THE RING RAN AT DOUBLE SPEED" in the render.
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -919,9 +915,6 @@ export const SeatSlot = memo(
       winningHandName,
       shownHandName,
       handStrength,
-      hudStats,
-      showHUD = false,
-      playerStyle,
       secondsLeft: secondsLeftProp,
       deckStyle,
       cardBack = 'classic_blue',
@@ -936,7 +929,6 @@ export const SeatSlot = memo(
       onAction,
       onAvatarClick,
       showAvatar = true,
-      showBadges = false,
       gesturesEnabled = true,
       isCollectingChips = false,
       isDealing = false,
@@ -3280,6 +3272,7 @@ export const SeatSlot = memo(
                 : undefined
             }
           >
+            {showHolo && <span className="seat__holo" aria-hidden="true" />}
             {/* Bible V8 §11.1 show_avatars: when the toggle is OFF the image is
                 not rendered at all. It used to render and be hidden with
                 `visibility: hidden` on the wrap, so a player who turned avatars
@@ -3457,7 +3450,7 @@ export const SeatSlot = memo(
 
         {/* Info Box — name + stack, with neon timer border when active.
             The React `key` forces a fresh mount per turn so the CSS
-            @property animation restarts from 100%. */}
+            countdown animation restarts for that turn. */}
         {/* ANIMATION AUDIT 2026-08-27: data-motion="keep" — the countdown ring
             IS duration-carrying CSS animation (spTimerRingShrink runs the whole
             turn; its length is the information). reducedMotion.css collapses
@@ -3473,17 +3466,9 @@ export const SeatSlot = memo(
           inert={foldIdentityHidden}
           aria-hidden={foldIdentityHidden || undefined}
         >
-          {/* The neon countdown ring. A real element (it was `.seat__info::before`
-              until 2026-10-04) because it has to be a size container: the
-              sweep is converted from "fraction of the BORDER spent" to a conic
-              angle in CSS, and that needs the ring's own width and height.
-              See "A CLOCK THAT IS LINEAR ALONG THE BORDER" in SeatSlot.css.
-              Decorative: the time is announced elsewhere. */}
-          {isActingNow && (
-            <span className="seat__timer-ring" aria-hidden="true">
-              <span className="seat__timer-ring-arc" />
-            </span>
-          )}
+          {/* Native transform clips drain stationary rounded ink. Timing is
+              inherited from the same frozen engine-clock anchor above. */}
+          {isActingNow && <ActionTimerRing timing={timerStyle} />}
           {/* Full names wrap within the seat plate (owner 2026-10-26). */}
           <span className="seat__name">{player.name?.trim()}</span>
           <span
@@ -3538,26 +3523,6 @@ export const SeatSlot = memo(
             </span>
           )}
         </div>
-
-        {/* Mini-HUD — opponent stats (VPIP/PFR) below info box */}
-        {!player.isHero && showHUD && (
-          <MiniHUD stats={hudStats || null} isVisible={showHUD} compact={true} />
-        )}
-
-        {/* Player Style Badge — auto-classified archetype */}
-        {/* Bible V8 §11.1: show_badges toggle controls badge visibility */}
-        {showBadges && !player.isHero && playerStyle && playerStyle.style !== 'unknown' && (
-          <div
-            className="seat__style-badge"
-            style={{
-              color: playerStyle.color,
-              backgroundColor: playerStyle.bgColor,
-            }}
-            title={playerStyle.tooltip}
-          >
-            {playerStyle.icon} {playerStyle.label}
-          </div>
-        )}
 
         {/* Hero Hole Cards — large, premium style beside avatar.
          *  After the hero folds, keep the cards visible but dim them so the
@@ -4010,7 +3975,6 @@ export const SeatSlot = memo(
     if (prev.bbjCreditAmount !== next.bbjCreditAmount) return false;
     if (prev.lastAction !== next.lastAction) return false;
     if (prev.lastBetAmount !== next.lastBetAmount) return false;
-    if (prev.showHUD !== next.showHUD) return false;
     // UI-AUDIT P1: collect-to-pot animation is driven solely by this flag on
     // COMMUNITY_CARDS_DEALT / HAND_COMPLETE — must force a re-render or the
     // cpCollect keyframe never fires and chips teleport into the pot.
@@ -4054,25 +4018,6 @@ export const SeatSlot = memo(
     // UI-AUDIT #13: gesture toggle must take effect on already-mounted seats.
     if (prev.gesturesEnabled !== next.gesturesEnabled) return false;
 
-    // HUD stats — only compare if visible
-    if (prev.showHUD && next.showHUD) {
-      const ps = prev.hudStats;
-      const ns = next.hudStats;
-      if (!ps && !ns) {
-        /* equal */
-      } else if (!ps || !ns) return false;
-      else if (
-        ps.handsPlayed !== ns.handsPlayed ||
-        ps.vpipCount !== ns.vpipCount ||
-        ps.pfrCount !== ns.pfrCount
-      )
-        return false;
-    }
-
-    // Player style badge — compare style name (cheapest check)
-    const prevStyle = prev.playerStyle?.style || 'unknown';
-    const nextStyle = next.playerStyle?.style || 'unknown';
-    if (prevStyle !== nextStyle) return false;
     if (prev.deckStyle !== next.deckStyle) return false;
     if (prev.cardBack !== next.cardBack) return false;
     if (prev.secondsLeft !== next.secondsLeft) return false;

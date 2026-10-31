@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { awaitQueuedCashouts, hasQueuedCashout } from './queuedCashoutWatcher';
 import { cashBuyInRefusalText } from '../lib/cashBuyIn';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
+import { masterBus } from '../core/MasterBus';
 
 export interface LobbySeat {
   seat_number: number;
@@ -360,6 +361,7 @@ export async function leaveCashGameWaitlist(
     data.released_offers < 0
   )
     throw new Error('Waitlist cancellation was not confirmed');
+  masterBus.emit('WAITLIST_CHANGED', undefined as void);
   return data;
 }
 
@@ -432,6 +434,7 @@ export async function joinCashGame(gameId: string): Promise<CashGameJoinResult> 
       outcome: data.action,
       table_id: data.table_id ?? null,
     });
+    masterBus.emit('WAITLIST_CHANGED', undefined as void);
     return data as CashGameJoinResult;
   } catch (error) {
     const message = error instanceof Error ? error.message : '';

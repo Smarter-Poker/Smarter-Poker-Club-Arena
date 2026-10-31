@@ -1,3 +1,19 @@
+import type { HorseOwnPublicHistoryLoader } from './ownPublicHistoryProvenance.js';
+import {
+  V31ControlClient,
+  type V31ControlRequest,
+  type V31ControlAck,
+} from './v31ReloadControl.js';
+import {
+  isolateMemoryIsValid,
+  type IsolateMemorySample,
+} from '../../observability/isolateMemory.js';
+import type { HorseOwnPublicHistoryCacheStatus } from './ownPublicHistory.js';
+import {
+  liveHorseFeatureAuthority,
+  horseFeatureAcceptanceUsable,
+} from '../HorseFeatureAuthority.js';
+import { liveHorsePhase8GuardAuthority } from '../HorseTournamentCatastropheGuardAuthority.js';
 import { HorseOwnPublicHistoryCache } from './ownPublicHistory.js';
 import {
   CORRECTIVE_DOMAINS,
@@ -85,7 +101,7 @@ import type {
 } from './protocol.js';
 import { horseDecisionSolverStoresAreValid } from './protocol.js';
 import {
-  horseDecisionReceiptIsValid,
+  horseDecisionReceiptRefusal,
   horseGovernorSnapshotIsValid,
   horseComputeMetadataIsValid,
   horseSamplingStateIsValid,
@@ -93,7 +109,7 @@ import {
 } from './responseValidation.js';
 
 export interface WorkerLike {
-  postMessage(message: HorseDecisionWorkerRequest): void;
+  postMessage(message: HorseDecisionWorkerRequest | V31ControlRequest): void;
   on(event: 'message', listener: (message: HorseDecisionWorkerResponse) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
   on(event: 'exit', listener: (code: number) => void): this;
@@ -115,7 +131,7 @@ export interface HorseDecisionJobOptions {
 }
 
 export interface LiveHorseDecisionWorkerClientOptions {
-  ownPublicHistory?: (context: HorseObserverReadContext) => Promise<unknown>;
+  ownPublicHistory?: HorseOwnPublicHistoryLoader;
   workerFactory?: () => WorkerLike;
   /** Legacy injection retained for source compatibility; pooled reads are never fetched. */
   opponentProfiles?: (
@@ -200,6 +216,9 @@ export interface LiveHorseDecisionWorkerStatus {
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'] | null;
   governor: HorseDecisionWorkerReady['governor'] | null;
   statusSampledAt: number | null;
+  isolateMemory?: IsolateMemorySample | null;
+  isolateMemoryAgeMs?: number | null;
+  mainHistoryCache?: HorseOwnPublicHistoryCacheStatus | null;
 }
 
 export class HorseDecisionAbortedError extends Error {
@@ -595,8 +614,10 @@ export class LiveHorseDecisionWorkerClient {
 
   /** Epoch of this client's worker Phase 8 authority, once it has reported. */
   private phase8WorkerEpoch: string | null = null;
+  private phase8GuardWorkerEpoch: string | null = null;
   /** P10.3: epoch of this client's worker Phase 10 authority. */
   private phase10WorkerEpoch: string | null = null;
+  private featureWorkerEpoch: string | null = null;
   /** P11.3: epoch of this client's worker Phase 11 holders (one per worker). */
   private phase11WorkerEpoch: string | null = null;
   /** P12.3: epoch of this client's worker Phase 12 holders (one per worker). */
@@ -609,7 +630,10 @@ export class LiveHorseDecisionWorkerClient {
     { inputDigest: string; readFrameDigest: string }
   >();
 
+  private isolateMemory: IsolateMemorySample | null = null;
+  private readonly shardIndex: number | undefined;
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
+    this.shardIndex = options.shard?.index ?? 0;
     this.onFatal = options.onFatal;
     this.ownPublicHistory = options.ownPublicHistory
       ? new HorseOwnPublicHistoryCache(options.ownPublicHistory)
@@ -619,6 +643,7 @@ export class LiveHorseDecisionWorkerClient {
     // never a withdrawal and never a renewal.
     liveHorsePhase8Authority.refresh();
     liveHorsePhase10Authority.refresh();
+    liveHorseFeatureAuthority.refresh();
     for (const variant of HORSE_PHASE11_VARIANTS) liveHorsePhase11Authorities[variant].refresh();
     for (const variant of HORSE_PHASE12_VARIANTS) liveHorsePhase12Authorities[variant].refresh();
     for (const variant of HORSE_PHASE13_VARIANTS) liveHorsePhase13Authorities[variant].refresh();
@@ -723,6 +748,11 @@ export class LiveHorseDecisionWorkerClient {
         : null,
       governor: this.governor ? { ...this.governor } : null,
       statusSampledAt: this.statusSampledAt,
+      isolateMemory: this.isolateMemory ? { ...this.isolateMemory } : null,
+      isolateMemoryAgeMs: this.isolateMemory
+        ? Math.max(0, now - this.isolateMemory.sampledAtMs)
+        : null,
+      mainHistoryCache: this.ownPublicHistory?.status() ?? null,
     };
   }
 
@@ -772,6 +802,9 @@ export class LiveHorseDecisionWorkerClient {
         ? this.ownPublicHistory?.forSnapshot(context, captured.decisionTimeMs)
         : undefined,
       ownPublicHistoryState: context ? this.ownPublicHistory?.state(context) : undefined,
+      ownPublicHistoryProvenance: context
+        ? this.ownPublicHistory?.provenance(context, captured.decisionTimeMs)
+        : undefined,
     };
     return this.enqueue<FastHorseDecisionResult>(
       request,
@@ -893,6 +926,15 @@ export class LiveHorseDecisionWorkerClient {
       return Promise.reject(new Error('Horse plan commit has no available client ownership'));
     // Effect acceptance rechecks authority for a selected Phase 8 candidate.
     // Effects issued beside a withdrawn selection retire instead of applying.
+    if (!horseFeatureAcceptanceUsable(result.decision)) {
+      this.retireDecisionEffects(result, 'decision_finalized');
+      return Promise.reject(new Error('Horse plan commit refused: feature authority'));
+    }
+    const guard = result.decision.tournamentCatastropheGuard;
+    if (guard?.applied && liveHorsePhase8GuardAuthority.check(guard.authority) !== 'usable') {
+      this.retireDecisionEffects(result, 'decision_finalized');
+      return Promise.reject(new Error('Horse plan commit refused: guard authority'));
+    }
     const phase8 = result.decision.tournamentPostflop;
     if (phase8?.applied) {
       const verdict = liveHorsePhase8Authority.check(phase8.authority);
@@ -1057,6 +1099,7 @@ export class LiveHorseDecisionWorkerClient {
    * the worker to flush and stop its owned services. No abrupt normal path.
    */
   stop(): Promise<void> {
+    this.v31Control?.close(Error('v31_control_worker_stopping'));
     if (this.stopPromise) return this.stopPromise;
     if (this.phase === 'stopped') return Promise.resolve();
     if (this.phase === 'failed') {
@@ -1370,7 +1413,27 @@ export class LiveHorseDecisionWorkerClient {
     if (next) this.startExecutionClock(next);
   }
 
-  private onMessage(message: HorseDecisionWorkerResponse): void {
+  private v31Control?: V31ControlClient;
+  requestV31Control(request: V31ControlRequest): Promise<V31ControlAck> {
+    if (this.phase !== 'ready') return Promise.reject(Error('v31_control_worker_not_ready'));
+    this.v31Control ??= new V31ControlClient((message) => this.worker.postMessage(message));
+    return this.v31Control.request(request).then((ack) => {
+      // Each acknowledgment comes from this exact worker; never infer sibling readiness.
+      if (ack.ok && this.solverStores)
+        this.solverStores = {
+          ...this.solverStores,
+          postflopV31: ack.count,
+          postflopV31Dataset: ack.dataset,
+        };
+      return ack;
+    });
+  }
+  private onMessage(message: HorseDecisionWorkerResponse | V31ControlAck): void {
+    if (message?.type === 'V31_STORE_CONTROL_ACK') {
+      this.v31Control?.receive(message);
+      return;
+    }
+
     if (
       !message ||
       typeof message !== 'object' ||
@@ -1392,6 +1455,10 @@ export class LiveHorseDecisionWorkerClient {
       if (!horseGovernorSnapshotIsValid(message.governor)) {
         this.fail(new Error('live horse decision worker returned invalid governor'));
         return;
+      }
+      if (message.phase8GuardAuthority) {
+        this.phase8GuardWorkerEpoch = message.phase8GuardAuthority.epoch;
+        liveHorsePhase8GuardAuthority.observeWorker(message.phase8GuardAuthority);
       }
       this.readyAt = Date.now();
       clearTimeout(this.readyTimer);
@@ -1791,16 +1858,16 @@ export class LiveHorseDecisionWorkerClient {
         delete message.decision.jointPolicy;
         noteFire('phase13_shadow_receipt_binding_dropped');
       }
-      if (
-        !horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant, {
-          player: active.request.player,
-          gameState: active.request.gameState,
-        })
-      ) {
+      const receiptRefusal = horseDecisionReceiptRefusal(
+        message.decision,
+        active.request.gameState.gameVariant,
+        { player: active.request.player, gameState: active.request.gameState }
+      );
+      if (receiptRefusal !== null) {
         this.refuseDecision(
           active,
           message,
-          new Error('horse decision worker returned invalid policy receipt')
+          new Error(`horse decision worker returned invalid policy receipt: ${receiptRefusal}`)
         );
         return;
       }
@@ -1827,12 +1894,43 @@ export class LiveHorseDecisionWorkerClient {
         );
         return;
       }
+      const feature = message.decision.featureAuthority;
+      if (
+        feature &&
+        (!message.featureAuthority ||
+          horseJournalJson(feature.authority) !== horseJournalJson(message.featureAuthority))
+      ) {
+        this.refuseDecision(active, message, new Error('horse feature authority was not mirrored'));
+        return;
+      }
+      if (message.featureAuthority) {
+        this.featureWorkerEpoch = message.featureAuthority.epoch;
+        liveHorseFeatureAuthority.observeWorker(message.featureAuthority);
+      }
+      if (feature) feature.authority = liveHorseFeatureAuthority.stamp(feature.authority);
       // FIFO order makes worker receipts monotonic. Observe before the
       // witness so a withdrawal reported here already binds this decision.
       if (message.phase8Authority) {
         this.phase8WorkerEpoch = message.phase8Authority.epoch;
         liveHorsePhase8Authority.observeWorker(message.phase8Authority);
       }
+      const returnedGuard = message.decision.tournamentCatastropheGuard;
+      if (
+        returnedGuard &&
+        (!message.phase8GuardAuthority ||
+          horseJournalJson(returnedGuard.authority) !==
+            horseJournalJson(message.phase8GuardAuthority))
+      ) {
+        this.refuseDecision(active, message, new Error('horse guard authority was not mirrored'));
+        return;
+      }
+      if (message.phase8GuardAuthority) {
+        this.phase8GuardWorkerEpoch = message.phase8GuardAuthority.epoch;
+        liveHorsePhase8GuardAuthority.observeWorker(message.phase8GuardAuthority);
+      }
+      const guardLedger = message.decision.tournamentCatastropheGuard;
+      if (guardLedger?.authority)
+        guardLedger.authority = liveHorsePhase8GuardAuthority.stamp(guardLedger.authority);
       const phase8Ledger = message.decision.tournamentPostflop;
       if (phase8Ledger?.authority)
         phase8Ledger.authority = liveHorsePhase8Authority.stamp(phase8Ledger.authority);
@@ -1910,6 +2008,7 @@ export class LiveHorseDecisionWorkerClient {
         const variant = correctiveDomain.variant;
         const mirrors = {
           phase8: message.phase8Authority,
+          phase8_guard: message.phase8GuardAuthority,
           phase10: message.phase10Authority,
           phase11:
             message.phase11Authority?.[
@@ -1936,19 +2035,23 @@ export class LiveHorseDecisionWorkerClient {
             return;
           }
           const gate =
-            owner === 'phase8'
-              ? liveHorsePhase8Authority
-              : owner === 'phase10'
-                ? liveHorsePhase10Authority
-                : owner === 'phase11'
-                  ? liveHorsePhase11Authorities[variant as keyof typeof liveHorsePhase11Authorities]
-                  : owner === 'phase12'
-                    ? liveHorsePhase12Authorities[
-                        variant as keyof typeof liveHorsePhase12Authorities
+            owner === 'phase8_guard'
+              ? liveHorsePhase8GuardAuthority
+              : owner === 'phase8'
+                ? liveHorsePhase8Authority
+                : owner === 'phase10'
+                  ? liveHorsePhase10Authority
+                  : owner === 'phase11'
+                    ? liveHorsePhase11Authorities[
+                        variant as keyof typeof liveHorsePhase11Authorities
                       ]
-                    : liveHorsePhase13Authorities[
-                        variant as keyof typeof liveHorsePhase13Authorities
-                      ];
+                    : owner === 'phase12'
+                      ? liveHorsePhase12Authorities[
+                          variant as keyof typeof liveHorsePhase12Authorities
+                        ]
+                      : liveHorsePhase13Authorities[
+                          variant as keyof typeof liveHorsePhase13Authorities
+                        ];
           if (!gate) {
             this.refuseDecision(
               active,
@@ -2030,6 +2133,11 @@ export class LiveHorseDecisionWorkerClient {
       this.lastComputeMs = message.computeMs;
       if (this.governor) this.governor = { ...this.governor, scale: message.governorScale };
     } else if (message.type === 'STATUS_RESULT') {
+      this.isolateMemory =
+        isolateMemoryIsValid(message.isolateMemory, this.shardIndex) &&
+        message.isolateMemory.sampledAtMs <= Date.now()
+          ? { ...message.isolateMemory }
+          : null;
       this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
@@ -2054,10 +2162,13 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private fail(error: Error): void {
+    this.v31Control?.close(error);
     if (this.phase === 'failed' || this.phase === 'stopped') return;
     // Work returned by a dead worker is restarted authority from here on.
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
+    liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
+    liveHorseFeatureAuthority.forgetWorker(this.featureWorkerEpoch);
     for (const variant of HORSE_PHASE11_VARIANTS)
       liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
     for (const variant of HORSE_PHASE12_VARIANTS)
@@ -2212,8 +2323,13 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private terminateWorker(): Promise<void> {
+    // Only terminal STOPPED/startup cancellation/failure reaches this owner.
+    // Ordinary null ACK recovery keeps this same cache and exact originals.
+    this.ownPublicHistory?.dispose();
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
+    liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
+    liveHorseFeatureAuthority.forgetWorker(this.featureWorkerEpoch);
     for (const variant of HORSE_PHASE11_VARIANTS)
       liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
     for (const variant of HORSE_PHASE12_VARIANTS)

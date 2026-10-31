@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * CLUB DATA (the owner's everyday screen)
  * ============================================================================
@@ -29,7 +30,7 @@
  * lives one tap away at ./advanced.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -39,6 +40,10 @@ import { reportError } from '../../utils/errorReporter';
 import styles from './ClubDataSimplePage.module.css';
 import { useClubGameHost } from '../../hooks/useClubGameHost';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { ClubRosterService, type RosterMember } from '../../services/ClubRosterService';
+import { titleCase } from '../../utils/titleCase';
+import { playerDisplayName } from '../../utils/playerDisplayName';
+import { useFitText } from '../../components/lobby/game-cards/useFitText';
 import {
   CLUB_DATA_ZONE_LABEL,
   addCalendarDays,
@@ -90,6 +95,12 @@ export interface ClubDataRow {
 interface Snapshot {
   range: { start: string; end: string; days: number };
   summary: ClubDataSummary;
+  member_fees?: {
+    cash_fees: number;
+    tournament_fees: number;
+    total_fees: number;
+    day_basis: string;
+  } | null;
   rows: ClubDataRow[];
   generated_at?: string;
   /** 'club' for the owner, co-owner and admins; 'downline' for an agent. */
@@ -182,6 +193,7 @@ export function isSnapshot(value: unknown): value is Snapshot {
   const v = value as Record<string, unknown>;
   const s = v.summary as Record<string, unknown> | undefined;
   return (
+    (v.scope === 'club' || v.scope === 'downline') &&
     !!v.range &&
     !!s &&
     typeof s === 'object' &&
@@ -202,14 +214,27 @@ export default function ClubDataSimplePage() {
   const clubParam = params.clubId || searchParams.get('club') || '';
 
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
-  const [preset, setPreset] = useState<Preset>(1);
+  const [preset, setPreset] = usePlayerPreference<Preset>('club/ClubDataSimplePage:preset', 1);
   const [endDate, setEndDate] = useState<string>(() => clubDataToday());
   const observedDayRef = useRef(endDate);
-  const [game, setGame] = useState<GameFilter>('ALL');
-  const [stakes, setStakes] = useState<StakesFilter>('ALL');
-  const [searchInput, setSearchInput] = useState('');
+  const [game, setGame] = usePlayerPreference<GameFilter>('club/ClubDataSimplePage:game', 'ALL');
+  const [stakes, setStakes] = usePlayerPreference<StakesFilter>(
+    'club/ClubDataSimplePage:stakes',
+    'ALL'
+  );
+  const [searchInput, setSearchInput] = usePlayerPreference(
+    'club/ClubDataSimplePage:searchInput',
+    ''
+  );
   const [search, setSearch] = useState('');
+  const [playerResults, setPlayerResults] = useState<{
+    key: string;
+    items: RosterMember[];
+    failed: boolean;
+  } | null>(null);
+  const [playerSearchAccess, setPlayerSearchAccess] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshotScope, setSnapshotScope] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
@@ -223,6 +248,38 @@ export default function ClubDataSimplePage() {
   const isToday = endDate >= today;
   const startDate = addDays(endDate, -(preset - 1));
   const stakesApply = game === 'ALL' || game === 'HOLDEM' || game === 'OMAHA' || game === 'MIXED';
+  const scopeKey = JSON.stringify([
+    userId,
+    clubParam,
+    clubUuid,
+    startDate,
+    endDate,
+    game,
+    stakes,
+    search,
+  ]);
+  const identityKey = JSON.stringify([userId, clubParam, clubUuid]);
+  const playerSearchReady =
+    !isHydrating && !!userId && playerSearchAccess === identityKey && !denied;
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
+  const visibleSnapshot = !isHydrating && userId && snapshotScope === scopeKey ? snapshot : null;
+
+  // Retire private figures and pending completions before another account or
+  // club can paint. A request number alone does not cover an account switch
+  // while the new session is still hydrating, or a response after unmount.
+  useLayoutEffect(() => {
+    ++requestRef.current;
+    setSnapshot(null);
+    setSnapshotScope(null);
+    setDenied(false);
+    setError(null);
+    setUpdatedAt(null);
+    setLoading(true);
+    return () => {
+      ++requestRef.current;
+    };
+  }, [scopeKey]);
 
   useEffect(() => {
     if (isUUID(clubParam)) {
@@ -284,6 +341,8 @@ export default function ClubDataSimplePage() {
   const load = useCallback(async () => {
     if (!clubUuid || isHydrating || !userId) return;
     const mine = ++requestRef.current;
+    const requestScope = scopeKey;
+    const isCurrent = () => mine === requestRef.current && activeScopeRef.current === requestScope;
     let timer = 0;
     try {
       const read = supabase.rpc('ca_club_data_screen', {
@@ -299,10 +358,13 @@ export default function ClubDataSimplePage() {
         timer = window.setTimeout(() => reject(new Error('club_data_timeout')), REQUEST_TIMEOUT_MS);
       });
       const { data, error: rpcError } = await Promise.race([Promise.resolve(read), timeout]);
-      if (mine !== requestRef.current) return;
+      if (!isCurrent()) return;
       if (rpcError) {
         if (isAuthzError(rpcError)) {
+          setSnapshot(null);
+          setSnapshotScope(null);
           setDenied(true);
+          setPlayerSearchAccess(null);
           setError(null);
         } else {
           reportError(rpcError, 'ClubDataSimplePage.snapshot');
@@ -315,19 +377,65 @@ export default function ClubDataSimplePage() {
         return;
       }
       setSnapshot(data);
+      setPlayerSearchAccess(identityKey);
+      setSnapshotScope(requestScope);
       if (data.club_name) setClubName(data.club_name);
       setDenied(false);
       setError(null);
       setUpdatedAt(Date.now());
     } catch (err) {
-      if (mine !== requestRef.current) return;
+      if (!isCurrent()) return;
       reportError(err, 'ClubDataSimplePage.snapshot');
       setError('Club Data Could Not Be Read. Showing The Last Good Figures.');
     } finally {
       window.clearTimeout(timer);
-      if (mine === requestRef.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [clubUuid, isHydrating, userId, startDate, endDate, game, stakes, stakesApply, search]);
+  }, [
+    clubUuid,
+    isHydrating,
+    userId,
+    startDate,
+    endDate,
+    game,
+    stakes,
+    stakesApply,
+    search,
+    scopeKey,
+    identityKey,
+  ]);
+
+  // Server roster permissions remain authoritative. Bind results to the exact
+  // viewer, club and query, and retire them before a changed identity paints.
+  useEffect(() => {
+    if (!clubUuid || !playerSearchReady || !search) return;
+    const controller = new AbortController();
+    let dead = false;
+    const key = scopeKey;
+    void ClubRosterService.getDataPlayerMatches(clubUuid, {
+      search,
+      signal: controller.signal,
+    })
+      .then((page) => {
+        if (!dead && activeScopeRef.current === key) {
+          setPlayerResults({
+            key,
+            items: page.items.filter((p) => p.can_view_financials),
+            failed: false,
+          });
+        }
+      })
+      .catch((err) => {
+        if (!dead && activeScopeRef.current === key) {
+          reportError(err, 'ClubDataSimplePage.player_search');
+          setPlayerResults({ key, items: [], failed: true });
+        }
+      });
+    return () => {
+      dead = true;
+      controller.abort();
+    };
+  }, [clubUuid, playerSearchReady, search, scopeKey]);
 
   // Read now, then keep reading while the screen is in view.
   useEffect(() => {
@@ -379,10 +487,16 @@ export default function ClubDataSimplePage() {
     setEndDate(next > today ? today : next);
   };
 
-  const summary = snapshot?.summary ?? null;
-  const isDownline = snapshot?.scope === 'downline';
-  const factsFrom = snapshot?.facts_from ?? null;
-  const rows = useMemo(() => snapshot?.rows ?? [], [snapshot]);
+  const summary = visibleSnapshot?.summary ?? null;
+  const isDownline = visibleSnapshot?.scope === 'downline';
+  const feeText = isDownline
+    ? formatMoney(visibleSnapshot?.member_fees?.total_fees)
+    : summary
+      ? formatMoney(summary.fee)
+      : '-';
+  const feeRef = useFitText<HTMLElement>(feeText, 1, 0.3);
+  const factsFrom = visibleSnapshot?.facts_from ?? null;
+  const rows = useMemo(() => visibleSnapshot?.rows ?? [], [visibleSnapshot]);
   const liveCount = summary?.live_games ?? rows.filter((r) => r.live).length;
   // A route segment, never a `??` inside the template: the reachability law
   // reads everything after a `?` as a query string.
@@ -409,10 +523,14 @@ export default function ClubDataSimplePage() {
         onBack={() => navigate(-1)}
         clubName={clubName}
         /* The full report is the whole club's; an agent's view is his own. */
-        onAdvanced={isDownline ? undefined : () => navigate(`/clubs/${clubKey}/data/advanced`)}
+        onAdvanced={
+          visibleSnapshot?.scope === 'club'
+            ? () => navigate(`/clubs/${clubKey}/data/advanced`)
+            : undefined
+        }
       />
 
-      {snapshot?.reporting_scope === 'union' && (
+      {visibleSnapshot?.reporting_scope === 'union' && (
         <div className={styles.agentScopeBanner}>All Member Clubs And Union Account</div>
       )}
       {isDownline && <div className={styles.agentScopeBanner}>You And Your Downline</div>}
@@ -489,16 +607,37 @@ export default function ClubDataSimplePage() {
           </dd>
         </div>
         <div className={styles.stat}>
-          <dt className={styles.statLabel}>Fee</dt>
+          <dt className={styles.statLabel}>
+            {visibleSnapshot?.scope === 'downline' ? 'My Fees Earned' : 'Fee'}
+          </dt>
           <dd
             className={styles.statValue}
-            title={summary ? formatMoney(summary.fee) : undefined}
-            aria-label={summary ? formatMoney(summary.fee) : undefined}
+            ref={feeRef}
+            title={
+              visibleSnapshot?.scope === 'downline'
+                ? formatMoney(visibleSnapshot.member_fees?.total_fees)
+                : summary
+                  ? formatMoney(summary.fee)
+                  : undefined
+            }
+            aria-label={
+              visibleSnapshot?.scope === 'downline'
+                ? formatMoney(visibleSnapshot.member_fees?.total_fees)
+                : summary
+                  ? formatMoney(summary.fee)
+                  : undefined
+            }
           >
-            {summary ? formatTotal(summary.fee) : '-'}
+            {feeText}
           </dd>
         </div>
       </dl>
+      {visibleSnapshot?.scope === 'downline' && (
+        <p className={styles.liveLine}>
+          Your Fees After Shares And Adjustments, Across All Games For These UTC Dates. Game Rows
+          Show Downline Fees Generated.
+        </p>
+      )}
       {summary &&
         summary.running_mtt_entries !== undefined &&
         summary.running_mtt_entries !== null && (
@@ -528,13 +667,13 @@ export default function ClubDataSimplePage() {
           </>
         )}
       </div>
-      {snapshot?.accounting_basis === 'chicago_net_money_flow' && (
+      {visibleSnapshot?.accounting_basis === 'chicago_net_money_flow' && (
         <p className={styles.liveLine}>
           Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only. Unfinished
           MTT Entries Are Buy-Ins For MTTs Still Running Or Not Yet Started.
         </p>
       )}
-      {snapshot?.accounting_basis === 'utc_net_money_flow' && (
+      {visibleSnapshot?.accounting_basis === 'utc_net_money_flow' && (
         <p className={styles.liveLine}>
           Net Entries And Payouts In UTC. Unfinished Event Entries Included.
         </p>
@@ -548,14 +687,49 @@ export default function ClubDataSimplePage() {
           type="search"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search Game, Creator Or ID"
-          aria-label="Search Games"
+          placeholder="Search Player, Game, Creator Or ID"
+          aria-label="Search Players And Games"
         />
         <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.searchIcon}>
           <circle cx="10.5" cy="10.5" r="6.5" />
           <path d="M15.5 15.5 L21 21" />
         </svg>
       </label>
+
+      {playerSearchReady &&
+        search &&
+        searchInput.trim() === search &&
+        playerResults?.key === scopeKey && (
+          <section aria-label="Matching Players">
+            {playerResults.failed ? (
+              <p role="status" className={styles.liveLine}>
+                Player Search Could Not Be Read.
+              </p>
+            ) : (
+              <ul className={styles.list}>
+                {playerResults.items.map((player) => (
+                  <li key={player.user_id}>
+                    <button
+                      type="button"
+                      className={`${styles.row} ${styles.playerResult}`}
+                      onClick={() =>
+                        navigate(
+                          `/clubs/${player.management_club_id || clubUuid}/members/${player.user_id}`
+                        )
+                      }
+                    >
+                      <span className={styles.rowName}>{titleCase(playerDisplayName(player))}</span>
+                      <span className={styles.rowFee}>View Player Data</span>
+                    </button>
+                  </li>
+                ))}
+                {playerResults.items.length === 0 && (
+                  <li className={styles.more}>No Matching Players In Your Data Scope.</li>
+                )}
+              </ul>
+            )}
+          </section>
+        )}
 
       <div className={styles.tabs} role="group" aria-label="Game Type">
         {GAME_FILTERS.map((f) => (

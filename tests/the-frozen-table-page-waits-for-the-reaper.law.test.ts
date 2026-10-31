@@ -8,7 +8,7 @@
  *   - a table enters poker_stalled_tables at 120s without progress
  *     (GameServer: `t.msSinceProgress > 120_000`);
  *   - the zombie reaper condemns and rebuilds it at 180s
- *     (GameServer: `engine.msSinceProgress() > 180_000`);
+ *     (GameServer: `zombieProgressAge(engine) > 180_000`);
  *   - the alert fires at 120s + its `for:`.
  *
  * With `for: 1m` it fired at 180s, the reaper's own moment. On 2026-10-15
@@ -41,7 +41,7 @@ describe('the frozen-table page waits for the reaper', () => {
     rules
   );
   const stall = /t\.msSinceProgress > (\d+)_000\)/.exec(gameServer);
-  const reaper = /engine\.msSinceProgress\(\) > (\d+)_000\)/.exec(gameServer);
+  const reaper = /zombieProgressAge\(engine\) > (\d+)_000\)/.exec(gameServer);
 
   it('reads the rule, the stall line and the reaper line', () => {
     expect(block, 'PokerTablesFrozen rule').not.toBeNull();

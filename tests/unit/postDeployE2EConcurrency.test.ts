@@ -32,7 +32,7 @@ describe('post-deploy E2E concurrency', () => {
     expect(
       readFileSync(resolve(__dirname, '../../scripts/ci/read-publisher-jobs.mjs'), 'utf8')
     ).toContain('jobs?filter=latest&per_page=30&page=${page}');
-    expect(workflow).toContain("entry?.name === 'publish-to-origin'");
+    expect(workflow).toContain("publisherJob(entry, 'publish-to-origin')");
     expect(workflow).toContain(
       "entry?.name === 'Stand down if the origin already serves a newer bundle'"
     );
@@ -44,7 +44,8 @@ describe('post-deploy E2E concurrency', () => {
     expect(workflow).toContain("proofs[0].conclusion === 'success'");
     expect(workflow).toContain("publishes[0].conclusion === 'skipped'");
     expect(workflow).toContain("proofs[0].conclusion === 'skipped'");
-    expect(workflow).not.toContain('SOURCE_CONCLUSION:');
+    expect(workflow).toContain("process.env.SOURCE_CONCLUSION === 'cancelled'");
+    expect(workflow).toContain('const cancelledBeforeTransaction');
     expect(workflow).not.toContain('should_run=false');
     expect(workflow).toContain(
       'The source run neither proved a Hetzner web publish nor completed a safe forward stand-down.'
@@ -324,27 +325,33 @@ describe('post-deploy E2E concurrency', () => {
   });
 });
 
-describe('explicit passive multirun queue ownership', () => {
+describe('explicit passive observation queue ownership', () => {
   const liveJob = workflow
     .slice(workflow.indexOf('  live-table-e2e:'))
     .split(/\n(?= {2}[a-z][\w-]*:)/)[0];
   const rawGroup = liveJob.match(/^\s+group: (.+)$/m)![1].trim();
-  function group(eventName: string, optIn?: unknown): string {
+  function group(eventName: string, optIn?: unknown, horseOptIn?: unknown): string {
     if (!rawGroup.startsWith('${{')) return rawGroup;
     const expression = rawGroup
       .slice(3, -2)
       .replaceAll('github.event.client_payload.mobile_multirun', 'optIn')
-      .replaceAll('github.event_name', 'eventName')
-      .replaceAll('toJSON(', 'JSON.stringify(');
-    return Function('eventName', 'optIn', `return (${expression});`)(eventName, optIn);
+      .replaceAll('github.event.client_payload.horse_social', 'horseOptIn')
+      .replaceAll('github.event_name', 'eventName');
+    return Function(
+      'eventName',
+      'optIn',
+      'horseOptIn',
+      'toJSON',
+      `return (${expression});`
+    )(eventName, optIn, horseOptIn, (value: unknown) => JSON.stringify(value ?? null));
   }
 
   it('ordinary publication replacement cannot cancel a requested passive observation', () => {
     // GitHub keeps one running and one newest pending job PER GROUP.
     const slots = new Map<string, { running: string; pending?: string }>();
     const cancelled: string[] = [];
-    function enqueue(name: string, event: string, flag?: unknown) {
-      const key = group(event, flag);
+    function enqueue(name: string, event: string, flag?: unknown, horseFlag?: unknown) {
+      const key = group(event, flag, horseFlag);
       const slot = slots.get(key);
       if (!slot) slots.set(key, { running: name });
       else {
@@ -354,9 +361,28 @@ describe('explicit passive multirun queue ownership', () => {
     }
     enqueue('ordinary-running', 'workflow_run');
     enqueue('explicit-multirun', 'repository_dispatch', true);
+    enqueue('explicit-horse-social', 'repository_dispatch', undefined, true);
     enqueue('new-publication', 'workflow_run');
     expect(cancelled).not.toContain('explicit-multirun');
+    expect(cancelled).not.toContain('explicit-horse-social');
     expect([...slots.values()].some((slot) => slot.running === 'explicit-multirun')).toBe(true);
+    expect([...slots.values()].some((slot) => slot.running === 'explicit-horse-social')).toBe(true);
+  });
+
+  it('isolates only a literal non-mixed horse observation in its static queue', () => {
+    expect(group('repository_dispatch', undefined, true)).toBe(
+      'post-deploy-live-table-horse-social-production'
+    );
+    expect(group('repository_dispatch', undefined, true)).not.toBe(
+      group('repository_dispatch', true)
+    );
+    for (const flag of [undefined, false, 'true', 'false', 1]) {
+      expect(group('repository_dispatch', undefined, flag)).toBe(
+        'post-deploy-live-table-production'
+      );
+    }
+    expect(group('workflow_run', undefined, true)).toBe('post-deploy-live-table-production');
+    expect(group('repository_dispatch', false, true)).toBe('post-deploy-live-table-production');
   });
 
   it('serializes explicit observations in one static group and preserves running work', () => {

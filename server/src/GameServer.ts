@@ -1,3 +1,15 @@
+import { mttPrizeShare } from './services/mttHorseArrivalPlan.js';
+import {
+  completeF06Custody,
+  createCompletedF06DiagnosticWindow,
+  appendCompletedF06DiagnosticWindow,
+  type CompletedF06DiagnosticWindow,
+  inspectCompletedF06Custody,
+  inspectCompletedF06OmittedHistory,
+  inspectCompletedF06DiagnosticWindow,
+  COMPLETED_F06_DIAGNOSTIC_LIMIT,
+  type CompletedF06Custody,
+} from './tournament/completedF06Custody.js';
 import { LightningObserverProjection } from './lightning/LightningObserverProjection.js';
 import { nearbyMaintenanceWindows } from './maintenance/maintenanceSchedule.js';
 import { horseRiverValueAlarmSnapshot } from './engine/HorseRiverValueAudit.js';
@@ -247,6 +259,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // the database terminal authority to settle completed play; operator-managed
 // cancellation enters through the authenticated database command authority.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
+import { readCompletingBoard } from './tournament/completingBoard.js';
 import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import {
@@ -265,7 +278,12 @@ import {
   type TournamentManagerWakeDatabaseState,
   type TournamentManagerWakeReceipt,
 } from './tournament/TournamentManagerWakeProtocol.js';
-import { isMaintenanceFrozen } from './maintenance/freezeState.js';
+import { isMaintenanceFrozen, setWeeklyPayoutFrozen } from './maintenance/freezeState.js';
+import { WeeklyPayoutPause } from './maintenance/WeeklyPayoutPause.js';
+import {
+  createWeeklyPayoutPauseStore,
+  type WeeklyPayoutLeaseClaim,
+} from './maintenance/weeklyPayoutPauseStore.js';
 import {
   raiseEngineAlert,
   resolveEngineAlert,
@@ -283,7 +301,7 @@ import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { BootPhaseTimeline } from './engine/bootPhases.js';
 import { decisionPipelineDistress } from './decisionPipelinePressure.js';
-import { isFleetWideStall } from './fleetWideZombieVerdict.js';
+import { isFleetWideStall, zombieProgressAge } from './fleetWideZombieVerdict.js';
 import {
   RunningResumeCooldowns,
   awaitsFirstDeal,
@@ -706,10 +724,8 @@ export class GameServer {
     string,
     { manager: TournamentManager; run: () => Promise<void> }
   >();
-  private completedF06TournamentCustody = new Map<
-    string,
-    Set<Readonly<{ original: DrainedF06Custody; terminalProof: unknown }>>
-  >();
+  private completedF06TournamentCustody = new Map<string, Set<CompletedF06Custody>>();
+  private completedF06DiagnosticWindows = new Map<string, Readonly<CompletedF06DiagnosticWindow>>();
   private tournamentDiagnosticIndexFailures = 0;
   private tournamentReleaseDiagnosticFailures = 0;
 
@@ -1024,6 +1040,15 @@ export class GameServer {
               proof.proofDeadlineMonotonicMs
             )
           ) {
+            // Preserve the first local refusal before fencing changes state.
+            const failures = (this.tournamentLeaseRenewalFailures ??= new WeakMap());
+            if (!failures.has(captured.manager))
+              failures.set(
+                captured.manager,
+                captured.manager.getTournamentLeaseRenewalRefusal?.() ?? {
+                  reason: 'answered_renewal_refused',
+                }
+              );
             lostManagers.set(proof.tournamentId, captured.manager);
           }
         }
@@ -1056,11 +1081,14 @@ export class GameServer {
                 new Error(
                   this.tournamentLeasesRefutedByDatabase?.has(manager)
                     ? `Tournament ${id} no longer proves its current lease generation: the database named another holder, a stale row or none`
-                    : `Tournament ${id} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
+                    : this.tournamentLeaseRenewalFailures?.has(manager)
+                      ? `Tournament ${id} heartbeat answered, but this manager or one of its dealers refused the renewal`
+                      : `Tournament ${id} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
                 ),
                 'GameServer.tournament_lease_lost',
                 {
                   tournamentId: id,
+                  renewalFailure: this.tournamentLeaseRenewalFailures?.get(manager) ?? null,
                   verdict: this.tournamentLeasesRefutedByDatabase?.has(manager)
                     ? 'refuted'
                     : 'unproven',
@@ -1367,11 +1395,14 @@ export class GameServer {
             new Error(
               this.tournamentLeasesRefutedByDatabase?.has(manager)
                 ? `Tournament ${tournamentId} no longer proves its current lease generation: the database named another holder, a stale row or none`
-                : `Tournament ${tournamentId} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
+                : this.tournamentLeaseRenewalFailures?.has(manager)
+                  ? `Tournament ${tournamentId} heartbeat answered, but this manager or one of its dealers refused the renewal`
+                  : `Tournament ${tournamentId} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
             ),
             'GameServer.tournament_lease_lost',
             {
               tournamentId,
+              renewalFailure: this.tournamentLeaseRenewalFailures?.get(manager) ?? null,
               verdict: this.tournamentLeasesRefutedByDatabase?.has(manager)
                 ? 'refuted'
                 : 'unproven',
@@ -1738,6 +1769,10 @@ export class GameServer {
   private readonly tournamentManagersJudgedLost = new WeakSet<TournamentManager>();
   /** Managers a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
   private tournamentLeasesRefutedByDatabase?: WeakSet<TournamentManager>;
+  private tournamentLeaseRenewalFailures?: WeakMap<
+    TournamentManager,
+    { reason: string; tableId?: string }
+  >;
   /** Cash engines a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
   private cashLeasesRefutedByDatabase?: WeakSet<ServerTableEngine>;
   /** Discovery-launched resume admissions not yet settled, by launch time. */
@@ -2042,6 +2077,7 @@ export class GameServer {
     if (this.tableEngines.get(tableId) !== engine) return;
 
     this.tableEngines.delete(tableId);
+    this.releaseWeeklyPayout(engine);
     tableStateHub.dropTable(tableId);
     if (!this.running) return;
 
@@ -2102,6 +2138,8 @@ export class GameServer {
   /** Where boot time goes, phase by phase, published on /health as bootPhases. */
   private readonly bootTimeline = new BootPhaseTimeline();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
+  /** Cursor for the existing bounded never-dealt candidate pass; no new timer. */
+  private neverDealtCandidateCursor: string | null = null;
   /**
    * When each installed manager was admitted. The never-dealt sweep measures a
    * manager's idleness from here, not from the event's started_at: an event
@@ -2110,6 +2148,8 @@ export class GameServer {
    * reveal hold, before its first deal).
    */
   private tournamentManagerAdmittedAtMs: WeakMap<TournamentManager, number> = new WeakMap();
+  /** Startup and every restored hold must finish before a direct dealer handoff. */
+  private tournamentManagersReadyForCapacityWake = new WeakSet<TournamentManager>();
   /** Re-entrancy guard for the event-driven managerless bounty-outbox drain. */
   private bountyRecoverySweepInFlight = false;
   /** A committed outbox event arrived while the current bounded drain was active. */
@@ -2153,6 +2193,95 @@ export class GameServer {
   /** Compare-and-delete: an old async continuation never owns a new slot. */
   private ownsTournamentManager(tournamentId: string, manager: TournamentManager): boolean {
     return this.tournamentEngines.get(tournamentId) === manager;
+  }
+
+  /** Terminal receipt adoption owns this synchronous archive transition. Unknown
+   * custody remains in the original Set; only authentic physical seals enter
+   * the bounded historical window. Never drop the drained owner on refusal. */
+  private archiveCompletedF06Custody(original: DrainedF06Custody, terminalProof: unknown): void {
+    const tournamentId = original.tournamentId;
+    const entry = completeF06Custody(original, terminalProof);
+    this.completedF06TournamentCustody ??= new Map();
+    this.completedF06DiagnosticWindows ??= new Map();
+    if (
+      !(this.completedF06TournamentCustody instanceof Map) ||
+      !(this.completedF06DiagnosticWindows instanceof Map)
+    )
+      throw Error('completed custody archive unavailable');
+    if (entry.status === 'sealed') {
+      const prior =
+        this.completedF06DiagnosticWindows.get(tournamentId) ??
+        createCompletedF06DiagnosticWindow(tournamentId);
+      const next = appendCompletedF06DiagnosticWindow(prior, entry);
+      this.completedF06DiagnosticWindows.set(tournamentId, next);
+    } else {
+      const unresolved = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
+      unresolved.add(entry);
+      this.completedF06TournamentCustody.set(tournamentId, unresolved);
+    }
+  }
+
+  /** The verified terminal cleanup caller owns this exact manager. Retire only
+   * detached historical data; unresolved or mismatched custody is untouched. */
+  retireCompletedF06CustodyMetadata(
+    tournamentId: string,
+    manager: unknown,
+    receiptTournamentId: string
+  ): number {
+    if (receiptTournamentId !== tournamentId || !(this.tournamentEngines instanceof Map)) return 0;
+    const current = this.tournamentEngines.get(tournamentId);
+    if (
+      !current ||
+      current !== manager ||
+      current.isRunning() ||
+      current.getTableIds().length > 0 ||
+      current.isF06RecoveryOwner()
+    )
+      return 0;
+    for (const active of [
+      this.drainedF06TournamentCustody,
+      this.durableMixedF06Custody,
+      this.mixedF06AdmissionContinuations,
+    ])
+      if (!(active instanceof Map) || active.has(tournamentId)) return 0;
+    if (!(this.completedF06TournamentCustody instanceof Map)) return 0;
+    if (!(this.completedF06DiagnosticWindows instanceof Map)) return 0;
+    const windowValue = this.completedF06DiagnosticWindows.get(tournamentId);
+    const window = windowValue
+      ? this.inspectCompletedF06DiagnosticWindow(windowValue, tournamentId)
+      : null;
+    if (windowValue && (!window || window.unsealed.length > 0)) return 0;
+    const entries = this.completedF06TournamentCustody.get(tournamentId);
+    if (entries !== undefined && !(entries instanceof Set)) return 0;
+    let retired = 0;
+    for (const entry of entries ?? []) {
+      try {
+        if (this.inspectCompletedF06Custody(entry)?.tournamentId !== tournamentId) continue;
+      } catch {
+        continue; /* unreadable evidence retains custody */
+      }
+      entries!.delete(entry);
+      retired++;
+    }
+    if (entries?.size === 0) this.completedF06TournamentCustody.delete(tournamentId);
+    if (window) {
+      retired += window.sealed.length + (window.omitted?.count ?? 0);
+      this.completedF06DiagnosticWindows.delete(tournamentId);
+    }
+    return retired;
+  }
+
+  inspectCompletedF06DiagnosticWindow(value: unknown, tournamentId: string) {
+    return inspectCompletedF06DiagnosticWindow(value, tournamentId);
+  }
+
+  inspectCompletedF06OmittedHistory(value: unknown, tournamentId: string) {
+    return inspectCompletedF06OmittedHistory(value, tournamentId);
+  }
+
+  /** Read the module-issued immutable terminal seal, never JSON supplied by a caller. */
+  inspectCompletedF06Custody(entry: unknown) {
+    return inspectCompletedF06Custody(entry);
   }
 
   /** Exact bounded object capture; no getStatus, authority callbacks or external reads. */
@@ -2208,9 +2337,23 @@ export class GameServer {
     }
     const custodyIndexAvailable =
       this.drainedF06TournamentCustody instanceof Map &&
-      this.completedF06TournamentCustody instanceof Map;
+      this.completedF06TournamentCustody instanceof Map &&
+      this.completedF06DiagnosticWindows instanceof Map;
     const activeCustody = this.drainedF06TournamentCustody?.get(tournamentId);
     const archivedCustody = this.completedF06TournamentCustody?.get(tournamentId);
+    const windowValue = this.completedF06DiagnosticWindows?.get(tournamentId);
+    const window = windowValue
+      ? this.inspectCompletedF06DiagnosticWindow(windowValue, tournamentId)
+      : null;
+    const windowAvailable = !windowValue || !!window;
+    const archivedEntryCount =
+      (archivedCustody?.size ?? 0) + (window?.unsealed.length ?? 0) + (window?.sealed.length ?? 0);
+    function* archivedEntries(): IterableIterator<CompletedF06Custody> {
+      yield* archivedCustody ?? [];
+      yield* window?.unsealed ?? [];
+      yield* window?.sealed ?? [];
+    }
+    const omittedHistoryCount = windowAvailable ? (window?.omitted?.count ?? 0) : null;
     const custodyOriginals: unknown[] = [];
     let archivedCustodyScanned = 0;
     const addCustody = (packet: DrainedF06Custody, role: string): void => {
@@ -2245,15 +2388,54 @@ export class GameServer {
       );
     };
     if (activeCustody) addCustody(activeCustody, 'drained-custody');
-    if (archivedCustody) {
-      for (const entry of archivedCustody) {
-        if (archivedCustodyScanned >= 32) break;
+    if (archivedEntryCount > 0) {
+      const iterator = archivedEntries();
+      for (let i = 0; i < COMPLETED_F06_DIAGNOSTIC_LIMIT; i++) {
+        const next = iterator.next();
+        if (next.done) break;
+        const entry = next.value;
         archivedCustodyScanned++;
-        addCustody(entry.original, 'completed-custody');
+        if (entry.status !== 'sealed') {
+          addCustody(entry.original, 'completed-custody');
+          continue;
+        }
+        const seal = this.inspectCompletedF06Custody(entry);
+        if (!seal) {
+          unavailableOwners++;
+          retirementIndexComplete = false;
+          continue;
+        }
+        add(seal.managerDiagnostic as Snapshot, 'completed-custody-historical');
+        const selected = boundedSelection.tableIds
+          ? seal.originals.filter((original) =>
+              boundedSelection.tableIds?.includes(original.tableId)
+            )
+          : seal.originals.slice(0, 8);
+        custodyOriginals.push(
+          Object.freeze({
+            role: 'completed-custody-historical',
+            historical: true,
+            capturedAtMs: seal.capturedAtMs,
+            originGeneration: seal.originGeneration,
+            originalsCount: seal.originals.length,
+            originalsReturned: selected.length,
+            originalsOmitted: seal.originals.length - selected.length,
+            originalsUnavailable: 0,
+            originals: Object.freeze(
+              selected.map((original) =>
+                Object.freeze({
+                  tableId: original.tableId,
+                  availability: 'observed',
+                  engine: original.diagnostic,
+                })
+              )
+            ),
+          })
+        );
       }
     }
     retirementIndexComplete &&=
-      custodyIndexAvailable && (archivedCustody?.size ?? 0) <= archivedCustodyScanned;
+      custodyIndexAvailable && windowAvailable && archivedEntryCount <= archivedCustodyScanned;
     for (const entry of scheduler.entries) {
       if (entry.owner) add(entry.owner, 'scheduler');
       else if (entry.managerInstanceId) unavailableOwners++;
@@ -2293,11 +2475,16 @@ export class GameServer {
         : ('unavailable' as const),
       retirementOperationsCount: retirementIndexComplete ? (retiring?.size ?? 0) : null,
       custody: Object.freeze({
-        coverage: custodyIndexAvailable ? 'available' : 'unavailable',
+        coverage: custodyIndexAvailable && windowAvailable ? 'available' : 'unavailable',
         active: !!activeCustody,
-        archivedCount: custodyIndexAvailable ? (archivedCustody?.size ?? 0) : null,
+        archivedCount: custodyIndexAvailable && windowAvailable ? archivedEntryCount : null,
+        archivedHistoryOmittedCount: omittedHistoryCount,
+        archivedHistoryTruncated: omittedHistoryCount === null ? null : omittedHistoryCount > 0,
         archivedScanned: archivedCustodyScanned,
-        archivedTruncated: (archivedCustody?.size ?? 0) > archivedCustodyScanned,
+        archivedTruncated:
+          omittedHistoryCount === null
+            ? null
+            : omittedHistoryCount > 0 || archivedEntryCount > archivedCustodyScanned,
         packets: Object.freeze(custodyOriginals),
         missingMeans: 'unknown',
       }),
@@ -2859,7 +3046,11 @@ export class GameServer {
     manager: TournamentManager,
     errorContext: string
   ): void {
-    if (manager.isF06RecoveryOwner?.() || this.tournamentManagerRetirementOperations.has(manager))
+    if (
+      manager.isF06RecoveryOwner?.() ||
+      manager.retainsTournamentAbortBoundary() ||
+      this.tournamentManagerRetirementOperations.has(manager)
+    )
       return;
     /* A QUARANTINED STOP IS RETRIED ON ITS OWN SCHEDULE (2026-09-26).
        Once a stop has failed, the quarantine owns when it is tried again:
@@ -2887,15 +3078,25 @@ export class GameServer {
     );
   }
 
-  private async awaitTournamentManagerLeaseRelease(tournamentId: string): Promise<void> {
+  private async awaitTournamentManagerLeaseRelease(
+    tournamentId: string,
+    expectedGeneration?: string
+  ): Promise<void> {
     for (;;) {
       const release = this.tournamentManagerLeaseReleaseOperations.get(tournamentId);
       if (release) {
+        if (
+          expectedGeneration &&
+          this.tournamentManagerPendingLeaseReleases.get(tournamentId) !== expectedGeneration
+        )
+          throw new Error('tournament_abort_pending_release_generation_unproven');
         await release;
         continue;
       }
       const leaseGeneration = this.tournamentManagerPendingLeaseReleases.get(tournamentId);
       if (!leaseGeneration) return;
+      if (expectedGeneration && leaseGeneration !== expectedGeneration)
+        throw new Error('tournament_abort_pending_release_generation_mismatch');
       const outcome = await releaseTournaments([{ tournamentId, leaseGeneration }]);
       if (outcome.status !== 'confirmed') {
         throw new Error(
@@ -3210,13 +3411,10 @@ export class GameServer {
         }
         if (durableMixed || packet?.mixed) mixedTerminalProof = state.terminalProof;
         if (packet && !recoveryRequired) {
-          // Terminal dispositions are monotonic. Retain the original objects,
-          // but stop applying their old mutable roster proof before dealers can
-          // start: a later startup error must not strand a newly accepted hand.
-          this.completedF06TournamentCustody ??= new Map();
-          const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
-          this.completedF06TournamentCustody.set(tournamentId, archive);
-          archive.add(Object.freeze({ original: packet, terminalProof: state.terminalProof }));
+          // Terminal dispositions are monotonic. Preserve their evidence,
+          // detaching original object graphs only when physical release is
+          // proven. A later startup failure must not reapply the old roster.
+          this.archiveCompletedF06Custody(packet, state.terminalProof);
           this.drainedF06TournamentCustody.delete(tournamentId);
         }
       } catch (error) {
@@ -3270,9 +3468,9 @@ export class GameServer {
           new Map(),
           current
         );
-        // This is terminal receipt adoption. The original objects and their
-        // reserved flags remain unchanged in custody; their exact SQL outcomes
-        // now account for every retained preparation in the native gate.
+        // This is terminal receipt adoption. Preserve exact SQL outcomes;
+        // a physical-release seal may detach quiescent original graphs while
+        // any unproven owner remains in exact, unsealed object custody.
         this.terminalMixedF06Admissions ??= new Map();
         this.terminalMixedF06Admissions.set(transfer.transferId, mixedTerminalProof);
         this.mixedF06AdmissionContinuations ??= new Map();
@@ -3289,11 +3487,8 @@ export class GameServer {
             return; // Unknown originals retain this admitted process and every reservation.
           }
           reservation.complete();
-          this.completedF06TournamentCustody ??= new Map();
           if (packet) {
-            const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
-            archive.add(Object.freeze({ original: packet, terminalProof: completion }));
-            this.completedF06TournamentCustody.set(tournamentId, archive);
+            this.archiveCompletedF06Custody(packet, completion);
             this.drainedF06TournamentCustody.delete(tournamentId);
           }
           this.durableMixedF06Custody.delete(tournamentId);
@@ -3301,6 +3496,7 @@ export class GameServer {
           manager.finishMixedF06RecoveryAdmission(completion);
           this.mixedF06AdmissionContinuations.delete(tournamentId);
           try {
+            this.tournamentManagersReadyForCapacityWake?.delete(manager);
             await manager.resume();
             await this.finishTournamentManagerAdmission(tournamentId, manager, generation);
           } catch (error) {
@@ -3319,6 +3515,7 @@ export class GameServer {
         await continueAdmission();
         return;
       }
+      this.tournamentManagersReadyForCapacityWake?.delete(manager);
       if (mode === 'resume') await manager.resume();
       else if (mode === 'stage_resume') await manager.resumeStage();
       else await manager.start();
@@ -3377,6 +3574,11 @@ export class GameServer {
     // Admitted and running: the streak's stability clock starts here, not at
     // the lease grant that cleared the attempt count.
     this.tournamentManagerRestartBackoff.recordReady(tournamentId);
+    // running=true precedes start/resume I/O. This exact-owner edge follows
+    // both that lifecycle and the post-start synchronized-break hold. An
+    // earlier wake remains durable and is redelivered by the drain below;
+    // never await the enclosing admission operation from inside that drain.
+    (this.tournamentManagersReadyForCapacityWake ??= new WeakSet()).add(manager);
     await this.drainTournamentManagerWakes(tournamentId);
   }
   /**
@@ -3806,7 +4008,198 @@ export class GameServer {
     return this.maintenanceBreak.requestRecoveryWindow(announcedAt, cause);
   }
 
-  private readonly maintenanceBreak = new MaintenanceBreak({
+  private weeklyPayoutChannel: ReturnType<typeof supabase.channel> | null = null;
+  private weeklyPayoutHeldToken: string | null = null;
+  private weeklyPayoutRead: Promise<void> | null = null;
+  private weeklyPayoutReadPending = false;
+  private weeklyPayoutGeneration = 0;
+  /**
+   * Weekly-payout boundary subscriptions, keyed by the engine that owns them.
+   *
+   * This must never be a strong registry. Until 2026-10-29 it was a `Map`,
+   * so every engine generation ever adopted (each tournament table, each
+   * replacement after lease loss, each cash wake or zombie rebuild) stayed
+   * reachable from GameServer for the life of the process together with its
+   * hand controller, telemetry rings and, through its owner callbacks, its
+   * whole TournamentManager. Nothing removed an entry before shutdown, and the
+   * main isolate exhausted its V8 heap twice in one day on the first image to
+   * carry it. A WeakMap keeps the subscription for exactly as long as the
+   * engine is alive somewhere else; `releaseWeeklyPayout` drops it the moment
+   * an engine leaves the process registry.
+   */
+  private readonly weeklyPayoutTableListeners = new WeakMap<ServerTableEngine, () => void>();
+  private readonly weeklyPayoutStore = createWeeklyPayoutPauseStore(INSTANCE_ID, () => {
+    const claims: WeeklyPayoutLeaseClaim[] = [];
+    for (const [tableId, engine] of this.enginesIncludingMixedF06Custody()) {
+      if (!engine.isRunning()) continue;
+      const authority = engine.getEngineLeaseAuthority();
+      if (!authority?.verified || !authority.generation)
+        throw new Error('weekly_payout_table_lease_unread');
+      if (authority.scope === 'cash')
+        claims.push({
+          table_id: tableId,
+          scope: 'cash',
+          lease_generation: authority.generation,
+          tournament_id: null,
+        });
+    }
+    for (const [tournamentId, manager] of this.tournamentEngines) {
+      const generation = manager.getTournamentLeaseGeneration();
+      if (!generation) throw new Error('weekly_payout_tournament_lease_unread');
+      claims.push({
+        table_id: null,
+        scope: 'tournament',
+        lease_generation: generation,
+        tournament_id: tournamentId,
+      });
+    }
+    return claims.sort((a, b) =>
+      (a.scope + String(a.table_id ?? a.tournament_id)).localeCompare(
+        b.scope + String(b.table_id ?? b.tournament_id)
+      )
+    );
+  });
+  private readonly weeklyPayoutPause: WeeklyPayoutPause = new WeeklyPayoutPause({
+    engines: () => [...this.enginesIncludingMixedF06Custody()].map(([, engine]) => engine),
+    drainReady: () => this.maintenanceBreak.financialDrainReady(),
+    now: () => this.weeklyPayoutStore.clock.now(),
+    onError: (error) => reportError(error, 'GameServer.weekly_payout_edge_admission_unknown'),
+    admit: (expected) => this.weeklyPayoutStore.admit(expected),
+    read: (expected) => this.weeklyPayoutStore.read(expected),
+    onChanged: (boundary) => {
+      if (boundary) {
+        this.weeklyPayoutHeldToken = boundary.ownershipToken;
+        setWeeklyPayoutFrozen(
+          boundary.ownershipToken,
+          boundary.phase === 'released' ? null : boundary.phase
+        );
+      } else if (this.weeklyPayoutHeldToken) {
+        setWeeklyPayoutFrozen(this.weeklyPayoutHeldToken, null);
+        this.weeklyPayoutHeldToken = null;
+      }
+    },
+  });
+
+  private adoptWeeklyPayout(engine: ServerTableEngine): void {
+    // A retained lifecycle harness may attach tables before this owner exists.
+    // No financial phase can be admitted without the initialized controller.
+    if (!this.weeklyPayoutPause) return;
+    if (!this.weeklyPayoutTableListeners.has(engine)) {
+      this.weeklyPayoutTableListeners.set(
+        engine,
+        engine.onWeeklyPayoutBoundary(() => {
+          void this.weeklyPayoutPause
+            .handBoundary()
+            .catch((error) => reportError(error, 'GameServer.weekly_payout_admission_unknown'));
+        })
+      );
+    }
+    this.weeklyPayoutPause.adopt(engine);
+  }
+
+  /**
+   * An engine that has left the process registry owns no further hand
+   * boundaries. Drop its weekly-payout subscription so neither the listener
+   * set on the engine nor this registry keeps the retired generation alive.
+   * Idempotent: an engine that was never adopted, or was already released, is
+   * a no-op. A quarantined engine still in `tableEngines` is not released.
+   */
+  private releaseWeeklyPayout(engine: ServerTableEngine): void {
+    // A retained lifecycle harness may release tables before this owner exists.
+    if (!this.weeklyPayoutTableListeners) return;
+    const unsubscribe = this.weeklyPayoutTableListeners.get(engine);
+    if (!unsubscribe) return;
+    this.weeklyPayoutTableListeners.delete(engine);
+    unsubscribe();
+  }
+
+  private refreshWeeklyPayout(): Promise<void> {
+    this.weeklyPayoutReadPending = true;
+    if (this.weeklyPayoutRead) return this.weeklyPayoutRead;
+    const generation = this.weeklyPayoutGeneration;
+    const operation = bindToProcessRoot(async () => {
+      do {
+        this.weeklyPayoutReadPending = false;
+        const existing = this.weeklyPayoutPause.snapshot();
+        const boundary = await this.weeklyPayoutStore.readCurrent(existing ?? undefined);
+        if (!this.running || generation !== this.weeklyPayoutGeneration) return;
+        if (boundary) this.weeklyPayoutPause.accept(boundary);
+        for (const [, engine] of this.enginesIncludingMixedF06Custody())
+          this.adoptWeeklyPayout(engine);
+        await this.weeklyPayoutPause.handBoundary();
+      } while (
+        this.weeklyPayoutReadPending &&
+        this.running &&
+        generation === this.weeklyPayoutGeneration
+      );
+    })();
+    this.weeklyPayoutRead = operation.finally(() => {
+      this.weeklyPayoutRead = null;
+    });
+    return this.weeklyPayoutRead;
+  }
+
+  private async startWeeklyPayout(): Promise<void> {
+    if (this.weeklyPayoutChannel) return;
+    const generation = this.weeklyPayoutGeneration;
+    const wake = bindToProcessRoot(() => {
+      if (!this.running || generation !== this.weeklyPayoutGeneration) return;
+      void this.refreshWeeklyPayout().catch((error) =>
+        reportError(error, 'GameServer.weekly_payout_state_unknown')
+      );
+    });
+    const channel = supabase
+      .channel(`weekly-payout-owned:${INSTANCE_ID}:${generation}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'weekly_accounting_payout_pauses' },
+        wake
+      );
+    this.weeklyPayoutChannel = channel;
+    channel.subscribe(
+      bindToProcessRoot((status: string) => {
+        if (this.weeklyPayoutChannel !== channel) return;
+        if (status === 'SUBSCRIBED') wake();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')
+          reportError(
+            new Error('weekly_payout_notification_unread'),
+            'GameServer.weekly_payout_channel'
+          );
+      })
+    );
+    await this.refreshWeeklyPayout();
+  }
+
+  private async stopWeeklyPayout(): Promise<void> {
+    this.weeklyPayoutGeneration++;
+    this.weeklyPayoutPause.stop();
+    const channel = this.weeklyPayoutChannel;
+    this.weeklyPayoutChannel = null;
+    if (channel) await supabase.removeChannel(channel);
+    // Engines that already left the registry released their subscription on
+    // the way out; the ones still published (including retained mixed F06
+    // custody) release here.
+    for (const [, engine] of this.enginesIncludingMixedF06Custody())
+      this.releaseWeeklyPayout(engine);
+    await this.weeklyPayoutRead?.catch((error) =>
+      reportError(error, 'GameServer.weekly_payout_stop_unknown')
+    );
+  }
+
+  private readonly maintenanceBreak: MaintenanceBreak = new MaintenanceBreak({
+    onFinancialDrainChanged: () => {
+      void this.weeklyPayoutPause
+        .handBoundary()
+        .catch((error) =>
+          reportError(error, 'GameServer.weekly_payout_durable_drain_admission_unknown')
+        );
+    },
+    onAnnounced: () => {
+      void this.refreshWeeklyPayout().catch((error) =>
+        reportError(error, 'GameServer.weekly_payout_announcement_unknown')
+      );
+    },
+    financialPayoutActive: () => this.weeklyPayoutPause.snapshot() !== null,
     claimOperatorAnnouncement: async (announcedAt) => {
       const { data, error } = await supabase.rpc('fn_ca_engine_operator_claim_hourly', {
         p_announced_at: new Date(announcedAt).toISOString(),
@@ -3902,6 +4295,7 @@ export class GameServer {
     // can recover its committed receipt. Completion schedules a future release;
     // MaintenanceBreak keeps the pause until that certified boundary.
     onReleased: (freezeStartedAt) => {
+      this.weeklyPayoutPause.expire();
       for (const manager of this.tournamentEngines.values()) {
         try {
           manager.startBookedLevelAfterMaintenance(freezeStartedAt);
@@ -4338,6 +4732,7 @@ export class GameServer {
        * adopted later are parked by maintenanceBreak.adopt().
        */
       const endBreakAdoptionPhase = this.bootTimeline.begin('maintenance_break_adoption');
+      await this.startWeeklyPayout();
       await this.maintenanceBreak.start();
       endBreakAdoptionPhase();
       if (!this.directAdmissionIsCurrent(generation)) return;
@@ -4748,6 +5143,7 @@ export class GameServer {
     const firstSupportingStops = [
       beginOwnedStop('RakeSpecGuard', stopRakeSpecGuard),
       beginOwnedStop('MaintenanceBreak', () => this.maintenanceBreak.stop()),
+      beginOwnedStop('WeeklyPayoutPause', () => this.stopWeeklyPayout()),
     ];
     // If shutdown lands while the worker is still hydrating, begin its
     // cancellation before joining performStart(). No dealer can have been
@@ -4809,6 +5205,7 @@ export class GameServer {
     const supportingStopResults = await Promise.all([
       ...firstSupportingStops,
       beginOwnedStop('MaintenanceBreak', () => this.maintenanceBreak.stop()),
+      beginOwnedStop('WeeklyPayoutPause', () => this.stopWeeklyPayout()),
       beginOwnedStop('RakeSpecGuard', stopRakeSpecGuard),
     ]);
     for (const result of supportingStopResults) {
@@ -5019,7 +5416,10 @@ export class GameServer {
         );
         continue;
       }
-      if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
+      if (this.tableEngines.get(tableId) === engine) {
+        this.tableEngines.delete(tableId);
+        this.releaseWeeklyPayout(engine);
+      }
     }
     for (let index = 0; index < managerStopResults.length; index++) {
       const result = managerStopResults[index];
@@ -5562,6 +5962,12 @@ export class GameServer {
        * than a race the workflow observes.
        */
       maintenance: { ...this.maintenanceBreak.snapshot(), dbClockSkewMs: this.lastDbSkewMs },
+      weeklyPayout: (() => {
+        const state = this.weeklyPayoutPause.snapshot();
+        if (!state) return null;
+        const { ownershipToken: _privateOwner, ...publicState } = state;
+        return publicState;
+      })(),
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
@@ -7119,9 +7525,18 @@ export class GameServer {
    */
   private async waitForAllTablesParked(managers: TournamentManager[]): Promise<boolean> {
     const generation = this.lifecycleGeneration;
+    const breakGeneration = this.synchronizedBreakGeneration;
     const startedAt = Date.now();
     let nextReportAt = startedAt + GameServer.PARK_WAIT_REPORT_MS;
-    while (this.running && this.directAdmissionIsCurrent(generation)) {
+    while (
+      this.running &&
+      this.directAdmissionIsCurrent(generation) &&
+      this.synchronizedBreakGeneration === breakGeneration
+    ) {
+      // A stopped manager cannot certify this break. Release its waiter
+      // without claiming its original hand finished. A newer hourly break
+      // likewise owns a different waiter, never an accumulated loop.
+      if (managers.some((tm) => !tm.isRunning())) return false;
       const waitingOn = managers.filter((tm) => !tm.areAllTablesParked());
       if (waitingOn.length === 0) return true;
       const waitedMs = Date.now() - startedAt;
@@ -7131,24 +7546,9 @@ export class GameServer {
           String((tm as unknown as { tournamentId?: string }).tournamentId ?? '?').slice(0, 8)
         )
         .join(', ');
-      /* A LIVENESS CEILING, NOT A GRACE ESTIMATE (2026-09-10).
-         A guessed two minutes is no authority to start a break over a hand
-         that is still being played. But with no ceiling at all, one wedged
-         table holds its tournament on the break screen for as long as it
-         stays wedged - until a restart - and nothing says which table it was.
-         A hand still in the air a whole break after :55 is not a slow hand;
-         start the countdown, and say loudly which event never parked. */
-      if (waitedMs >= GameServer.PARK_WAIT_CEILING_MS) {
-        reportError(
-          new Error(
-            `[GameServer] synchronized break: ${waitingOn.length} tournament(s) still had a table ` +
-              `in play ${Math.round(waitedMs / 1000)}s after the last hand was called (${names}); ` +
-              'starting the countdown so the tournament is not held on a wedged table'
-          ),
-          'GameServer.synchronized_break_park_ceiling'
-        );
-        return true;
-      }
+      // Elapsed time cannot prove that an accepted hand completed. Keep the
+      // existing diagnostic cadence while the hand's own authority resolves
+      // it; shutdown returns false below and never begins a false countdown.
       if (Date.now() >= nextReportAt) {
         console.warn(
           `[GameServer] synchronized break still waiting on ${waitingOn.length} tournament(s) ` +
@@ -7163,12 +7563,6 @@ export class GameServer {
 
   /** How long the drain may run before it names who it is waiting on, and how often after. */
   private static readonly PARK_WAIT_REPORT_MS = 15_000;
-  /**
-   * The drain's liveness ceiling: a whole break after the last hand was
-   * called. Far beyond any real hand (the maintenance break has had every
-   * table finishing since :53), so it only ever fires on a wedged table.
-   */
-  private static readonly PARK_WAIT_CEILING_MS = 5 * 60 * 1000;
 
   // ═════════════════════════════════════════════════════════════════════════════
   // STALE DATA CLEANUP — Run on startup
@@ -7859,7 +8253,9 @@ export class GameServer {
             !heldByMaintenanceBreak && engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
           const parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong;
           if (shouldBeDealing && !parkedOnPurpose) zombieCandidates += 1;
-          if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {
+          // A newly entered boot read is progress even after earlier admission
+          // work made the engine object older than the zombie threshold.
+          if (shouldBeDealing && !parkedOnPurpose && zombieProgressAge(engine) > 180_000) {
             zombieVerdicts.push([id, engine]);
           }
         }
@@ -8035,6 +8431,7 @@ export class GameServer {
           variant: string | null;
           tournament_type: string | null;
           buy_in_amount: number | null;
+          bounty_amount: number | null;
           buy_in_fee: number | null;
           guaranteed_prize: number | null;
           prize_pool: number | null;
@@ -8044,7 +8441,7 @@ export class GameServer {
             let q = supabase
               .from('tournaments')
               .select(
-                'format_contract, id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
+                'format_contract, id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, bounty_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
               )
               .eq('status', 'REGISTERING')
               .order('id', { ascending: true })
@@ -8455,7 +8852,7 @@ export class GameServer {
           const msUntilStart = startTime - now;
           if (!poolFinalized && msUntilStart > 0 && msUntilStart <= MTT_PRESTART_RAMP_MS) {
             const lastRamp = this.lastMttRampAt.get(tournament.id) ?? 0;
-            if (now - lastRamp >= 45_000) {
+            if (now - lastRamp >= MTT_PRESTART_TICK_MS) {
               // The whole decision - window, curve, seat-first exclusion, pool
               // cap and per-tick step - is inside this pure function, so the
               // rule is tested without a database and this call site cannot
@@ -8472,7 +8869,7 @@ export class GameServer {
                    the fee is rake and never reaches the pool. */
                 guaranteedPrize: Number(tournament.guaranteed_prize) || 0,
                 prizePool: Number((tournament as { prize_pool?: unknown }).prize_pool) || 0,
-                buyInPrizeShare: Number(tournament.buy_in_amount) || 0,
+                buyInPrizeShare: mttPrizeShare(tournament),
               });
               const redeemTickets =
                 ticketEligible(tournament) && ticketTargets?.has(tournament.id) === true;
@@ -8816,18 +9213,22 @@ export class GameServer {
         // recovery off the back of a finish that is still paying - the row is
         // flipped to COMPLETING BEFORE the money moves, and a manager leaves
         // `tournamentEngines` the moment it stops.
-        const { data: stuckTournaments, error: completingScanErr } = await supabase
-          .from('tournaments')
-          .select('id, name, status')
-          .eq('status', 'COMPLETING');
+        const stuckTournaments = await readCompletingBoard<{
+          id: string;
+          name: string | null;
+          status: string;
+        }>('id, name, status', {
+          shouldContinue: () => this.directAdmissionIsCurrent(generation),
+        });
+        if (!this.directAdmissionIsCurrent(generation)) break;
 
         // An unreadable scan is not an empty one: forgetting every dwell here
         // would restart all five-minute clocks on a transient error, which is
         // the one way this gate could hold a genuinely stuck row forever.
-        if (completingScanErr) {
+        if (!stuckTournaments) {
           reportError(
             new Error(
-              `[GameServer] COMPLETING scan failed: ${completingScanErr.message} - dwell clocks kept, nothing recovered this pass`
+              '[GameServer] COMPLETING scan incomplete or unreadable - dwell clocks kept, nothing recovered this pass'
             ),
             'GameServer.completing_scan_failed'
           );
@@ -9124,96 +9525,120 @@ export class GameServer {
         // rescues stuck-COMPLETING tournaments (ranks survivors, pays via
         // computePlacePrize, closes every player row).
         const decidedCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-        const { data: maybeDecided } = await supabase
-          .from('tournaments')
-          .select('id, name')
-          .eq('status', 'RUNNING')
-          .lt('started_at', decidedCutoff);
-        /* EVERY COUNT IN ONE READ (2026-09-11). This loop used to await an
+        const decidedPage = await fetchAllRows<{ id: string; name: string | null }>(
+          (cursor, want) => {
+            let query = supabase
+              .from('tournaments')
+              .select('id, name')
+              .eq('status', 'RUNNING')
+              .lt('started_at', decidedCutoff)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) query = query.gt('id', cursor);
+            return query;
+          },
+          {
+            label: 'GameServer.decidedBoard',
+            pageAttempts: 1,
+            shouldContinue: () => this.directAdmissionIsCurrent(generation),
+          }
+        );
+        if (!this.directAdmissionIsCurrent(generation)) break;
+        // A prefix is neither the whole recovery board nor evidence that a
+        // previously held event disappeared. Preserve its held-state evidence.
+        if (!decidedPage.complete) {
+          reportError(
+            new Error('Decided-event board incomplete; no finish owners woken'),
+            'GameServer.decided_board_read_failed'
+          );
+        } else {
+          /* EVERY COUNT IN ONE READ (2026-09-11). This loop used to await an
            exact count per tournament: 368 of them at ~110 ms, ~40 s of every
            pass. The counts now come from one keyset-paged read of the playing
            rows, a chunk of tournaments at a time, and the rule the old count
            carried is kept per chunk: a chunk that did not read to the end
            leaves every tournament in it UNKNOWN. See decidedRunningBoard.ts. */
-        const decidedBoard = maybeDecided || [];
-        const decidedVerdicts = decidedRunningVerdicts(
-          await readPlayingCounts(
-            decidedBoard.map((t) => String(t.id)),
-            (chunk, cursor, want) => {
-              let q = supabase
-                .from('tournament_players')
-                .select('id, tournament_id')
-                .eq('status', 'playing')
-                .in('tournament_id', chunk)
-                .order('id', { ascending: true })
-                .limit(want);
-              if (cursor) q = q.gt('id', cursor);
-              return q;
+          const decidedBoard = decidedPage.rows;
+          const decidedVerdicts = decidedRunningVerdicts(
+            await readPlayingCounts(
+              decidedBoard.map((t) => String(t.id)),
+              (chunk, cursor, want) => {
+                let q = supabase
+                  .from('tournament_players')
+                  .select('id, tournament_id')
+                  .eq('status', 'playing')
+                  .in('tournament_id', chunk)
+                  .order('id', { ascending: true })
+                  .limit(want);
+                if (cursor) q = q.gt('id', cursor);
+                return q;
+              }
+            )
+          );
+          if (!this.directAdmissionIsCurrent(generation)) break;
+          let decidedUnread = 0;
+          let decidedRecoveries = 0;
+          const decidedHeld = new Set<string>();
+          for (const t of decidedBoard) {
+            const verdict = verdictFor(decidedVerdicts, String(t.id));
+            // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
+            if (verdict.kind === 'unknown') {
+              decidedUnread++;
+              continue;
             }
-          )
-        );
-        let decidedUnread = 0;
-        let decidedRecoveries = 0;
-        const decidedHeld = new Set<string>();
-        for (const t of decidedBoard) {
-          const verdict = verdictFor(decidedVerdicts, String(t.id));
-          // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
-          if (verdict.kind === 'unknown') {
-            decidedUnread++;
-            continue;
-          }
-          if (verdict.kind === 'live') continue; // still a live contest
-          const playingCount = verdict.playingCount;
-          const decidedAction = this.decidedOwnerActionFor(String(t.id));
-          if (decidedAction.kind === 'held') {
-            decidedHeld.add(String(t.id));
-            this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
-            continue;
-          }
-          /* A REFUSED FINISH IS NOT A STALLED ONE (2026-10-07). This recovery
+            if (verdict.kind === 'live') continue; // still a live contest
+            const playingCount = verdict.playingCount;
+            const decidedAction = this.decidedOwnerActionFor(String(t.id));
+            if (decidedAction.kind === 'held') {
+              decidedHeld.add(String(t.id));
+              this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
+              continue;
+            }
+            /* A REFUSED FINISH IS NOT A STALLED ONE (2026-10-07). This recovery
              is for a finish that never ran. A manager whose finish the
              database refused already holds its own retry at the refusal's
              delay; waking it here (delay zero, earliest wake wins) re-asked
              four Spins every ~10.6 s for a day. Skip it before the stagger,
              so it costs this pass nothing. See awaitsItsOwnFinishRetry. */
-          if (this.tournamentEngines.get(String(t.id))?.awaitsItsOwnFinishRetry?.()) continue;
-          /* The per-tournament reads were this sweep's only brake: no two
+            if (this.tournamentEngines.get(String(t.id))?.awaitsItsOwnFinishRetry?.()) continue;
+            /* The per-tournament reads were this sweep's only brake: no two
              recoveries could land closer than one round trip apart. Keep that
              spacing, or a board of decided tournaments becomes one burst of
              resumes after a restart and one burst of urgent wakes on every
              pass (decidedRunningBoard.ts). The first recovery never waits. */
-          if (decidedRecoveries++ > 0) {
-            await this.sleep(DECIDED_RECOVERY_STAGGER_MS);
-            if (!this.directAdmissionIsCurrent(generation)) break;
+            if (decidedRecoveries++ > 0) {
+              await this.sleep(DECIDED_RECOVERY_STAGGER_MS);
+              if (!this.directAdmissionIsCurrent(generation)) break;
+            }
+            console.warn(
+              `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) - recovering the winner`
+            );
+            const idleTm = this.tournamentEngines.get(String(t.id));
+            if (idleTm) {
+              idleTm.requestDecidedEliminationSweep('stalled_decided_survivor');
+            } else {
+              this.launchDiscoveryJob(
+                this.ensureTournamentManagerAdmission(
+                  String(t.id),
+                  'resume',
+                  `Resuming decided tournament through its finish owner: ${t.name}`,
+                  generation
+                ),
+                'GameServer.stalled_decided_resume_failed',
+                { tournamentId: String(t.id) }
+              );
+            }
           }
-          console.warn(
-            `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) - recovering the winner`
-          );
-          const idleTm = this.tournamentEngines.get(String(t.id));
-          if (idleTm) {
-            idleTm.requestDecidedEliminationSweep('stalled_decided_survivor');
-          } else {
-            this.launchDiscoveryJob(
-              this.ensureTournamentManagerAdmission(
-                String(t.id),
-                'resume',
-                `Resuming decided tournament through its finish owner: ${t.name}`,
-                generation
-              ),
-              'GameServer.stalled_decided_resume_failed',
-              { tournamentId: String(t.id) }
+          this.decidedEventsHeldByQuarantine = decidedHeld.size;
+          const heldReported = (this.decidedEventsHeldReported ??= new Map());
+          for (const id of [...heldReported.keys()]) {
+            if (!decidedHeld.has(id)) heldReported.delete(id);
+          }
+          if (decidedUnread > 0) {
+            console.warn(
+              `[GameServer] Decided-but-RUNNING sweep could not read the playing count of ${decidedUnread} of ${decidedBoard.length} tournament(s) - skipped this pass, not treated as decided`
             );
           }
-        }
-        this.decidedEventsHeldByQuarantine = decidedHeld.size;
-        const heldReported = (this.decidedEventsHeldReported ??= new Map());
-        for (const id of [...heldReported.keys()]) {
-          if (!decidedHeld.has(id)) heldReported.delete(id);
-        }
-        if (decidedUnread > 0) {
-          console.warn(
-            `[GameServer] Decided-but-RUNNING sweep could not read the playing count of ${decidedUnread} of ${decidedBoard.length} tournament(s) - skipped this pass, not treated as decided`
-          );
         }
 
         // ── STARTED-BUT-NEVER-DEALT RECOVERY (2026-08-24) ──
@@ -9266,39 +9691,87 @@ export class GameServer {
          * it is this same stall, recovering by luck on a later re-adoption.
          */
         const neverDealtCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-        const { data: maybeNeverDealt } = await supabase
+        let neverDealtQuery = supabase
           .from('tournaments')
           .select('id, name, started_at')
           .eq('status', 'RUNNING')
-          .lt('started_at', neverDealtCutoff);
-        for (const t of (maybeNeverDealt || []).slice(0, 15)) {
-          const { data: tRows, error: tErr } = await supabase
-            .from('tables')
-            .select('id, status')
-            .eq('tournament_id', t.id);
-          if (tErr) continue; // unreadable is UNKNOWN, never "it never dealt"
-          const tableIds = (tRows || []).map((r) => String((r as { id: string }).id));
-          if (tableIds.length === 0) continue; // no table at all - creation path owns it
+          .lt('started_at', neverDealtCutoff)
+          .order('id', { ascending: true })
+          .limit(15);
+        const candidateCursor = this.neverDealtCandidateCursor ?? null;
+        if (candidateCursor) neverDealtQuery = neverDealtQuery.gt('id', candidateCursor);
+        const { data: maybeNeverDealt, error: neverDealtError } = await neverDealtQuery;
+        if (!this.directAdmissionIsCurrent(generation)) break;
+        if (neverDealtError || !Array.isArray(maybeNeverDealt)) {
+          throw neverDealtError ?? new Error('Never-dealt candidate board unavailable');
+        }
+        // Advance only a valid ordered page. Healthy early events must not
+        // permanently hide the later candidates behind the per-pass budget.
+        let previousCandidate = candidateCursor;
+        for (const candidate of maybeNeverDealt) {
+          if (
+            typeof candidate.id !== 'string' ||
+            !candidate.id ||
+            (previousCandidate !== null && candidate.id <= previousCandidate)
+          ) {
+            throw new Error('Never-dealt candidate cursor unavailable');
+          }
+          previousCandidate = candidate.id;
+        }
+        this.neverDealtCandidateCursor = maybeNeverDealt.length < 15 ? null : previousCandidate;
+        neverDealtCandidate: for (const t of maybeNeverDealt) {
+          if (!this.directAdmissionIsCurrent(generation)) break;
+          const tableRead = await fetchAllRows<{ id: string; status: string }>(
+            (cursor, want) => {
+              let query = supabase
+                .from('tables')
+                .select('id, status')
+                .eq('tournament_id', t.id)
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) query = query.gt('id', cursor);
+              return query;
+            },
+            {
+              label: 'GameServer.neverDealtTables',
+              pageAttempts: 1,
+              shouldContinue: () => this.directAdmissionIsCurrent(generation),
+            }
+          );
+          if (!this.directAdmissionIsCurrent(generation)) break;
+          if (!tableRead.complete) continue;
+          const tRows = tableRead.rows;
+          const tableIds = tRows.map((r) => r.id);
+          if (tableIds.length === 0) continue; // creation path owns an event with no tables
 
-          const { count: dealt, error: dealtErr } = await supabase
-            .from('hand_history')
-            .select('id', { count: 'exact', head: true })
-            .in('table_id', tableIds);
-          if (dealtErr || dealt === null || dealt === undefined) continue;
-          if (dealt > 0) continue; // it played; the sweeps above own it
+          // Every table must prove zero completed hands. A truncated table
+          // prefix cannot establish that the event never dealt. Bound each IN
+          // request so a large field cannot exceed the gateway URL limit.
+          for (let offset = 0; offset < tableIds.length; offset += 200) {
+            const { count: dealt, error: dealtErr } = await supabase
+              .from('hand_history')
+              .select('id', { count: 'exact', head: true })
+              .in('table_id', tableIds.slice(offset, offset + 200));
+            if (!this.directAdmissionIsCurrent(generation)) break neverDealtCandidate;
+            if (dealtErr || dealt === null || dealt === undefined || dealt !== 0)
+              continue neverDealtCandidate;
+          }
 
-          // Only a game that can actually deal goes back in the queue: 2+
-          // live seats on a non-closed table.
-          const openTableIds = (tRows || [])
-            .filter((r) => String((r as { status?: string }).status) !== 'closed')
-            .map((r) => String((r as { id: string }).id));
+          const openTableIds = tRows.filter((r) => r.status !== 'closed').map((r) => r.id);
           if (openTableIds.length === 0) continue;
-          const { count: liveSeats, error: seatErr } = await supabase
-            .from('table_seats')
-            .select('id', { count: 'exact', head: true })
-            .in('table_id', openTableIds)
-            .is('left_at', null);
-          if (seatErr || !liveSeats || liveSeats < 2) continue;
+          let liveSeats = 0;
+          for (let offset = 0; offset < openTableIds.length; offset += 200) {
+            const { count, error } = await supabase
+              .from('table_seats')
+              .select('id', { count: 'exact', head: true })
+              .in('table_id', openTableIds.slice(offset, offset + 200))
+              .is('left_at', null);
+            if (!this.directAdmissionIsCurrent(generation)) break neverDealtCandidate;
+            if (error || count === null || count === undefined || count < 0)
+              continue neverDealtCandidate;
+            liveSeats += count;
+          }
+          if (liveSeats < 2) continue;
 
           /**
            * SEATING HAS TO BE FINISHED BEFORE "NEVER DEALT" MEANS "DEAD".
@@ -9319,6 +9792,7 @@ export class GameServer {
             .select('id', { count: 'exact', head: true })
             .eq('tournament_id', t.id)
             .eq('status', 'playing');
+          if (!this.directAdmissionIsCurrent(generation)) break;
           if (playingCountErr || stillPlaying === null || stillPlaying === undefined) continue;
           if (liveSeats < stillPlaying) continue;
 
@@ -10405,7 +10879,25 @@ export class GameServer {
     // Queue admission is not completion. Leave the row pending until the
     // manager finishes a full reason-aware sweep; a crash, lifecycle abort or
     // cooperative budget yield must be replayed by the next manager.
-    return manager.requestEliminationSweep(String(row.reason ?? ''), id, generation);
+    const accepted = manager.requestEliminationSweep(String(row.reason ?? ''), id, generation);
+    if (
+      row.reason === 'late_registration' &&
+      this.tournamentManagersReadyForCapacityWake?.has(manager)
+    ) {
+      const owner = manager;
+      const lifecycle = this.lifecycleGeneration;
+      // A full sweep may already be awaiting an unrelated bust transaction.
+      // The committed capacity receipt only needs its dealer, not another
+      // money/seat writer or permission to release that existing operation.
+      await owner.admitCommittedCapacityTablesForWake(
+        () =>
+          this.running &&
+          this.lifecycleGeneration === lifecycle &&
+          this.tournamentEngines.get(tournamentId) === owner &&
+          this.tournamentManagersReadyForCapacityWake?.has(owner) === true
+      );
+    }
+    return accepted;
   }
 
   /** Acknowledge durable action wakes only after their full sweep completed. */
@@ -10532,9 +11024,12 @@ export class GameServer {
 
   /** One bounded, keyset-paged snapshot of durable manager wake receipts. */
   private async drainTournamentManagerWakePages(tournamentId?: string): Promise<boolean> {
+    const lifecycle = this.lifecycleGeneration;
+    const ownsRead = () => this.running && this.lifecycleGeneration === lifecycle;
     const pageSize = tournamentId ? 50 : 200;
     let afterId = 0;
     for (;;) {
+      if (!ownsRead()) return true;
       let query = supabase
         .from('tournament_manager_wakes')
         .select('id,tournament_id,reason,generation,created_at,consumed_at')
@@ -10551,15 +11046,23 @@ export class GameServer {
           return null;
         }
       })();
+      if (!ownsRead()) return true;
       if (!response) return false;
       const { data, error } = response;
       if (error) {
         reportError(error, 'GameServer.tournament_manager_wake_drain_read_failed');
         return false;
       }
-      const rows = data || [];
+      if (!Array.isArray(data)) {
+        reportError(
+          new Error('Tournament wake inbox returned no readable page'),
+          'GameServer.tournament_manager_wake_drain_read_failed'
+        );
+        return false;
+      }
+      const rows = data;
       for (const row of rows) {
-        if (!this.running) return true;
+        if (!ownsRead()) return true;
         await this.admitTournamentManagerWake(row as Record<string, unknown>);
       }
       if (rows.length < pageSize) return true;
@@ -11183,6 +11686,80 @@ export class GameServer {
    * the move without a manager would mean re-implementing the move, which is
    * how the duplicate-seat incidents of 2026-08-20 and 2026-08-25 happened.
    */
+  /** Explicit operator operation only. The persisted request is read before
+   * touching physical engines; no discovery pass or recurring repair invokes it.
+   */
+  async acknowledgeTournamentAbortBoundary(
+    operationId: string,
+    tournamentId: string
+  ): Promise<unknown> {
+    const { data, error } = await supabase.rpc('fn_ca_tournament_abort_stop_state', {
+      p_operation_id: operationId,
+      p_tournament_id: tournamentId,
+    });
+    if (
+      error ||
+      data?.ok !== true ||
+      data.operation_id !== operationId ||
+      data.tournament_id !== tournamentId ||
+      !Array.isArray(data.tables)
+    )
+      throw new Error('tournament_abort_original_request_unproven');
+    const manager = this.tournamentEngines.get(tournamentId);
+    if (data.state === 'settled') {
+      if (
+        data.receipt?.fully_settled !== true ||
+        data.tournament_status !== 'CANCELLED' ||
+        data.receipt.operation_id !== operationId ||
+        data.receipt.tournament_id !== tournamentId
+      )
+        throw new Error('tournament_abort_terminal_receipt_unproven');
+      const originalGeneration = data.receipt.quiescence?.generation;
+      if (
+        typeof originalGeneration !== 'string' ||
+        !originalGeneration ||
+        (data.current_generation !== null && data.current_generation !== originalGeneration)
+      )
+        throw new Error('tournament_abort_terminal_generation_unproven');
+      if (manager) {
+        if (manager.getTournamentLeaseGeneration() !== originalGeneration)
+          throw new Error('tournament_abort_terminal_owner_mismatch');
+        // This checks the stable operation even after a prior release flag.
+        manager.releaseTournamentAbortBoundary(operationId);
+        const stopped = await this.stopTournamentManagerIfOwned(
+          tournamentId,
+          manager,
+          'GameServer.tournament_abort_final_stop_failed'
+        );
+        if (!stopped) throw new Error('tournament_abort_final_retirement_unconfirmed');
+      }
+      // A lost lease-release response may outlive the manager map slot. Join
+      // or resume only this original generation's existing release operation.
+      await this.awaitTournamentManagerLeaseRelease(tournamentId, originalGeneration);
+      if (this.tournamentEngines.has(tournamentId))
+        throw new Error('tournament_abort_runtime_slot_retained');
+      return { ...data, runtime_retired: true };
+    }
+    if (
+      data.state === 'quiesced' &&
+      data.current_boundary_valid === true &&
+      data.quiescence_generation === data.current_generation
+    )
+      return data;
+    if (
+      !manager ||
+      !data.current_generation ||
+      manager.getTournamentLeaseGeneration() !== data.current_generation ||
+      !manager.hasCurrentTournamentLeaseAuthority()
+    )
+      return {
+        state: 'pending',
+        operation_id: operationId,
+        reason: 'current_original_manager_unavailable',
+      };
+    return manager.acknowledgeTournamentAbortBoundary(data);
+  }
+
   private async repairOrphanedTournamentSeats(): Promise<void> {
     if (this.tournamentEngines.size === 0) return;
 
@@ -11216,45 +11793,45 @@ export class GameServer {
    * reopen a no-op if something opened the table in the meantime.
    */
   private async reopenTablesClosedUnderLiveTournaments(): Promise<void> {
-    /* Every live tournament, a page at a time: one 500-row read left the
-       tail of a 594-tournament board out of the sweep entirely. */
-    const tournaments: LiveTournamentRow[] = [];
-    const PAGE = 500;
-    for (let from = 0; ; from += PAGE) {
-      const { data: liveRows, error: liveErr } = await supabase
-        .from('tournaments')
-        .select('id, status, start_time')
-        .in('status', ['REGISTERING', 'RUNNING'])
-        .order('id')
-        .range(from, from + PAGE - 1);
-      if (liveErr) {
-        reportError(
-          new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
-          'GameServer.reopen_sweep_tournament_read_failed'
-        );
-        return;
-      }
-      const page = (liveRows ?? []) as LiveTournamentRow[];
-      tournaments.push(...page);
-      if (page.length < PAGE) break;
-    }
+    const generation = this.lifecycleGeneration;
+    const current = () => this.directAdmissionIsCurrent(generation) && !isMaintenanceFrozen();
+    if (!current()) return;
+    const tournamentRead = await fetchAllRows<LiveTournamentRow & Record<string, unknown>>(
+      (cursor, want) => {
+        let query = supabase
+          .from('tournaments')
+          .select('id, status, start_time')
+          .in('status', ['REGISTERING', 'RUNNING'])
+          .order('id', { ascending: true })
+          .limit(want);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'GameServer.reopenTournamentBoard', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!current() || !tournamentRead.complete) return;
+    const tournaments = tournamentRead.rows;
     if (tournaments.length === 0) return;
 
-    // Bounded `in.(...)` lists: see REOPEN_SWEEP_ID_CHUNK.
+    // A bounded event list can still own more than one response of tables.
+    // The planner must see every open sibling before it may reopen a closed one.
     const tables: TournamentTableRow[] = [];
     for (const chunk of reopenSweepIdChunks(tournaments.map((t) => String(t.id)))) {
-      const { data: tableRows, error: tableErr } = await supabase
-        .from('tables')
-        .select('id, tournament_id, status, is_deleted, created_at')
-        .in('tournament_id', chunk);
-      if (tableErr) {
-        reportError(
-          new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
-          'GameServer.reopen_sweep_table_read_failed'
-        );
-        return;
-      }
-      tables.push(...((tableRows ?? []) as TournamentTableRow[]));
+      const tableRead = await fetchAllRows<TournamentTableRow & Record<string, unknown>>(
+        (cursor, want) => {
+          let query = supabase
+            .from('tables')
+            .select('id, tournament_id, status, is_deleted, created_at')
+            .in('tournament_id', chunk)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) query = query.gt('id', cursor);
+          return query;
+        },
+        { label: 'GameServer.reopenTableBoard', pageAttempts: 1, shouldContinue: current }
+      );
+      if (!current() || !tableRead.complete) return;
+      tables.push(...tableRead.rows);
     }
 
     /* Seat counts for the CLOSED candidates only. A seat row survives its
@@ -11270,9 +11847,12 @@ export class GameServer {
         .select('table_id')
         .in('table_id', chunk)
         .is('left_at', null);
-      if (seatErr) {
+      if (!current()) return;
+      if (seatErr || !Array.isArray(seatRows)) {
         reportError(
-          new Error(`[GameServer] reopen sweep seat read failed: ${seatErr.message}`),
+          new Error(
+            `[GameServer] reopen sweep seat read failed: ${seatErr?.message ?? 'missing seat array'}`
+          ),
           'GameServer.reopen_sweep_seat_read_failed'
         );
         return;
@@ -11289,10 +11869,11 @@ export class GameServer {
 
     let reopened = 0;
     for (const plan of plans) {
+      if (!current()) return;
       if (!this.tournamentRetirementCustody.admissionAllowed(plan.tableId)) continue;
       const { error: reopenErr } = await this.tournamentRetirementCustody.withAdmission(
         plan.tableId,
-        () => this.running,
+        current,
         async (assertCurrent) => {
           const result = await supabase
             .from('tables')
@@ -11314,6 +11895,7 @@ export class GameServer {
       }
       reopened++;
 
+      if (!current()) return;
       if (plan.refreshHumanWindow) {
         /* The window closed hours ago. Hand the board a fresh one rather than
            straight to the past-start filler, so a repaired game is a game that
@@ -12275,6 +12857,7 @@ export class GameServer {
     // Tournament tables get the same treatment as cash ones. The tournament
     // break suspends the blind clock; this keeps cards off the felt.
     this.maintenanceBreak.adopt(tableId, engine);
+    this.adoptWeeklyPayout(engine);
     return true;
   }
 
@@ -12329,6 +12912,8 @@ export class GameServer {
       replaced = true;
     }
     if (!replaced) return false;
+    // The stopped generation has left the registry whichever branch follows.
+    this.releaseWeeklyPayout(expected);
     if (!this.running) {
       await replacement.stop().catch(() => undefined);
       unregisterOwnedTournamentTableEngine(
@@ -12336,12 +12921,16 @@ export class GameServer {
         this.tournamentOwnedTables,
         tableId,
         replacement,
-        () => tableStateHub.dropTable(tableId)
+        () => {
+          tableStateHub.dropTable(tableId);
+          this.releaseWeeklyPayout(replacement);
+        }
       );
       return false;
     }
     tableStateHub.dropTable(tableId);
     this.maintenanceBreak.adopt(tableId, replacement);
+    this.adoptWeeklyPayout(replacement);
     return true;
   }
 
@@ -12356,7 +12945,10 @@ export class GameServer {
       this.tournamentOwnedTables,
       tableId,
       engine,
-      () => tableStateHub.dropTable(tableId)
+      () => {
+        tableStateHub.dropTable(tableId);
+        this.releaseWeeklyPayout?.(engine);
+      }
     );
   }
 
@@ -12371,9 +12963,13 @@ export class GameServer {
    */
   unregisterTableEngine(tableId: string, engine: ServerTableEngine): boolean {
     const current = this.tableEngines.get(tableId);
+    // Retained lifecycle harnesses borrow this method onto a bare registry
+    // host (no weekly-payout owner), exactly as adoptWeeklyPayout tolerates.
+    const release = this.releaseWeeklyPayout?.bind(this);
     if (current === undefined) {
       this.tournamentOwnedTables.delete(tableId);
       tableStateHub.dropTable(tableId);
+      release?.(engine);
       return true;
     }
     if (current !== engine) return false;
@@ -12381,6 +12977,7 @@ export class GameServer {
     this.tableEngines.delete(tableId);
     this.tournamentOwnedTables.delete(tableId);
     tableStateHub.dropTable(tableId);
+    release?.(engine);
     return true;
   }
 
@@ -12751,6 +13348,7 @@ export class GameServer {
     // On-demand wake during a break: the player gets the break screen, not a
     // table that deals to them alone.
     this.maintenanceBreak.adopt(tableId, engine);
+    this.adoptWeeklyPayout(engine);
     const readyPromise = this.trackDirectTableEngineReadiness(tableId, engine);
     void engine
       .start()

@@ -12,6 +12,7 @@ import nodeCrypto from 'node:crypto';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
 import { isMaintenanceFrozen, isTerminalSettlementFrozen } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError, reportWarning } from '../services/errorReporter.js';
 import {
@@ -66,6 +67,7 @@ import {
 } from './satelliteSettlementRpc.js';
 import { horseRebuyAllowance } from '../services/FreeBuy.js';
 import { horseChoosesTournamentRebuy } from './horseTournamentRebuyChoice.js';
+import { reportHorseRebuyDecision } from './horseTournamentRebuyDiagnostic.js';
 import {
   horseRebuyAnswerDueAtMs,
   horseRebuyOfferTimingOf,
@@ -73,11 +75,11 @@ import {
 } from './horseTournamentRebuyTiming.js';
 import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from './bustOrder.js';
 
-/** A verified close and exact engine retirement, never an attempted move. */
-export interface TournamentBalanceProgress {
-  kind: 'table-retired';
-  tableId: string;
-}
+/** Distinguish a receipted retirement, completed planning and an unfinished pass. */
+export type TournamentBalanceProgress =
+  | { kind: 'table-retired'; tableId: string }
+  | { kind: 'planning-complete' }
+  | { kind: 'park-continuation' };
 
 interface FinalTableDealConsensus {
   reviewId: string | null;
@@ -278,9 +280,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     durableWakeId?: number,
     durableWakeGeneration?: number
   ): boolean {
-    const accepted = super.requestEliminationSweep(reason, durableWakeId);
+    // Retain the generation before the base can admit a scheduler callback,
+    // including a temporary refusal while registration is being established.
     if (
-      accepted &&
       Number.isSafeInteger(durableWakeId) &&
       Number(durableWakeId) > 0 &&
       Number.isSafeInteger(durableWakeGeneration) &&
@@ -293,7 +295,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         Math.max(this.pendingManagerWakeGenerations.get(id) ?? 0, generation)
       );
     }
-    return accepted;
+    return super.requestEliminationSweep(reason, durableWakeId);
   }
   /** One signal per unresolved bounty hand, cleared when its exact row lands. */
   protected bountyEvidenceDeferred = new Set<string>();
@@ -476,12 +478,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     let completedWholeSweep = false;
     /** This pass recorded the bust that left at most one player standing. */
     let lastBustRecordedThisPass = false;
-    const durableWakes = new Map(this.pendingManagerWakes);
-    const durableWakeIds = [...durableWakes.keys()];
-    const durableWakeReceipts: TournamentManagerWakeReceipt[] = durableWakeIds.map((id) => ({
-      id,
-      generation: this.pendingManagerWakeGenerations.get(id) ?? 1,
-    }));
+    const durableWakes = new Map<number, string>();
+    const durableWakeReceipts: TournamentManagerWakeReceipt[] = [];
     const acknowledgeCapturedWakes = async (): Promise<void> => {
       if (durableWakeReceipts.length === 0) return;
       const acknowledgement = await this.gameServer.acknowledgeTournamentManagerWakes(
@@ -606,6 +604,68 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.noteEliminationSweepStep('resumeCommittedTerminalCleanup');
       if (await this.resumeCommittedTerminalCleanup()) return;
       if (sweepStopped()) return;
+
+      // Realtime is a delivery hint, not custody of committed work. Read the
+      // original event's pending receipts in its existing business admission,
+      // before taking the exact-generation snapshot. No new scheduler exists.
+      if (!isMaintenanceFrozen()) {
+        try {
+          const { data, error } = await supabase
+            .from('tournament_manager_wakes')
+            .select('id, reason, generation')
+            .eq('tournament_id', this.tournamentId)
+            .is('consumed_at', null)
+            .order('id', { ascending: true })
+            .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+          if (error) throw error;
+          const reasons = new Set([
+            'rebuy',
+            'reentry',
+            'addon',
+            'late_registration',
+            'deal_vote',
+            'bounty_settled',
+          ]);
+          if (
+            !Array.isArray(data) ||
+            data.some(
+              (row) =>
+                !Number.isSafeInteger(row.id) ||
+                row.id <= 0 ||
+                !Number.isSafeInteger(row.generation) ||
+                row.generation <= 0 ||
+                !reasons.has(row.reason)
+            )
+          )
+            throw new Error('Pending manager wake read has an invalid receipt');
+          if (sweepStopped()) return;
+          if (!isMaintenanceFrozen()) {
+            for (const row of data) {
+              this.pendingManagerWakes.set(row.id, row.reason);
+              this.pendingManagerWakeGenerations.set(
+                row.id,
+                Math.max(this.pendingManagerWakeGenerations.get(row.id) ?? 0, row.generation)
+              );
+              if (row.reason === 'deal_vote') this.forceFinalTableDealCheck = true;
+            }
+          }
+        } catch (err) {
+          // UNKNOWN is not an empty inbox. Keep known receipts and allow the
+          // existing terminal-authority path to run; retry this causal failure.
+          reportError(err, 'Tournament.manager_wake_admission_read_unknown');
+          if (!sweepStopped()) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          }
+        }
+      }
+      if (sweepStopped()) return;
+      for (const [id, reason] of this.pendingManagerWakes) durableWakes.set(id, reason);
+      durableWakeReceipts.push(
+        ...[...durableWakes.keys()].map((id) => ({
+          id,
+          generation: this.pendingManagerWakeGenerations.get(id) ?? 1,
+        }))
+      );
 
       /*
        * AN OPEN ADD-ON WINDOW IS SERVED BEFORE THE STAGES A BUST REWINDS
@@ -765,16 +825,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (this.eliminationSweepCursor.nextStage > 1) break bustStage;
         const bustObservation = { firstNewBustAt: null as number | null };
         this.bustObservationInFlight = bustObservation;
-        // Find ALL busted players (0 chips) in a single query
+        // Both the zero-field guard and knockout ordering need the complete
+        // roster. A capped prefix cannot establish either fact.
         this.noteEliminationSweepStep('db:tournament_players');
-        // eslint-disable-next-line prefer-const
-        let { data: busted, error: bustedErr } = await supabase
-          .from('tournament_players')
-          .select('user_id, chips')
-          .eq('tournament_id', this.tournamentId)
-          .eq('status', 'playing')
-          .lte('chips', 0);
+        const bustedRead = await fetchAllRows<{ id: string; user_id: string; chips: number }>(
+          (cursor, pageSize) => {
+            let query = supabase
+              .from('tournament_players')
+              .select('id, user_id, chips')
+              .eq('tournament_id', this.tournamentId)
+              .eq('status', 'playing')
+              .lte('chips', 0)
+              .order('id', { ascending: true })
+              .limit(pageSize);
+            if (cursor) query = query.gt('id', cursor);
+            return query;
+          },
+          {
+            label: 'Tournament.bustedField',
+            pageAttempts: 1,
+            shouldContinue: () => !sweepStopped(),
+          }
+        );
+        let busted = bustedRead.complete ? bustedRead.rows : null;
+        const bustedErr = bustedRead.complete ? null : new Error('incomplete bust roster');
         let bustBatchHasMore = false;
+        let preserveBustWait = false;
         if (sweepStopped()) return;
 
         // PAYOUT-INTEGRITY 2026-08-25: an unreadable bust list is UNKNOWN. The
@@ -837,7 +913,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * stack in the database transaction that creates them. This check is
          * defence in depth against corruption; it is not a delayed-credit gate.
          */
-        if (busted && busted.length > 0) {
+        // Resolving or awaiting a rebuy ends this batch, not the sweep. The
+        // cursor must still advance so the same event reaches table balance.
+        bustedBatch: if (busted && busted.length > 0) {
           /**
            * ONE QUESTION, ONE ROUND TRIP (2026-09-11).
            *
@@ -1054,11 +1132,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // These busts have been resolved, so their old wait cannot
               // trigger a successor. Any untouched batch keeps a fresh clock.
               recordBustProgress();
-              // Everyone bought back in; nobody is eliminated this pass. The
-              // pass goes on to its later stages - balancing above all - and
-              // never returns from the sweep here (see A REBUY WINDOW DOES NOT
-              // STARVE THE BALANCER below).
-              break bustStage;
+              break bustedBatch; // everyone bought back in; continue toward balance
             }
           }
 
@@ -1152,6 +1226,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               const openDecisions = [...decisions].filter(([, open]) => open);
               if (openDecisions.every(([userId]) => (openUntilMs.get(userId) ?? 0) > nowMs)) {
                 recordBustProgress();
+              } else {
+                // A malformed/expired open-decision receipt proves no
+                // progress. Balancing may continue, but retain its stall age.
+                preserveBustWait = true;
               }
               /* A REBUY WINDOW DOES NOT STARVE THE BALANCER (Dan, 2026-10-26:
                  "TABLES NEED TO ALWAYS BE BALANCED 100% OF THE TIME NO MATTER
@@ -1171,7 +1249,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                  deciding a rebuy still count as playing, so the finish stage
                  cannot end the event on them. Same class of defect as the
                  2026-09-12 backlog return below. */
-              break bustStage;
+              break bustedBatch;
             }
           }
 
@@ -1319,11 +1397,24 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            */
           this.noteEliminationSweepStep('db:tournament_players');
           const [takenRead, unplacedRead] = await Promise.all([
-            supabase
-              .from('tournament_players')
-              .select('position')
-              .eq('tournament_id', this.tournamentId)
-              .not('position', 'is', null),
+            fetchAllRows<{ id: string; position: number }>(
+              (cursor, pageSize) => {
+                let query = supabase
+                  .from('tournament_players')
+                  .select('id, position')
+                  .eq('tournament_id', this.tournamentId)
+                  .not('position', 'is', null)
+                  .order('id', { ascending: true })
+                  .limit(pageSize);
+                if (cursor) query = query.gt('id', cursor);
+                return query;
+              },
+              {
+                label: 'Tournament.takenPlaces',
+                pageAttempts: 1,
+                shouldContinue: () => !sweepStopped(),
+              }
+            ),
             // Players who hold no finishing place yet. Monotonic, and immune to
             // the late-reg promotion that made `playingCount` drift.
             supabase
@@ -1332,7 +1423,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               .eq('tournament_id', this.tournamentId)
               .is('position', null),
           ]);
-          const { data: takenRows, error: takenErr } = takenRead;
+          const takenRows = takenRead.complete ? takenRead.rows : null;
+          const takenErr = takenRead.complete ? null : new Error('incomplete taken places');
           const { count: unplacedCount, error: unplacedErr } = unplacedRead;
           if (sweepStopped()) return;
 
@@ -1584,8 +1676,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestEliminationSweep();
         }
 
-        // Later cursor stages must not carry a wait for already-settled busts.
-        recordBustProgress();
+        // Later stages retire only proven progress, never an unknown deadline.
+        if (!preserveBustWait) recordBustProgress();
         if (completedStage(2)) return;
       }
 
@@ -1637,7 +1729,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
         } else if (remainingCount > 1) {
-          this.mysteryPlayersRemainingHint = remainingCount;
+          // A hand may complete while this read is in flight. A closed field
+          // cannot grow; never overwrite a newer synchronous bust hint upward.
+          this.mysteryPlayersRemainingHint = this.prizePoolFinalized
+            ? Math.min(this.mysteryPlayersRemainingHint ?? remainingCount, remainingCount)
+            : remainingCount;
           // MYSTERY BOUNTY ACTIVATION (2026-08-25). This is the only place in
           // the engine that knows, between hands and from a count it has just
           // verified, how many players can still be knocked out — which is
@@ -1648,9 +1744,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.noteEliminationSweepStep('maybeActivateMysteryBounty');
             const awaitingBoundary = await this.maybeActivateMysteryBounty(remainingCount);
             if (sweepStopped()) return;
-            // Hold the parked boundary only while a hand is still in the air;
-            // every other answer is final for this count, so deal on.
+            // Unknown/unfinished activation retains custody; only a confirmed
+            // activation or a definitive ineligible answer releases the deal.
             if (awaitingBoundary !== true) this.releaseMysteryActivationBoundary();
+            else if (this.mysteryActivationBoundaryPending) {
+              // Continue this exact held transition after an unavailable RPC.
+              // Park edges also wake it; no independent repair job owns it.
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+            }
           } catch (mbErr) {
             reportError(mbErr, 'Tournament.mystery_bounty_activation_sweep');
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
@@ -1886,9 +1989,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           do {
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
-            // A slow move/read still owns this stage on the next admission.
-            if (this.eliminationWorkBudgetExpired()) {
+            // A slow move/read retains its physical operation, not exclusive use of the sweep cursor.
+            if (
+              progress?.kind === 'park-continuation' ||
+              (this.eliminationWorkBudgetExpired() && progress?.kind !== 'planning-complete')
+            ) {
               this.declareConsolidationOutstanding(true);
+              // The pending physical operation remains owned by the balancer.
+              // It must not also own every future sweep: new busts can reserve
+              // the very chairs that its next move needs. Finish this cycle
+              // before returning to the same exact park/move on the next one.
+              if (!completedStage(6)) this.requestEliminationSweep();
               return;
             }
             // Only a fully receipted retirement permits another fresh plan
@@ -2127,8 +2238,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               this.noteEliminationSweepStep('broadcast');
               await this.broadcast('bubble_burst', { playersRemaining: playingNow });
               if (sweepStopped()) return;
-              // Ending the bubble cannot release an overlapping tournament break.
-              if (!this.isOnBreak() && !this.successorDrainRequested) {
+              // The bubble does not own an overlapping mystery activation.
+              // Keep every table parked until its chest inventory is sealed.
+              if (
+                !this.isOnBreak() &&
+                !this.successorDrainRequested &&
+                !this.mysteryActivationBoundaryPending
+              ) {
                 for (const engine of this.tableEngines.values()) {
                   engine.resumeDealing();
                 }
@@ -2143,8 +2259,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // immediate and delayed bust wakes can then coalesce into that same
       // queued continuation, which skips the already completed bust stage.
       // Retain the known obligation until a fresh bust read proves it empty.
-      if (this.unresolvedBustsInSweepCycle && !sweepStopped()) {
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      if (!sweepStopped()) {
+        // An immediate cursor continuation can consume the balance owner's
+        // delayed wake. Keep its exact pending work owed after the full cycle,
+        // just as unresolved busts remain owed until an authoritative read.
+        if (this.consolidationDeclared)
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        else if (this.unresolvedBustsInSweepCycle)
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
       }
       completedWholeSweep = true;
     } catch (err) {
@@ -2305,6 +2427,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * due moment does not spend one of the sixteen retry passes.
    */
   private horseRebuyInputInFlight = false;
+  protected override tournamentAbortBusinessTailsDrained(): boolean {
+    if (!super.tournamentAbortBusinessTailsDrained() || this.horseRebuyInputInFlight) return false;
+    if (this.horseRebuyPending !== undefined && this.horseRebuyPending.size !== 0) return false;
+    for (const queue of this.bountyRevealQueues.values())
+      if (queue.active !== null || queue.waiting.length !== 0 || queue.coalesceTimer !== null)
+        return false;
+    return true;
+  }
+  /** Retain physical purchases until their responses settle; never cancel an unknown money outcome. */
+  private horseRebuyPending?: Map<string, Promise<void>>;
   private horseRebuyInputAgain = false;
   private horseRebuyInputTimer: ReturnType<typeof setTimeout> | null = null;
   private horseRebuyInputTimerAtMs = Number.POSITIVE_INFINITY;
@@ -2312,6 +2444,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private horseRebuyInputNextDueAtMs: number | null = null;
   static readonly HORSE_REBUY_INPUT_RETRY_MS = 2_000;
   static readonly HORSE_REBUY_INPUT_MAX_PASSES = 16;
+  static readonly HORSE_REBUY_INPUT_CONCURRENCY = 4;
 
   protected override horseRebuyOfferMayHaveOpened(): void {
     this.answerHorseRebuyOffersNow(0);
@@ -2354,7 +2487,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       try {
         do {
           this.horseRebuyInputAgain = false;
-          const unanswered = await this.answerOpenHorseRebuyOffers();
+          const unanswered = await this.answerOpenHorseRebuyOffers(false);
           nextDueAtMs = this.horseRebuyInputNextDueAtMs;
           if (this.horseRebuyInputAgain) current = 0;
           else if (
@@ -2393,21 +2526,39 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * (worth asking again). A horse that is not due yet is not "unanswered": its
    * due moment is left in horseRebuyInputNextDueAtMs for the device to wake at.
    */
-  private async answerOpenHorseRebuyOffers(): Promise<boolean> {
+  private async answerOpenHorseRebuyOffers(waitForPurchases = true): Promise<boolean> {
     this.horseRebuyInputNextDueAtMs = null;
     if (!this.running || isMaintenanceFrozen()) return false;
     const t = this.tournamentCache as { is_rebuy?: boolean; is_reentry?: boolean } | undefined;
     if (!t?.is_rebuy && !t?.is_reentry) return false;
     const nowIso = new Date().toISOString();
-    const { data: offers, error } = await supabase
-      .from('tournament_knockout_candidates')
-      .select('eliminated_user_id, hand_number, created_at, rebuy_prompt_until')
-      .eq('tournament_id', this.tournamentId)
-      .eq('state', 'pending')
-      .gt('rebuy_prompt_until', nowIso)
-      .order('hand_number', { ascending: true })
-      .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE * 4);
-    if (error || !Array.isArray(offers)) return true;
+    const mayAnswer = () => this.running && !isMaintenanceFrozen();
+    // An unanswered prefix (including human offers) must not hide a later
+    // horse's input. Read the complete open board before making decisions.
+    const offerRead = await fetchAllRows<{
+      id: string;
+      eliminated_user_id: string;
+      hand_number: unknown;
+      created_at?: unknown;
+      rebuy_prompt_until?: unknown;
+    }>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournament_knockout_candidates')
+          .select('id, eliminated_user_id, hand_number, created_at, rebuy_prompt_until')
+          .eq('tournament_id', this.tournamentId)
+          .eq('state', 'pending')
+          .gt('rebuy_prompt_until', nowIso)
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.horseRebuyOffers', pageAttempts: 1, shouldContinue: mayAnswer }
+    );
+    if (!mayAnswer()) return false;
+    if (!offerRead.complete) return true;
+    const offers = offerRead.rows.sort((a, b) => Number(a.hand_number) - Number(b.hand_number));
     if (offers.length === 0) return false;
 
     const handNumbers = new Map<string, number>();
@@ -2429,18 +2580,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const userIds = [...handNumbers.keys()];
     if (userIds.length === 0) return false;
 
-    const mayAnswer = () => this.running && !isMaintenanceFrozen();
     let stillOpen = false;
     let nextDueAtMs: number | null = null;
     for (let i = 0; i < userIds.length; i += TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE) {
       if (!mayAnswer()) return false;
       const batch = userIds.slice(i, i + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
-      const { answered, horses, deferredUntil } = await this.tryTournamentRebuys(
-        batch,
-        handNumbers,
-        timings,
-        mayAnswer
-      );
+      const { answered, horses, deferredUntil, identificationUnproven } =
+        await this.tryTournamentRebuys(batch, handNumbers, timings, mayAnswer, waitForPurchases);
+      if (identificationUnproven) stillOpen = true;
       for (const due of deferredUntil.values()) {
         if (nextDueAtMs === null || due < nextDueAtMs) nextDueAtMs = due;
       }
@@ -2489,12 +2636,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // The sweep passes its own work-budget fence. The horse input device
     // (answerHorseRebuyOffersNow) is not a sweep and answers to manager stop
     // and the maintenance freeze only, exactly as a human's click does.
-    mayMutate: () => boolean = () => this.eliminationMutationAllowed()
+    mayMutate: () => boolean = () => this.eliminationMutationAllowed(),
+    waitForPurchases = true
   ): Promise<{
     rebought: Set<string>;
     answered: Set<string>;
     horses: Set<string>;
     deferredUntil: Map<string, number>;
+    identificationUnproven?: boolean;
   }> {
     const rebought = new Set<string>();
     /** Horses that chose to rebuy but whose answer is not due yet, with the
@@ -2561,14 +2710,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (closedWindow) return { rebought, answered, horses, deferredUntil };
       // Open, malformed or unreadable policy retains the original purchase
       // authority, including its exact receipt replay and fresh locked checks.
-      const { data: horseRows, error: horseErr } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('id', batch)
-        .eq('is_horse', true);
-      if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
-      if (horseErr || !horseRows || horseRows.length === 0)
-        return { rebought, answered, horses, deferredUntil };
+      let horseRows: Array<{ id: string }>;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id')
+          .in('id', batch)
+          .eq('is_horse', true);
+        if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
+        if (error || !Array.isArray(data)) throw error ?? new Error('Horse profiles unreadable');
+        horseRows = data;
+      } catch (error) {
+        reportError(error, 'Tournament.rebuy_profile_identification_unproven', {
+          tournamentId: this.tournamentId,
+        });
+        // Unknown identity is not an empty human-only batch. Preserve the
+        // original input device's bounded continuation; never infer a choice,
+        // purchase, or decline while the profile read is unavailable.
+        return { rebought, answered, horses, deferredUntil, identificationUnproven: true };
+      }
+      if (horseRows.length === 0) return { rebought, answered, horses, deferredUntil };
       for (const horse of horseRows) horses.add(String(horse.id));
 
       const declined = new Map<string, number>();
@@ -2594,37 +2755,61 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           ])
         );
       }
-      for (const h of horseRows) {
-        if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
+      // Each horse supplies an independent input. A delayed transport response
+      // must not spend a different player's decision window. Bound in-flight
+      // requests; the unchanged database transaction serializes money/seat locks.
+      let nextHorse = 0;
+      const answer = async (h: { id: string }): Promise<void> => {
+        if (!mayMutate()) return;
         const bustHandNumber = bustHandNumbers.get(h.id);
         if (!Number.isSafeInteger(bustHandNumber) || Number(bustHandNumber) <= 0) {
           // Unknown identity is not a decline or permission to charge. Keep
           // the normal durable decision grace until the bust can be read.
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          continue;
+          return;
         }
-        if (!horseChoosesTournamentRebuy(this.tournamentId, h.id, bustHandNumber)) {
+        const choice = horseChoosesTournamentRebuy(this.tournamentId, h.id, bustHandNumber);
+        const timing = offerTimings.get(h.id);
+        let dueAtMs: number | null = null;
+        const diagnostic = (
+          phase: Parameters<typeof reportHorseRebuyDecision>[0]['phase'],
+          error?: unknown,
+          startedAtMs?: number
+        ) =>
+          reportHorseRebuyDecision({
+            tournamentId: this.tournamentId,
+            userId: h.id,
+            handNumber: Number(bustHandNumber),
+            choice,
+            phase,
+            bustAtMs: timing?.bustAtMs ?? null,
+            promptUntilMs: timing?.promptUntilMs ?? null,
+            startedAtMs,
+            dueAtMs,
+            error,
+          });
+        diagnostic('choice');
+        if (!choice) {
           await this.declineHorseRebuyOffer(h.id, mayMutate);
           answered.add(h.id);
-          continue;
+          return;
         }
         if (freeBuyReloads) {
           const used = freeBuyReloads.get(h.id);
           if (used === undefined) {
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-            continue;
+            return;
           }
           if (used >= horseRebuyAllowance(h.id, this.tournamentId)) {
             await this.declineHorseRebuyOffer(h.id, mayMutate);
             answered.add(h.id);
-            continue;
+            return;
           }
         }
         // A HORSE TAKES A HUMAN MOMENT TO REBUY (2026-10-24, CLAUDE.md 10.5).
         // Never before bust + its deterministic think time, never past the
         // window's safety margin. Both answering paths pass through here.
-        const timing = offerTimings.get(h.id);
-        const dueAtMs =
+        dueAtMs =
           timing && timing.handNumber === Number(bustHandNumber)
             ? horseRebuyAnswerDueAtMs(
                 this.tournamentId,
@@ -2638,34 +2823,115 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // The bust moment is unknown, so "due" is unknown: keep the grace
           // and read the generation again rather than answer early.
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          continue;
+          return;
         }
         if (Date.now() < dueAtMs) {
+          diagnostic('deferred');
           deferredUntil.set(h.id, dueAtMs);
-          continue;
+          return;
         }
-        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: this.tournamentId,
-          p_user_id: h.id,
-          p_rebuy_type: recoveryType,
-          // null: let the server price it. Passing a client-side quote here
-          // would only risk a spurious 'Price mismatch'.
-          p_cost: null,
-          p_chips: null,
-          p_current_level: this.currentLevel,
-        });
-        if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
-        if (error) {
-          declined.set(error.message, (declined.get(error.message) || 0) + 1);
-          // A transport error can follow a committed purchase. Keep the
-          // decision grace open and re-read chips next pass; never eliminate
-          // this horse from a stale pre-rebuy snapshot.
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          continue;
+        if (
+          timing?.promptUntilMs !== null &&
+          timing?.promptUntilMs !== undefined &&
+          Date.now() >= timing.promptUntilMs
+        ) {
+          diagnostic('expired');
+          return;
         }
-        answered.add(h.id);
-        if ((data as { success?: boolean } | null)?.success === true) rebought.add(h.id);
-      }
+        const pending = (this.horseRebuyPending ??= new Map());
+        const key = JSON.stringify([h.id, bustHandNumber]);
+        const prior = pending.get(key);
+        if (prior) {
+          diagnostic('purchase_pending');
+          if (waitForPurchases) await prior;
+          return;
+        }
+        if (pending.size >= TournamentManagerEliminations.HORSE_REBUY_INPUT_CONCURRENCY) {
+          diagnostic('capacity_deferred');
+          return;
+        }
+        let startedAtMs: number | undefined;
+        let purchase!: Promise<void>;
+        purchase = this.trackLifecycleJob(
+          Promise.resolve().then(async () => {
+            try {
+              // State can change between reservation and this queued callback.
+              // service_role is not protected by the ordinary database freeze trigger.
+              if (!mayMutate() || isMaintenanceFrozen()) return;
+              if (
+                timing?.promptUntilMs !== null &&
+                timing?.promptUntilMs !== undefined &&
+                Date.now() >= timing.promptUntilMs
+              ) {
+                diagnostic('expired');
+                return;
+              }
+              startedAtMs = Date.now();
+              diagnostic('purchase_started', undefined, startedAtMs);
+              const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+                p_tournament_id: this.tournamentId,
+                p_user_id: h.id,
+                p_rebuy_type: recoveryType,
+                // null: let the server price it. Passing a client-side quote here
+                // would only risk a spurious 'Price mismatch'.
+                p_cost: null,
+                p_chips: null,
+                p_current_level: this.currentLevel,
+              });
+              diagnostic(
+                error || (data as { success?: boolean } | null)?.success !== true
+                  ? 'purchase_unproven'
+                  : 'purchased',
+                error,
+                startedAtMs
+              );
+              if (!mayMutate()) return;
+              if (error || (data as { success?: boolean } | null)?.success !== true) {
+                const message = error?.message ?? 'purchase response unproven';
+                declined.set(message, (declined.get(message) || 0) + 1);
+                // A transport error can follow a committed purchase. Keep the
+                // decision grace open and re-read chips next pass; never eliminate
+                // this horse from a stale pre-rebuy snapshot.
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return;
+              }
+              answered.add(h.id);
+              rebought.add(h.id);
+            } catch (error) {
+              diagnostic('purchase_unproven', error, startedAtMs);
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+            } finally {
+              if (pending.get(key) === purchase) pending.delete(key);
+            }
+          })
+        );
+        pending.set(key, purchase);
+        // The direct input must return to arm other horses' due moments even
+        // while this response is slow. Existing bounded passes re-read the
+        // authoritative offer/receipt; the sweep may still await the response.
+        if (waitForPurchases) await purchase;
+      };
+      const worker = async (): Promise<void> => {
+        while (nextHorse < horseRows.length) {
+          const horse = horseRows[nextHorse++];
+          await answer(horse);
+        }
+      };
+      await Promise.all(
+        Array.from(
+          {
+            length: Math.min(
+              TournamentManagerEliminations.HORSE_REBUY_INPUT_CONCURRENCY,
+              horseRows.length
+            ),
+          },
+          () => worker()
+        )
+      );
 
       if (rebought.size > 0) {
         console.log(
@@ -4671,11 +4937,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * final pool is known; the atomic finish moves the money later.
    */
   protected async recalculateEliminatedPrizes(finalPrizePool: number): Promise<boolean> {
-    const { data: eliminated, error: eliminatedErr } = await supabase
-      .from('tournament_players')
-      .select('user_id, position, prize')
-      .eq('tournament_id', this.tournamentId)
-      .eq('status', 'eliminated');
+    const lifecycle = this.captureLifecycleToken();
+    const current = () =>
+      Boolean(lifecycle && this.lifecycleIsCurrent(lifecycle) && this.eliminationMutationAllowed());
+    if (!current()) return false;
+    const field = await fetchAllRows<{
+      id: string;
+      user_id: string;
+      position: number | null;
+      prize: number | null;
+    }>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournament_players')
+          .select('id, user_id, position, prize')
+          .eq('tournament_id', this.tournamentId)
+          .eq('status', 'eliminated')
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor !== null) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.reprice_field', shouldContinue: current }
+    );
+    if (!current()) return false;
+    const eliminated = field.rows;
+    const eliminatedErr = field.complete ? null : new Error('eliminated field read incomplete');
 
     /* Zero cannot be used as the ITM filter. A guaranteed freeroll that ends
        before its usual funding point records every early prize as zero; those
@@ -4705,6 +4992,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // column here meant a top-up computed from a DIFFERENT structure than the
     // payment it is topping up.
     const finalField = await this.finalFieldSize();
+    if (!current()) return false;
     if (typeof finalField !== 'number') {
       reportError(
         new Error(
@@ -4748,6 +5036,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     let complete = true;
     let mutations = 0;
     for (const player of eliminated) {
+      if (!current()) return false;
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
         ? computePlacePrize(
@@ -4808,6 +5097,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             p_new_prize: correctPrize,
           }
         );
+        if (!current()) return false;
         const record = recordRaw as {
           ok?: boolean;
           tournament_id?: string;
@@ -5165,6 +5455,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     });
   }
 
+  private retireCompletedCustodyAfterTerminalCleanup(receiptTournamentId: string): void {
+    if (receiptTournamentId !== this.tournamentId) return;
+    try {
+      this.gameServer.retireCompletedF06CustodyMetadata(
+        this.tournamentId,
+        this,
+        receiptTournamentId
+      );
+    } catch (error) {
+      // Historical metadata cannot unwind a committed terminal receipt or its
+      // successful physical cleanup. Unknown retirement keeps its custody.
+      try {
+        reportError(error, 'Tournament.completed_custody_metadata_retirement_failed', {
+          tournamentId: this.tournamentId,
+        });
+      } catch {
+        /* diagnostic failure cannot repeat terminal presentation */
+      }
+    }
+  }
+
   /** Announce and close a normal place settlement, without moving money. */
   private async cleanupCommittedTournament(
     receipt: VerifiedTournamentCompletionReceipt
@@ -5184,7 +5495,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const cleaned = await this.cleanupCommittedTablesAndManager(
       receipt.tableClosure.closedTableIds
     );
-    if (cleaned) this.committedFinishReceipt = null;
+    if (cleaned) {
+      this.retireCompletedCustodyAfterTerminalCleanup(receipt.tournamentId);
+      this.committedFinishReceipt = null;
+    }
     return cleaned;
   }
 
@@ -5204,7 +5518,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const cleaned = await this.cleanupCommittedTablesAndManager(
       receipt.sourceCloseout.sourceTableIds
     );
-    if (cleaned) this.committedSatelliteReceipt = null;
+    if (cleaned) {
+      this.retireCompletedCustodyAfterTerminalCleanup(receipt.tournamentId);
+      this.committedSatelliteReceipt = null;
+    }
     return cleaned;
   }
 
@@ -5225,8 +5542,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const cleaned = await this.cleanupCommittedTablesAndManager(
       receipt.sourceCloseout.sourceTableIds
     );
-    if (cleaned) this.committedSatelliteQualifierReceipt = null;
-    else if (this.running)
+    if (cleaned) {
+      this.retireCompletedCustodyAfterTerminalCleanup(receipt.tournamentId);
+      this.committedSatelliteQualifierReceipt = null;
+    } else if (this.running)
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
     return cleaned;
   }
@@ -6362,6 +6681,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       receipt.tableClosure.closedTableIds
     );
     if (cleaned) {
+      this.retireCompletedCustodyAfterTerminalCleanup(receipt.tournamentId);
       this.committedFinalTableDealCleanupPending = false;
       this.committedFinalTableDealReceipt = null;
     }

@@ -187,9 +187,8 @@ describe('Club Arena runtime asset retention', () => {
           !line.includes("'*.map'")
       );
     expect(runtimePrunes).toEqual([]);
-    expect(await read('.github/workflows/publish-club-arena.yml')).not.toContain(
-      'sync-club-arena-dist.mjs'
-    );
+    for (const file of ['publish-club-arena.yml', 'publish-club-arena-transaction.yml'])
+      expect(await read(`.github/workflows/${file}`)).not.toContain('sync-club-arena-dist.mjs');
   });
 
   it('atomically adopts the legacy regular fonts.css only when its bytes exactly match current', async () => {
@@ -419,4 +418,99 @@ describe('Club Arena runtime asset retention', () => {
       await rm(sandbox, { recursive: true, force: true });
     }
   });
+});
+
+it('seals unchanged old-owner rollback bytes before verifying the transferred immutable candidate', async () => {
+  const transaction = await activationTransaction();
+  const sandbox = await mkdtemp(path.join(tmpdir(), 'club-arena-transfer-origin-'));
+  const oldRepository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+  const repository = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
+  const oldSha = 'a'.repeat(40),
+    nextSha = 'b'.repeat(40);
+  try {
+    const oldRelease = path.join(sandbox, 'releases', oldSha);
+    const candidate = path.join(sandbox, 'releases', nextSha);
+    const incoming = path.join(sandbox, 'incoming');
+    await mkdir(oldRelease, { recursive: true });
+    await mkdir(candidate, { recursive: true });
+    await mkdir(incoming);
+    await writeReleaseIdentity(oldRelease, oldSha, oldRepository);
+    await writeFile(path.join(oldRelease, 'index.html'), 'old immutable runtime');
+    const original = await readFile(path.join(oldRelease, 'ca-provenance.json'), 'utf8');
+    const current = path.join(sandbox, 'current');
+    await symlink(oldRelease, current);
+    const seal = await writeRollbackSealProbe(sandbox, transaction);
+    const sealed = spawnSync(
+      'bash',
+      [
+        seal,
+        current,
+        oldRelease,
+        oldSha,
+        repository,
+        path.join(incoming, 'manifest-stage'),
+        path.join(incoming, 'manifest-check'),
+      ],
+      { encoding: 'utf8' }
+    );
+    expect(sealed.status, sealed.stderr).toBe(0);
+    expect(await readFile(path.join(oldRelease, 'ca-provenance.json'), 'utf8')).toBe(original);
+    expect(await readlink(current)).toBe(oldRelease);
+    const verify = path.join(sandbox, 'verify-candidate.sh');
+    await writeFile(
+      verify,
+      `set -euo pipefail\n${shellFunction(transaction, 'verify_release_identity')}\nverify_release_identity "$@"\n`
+    );
+    await writeReleaseIdentity(candidate, nextSha, repository);
+    const legacyNew = JSON.parse(
+      await readFile(path.join(candidate, 'ca-provenance.json'), 'utf8')
+    );
+    const good = {
+      ...legacyNew,
+      repositoryId: '1132369872',
+      publication: {
+        admittedMain: nextSha,
+        observedMain: nextSha,
+        workflowRef: `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main`,
+        workflowSha: nextSha,
+        triggerSha: nextSha,
+        eventName: 'push',
+      },
+    };
+    const check = (repo = repository) =>
+      spawnSync('bash', [verify, candidate, nextSha, repo], { encoding: 'utf8' });
+    for (const [value, accepted] of [
+      [good, true],
+      [legacyNew, false],
+      [{ ...good, repositoryId: '42' }, false],
+      [{ ...good, repositoryId: undefined }, false],
+      [
+        {
+          ...good,
+          publication: {
+            ...good.publication,
+            workflowRef: `${oldRepository}/.github/workflows/publish-club-arena.yml@refs/heads/main`,
+          },
+        },
+        false,
+      ],
+      [{ ...good, ciRun: 'https://github.com/evil/fork/actions/runs/123456' }, false],
+    ] as const) {
+      await writeFile(path.join(candidate, 'ca-provenance.json'), JSON.stringify(value));
+      const result = check();
+      expect(result.status === 0, result.stderr).toBe(accepted);
+    }
+    await writeFile(path.join(candidate, 'ca-provenance.json'), JSON.stringify(good));
+    expect(check('evil/Smarter-Poker-Club-Arena').status).not.toBe(0);
+    await writeFile(
+      path.join(oldRelease, 'ca-provenance.json'),
+      JSON.stringify({ ...JSON.parse(original), repositoryId: '42' })
+    );
+    expect(
+      spawnSync('bash', [verify, oldRelease, oldSha, repository, 'rollback'], { encoding: 'utf8' })
+        .status
+    ).not.toBe(0);
+  } finally {
+    await rm(sandbox, { recursive: true, force: true });
+  }
 });

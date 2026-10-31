@@ -58,15 +58,40 @@ describe('Player Record: Win / Loss card', () => {
     expect(screen.getByText('This Month')).toBeInTheDocument();
     expect(screen.getByText('Overall')).toBeInTheDocument();
 
-    expect(screen.getByText('+70')).toBeInTheDocument();
-    expect(screen.getByText('-1.2K')).toBeInTheDocument();
-    expect(screen.getByText('+4.3K')).toBeInTheDocument();
-    expect(screen.getByText('Cash +120 / Tournaments -50')).toBeInTheDocument();
+    expect(screen.getByText('+70.00')).toBeInTheDocument();
+    expect(screen.getByText('-1,250.75')).toBeInTheDocument();
+    expect(screen.getByText('+4,300.00')).toBeInTheDocument();
+    expect(screen.getByText('Cash +120.00 / Tournaments -50.00')).toBeInTheDocument();
     expect(ClubRosterService.getMemberWinLoss).toHaveBeenCalledWith(
       'club-1',
       'player-1',
       expect.any(AbortSignal)
     );
+  });
+
+  it('retains cents in each period total and both underlying categories', async () => {
+    vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue({
+      ...record,
+      today: figure(-0.4, 0.01),
+      week: figure(1000.01, -0.02),
+      month: figure(10234.57, -35.12),
+      overall: figure(-1234567.89, 987.65),
+    });
+    const { container } = render(<MemberWinLossCard clubId="club-1" userId="player-1" />);
+    await screen.findByText('-0.39');
+    const rows = [...container.querySelectorAll('.mm-winloss__row')];
+    expect(rows.map((row) => row.querySelector('.mm-stat__value')?.textContent)).toEqual([
+      '-0.39',
+      '+999.99',
+      '+10,199.45',
+      '-1,233,580.24',
+    ]);
+    expect(rows.map((row) => row.querySelector('.mm-winloss__split')?.textContent)).toEqual([
+      'Cash -0.40 / Tournaments +0.01',
+      'Cash +1,000.01 / Tournaments -0.02',
+      'Cash +10,234.57 / Tournaments -35.12',
+      'Cash -1,234,567.89 / Tournaments +987.65',
+    ]);
   });
 
   it('colours a win up and a loss down with the record inks', async () => {
@@ -219,16 +244,16 @@ describe('the migration measures money, under the record access rule', () => {
 it('refreshes the mounted win/loss card when its record changes', async () => {
   const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
   const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={0} />);
-  await screen.findByText('+70');
+  await screen.findByText('+70.00');
   spy.mockResolvedValue({ ...record, today: figure(77, 0) });
   view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={1} />);
-  expect(await screen.findByText('+77')).toBeInTheDocument();
+  expect(await screen.findByText('+77.00')).toBeInTheDocument();
 });
 
 it('keeps verified figures visible during an in-flight background refresh', async () => {
   const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
   const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={0} />);
-  await screen.findByText('+70');
+  await screen.findByText('+70.00');
   let finish!: (data: MemberWinLoss) => void;
   spy.mockReturnValueOnce(
     new Promise((resolve) => {
@@ -237,36 +262,36 @@ it('keeps verified figures visible during an in-flight background refresh', asyn
   );
   view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={1} />);
   await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
-  expect(screen.getByText('+70')).toBeInTheDocument();
+  expect(screen.getByText('+70.00')).toBeInTheDocument();
   expect(screen.queryByText('Loading Win And Loss...')).not.toBeInTheDocument();
   finish({ ...record, today: figure(88, 0) });
-  expect(await screen.findByText('+88')).toBeInTheDocument();
+  expect(await screen.findByText('+88.00')).toBeInTheDocument();
 });
 
 it('withdraws the old card immediately when the member changes', async () => {
   const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
   const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" />);
-  await screen.findByText('+70');
+  await screen.findByText('+70.00');
   spy.mockReturnValueOnce(new Promise(() => {}));
   view.rerender(<MemberWinLossCard clubId="club-1" userId="player-2" />);
-  expect(screen.queryByText('+70')).not.toBeInTheDocument();
+  expect(screen.queryByText('+70.00')).not.toBeInTheDocument();
   expect(screen.getByText('Loading Win And Loss...')).toBeInTheDocument();
 });
 
 it('keeps loaded figures with a stale note when a background refresh fails', async () => {
   const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
   const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={0} />);
-  await screen.findByText('+70');
+  await screen.findByText('+70.00');
   spy.mockRejectedValueOnce(new Error('timed out'));
   view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={1} />);
   expect(
     await screen.findByText('Could Not Refresh Win And Loss. Showing The Previous Successful Read.')
   ).toBeInTheDocument();
-  expect(screen.getByText('+70')).toBeInTheDocument();
+  expect(screen.getByText('+70.00')).toBeInTheDocument();
   expect(screen.queryByText('Win And Loss Could Not Be Loaded.')).not.toBeInTheDocument();
   spy.mockResolvedValueOnce({ ...record, today: figure(90, 0) });
   view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={2} />);
-  expect(await screen.findByText('+90')).toBeInTheDocument();
+  expect(await screen.findByText('+90.00')).toBeInTheDocument();
   expect(
     screen.queryByText('Could Not Refresh Win And Loss. Showing The Previous Successful Read.')
   ).not.toBeInTheDocument();
@@ -276,4 +301,18 @@ it('shows Unavailable on a Players row whose win / loss read failed', () => {
   const page = read('src/pages/ClubMembersPage.tsx');
   expect(page).toContain('winLossUnavailable={winLoss.unavailable.has(member.user_id)}');
   expect(page).toContain("return unavailable ? 'Unavailable' : '...';");
+});
+
+it('keeps current results visible when only historical ownership is unavailable', async () => {
+  vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue({
+    ...record,
+    overall: { cash: null, mtt: -50, net: null },
+  });
+  const { container } = render(<MemberWinLossCard clubId="club-partial" userId="player-partial" />);
+  await screen.findByText('+70.00');
+  const overall = screen.getByText('Overall').closest('.mm-stat');
+  expect(overall?.querySelector('.mm-stat__value')?.textContent).toBe('Unavailable');
+  expect(overall?.textContent).toContain('Cash Unavailable / Tournaments -50.00');
+  expect(overall?.className).not.toMatch(/mm-stat--(up|down)/);
+  expect(container.textContent).toContain('Some Historical Jackpot Club Records Are Missing');
 });

@@ -14,6 +14,7 @@ import { remainingInitialTableReadinessMs } from './support/initialTableReadines
 import {
   installNaturalMultiRunWitness,
   completedNaturalRuns,
+  naturalMultiRunTiming,
   naturalMultiRunEngineIdentity,
   readNaturalMultiRunHistory,
   initializeNaturalMultiRunObserver,
@@ -22,6 +23,10 @@ import {
   eligibleNaturalMultiRunTable,
   naturalMultiRunTransportEvidence,
   naturalMultiRunRequiredRuns,
+  naturalSingleRunPackets,
+  naturalSingleRunClockAligned,
+  completedNaturalSingleRuns,
+  type NaturalSingleRunPacket,
   type NaturalMultiRunCandidate,
   type NaturalRunPacket,
 } from './support/naturalMultiRunMobile';
@@ -107,10 +112,15 @@ const enabled = process.env.LIVE_TABLE_MULTIRUN_CERTIFICATION === '1';
 const requestedRuns = naturalMultiRunRequiredRuns(
   process.env.MOBILE_MULTIRUN_TARGET_JSON,
   process.env.MOBILE_MULTIRUN_JSON,
-  process.env.ENGINE_TRIGGER_JSON
+  process.env.ENGINE_TRIGGER_JSON,
+  process.env.HORSE_SOCIAL_JSON,
+  process.env.CLIENT_NAVIGATION_JSON
 );
-const proofName =
-  requestedRuns.length === 1
+const onceOnly = requestedRuns.length === 1 && requestedRuns[0] === 1;
+if (onceOnly) test.use({ trace: 'on' });
+const proofName = onceOnly
+  ? 'natural once decisions clear the status on the same visible mobile hand'
+  : requestedRuns.length === 1
     ? 'natural three-run only mobile rivers precede awards and winner chip landings'
     : 'natural two-run and three-run mobile rivers precede awards and winner chip landings';
 const union = 'fade0000-0000-0000-0000-000000000001';
@@ -171,6 +181,8 @@ test(proofName, async ({ context, request, baseURL, browserName }, testInfo) => 
     tableId: string;
     journal: EngineSocketJournal;
     packets: NaturalRunPacket[];
+    singlePackets: NaturalSingleRunPacket[];
+    clock?: { nodeBefore: number; browserNow: number; nodeAfter: number };
   }> = [];
   const coverage = new Map<number, any>();
   const observations: any[] = [];
@@ -186,7 +198,7 @@ test(proofName, async ({ context, request, baseURL, browserName }, testInfo) => 
         const journal = new EngineSocketJournal(page);
         await installNaturalAuthAdmissionDiagnostic(page);
         await installNaturalMultiRunWitness(page);
-        pages.push({ page, tableId: table.id, journal, packets: [] });
+        pages.push({ page, tableId: table.id, journal, packets: [], singlePackets: [] });
         await openNaturalMultiRunObserver(
           page,
           journal,
@@ -194,6 +206,16 @@ test(proofName, async ({ context, request, baseURL, browserName }, testInfo) => 
           navigationBudgetMs,
           remainingSetup
         );
+        if (onceOnly) {
+          const nodeBefore = Date.now();
+          const browserNow = await page.evaluate(() => Date.now());
+          const clock = { nodeBefore, browserNow, nodeAfter: Date.now() };
+          expect(
+            naturalSingleRunClockAligned(clock),
+            'The received event and browser clocks must be aligned'
+          ).toBe(true);
+          pages[pages.length - 1].clock = clock;
+        }
       },
       setupStartedAt
     );
@@ -202,6 +224,51 @@ test(proofName, async ({ context, request, baseURL, browserName }, testInfo) => 
       .poll(
         async () => {
           for (const item of pages) {
+            if (onceOnly) {
+              // The only decision marker comes from an actual, non-replayed received EVENT.
+              item.singlePackets = naturalSingleRunPackets(
+                item.journal.frames,
+                item.tableId,
+                setupStartedAt
+              );
+              for (const packet of item.singlePackets) {
+                await item.page.evaluate(
+                  (decision) =>
+                    (window as any).__naturalMultiRunWitness.markSingleRunDecision(decision),
+                  packet
+                );
+              }
+              const witness = await item.page.evaluate(() =>
+                (window as any).__naturalMultiRunWitness.read()
+              );
+              expect(witness.violations, `Natural once presentation at ${item.tableId}`).toEqual(
+                []
+              );
+              const packet = completedNaturalSingleRuns(
+                item.singlePackets,
+                witness,
+                item.clock!
+              )[0];
+              if (packet && !coverage.has(1)) {
+                const imagePath = testInfo.outputPath(
+                  'mobile-live-table-natural-once-decision.png'
+                );
+                await mkdir(dirname(imagePath), { recursive: true });
+                expect(
+                  await item.page
+                    .locator('.table-brand__hand')
+                    .evaluate((node) => Number(node.textContent?.match(/\d+/)?.[0]))
+                ).toBe(packet.hand);
+                await expect(item.page.locator('.rit-felt-banner')).toHaveCount(0);
+                await item.page.screenshot({ path: imagePath });
+                await testInfo.attach('mobile-live-table-natural-once-decision', {
+                  path: imagePath,
+                  contentType: 'image/png',
+                });
+                coverage.set(1, { tableId: item.tableId, packet, witness, clock: item.clock });
+              }
+              continue;
+            }
             item.packets = item.journal
               .matchingFrames({ direction: 'received', tableId: item.tableId, type: 'EVENT' })
               .flatMap((frame) => {
@@ -233,12 +300,18 @@ test(proofName, async ({ context, request, baseURL, browserName }, testInfo) => 
             for (const packet of completedNaturalRuns(item.packets, witness)) {
               if (!requestedRuns.includes(packet.runs as 2 | 3) || coverage.has(packet.runs))
                 continue;
+              const timing = naturalMultiRunTiming(packet, witness);
+              expect(
+                timing.violations,
+                `Natural run timing at ${item.tableId}, hand ${packet.hand}`
+              ).toEqual([]);
+              if (!timing.ready) continue;
               const name = `mobile-live-table-natural-${packet.runs}-runs`;
               const imagePath = testInfo.outputPath(`${name}.png`);
               await mkdir(dirname(imagePath), { recursive: true });
               await item.page.screenshot({ path: imagePath });
               await testInfo.attach(name, { path: imagePath, contentType: 'image/png' });
-              coverage.set(packet.runs, { tableId: item.tableId, packet, witness });
+              coverage.set(packet.runs, { tableId: item.tableId, packet, witness, timing });
             }
           }
           return [...coverage.keys()].sort();
@@ -278,6 +351,8 @@ test(proofName, async ({ context, request, baseURL, browserName }, testInfo) => 
       observations.push({
         tableId: item.tableId,
         packets: item.packets,
+        singlePackets: item.singlePackets,
+        clock: item.clock,
         witness: await item.page
           .evaluate(() => (window as any).__naturalMultiRunWitness?.read())
           .catch(() => null),

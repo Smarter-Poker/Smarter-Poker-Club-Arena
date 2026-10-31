@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  THE SWEEP ASKS INDEPENDENT QUESTIONS TOGETHER (2026-09-11)
@@ -57,6 +58,7 @@ interface Request {
   head: boolean;
   filters: Array<[string, string, unknown]>;
   sentAt: number;
+  limit?: number;
 }
 interface Answer {
   data?: unknown;
@@ -83,9 +85,16 @@ function transport(answer: (request: Request) => Answer): Request[] {
     request.sentAt = Date.now();
     sent.push(request);
     const response = { data: null, count: null, error: null, ...answer(request) };
+    if (Array.isArray(response.data) && request.table === 'tournament_players') {
+      const cursor = request.filters.find(([c, op]) => c === 'id' && op === 'gt')?.[2];
+      response.data = response.data
+        .filter((row: any) => cursor == null || row.id > String(cursor))
+        .slice(0, Math.min(1000, request.limit ?? 1000));
+    }
     return new Promise((resolve) => setTimeout(() => resolve(response), TRIP_MS));
   };
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     const request: Request = { table, columns: null, head: false, filters: [], sentAt: -1 };
     const filter = (column: string, op: string, value: unknown): unknown => {
       request.filters.push([column, op, value]);
@@ -99,6 +108,11 @@ function transport(answer: (request: Request) => Answer): Request[] {
       },
       eq: (column: string, value: unknown) => filter(column, 'eq', value),
       lte: (column: string, value: unknown) => filter(column, 'lte', value),
+      gt: (column: string, value: unknown) => filter(column, 'gt', value),
+      limit: (value: number) => {
+        request.limit = value;
+        return query;
+      },
       in: (column: string, value: unknown) => filter(column, 'in', value),
       is: (column: string, value: unknown) => filter(column, 'is', value),
       // An ORDER BY shapes the answer, not the trip.
@@ -127,9 +141,10 @@ function oneBustOfTwo(overrides: (request: Request) => Answer | undefined = () =
     const override = overrides(request);
     if (override) return override;
     if (request.table === 'tournament_players') {
-      if (request.columns === 'user_id, chips') return { data: [{ user_id: bustedId, chips: 0 }] };
+      if (/^(id, )?user_id, chips$/.test(request.columns ?? ''))
+        return { data: [{ user_id: bustedId, chips: 0 }] };
       if (isPlayingCount(request)) return { count: 2 };
-      if (request.columns === 'position') return { data: [] };
+      if (/^(id, )?position$/.test(request.columns ?? '')) return { data: [] };
       if (request.head && has(request, 'position', 'is', null)) return { count: 2 };
       if (request.head) return { count: 2 };
     }
@@ -238,7 +253,9 @@ describe('the sweep asks independent questions together', () => {
     const sent = oneBustOfTwo();
     const { manager } = bustStageManager();
     await sweep(manager);
-    const taken = sent.find((r) => r.table === 'tournament_players' && r.columns === 'position');
+    const taken = sent.find(
+      (r) => r.table === 'tournament_players' && /^(id, )?position$/.test(r.columns ?? '')
+    );
     const unplaced = sent.find(
       (r) => r.table === 'tournament_players' && r.head && has(r, 'position', 'is', null)
     );
@@ -255,6 +272,96 @@ describe('the sweep asks independent questions together', () => {
     expect(fixture.reportError).toHaveBeenCalledWith(
       expect.any(Error),
       'Tournament.zero_chip_field_refused'
+    );
+  });
+
+  it.each([1000, 1001, 9001])('refuses the entire %s-player zero-chip field', async (size) => {
+    oneBustOfTwo((request) => {
+      if (isPlayingCount(request)) return { count: size };
+      if (/^(id, )?user_id, chips$/.test(request.columns ?? ''))
+        return {
+          data: Array.from({ length: size }, (_, i) => ({
+            id: String(i).padStart(8, '0'),
+            user_id: `bust-${i}`,
+            chips: 0,
+          })),
+        };
+      return undefined;
+    });
+    const { manager, eliminated } = bustStageManager();
+    await sweep(manager);
+    expect(eliminated).toHaveLength(0);
+    expect(fixture.reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Tournament.zero_chip_field_refused'
+    );
+  });
+
+  it.each(['fault', 'stop'])(
+    'does not act on a truncated bust roster after a later-page %s',
+    async (mode) => {
+      const { manager, eliminated } = bustStageManager();
+      oneBustOfTwo((request) => {
+        if (!/^(id, )?user_id, chips$/.test(request.columns ?? '')) return undefined;
+        if (has(request, 'id', 'gt')) {
+          if (mode === 'stop') manager.running = false;
+          return mode === 'fault'
+            ? { data: null, error: { message: 'later page failed' } }
+            : { data: [] };
+        }
+        return {
+          data: Array.from({ length: 1000 }, (_, i) => ({
+            id: String(i).padStart(8, '0'),
+            user_id: `bust-${i}`,
+            chips: 0,
+          })),
+        };
+      });
+      await sweep(manager);
+      expect(eliminated).toHaveLength(0);
+      expect(fixture.rpc).not.toHaveBeenCalled();
+      if (mode === 'fault')
+        expect(fixture.reportError).toHaveBeenCalledWith(
+          expect.any(Error),
+          'Tournament.busted_list_unavailable'
+        );
+    }
+  );
+
+  it('does not reuse a finishing place beyond the first page', async () => {
+    oneBustOfTwo((request) => {
+      if (/^(id, )?position$/.test(request.columns ?? ''))
+        return {
+          data: Array.from({ length: 1001 }, (_, i) => ({
+            id: String(i).padStart(8, '0'),
+            position: i === 1000 ? 2 : i + 3,
+          })),
+        };
+      return undefined;
+    });
+    const { manager, eliminated } = bustStageManager();
+    await sweep(manager);
+    expect(eliminated).toHaveLength(1);
+    expect(eliminated[0].place).toBe(1003);
+  });
+
+  it('refuses an incomplete taken-places read before eliminating anyone', async () => {
+    oneBustOfTwo((request) => {
+      if (!/^(id, )?position$/.test(request.columns ?? '')) return undefined;
+      if (has(request, 'id', 'gt')) return { data: null, error: { message: 'later page failed' } };
+      return {
+        data: Array.from({ length: 1000 }, (_, i) => ({
+          id: String(i).padStart(8, '0'),
+          position: i + 3,
+        })),
+      };
+    });
+    const { manager, eliminated } = bustStageManager();
+    await sweep(manager);
+    expect(eliminated).toHaveLength(0);
+    expect(fixture.reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Tournament.taken_places_unavailable'
     );
   });
 
@@ -282,7 +389,7 @@ describe('the sweep asks independent questions together', () => {
   ])('still defers every elimination when the %s cannot be read', async (_name, which, alert) => {
     oneBustOfTwo((request) => {
       if (request.table !== 'tournament_players') return undefined;
-      if (which === 'position' && request.columns === 'position') {
+      if (which === 'position' && /^(id, )?position$/.test(request.columns ?? '')) {
         return { data: null, error: { message: 'read failed' } };
       }
       if (which === 'unplaced' && request.head && has(request, 'position', 'is', null)) {

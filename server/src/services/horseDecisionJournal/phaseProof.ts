@@ -1,3 +1,4 @@
+import { isHorseOwnerForcedAuthority } from '../../engine/HorseOwnerForcedActivation.js';
 import type { HorseDecision } from '../../types.js';
 import type { HorseExecutionWitness } from '../../engine/HorseExecutionWitness.js';
 import type {
@@ -16,7 +17,7 @@ import {
   horseCanonicalMaterialSha256,
   horseTournamentUtilityEvidenceSha256,
 } from '../../engine/HorseTournamentUtilityEvidence.js';
-import { HorseMind } from '../../engine/HorseMind.js';
+import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../../engine/HorseTournamentContextProvenance.js';
 import { horseRetainedPlanContext } from './effects.js';
 import { PHASE11_PROTECTED_RELEASE_SELECTIONS } from '../../engine/HorsePhase11Authority.js';
@@ -51,7 +52,9 @@ const baselineDomains = Object.freeze({
   phase13: Object.freeze(Object.keys(PHASE13_PROTECTED_RELEASE_SELECTIONS)),
 });
 const admissionKeys = new Set([
+  'features',
   'phase8',
+  'phase8_guard',
   'phase10',
   ...Object.entries(baselineDomains).flatMap(([owner, domains]) =>
     domains.map((domain) => `${owner}:${domain}`)
@@ -87,7 +90,7 @@ export interface HorsePhaseProof {
   status: HorsePhaseStatus;
   capability: 'captured' | 'unobserved';
   eligibility: 'eligible' | 'outside-domain' | 'unknown';
-  qualification: 'verified' | 'unknown' | 'refused';
+  qualification: 'verified' | 'owner-forced' | 'unknown' | 'refused';
   application: 'accepted' | 'not-selected' | 'shadow' | 'refused' | 'not-applicable' | 'unknown';
   /** Closed local vocabulary only: never an exception, path, actor or payload. */
   reason: string;
@@ -174,9 +177,17 @@ export class HorseFleetPhaseInterpreter {
       return this.admissions.get(key);
     };
     this.replayAdmissions = {
+      admitFeatureAuthority: () =>
+        once('features', qualifiedReplayAdmissions.admitFeatureAuthority) as ReturnType<
+          typeof qualifiedReplayAdmissions.admitFeatureAuthority
+        >,
       admitPhase8Authority: () =>
         once('phase8', qualifiedReplayAdmissions.admitPhase8Authority) as ReturnType<
           typeof qualifiedReplayAdmissions.admitPhase8Authority
+        >,
+      admitPhase8GuardAuthority: () =>
+        once('phase8_guard', qualifiedReplayAdmissions.admitPhase8GuardAuthority) as ReturnType<
+          typeof qualifiedReplayAdmissions.admitPhase8GuardAuthority
         >,
       admitPhase10Authority: () =>
         once('phase10', qualifiedReplayAdmissions.admitPhase10Authority) as ReturnType<
@@ -339,7 +350,7 @@ export class HorseFleetPhaseInterpreter {
           decodeHorseDecisionReads(
             c.readFrame,
             gs.players,
-            HorseMind.handKeyOf(gs.actionHistory),
+            horsePlanHandKey(gs.actionHistory, plan.kind === 'current' ? plan.context : undefined),
             plan.kind === 'current' ? plan.context : undefined
           );
           if (
@@ -377,14 +388,26 @@ export class HorseFleetPhaseInterpreter {
     const tournamentCorrectiveFamily = tournament
       ? classifyTournamentRiverSnapshot(originalFast?.snapshot ?? c.snapshot)
       : null;
+    const guardMode = c.replayState?.admission?.phase8CatastropheGuard;
+    const guardPhase8 =
+      d.tournamentCatastropheGuard !== undefined ||
+      guardMode === 'candidate' ||
+      guardMode === 'shadow';
+    const guardDomain =
+      tournament &&
+      !preflop &&
+      variant === 'nlh' &&
+      (gs.boardCount ?? 1) === 1 &&
+      !gs.communityCards2?.length &&
+      !gs.communityCards3?.length;
     const policies = [
       [
         'phase8',
-        d.tournamentPostflop,
-        w.phase8Authority,
-        'phase8Postflop',
+        guardPhase8 ? d.tournamentCatastropheGuard : d.tournamentPostflop,
+        guardPhase8 ? w.phase8GuardAuthority : w.phase8Authority,
+        guardPhase8 ? 'phase8CatastropheGuard' : 'phase8Postflop',
         null,
-        tournament && !preflop,
+        guardPhase8 ? guardDomain : tournament && !preflop,
       ],
       ['phase10', d.plo4Policy, w.phase10Authority, 'phase10Plo4', null, variant === 'plo4'],
       [
@@ -535,7 +558,9 @@ export class HorseFleetPhaseInterpreter {
           throw Error();
         const admission: HorseAuthorityAdmission =
           owner === 'phase8'
-            ? this.replayAdmissions.admitPhase8Authority()
+            ? guardPhase8
+              ? this.replayAdmissions.admitPhase8GuardAuthority()
+              : this.replayAdmissions.admitPhase8Authority()
             : owner === 'phase10'
               ? this.replayAdmissions.admitPhase10Authority()
               : owner === 'phase11'
@@ -550,6 +575,7 @@ export class HorseFleetPhaseInterpreter {
           admission,
           receiptAuthority.continuationVersion
         );
+        let forcedBaseline = false;
         // Corrective composition also binds every selected baseline owner,
         // including an admitted baseline whose proposal did not apply here.
         if (owner === 'phase14')
@@ -557,11 +583,14 @@ export class HorseFleetPhaseInterpreter {
             const authority = value as any;
             const h = restore(
               baseline as any,
-              baseline === 'phase8' || baseline === 'phase10' ? null : variant,
+              baseline === 'phase8' || baseline === 'phase8_guard' || baseline === 'phase10'
+                ? null
+                : variant,
               authority.continuationVersion,
               authority.epoch
             );
             if (!h.current() || h.currentState() !== 'usable') throw Error();
+            if (isHorseOwnerForcedAuthority(h.current())) forcedBaseline = true;
           }
         if (
           !holder.current() ||
@@ -585,10 +614,18 @@ export class HorseFleetPhaseInterpreter {
           out[owner] = refused('candidate_not_controller_accepted');
           continue;
         }
-        out[owner] = active(
-          'protected_owner_independently_admitted',
-          selected ? 'accepted' : 'not-selected'
-        );
+        const forced =
+          (admission.status === 'admitted' && isHorseOwnerForcedAuthority(admission.authority)) ||
+          forcedBaseline;
+        out[owner] = {
+          ...active(
+            forced
+              ? 'owner_forced_not_independently_qualified'
+              : 'protected_owner_independently_qualified',
+            selected ? 'accepted' : 'not-selected'
+          ),
+          qualification: forced ? 'owner-forced' : 'verified',
+        };
       } catch {
         this.checkBudget();
         out[owner] = {

@@ -53,7 +53,12 @@ describe('the natural multirun observation survives a failed continuity case', (
 });
 
 const origin = workflow.jobs['publication-gate'].steps.find((step: any) => step.id === 'origin');
-function admitTarget(target: string, mobile = 'true', pin = 'null') {
+function admitTarget(
+  target: string,
+  mobile = 'true',
+  pin = 'null',
+  extra: Record<string, string> = {}
+) {
   return spawnSync('bash', ['-c', origin.run], {
     env: {
       ...process.env,
@@ -63,6 +68,7 @@ function admitTarget(target: string, mobile = 'true', pin = 'null') {
       ENGINE_TRIGGER_JSON: pin,
       ENGINE_TRIGGER_SHA: pin === 'null' ? '' : pin.slice(1, -1),
       GITHUB_OUTPUT: '/dev/null',
+      ...extra,
     },
     encoding: 'utf8',
     timeout: 2_000,
@@ -85,8 +91,9 @@ it('passes the raw target and authority JSON into publication admission and the 
 it('admits default null and typed three before production fixtures', () => {
   expect(admitTarget('null').status).toBe(0);
   expect(admitTarget('3').status).toBe(0);
+  expect(admitTarget('1').status).toBe(0);
 });
-it.each(['"3"', '2', 'true', '[]', '{}', '[3]', 'false'])(
+it.each(['"1"', '"3"', '2', 'true', '[]', '{}', '[3]', 'false'])(
   'refuses raw target %s before fixtures',
   (target) => {
     expect(admitTarget(target).status).not.toBe(0);
@@ -100,4 +107,14 @@ it('names a targeted three-run step honestly and leaves default BOTH coverage in
   expect(multirun?.name).toContain('mobile_multirun_target');
   expect(multirun?.name).toContain('three-run only');
   expect(multirun?.name).toContain('two-run and three-run');
+});
+
+it('refuses mixed once requests before any production fixture', () => {
+  expect(admitTarget('1', 'true', 'null', { HORSE_SOCIAL_JSON: 'true' }).status).not.toBe(0);
+  expect(admitTarget('1', 'true', 'null', { CLIENT_NAVIGATION_JSON: 'true' }).status).not.toBe(0);
+  expect(admitTarget('1', 'true', '"' + 'a'.repeat(40) + '"').status).not.toBe(0);
+  expect(admitTarget('1', '"true"').status).not.toBe(0);
+});
+it('retains the actual once trace even when the natural observation passes', () => {
+  expect((retain as any).with.path).toContain('test-results/live-table-multirun/**/trace.zip');
 });

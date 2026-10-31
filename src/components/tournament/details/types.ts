@@ -1,3 +1,5 @@
+import type { FollowTournamentPlayer } from '../../../utils/followTournamentPlayer';
+import type { SatelliteAwardView } from './useSatelliteAwards';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY TABS — the shared contract
@@ -78,6 +80,7 @@ export const TAB_IDS: readonly TabId[] = [
  */
 export const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'detail', label: 'Details' },
+  { id: 'satellites', label: 'Satellites' },
   { id: 'blinds', label: 'Blinds' },
   { id: 'ranking', label: 'Ranking' },
   { id: 'entries', label: 'Entries' },
@@ -135,6 +138,8 @@ export interface TournamentEntry {
   position?: number;
   /** Exact settled prize from tournament_players; required for dealt finishes. */
   prize?: number;
+  /** Cash bounties already awarded, excluding the head still carried in play. */
+  bounty_winnings?: number;
   chips?: number;
   status: 'registered' | 'playing' | 'eliminated' | 'finished' | 'winner';
   table_id?: string | null;
@@ -183,6 +188,8 @@ export interface TournamentTabProps {
    */
   tournament: Tournament & TournamentArenaEmbed;
   entries: TournamentEntry[];
+  /** Page-owned immutable award evidence shared by result consumers. */
+  satelliteAwards?: SatelliteAwardView;
   tables: TournamentTable[];
   blindLevels: NormalisedBlindLevel[];
   /** Signed-in player, for "your position" and hero highlighting. */
@@ -206,7 +213,11 @@ export interface TournamentTabProps {
    * and nothing visible happened. One door, owned by the page, which knows
    * where it is mounted. `tableName` labels the new screen's tab.
    */
-  onWatchPlayer?: (tableId: string, tableName?: string) => void;
+  onWatchPlayer?: (
+    tableId: string,
+    tableName?: string,
+    followPlayer?: FollowTournamentPlayer
+  ) => void;
 
   /**
    * The mystery bounty ladder, fetched ONCE by the page from

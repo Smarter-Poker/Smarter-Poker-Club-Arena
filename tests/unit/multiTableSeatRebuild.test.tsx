@@ -1,6 +1,6 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { clearSessionSummary, peekSessionSummary } from '../../src/services/pendingSessionSummary';
 
@@ -12,11 +12,13 @@ type SeatRead = {
   reject: (error: Error) => void;
 };
 const state = vi.hoisted(() => ({
+  lightningSession: vi.fn(),
   user: { id: 'account-a' } as { id: string } | null,
   listeners: new Map<string, Set<(event: { payload: unknown }) => void>>(),
   reads: [] as SeatRead[],
   metadata: [] as string[][],
   finishRead: vi.fn(),
+  moveSession: vi.fn(),
   reportAtUnmount: new Map<string, number | null>(),
   metadataResults: [] as (QueryResult | Promise<QueryResult>)[],
   reports: new Map<string, (info: Record<string, unknown>) => void>(),
@@ -102,7 +104,7 @@ vi.mock('../../src/lib/supabase', () => ({
       };
       return query;
     },
-    rpc: vi.fn(async () => ({ data: [], error: null })),
+    rpc: (...args: unknown[]) => state.lightningSession(...args),
     auth: { getSession: vi.fn(async () => ({ data: { session: null }, error: null })) },
   },
 }));
@@ -122,8 +124,13 @@ vi.mock('../../src/core/MasterBus', () => {
       },
       getOrCreateChannel() {
         const channel = {
-          on(_kind: string, _filter: unknown, callback: (payload: unknown) => void) {
-            state.inserts.push(callback);
+          on(
+            _kind: string,
+            filter: { table?: string; event?: string },
+            callback: (payload: unknown) => void
+          ) {
+            if (filter.table === 'table_seats' && filter.event === 'INSERT')
+              state.inserts.push(callback);
             return channel;
           },
           subscribe() {
@@ -186,7 +193,7 @@ vi.mock('../../src/services/SoundService', () => ({
   haptic: new Proxy({}, { get: () => vi.fn() }),
 }));
 vi.mock('../../src/services/SessionStatsService', () => ({
-  sessionStatsService: { getStats: () => null },
+  sessionStatsService: { getStats: () => null, moveSession: state.moveSession },
 }));
 vi.mock('../../src/services/GameServerAPI', () => ({
   setSitOut: vi.fn(),
@@ -219,6 +226,10 @@ vi.mock('../../src/utils/lazyWithRetry', () => ({
 }));
 
 import MultiTablePage from '../../src/pages/MultiTablePage';
+import {
+  resetLightningRegistryForTests,
+  getLightningPoolSession,
+} from '../../src/lightning/lightningSession';
 import { masterBus } from '../../src/core/MasterBus';
 
 function Location() {
@@ -256,6 +267,8 @@ async function reconnect() {
 
 beforeEach(() => {
   state.user = { id: 'account-a' };
+  resetLightningRegistryForTests();
+  state.lightningSession.mockReset();
   state.listeners.clear();
   state.reads.length = 0;
   state.metadata.length = 0;
@@ -274,6 +287,41 @@ afterEach(() => {
 });
 
 describe('Rendered MultiTable authoritative seat rebuild', () => {
+  it('hands the game session over before a verified tournament seat insertion replaces the felt', async () => {
+    await seatA();
+    state.metadataResults.push({
+      data: [
+        { id: 'A', name: 'Old', tournament_id: 'event', small_blind: 1, big_blind: 2 },
+        { id: 'B', name: 'New', tournament_id: 'event', small_blind: 1, big_blind: 2 },
+      ],
+      error: null,
+    });
+    expect(state.inserts.length).toBeGreaterThan(0);
+    await act(async () => state.inserts[0]({ new: { table_id: 'B', left_at: null } }));
+    await waitFor(() => expect(state.moveSession).toHaveBeenCalledWith('A', 'B', 'account-a'));
+    expect(screen.getByTestId('felt-B')).toBeTruthy();
+  });
+
+  it('moves the seated source rather than an earlier observer of the same event', async () => {
+    mount();
+    await waitFor(() => expect(state.reads).toHaveLength(1));
+    await settle(state.reads[0], ['B']);
+    expect(screen.getByTestId('felt-A')).toBeTruthy();
+    state.metadataResults.push({
+      data: ['A', 'B', 'C'].map((id) => ({
+        id,
+        name: id,
+        tournament_id: 'event',
+        small_blind: 1,
+        big_blind: 2,
+      })),
+      error: null,
+    });
+    await act(async () => state.inserts[0]({ new: { table_id: 'C', left_at: null } }));
+    await waitFor(() => expect(state.moveSession).toHaveBeenCalledWith('B', 'C', 'account-a'));
+    expect(state.moveSession).not.toHaveBeenCalledWith('A', 'C', 'account-a');
+  });
+
   it('closes the final stale seated tab after successful zero-seat truth', async () => {
     await seatA();
     const read = await reconnect();
@@ -581,4 +629,112 @@ describe('Rendered MultiTable authoritative seat rebuild', () => {
       6000
     );
   });
+});
+
+const LIGHTNING_ANCHOR = '33333333-3333-4333-8333-333333333333';
+const LIGHTNING_ROOM = '11111111-1111-4111-8111-111111111111';
+const LIGHTNING_CLUSTER = '22222222-2222-4222-8222-222222222222';
+function lightningMetadata() {
+  state.metadataResults.push({
+    data: [
+      {
+        id: LIGHTNING_ANCHOR,
+        cluster_id: LIGHTNING_CLUSTER,
+        name: 'Lightning NLH',
+        small_blind: 1,
+        big_blind: 2,
+        max_players: 6,
+        tournament_id: null,
+      },
+    ],
+    error: null,
+  });
+}
+function lightningAnswer() {
+  return {
+    data: { pool_session_id: LIGHTNING_ROOM, state: 'active', anchor_table_id: LIGHTNING_ANCHOR },
+    error: null,
+  };
+}
+it('cold lobby recovery mounts the private Lightning room and restores the return dock without a public anchor', async () => {
+  lightningMetadata();
+  state.lightningSession.mockResolvedValue(lightningAnswer());
+  render(
+    <MemoryRouter initialEntries={['/clubs']}>
+      <MultiTablePage />
+      <Location />
+    </MemoryRouter>
+  );
+  await waitFor(() => expect(state.reads).toHaveLength(1));
+  await settle(state.reads[0], [LIGHTNING_ANCHOR]);
+  expect(screen.getByTestId('felt-' + LIGHTNING_ROOM)).toBeTruthy();
+  expect(screen.queryByTestId('felt-' + LIGHTNING_ANCHOR)).toBeNull();
+  expect(getLightningPoolSession(LIGHTNING_ROOM)?.clusterId).toBe(LIGHTNING_CLUSTER);
+  fireEvent.click(screen.getAllByTestId('tab-' + LIGHTNING_ROOM)[0]);
+  expect(screen.getByTestId('location').textContent).toBe('/table/' + LIGHTNING_ROOM);
+});
+it('a delayed Lightning ownership answer cannot register or mount the previous account room', async () => {
+  lightningMetadata();
+  let resolve!: (value: ReturnType<typeof lightningAnswer>) => void;
+  state.lightningSession.mockReturnValue(
+    new Promise((yes) => {
+      resolve = yes;
+    })
+  );
+  const view = mount();
+  await waitFor(() => expect(state.reads).toHaveLength(1));
+  await settle(state.reads[0], [LIGHTNING_ANCHOR]);
+  state.user = { id: 'account-b' };
+  view.rerender(page());
+  await waitFor(() => expect(state.reads.at(-1)?.userId).toBe('account-b'));
+  await settle(state.reads.at(-1)!, []);
+  await act(async () => resolve(lightningAnswer()));
+  expect(getLightningPoolSession(LIGHTNING_ROOM)).toBeNull();
+  expect(screen.queryByTestId('felt-' + LIGHTNING_ROOM)).toBeNull();
+});
+
+it('a failed Lightning ownership read recovers from the original room-opened event without mounting an observer', async () => {
+  lightningMetadata();
+  state.lightningSession.mockResolvedValueOnce({ data: null, error: { message: 'offline' } });
+  render(
+    <MemoryRouter initialEntries={['/clubs']}>
+      <MultiTablePage />
+    </MemoryRouter>
+  );
+  await waitFor(() => expect(state.reads).toHaveLength(1));
+  await settle(state.reads[0], [LIGHTNING_ANCHOR]);
+  expect(screen.queryByTestId('felt-' + LIGHTNING_ANCHOR)).toBeNull();
+  expect(screen.queryByTestId('felt-' + LIGHTNING_ROOM)).toBeNull();
+  lightningMetadata();
+  state.lightningSession.mockResolvedValue(lightningAnswer());
+  await act(async () =>
+    masterBus.emit('LIGHTNING_ROOM_OPENED', { userId: 'account-a', clusterId: LIGHTNING_CLUSTER })
+  );
+  await waitFor(() => expect(state.reads).toHaveLength(2));
+  await settle(state.reads[1], [LIGHTNING_ANCHOR]);
+  expect(screen.getByTestId('felt-' + LIGHTNING_ROOM)).toBeTruthy();
+});
+
+it('an existing seated table conversion offers its own View Game path instead of switching the tab', async () => {
+  render(
+    <MemoryRouter initialEntries={['/table/' + LIGHTNING_ANCHOR]}>
+      <MultiTablePage />
+    </MemoryRouter>
+  );
+  await waitFor(() => expect(state.reads).toHaveLength(1));
+  await settle(state.reads[0], [LIGHTNING_ANCHOR]);
+  await act(async () =>
+    masterBus.emit('TABLE_SEATED', { tableId: LIGHTNING_ANCHOR, userId: 'account-a' })
+  );
+  for (const read of state.reads.filter((read) => !read.settled))
+    await settle(read, [LIGHTNING_ANCHOR]);
+  lightningMetadata();
+  state.lightningSession.mockResolvedValue(lightningAnswer());
+  await act(async () =>
+    masterBus.emit('LIGHTNING_ROOM_OPENED', { userId: 'account-a', clusterId: LIGHTNING_CLUSTER })
+  );
+  await settle(state.reads.at(-1)!, [LIGHTNING_ANCHOR]);
+  expect(screen.getByTestId('felt-' + LIGHTNING_ANCHOR)).toBeTruthy();
+  expect(screen.queryByTestId('felt-' + LIGHTNING_ROOM)).toBeNull();
+  expect(state.lightningSession).not.toHaveBeenCalled();
 });

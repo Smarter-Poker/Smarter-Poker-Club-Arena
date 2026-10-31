@@ -121,6 +121,7 @@ export interface SignUpDialogOptions {
   isMysteryBounty?: boolean;
   /** ISO start time. Omitted hides the row (a Sit & Go has no clock). */
   startTime?: string | null;
+  startsWhenFull?: boolean;
   /** Whose wallet to check. Omitted skips the balance row and the funds gate. */
   userId?: string | null;
   /**
@@ -404,7 +405,7 @@ export function SignUpHost() {
   const o = current.opts;
   const id = current.id;
   const cost = totalBuyIn(o.buyInAmount, o.buyInFee ?? 0, o);
-  const startLabel = formatStart(o.startTime);
+  const startLabel = o.startsWhenFull ? 'When Full' : formatStart(o.startTime);
   const short = !usesTournamentTicket && balance !== null && balance < cost;
   /* The head, at the entry's unit. `--` is this card's own unknown mark, the
      one the balance row has always used for a figure it could not read. */
@@ -544,7 +545,7 @@ export function SignUpHost() {
           {/* Only true for a scheduled event you are entering BEFORE the off.
               A late registration cannot be unregistered, and an SNG or Spin has
               no scheduled boundary for the rule to describe. */}
-          {!o.isLateRegistration && !!startLabel && (
+          {!o.isLateRegistration && !o.startsWhenFull && !!startLabel && (
             <p className="signup-note">You Can Unregister Any Time Before The Tournament Starts</p>
           )}
         </SpadeConsole>

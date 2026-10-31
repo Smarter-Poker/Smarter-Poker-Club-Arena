@@ -210,12 +210,12 @@ describe('the action tab starts below the ticker, never above it', () => {
        the design width; the fix applied everywhere it did not matter. */
     const insetRules =
       TAB_BAR_CSS.replace(/\/\*[\s\S]*?\*\//g, '').match(
-        /padding-top:\s*calc\([^;]*safe-area-inset-top[^;]*\)/g
+        /padding-top:\s*calc\([^;]*sp-tabbar-safe-top[^;]*\)/g
       ) || [];
     expect(insetRules.length).toBeGreaterThanOrEqual(2);
     for (const rule of insetRules) {
       expect(rule, `every padding-top must read the property: ${rule}`).toMatch(
-        /var\(--sp-tabbar-inset,\s*env\(safe-area-inset-top/
+        /var\(--sp-tabbar-inset,\s*var\(--sp-tabbar-safe-top/
       );
     }
   });
@@ -269,7 +269,7 @@ describe('the action tab starts below the ticker, never above it', () => {
     // zeroes the bar's inset when it does. Paying twice is a ~47px dead band
     // on notched iPhones, which this pairing has produced once already.
     expect(TAB_BAR_CSS).toMatch(
-      /padding-top:\s*calc\(6px \+ var\(--sp-tabbar-inset,\s*env\(safe-area-inset-top, 0\)\)\)/
+      /padding-top:\s*calc\(var\(--sp-tabbar-pad-top\) \+ var\(--sp-tabbar-inset,\s*var\(--sp-tabbar-safe-top\)\)\)/
     );
     expect(TICKER).toMatch(/setProperty\('--sp-tabbar-inset', '0px'\)/);
   });

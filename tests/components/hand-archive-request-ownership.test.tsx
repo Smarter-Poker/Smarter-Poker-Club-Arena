@@ -79,6 +79,14 @@ vi.mock('../../src/components/handdetail/HandFlagControl', () => ({
 vi.mock('../../src/components/handdetail/HandNoteEditor', () => ({
   default: () => <div>Hand Note</div>,
 }));
+vi.mock('../../src/components/replay/HandReplay', () => ({
+  default: ({ handId, onClose }: { handId: string; onClose: () => void }) => (
+    <div>
+      Replay {handId}
+      <button onClick={onClose}>Close Replay</button>
+    </div>
+  ),
+}));
 import HandHistoryPage from '../../src/pages/HandHistoryPage';
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -98,6 +106,7 @@ function rows(prefix: string, count: number) {
   }));
 }
 beforeEach(() => {
+  localStorage.clear();
   state.userId = 'a';
   state.search = '';
   state.refresh = null;
@@ -106,6 +115,21 @@ beforeEach(() => {
   state.toast.error.mockReset();
 });
 describe('Hand archive request ownership', () => {
+  it('opens Replay outside the isolated archive so shell controls cannot cover it', async () => {
+    state.search = '?hand=linked-0';
+    state.getHands.mockResolvedValue(rows('linked', 1));
+    state.getHand.mockResolvedValue(rows('linked', 1)[0]);
+    const view = render(<HandHistoryPage />);
+    await screen.findByText('Hand Details');
+    fireEvent.click(screen.getByRole('button', { name: 'Replay', exact: true }));
+    const dialog = screen.getByRole('dialog', { name: 'Hand Replay' });
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(view.container.contains(dialog)).toBe(false);
+    expect(dialog.textContent).toContain('Replay linked-0');
+    fireEvent.click(screen.getByRole('button', { name: 'Close Replay' }));
+    expect(screen.queryByRole('dialog', { name: 'Hand Replay' })).toBeNull();
+  });
+
   it('waits for a background first-page refresh before accepting pagination', async () => {
     const refresh = deferred<unknown[]>();
     state.getHands

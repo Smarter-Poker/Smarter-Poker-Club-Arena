@@ -1,3 +1,4 @@
+import { horsePlo5DepartureEvidence } from '../services/HorsePlo5DepartureEvidence.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THE LEAVE DOOR, DRIVEN (chip continuity, Gate 1 deep audit, 2026-09-04)
@@ -121,18 +122,13 @@ describe('a locked player is refused synchronously, human and horse alike', () =
     ['human', HUMAN],
     ['horse', HORSE],
   ] as const) {
-    it(`${who}: the mirror says locked -> LEAVE_LOCKED with the label, no cash-out attempted`, async () => {
+    it(`${who}: a legacy winning-player clock cannot hold a cashout`, async () => {
       const e = makeEngine();
       e.chipContinuity.rows.set(id, row(id));
+      cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
       const res = await e.leaveTable(id);
-      expect(res).toMatchObject({ success: false, code: 'LEAVE_LOCKED', immediate: false });
-      expect(res.error).toMatch(/^Leave Available In \d+:\d\d$/);
-      expect(cashoutVoluntary).not.toHaveBeenCalled();
-      expect(cashout).not.toHaveBeenCalled();
-      expect(e.hub.emitEvent).not.toHaveBeenCalledWith(
-        TABLE,
-        expect.objectContaining({ type: 'seat_left' })
-      );
+      expect(res).toMatchObject({ success: true });
+      expect(cashoutVoluntary).toHaveBeenCalled();
     });
 
     it(`${who}: the mirror is empty but the DATABASE refuses -> refusal returned, seat kept, nothing torn down`, async () => {
@@ -228,7 +224,7 @@ describe('a kick is a system exit', () => {
 });
 
 describe('a leave refused at settlement is held by the clock, then released', () => {
-  it('counts as active for the clock, and the heartbeat opens the door at zero', async () => {
+  it('releases an old held leave without waiting for the retired clock', async () => {
     const e = makeEngine();
     e.onLeaveRefusedAtSettlement(HORSE, 500, occupancyId);
     expect(e.leaveHeldByClock.has(HORSE)).toBe(true);
@@ -237,10 +233,7 @@ describe('a leave refused at settlement is held by the clock, then released', ()
     e.chipContinuity.rows.set(HORSE, row(HORSE, { stay_remaining_ms: 5_000 }));
     cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
     await e.releaseLeavesHeldByClock();
-    expect(cashoutVoluntary).not.toHaveBeenCalled();
-    // Clock at zero: released through the guarded door, seat_left follows.
-    e.chipContinuity.rows.set(HORSE, row(HORSE, { stay_remaining_ms: 0, stay_running: false }));
-    await e.releaseLeavesHeldByClock();
+    // The retired timer cannot hold an existing pending leave either.
     expect(cashoutVoluntary).toHaveBeenCalledWith(HORSE, TABLE, 2, occupancyId);
     expect(e.leaveHeldByClock.has(HORSE)).toBe(false);
     expect(e.hub.emitEvent).toHaveBeenCalledWith(
@@ -675,5 +668,137 @@ describe('clock-held departure remains tied to its original hand and occupancy',
     await e.releaseLeavesHeldByClock();
     expect(e.seatedPlayers.some((p: any) => p.user_id === HUMAN)).toBe(false);
     expect(e.seatedPlayers.some((p: any) => p.user_id === HORSE)).toBe(true);
+  });
+});
+
+describe('2/5 PLO5 Horse profit floor', () => {
+  async function attempt(
+    stack: number,
+    baseline: unknown,
+    options: {
+      forced?: boolean;
+      human?: boolean;
+      variant?: string;
+      sb?: number;
+      bb?: number;
+      error?: boolean;
+      live?: boolean;
+      missingRoster?: boolean;
+      nullableHuman?: boolean;
+      handStartsDuringRead?: boolean;
+    } = {}
+  ) {
+    const e = makeEngine();
+    Object.assign(e.tableInfo, {
+      game_variant: options.variant ?? 'plo5',
+      small_blind: options.sb ?? 2,
+      big_blind: options.bb ?? 5,
+    });
+    const id = options.human ? HUMAN : HORSE;
+    e.seatedPlayers.find((p: any) => p.user_id === id).stack = stack;
+    if (options.missingRoster) e.seatedPlayers = [];
+    if (options.live) e.handController = { getState: () => ({ players: [{ user_id: id }] }) };
+    const chain: any = {
+      select: vi.fn(() => chain),
+      eq: vi.fn(() => chain),
+      is: vi.fn(() => chain),
+      maybeSingle: vi.fn(async () => {
+        if (options.handStartsDuringRead)
+          e.handController = { getState: () => ({ players: [{ user_id: id }] }) };
+        return {
+          data:
+            baseline === null
+              ? null
+              : { baseline, is_horse: options.nullableHuman ? null : !options.human },
+          error: options.error ? { message: 'unavailable' } : null,
+        };
+      }),
+    };
+    const from = vi.spyOn(supabase, 'from').mockReturnValue(chain);
+    cashoutVoluntary.mockResolvedValue({ ok: true, stack });
+    cashout.mockResolvedValue(stack);
+    try {
+      const result = await e.leaveTable(id, {
+        forced: options.forced,
+        ...(options.missingRoster ? { occupancyId, seatNumber: options.human ? 1 : 2 } : {}),
+      });
+      return { result, chain, fromCalls: [...from.mock.calls] };
+    } finally {
+      from.mockRestore();
+    }
+  }
+  it.each([500, 1000, 1750, 2249.99])('keeps a 500 buy-in seated at stack %s', async (stack) => {
+    const before = horsePlo5DepartureEvidence().counts.below_profit_floor;
+    expect((await attempt(stack, 500)).result.success).toBe(false);
+    expect(horsePlo5DepartureEvidence().counts.below_profit_floor).toBe(before + 1);
+    expect(cashoutVoluntary).not.toHaveBeenCalled();
+    expect(departure).not.toHaveBeenCalled();
+  });
+  it.each([2250, 2250.01, 3000])('permits the threshold and above at stack %s', async (stack) => {
+    const before = horsePlo5DepartureEvidence().counts.eligible;
+    expect((await attempt(stack, 500)).result.success).toBe(true);
+    expect(horsePlo5DepartureEvidence().counts.eligible).toBe(before + 1);
+    expect(cashoutVoluntary).toHaveBeenCalled();
+  });
+  it('counts reloads as invested money rather than winnings', async () => {
+    expect((await attempt(2250, 1000)).result.success).toBe(false);
+    expect((await attempt(4500, 1000)).result.success).toBe(true);
+  });
+  it.each([null, 0, -1, 'invalid', Infinity])(
+    'retains the seat for invalid baseline %s',
+    async (baseline) => {
+      expect((await attempt(2250, baseline)).result.success).toBe(false);
+    }
+  );
+  it('retains the seat on a failed session read', async () => {
+    expect((await attempt(2250, 500, { error: true })).result.success).toBe(false);
+  });
+  it('waits for a settled stack when the Horse is in a hand', async () => {
+    expect((await attempt(2250, 500, { live: true })).result.success).toBe(false);
+    expect(departure).not.toHaveBeenCalled();
+  });
+  it.each([
+    { human: true },
+    { variant: 'plo4' },
+    { sb: 1, bb: 2 },
+    { sb: 1, bb: 5 },
+    { forced: true },
+  ])('preserves unrelated exits: %j', async (options) => {
+    const { result, fromCalls } = await attempt(500, null, options);
+    expect(result.success).toBe(true);
+    expect(fromCalls.filter(([table]) => table === 'cash_player_session')).toHaveLength(0);
+  });
+  it('retains a reserved Horse seat missing from the in-memory roster', async () => {
+    const { result } = await attempt(1000, 500, { missingRoster: true });
+    expect(result.success).toBe(false);
+    expect(cashout).not.toHaveBeenCalled();
+  });
+  it('preserves the verified human reserved-seat fallback', async () => {
+    expect((await attempt(1000, 500, { missingRoster: true, human: true })).result.success).toBe(
+      true
+    );
+    expect(cashout).toHaveBeenCalled();
+  });
+  it('preserves a human reserved-seat profile with the nullable default', async () => {
+    expect(
+      (await attempt(1000, 500, { missingRoster: true, human: true, nullableHuman: true })).result
+        .success
+    ).toBe(true);
+    expect(cashout).toHaveBeenCalled();
+  });
+  it('does not certify a profit refusal if a hand starts during the investment read', async () => {
+    const before = horsePlo5DepartureEvidence().counts;
+    expect((await attempt(1000, 500, { handStartsDuringRead: true })).result.success).toBe(false);
+    const after = horsePlo5DepartureEvidence().counts;
+    expect(after.in_hand).toBe(before.in_hand + 1);
+    expect(after.below_profit_floor).toBe(before.below_profit_floor);
+    expect(cashoutVoluntary).not.toHaveBeenCalled();
+  });
+  it('binds the read to this Horse, table and open session', async () => {
+    const { chain, fromCalls } = await attempt(2250, 500);
+    expect(fromCalls).toContainEqual(['cash_player_session']);
+    expect(chain.eq).toHaveBeenCalledWith('player_id', HORSE);
+    expect(chain.eq).toHaveBeenCalledWith('table_id', TABLE);
+    expect(chain.is).toHaveBeenCalledWith('closed_at', null);
   });
 });

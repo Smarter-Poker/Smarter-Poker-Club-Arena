@@ -177,6 +177,13 @@ export class StateVerifier {
    * Returns all detected violations. Call between hands or during dealing pauses.
    */
   verify(context: VerificationContext): VerificationResult {
+    const result = this.measure(context);
+    this.acceptVerificationResult(context.tableId, context.handNumber, result);
+    return result;
+  }
+
+  /** Read-only measurement, captured synchronously before original event retention. */
+  measure(context: VerificationContext): VerificationResult {
     const violations: IntegrityViolation[] = [];
     const phase: VerificationPhase = context.phase ?? 'hand_complete';
 
@@ -203,8 +210,28 @@ export class StateVerifier {
     // 6. Pot Size Sanity
     this.verifyPotSanity(context, violations);
 
+    // A7: report exactly what was measured, and against what.
+    const chipTotal = this.liveChipTotal(context);
+    const expectedChipTotal = this.expectedTotalFor(context);
+
+    return {
+      valid: violations.length === 0,
+      violations,
+      chipTotal,
+      expectedChipTotal,
+      drift:
+        expectedChipTotal === undefined
+          ? undefined
+          : Math.round((chipTotal - expectedChipTotal) * 100) / 100,
+      phase,
+    };
+  }
+
+  /** Apply the original verdict once its owning event is retained, including on replay. */
+  acceptVerificationResult(tableId: string, handNumber: number, result: VerificationResult): void {
+    const violations = result.violations;
     // Recovery FSM integration
-    const recoveryFSM = this.getRecoveryFSM(context.tableId);
+    const recoveryFSM = this.getRecoveryFSM(tableId);
     const hasCritical = violations.some((v) => v.severity === 'critical');
 
     if (hasCritical && recoveryFSM.state === 'healthy') {
@@ -216,15 +243,15 @@ export class StateVerifier {
       // Violations cleared — if we were in desync_detected, resolve back to healthy
       if (recoveryFSM.canTransition('healthy')) {
         recoveryFSM.transition('healthy');
-        this.resyncRetries.delete(context.tableId);
+        this.resyncRetries.delete(tableId);
       }
     }
 
     // Emit violations
     if (violations.length > 0) {
       const event: ViolationEvent = {
-        tableId: context.tableId,
-        handNumber: context.handNumber,
+        tableId,
+        handNumber,
         violationCount: violations.length,
         violations: violations.map((v) => ({
           type: v.type,
@@ -246,22 +273,6 @@ export class StateVerifier {
         }
       }
     }
-
-    // A7: report exactly what was measured, and against what.
-    const chipTotal = this.liveChipTotal(context);
-    const expectedChipTotal = this.expectedTotalFor(context);
-
-    return {
-      valid: violations.length === 0,
-      violations,
-      chipTotal,
-      expectedChipTotal,
-      drift:
-        expectedChipTotal === undefined
-          ? undefined
-          : Math.round((chipTotal - expectedChipTotal) * 100) / 100,
-      phase,
-    };
   }
 
   /** The baseline this table's chips are measured against, if one was recorded. */

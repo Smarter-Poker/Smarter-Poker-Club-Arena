@@ -30,7 +30,10 @@ interface CorrectiveLiveKernelReceiptBase {
   reason: 'sampled' | 'not_sampled' | 'illegal_candidate' | 'withdrawn_before_acceptance';
   authority?: HorseAuthorityReceipt;
   baselineAuthorities?: Partial<
-    Record<'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13', HorseAuthorityReceipt>
+    Record<
+      'phase8' | 'phase8_guard' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
+      HorseAuthorityReceipt
+    >
   >;
 }
 export type CorrectiveLiveKernelReceipt = CorrectiveLiveKernelReceiptBase &

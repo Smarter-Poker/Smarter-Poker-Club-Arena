@@ -75,9 +75,12 @@ function acceptedCounterparties(body: string): string[] {
 describe('the new-club opening grant is never drift', () => {
   it('reads the newest definitions, and they are this migration', () => {
     expect(migration, `${MIGRATION} must exist`).not.toBe('');
-    // 20261003131810 restated the velocity watch to also leave out a declared
-    // operator funding; every clause below still holds in its body.
-    expect(velocity.file).toBe('20261003131810_an_operators_declared_funding_is_not_a_mint_loop.sql');
+    // The completed Mint receipt patch preserves every opening-grant clause.
+    // Its guarded preimage is retained in the migration; the isolated native
+    // regression additionally exercises the installed postimage.
+    expect(velocity.file).toBe(
+      '20261026150531_the_mint_watch_recognizes_its_completed_issuance_receipt_and.sql'
+    );
     expect(reconcile.file).toBe(MIGRATION);
     // 20261022162545 restated the integrity report (its liveness line asks
     // whether any hand was dealt instead of counting them); every clause

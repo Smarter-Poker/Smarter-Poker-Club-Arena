@@ -39,11 +39,77 @@ import {
   computeTransfers,
   maxWinnable,
   writeHandFacts,
+  captureAllInEquity,
   type HandAction,
 } from '../server/src/services/supabase/handFacts';
 import { dealtStacksFromAtomicCommit } from '../server/src/services/supabase/handHistory';
 
 describe('accepted-hand Stats fact payload', () => {
+  it('adds the original obligation without changing captured equity or EV arithmetic', async () => {
+    const input = {
+      handId: '30000000-0000-4000-8000-000000000099',
+      tableId: '20000000-0000-4000-8000-000000000099',
+      clubId: '10000000-0000-4000-8000-000000000099',
+      handNumber: 1002,
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      playedAt: '2026-10-26T18:00:00Z',
+      buttonSeat: 1,
+      rakeAmount: 0,
+      boardLength: 5,
+      holeCardsAll: new Map([
+        ['hero', { seat: 1, cards: [] }],
+        ['villain', { seat: 2, cards: [] }],
+      ]),
+      contributions: new Map([
+        ['hero', 100],
+        ['villain', 100],
+      ]),
+      winners: [{ userId: 'hero', amount: 200 }],
+      actions: [
+        { seat: 1, userId: 'hero', action: 'all_in', amount: 100, stage: 'preflop' },
+        { seat: 2, userId: 'villain', action: 'call', amount: 100, stage: 'preflop' },
+      ],
+      roster: [
+        { userId: 'hero', isHorse: true },
+        { userId: 'villain', isHorse: false },
+      ],
+      collectOnly: true,
+    };
+    captureAllInEquity(input.tableId, {
+      type: 'all_in_equity',
+      hand_number: input.handNumber,
+      board: [],
+      equities: [
+        { userId: 'hero', equity: 50 },
+        { userId: 'villain', equity: 50 },
+      ],
+    });
+    const before = await writeHandFacts(input);
+    const after = await writeHandFacts({
+      ...input,
+      allInRunoutWitness: { street: 'preflop', playerIds: ['hero', 'villain'] },
+    });
+    expect(before!.facts.map((f) => f.ev_net)).toEqual([0, 0]);
+    expect(after!.facts.map((f) => f.all_in_equity_owed)).toEqual([true, true]);
+    const withoutFlag = (p: NonNullable<typeof before>) =>
+      p.facts.map(({ all_in_equity_owed: _flag, ...rest }) => rest);
+    expect(withoutFlag(after!)).toEqual(withoutFlag(before!));
+    expect(after!.transfers).toEqual(before!.transfers);
+    captureAllInEquity(input.tableId, {
+      type: 'all_in_equity',
+      hand_number: 1003,
+      board: [],
+      exact: true,
+      equities: [
+        { userId: 'hero', equity: 0.1, equityRaw: 100 / 990 },
+        { userId: 'villain', equity: 99.9, equityRaw: 100 - 100 / 990 },
+      ],
+    });
+    const raw = await writeHandFacts({ ...input, handNumber: 1003 });
+    expect(raw!.facts.find((f) => f.user_id === 'hero')!.all_in_equity).toBeCloseTo(1 / 990, 12);
+  });
+
   it('uses atomic stack_before instead of arithmetic corrupted by side inflows', () => {
     const exact = dealtStacksFromAtomicCommit({
       stacks: [
@@ -236,6 +302,22 @@ describe('derivePosition — from the button, not from action order', () => {
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('deriveFlowFlags', () => {
+  it('does not count a short all-in below the live blind or straddle as a raise', () => {
+    const actions: HandAction[] = [
+      { seat: 2, userId: 'b', action: 'bb', amount: 10, stage: 'preflop', origin: 'forced' },
+      { seat: 3, userId: 'c', action: 'straddle', amount: 20, stage: 'preflop', origin: 'forced' },
+      { seat: 1, userId: 'hero', action: 'all_in', amount: 15, stage: 'preflop' },
+    ];
+    const flags = deriveFlowFlags('hero', actions, {
+      boardLength: 0,
+      returned: 0,
+      nonFoldedCount: 2,
+    });
+    expect(flags.vpip).toBe(true);
+    expect(flags.pfr).toBe(false);
+    expect(flags.three_bet).toBe(false);
+  });
+
   const A = 'user-a';
   const B = 'user-b';
   const C = 'user-c';

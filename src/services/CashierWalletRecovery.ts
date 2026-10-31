@@ -8,6 +8,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const ACTIONS = new Set([
   'fn_club_bank_send',
   'fn_club_bank_claim_back',
+  'fn_club_wallet_claim_back',
   'fn_agent_wallet_send',
   'fn_agent_wallet_claim_back',
   'fn_club_bank_reverse',

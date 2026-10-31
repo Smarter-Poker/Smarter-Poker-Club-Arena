@@ -172,3 +172,19 @@
   height: 16%;
   font-size: 2.8cqw;
 }
+
+/* Keep the target entry legible within the existing header well. */
+.agc-mtt-premium__header:has(.agc-mtt-premium__destination) h3 {
+  height: 46%;
+}
+.agc-mtt-premium__header:has(.agc-mtt-premium__destination) .agc-mtt-premium__status {
+  top: 47%;
+  height: 19%;
+}
+.agc-mtt-premium__destination {
+  top: 68%;
+  height: 32%;
+  font-size: 4.2cqw;
+  font-weight: 800;
+  color: #eaf5ff;
+}

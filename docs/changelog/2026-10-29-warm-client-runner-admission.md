@@ -1,0 +1,9 @@
+# Use GitHub warm standard runners for client delivery
+
+In the same qualified UI delivery, the standard ubuntu-latest Money verifier, migration ledger and source-binding jobs received runners in two to three seconds. A client shard on ca-linux-delivery waited 28 minutes 13 seconds; both public serving revisions were confirmed 54 minutes 19 seconds after push. Raising configured larger-runner headroom and changing VM size did not establish a reliable admission improvement. GitHub Support ticket 4922633 has been escalated to capacity engineering with those public job IDs and authorization for the supported paid remedy.
+
+Client CI, lightweight classification/aggregates, publisher admission/build/tests and the three client production transaction jobs now use the existing GitHub-hosted ubuntu-latest fleet. GitHub documents this fleet as warm; each job still receives an isolated hosted VM. Client Vitest uses the existing conservative two-worker fallback cap. This is a routing correction, not removal of qualification. Actual delivery timing still requires a subsequent protected UI delivery and both public identities.
+
+All PostgreSQL, server and native-fixture qualification and private gateway routes stay on their existing paid pools. Every command, test, matrix, assertion, timeout, required context, trusted App identity, secret scope, immutable artifact check, continuous production lock and rollback remains intact. No new publisher, local runner, SQL, engine operation or scheduled repair is introduced.
+
+Concurrent protected PR #8640 is preserved in the combined candidate: PostgreSQL shard 2 keeps its real private pg_net build prerequisites, and the gateway bootstrap keeps its publishable-key runtime configuration. The six qualification records retain both historical audit trails and bind the combined CI bytes. The workflow equality check is rebased to that protected parent and still permits only the nineteen warm routes and two client worker caps.

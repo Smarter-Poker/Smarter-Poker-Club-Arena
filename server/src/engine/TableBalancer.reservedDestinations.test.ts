@@ -84,3 +84,27 @@ describe('table breaks use physically available destination chairs', () => {
     expect(targets).toEqual(before);
   });
 });
+
+describe('balancing preserves the selected player across unavailable destinations', () => {
+  it.each([1, 3])('keeps the next big blind after %s blocked destinations', (blockedCount) => {
+    const source = table('source', 9);
+    const blocked = Array.from({ length: blockedCount }, (_, i) =>
+      table(`blocked-${i}`, 1, [2, 3, 4, 5, 6, 7, 8, 9])
+    );
+    const available = table('available', 1);
+    const tables = [source, ...blocked, available];
+    const before = structuredClone(tables);
+    const moves = new TableBalancer().calculateMoves(tables);
+    // Button 1, current SB 2 and BB 3: seat 4 owes the next big blind.
+    expect(moves.length).toBeGreaterThan(0);
+    expect(moves[0]).toMatchObject({
+      playerId: 'source-4',
+      fromSeat: 4,
+      fromTableId: 'source',
+      toTableId: 'available',
+    });
+    expect(moves.every((move) => move.toTableId === 'available')).toBe(true);
+    expect(new Set(moves.map((move) => move.playerId)).size).toBe(moves.length);
+    expect(tables).toEqual(before);
+  });
+});

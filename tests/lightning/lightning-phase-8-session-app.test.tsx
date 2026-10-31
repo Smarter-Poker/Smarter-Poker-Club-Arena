@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom';
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const POOL = '11111111-1111-4111-8111-111111111111';
 const POOL_B = '11111111-1111-4111-8111-222222222222';
@@ -51,6 +51,24 @@ vi.mock('../../src/components/common/Toast', () => ({ useToast: () => toast }));
 vi.mock('../../src/components/replay/HandReplay', () => ({
   default: ({ handId }: { handId: string }) => <div data-testid="hand-replay">{handId}</div>,
 }));
+vi.mock('../../src/core/MasterBus', () => {
+  const listeners = new Map<string, Set<(event: { payload: unknown }) => void>>();
+  return {
+    masterBus: {
+      subscribe: (type: string, fn: (event: { payload: unknown }) => void) => {
+        const group = listeners.get(type) ?? new Set();
+        listeners.set(type, group);
+        group.add(fn);
+        return () => {
+          group.delete(fn);
+        };
+      },
+      emit: (type: string, payload: unknown) => {
+        for (const fn of listeners.get(type) ?? []) fn({ payload });
+      },
+    },
+  };
+});
 let serverClock = 1_000_000;
 vi.mock('../../src/utils/serverClock', () => ({
   serverNow: () => serverClock,
@@ -101,7 +119,11 @@ import {
 } from '../../src/lightning/lightningSummaryStore';
 import LightningRecentHands from '../../src/components/lightning/LightningRecentHands';
 import { lightningStatRows } from '../../src/components/lightning/LightningStatsGrid';
-import { LightningSessionSummaryHost } from '../../src/components/lightning/LightningSessionSummary';
+import { masterBus } from '../../src/core/MasterBus';
+import {
+  LightningSessionSummaryHost,
+  useLightningSessionSummary,
+} from '../../src/components/lightning/LightningSessionSummary';
 import LightningEndedNotice from '../../src/components/table/LightningEndedNotice';
 import LightningEntryPage from '../../src/pages/LightningEntryPage';
 
@@ -473,6 +495,107 @@ function LobbyProbe() {
 }
 
 describe('the session summary', () => {
+  const target = { tableId: CLUSTER, occupancyId: HH };
+  function SummaryProbe({ pool = POOL }: { pool?: string }) {
+    const { summary, failed } = useLightningSessionSummary(pool, target);
+    return (
+      <div data-testid="summary-probe">
+        {summary
+          ? `${summary.ended}:${summary.hands}:${summary.currentStack}`
+          : failed
+            ? 'failed'
+            : 'loading'}
+      </div>
+    );
+  }
+
+  it('refreshes a deferred summary only for its exact cashout and coalesces duplicates', async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    rpc
+      .mockImplementationOnce(() =>
+        Promise.resolve({ data: { ...STATS, ended: false }, error: null })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          })
+      );
+    render(<SummaryProbe />);
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-probe').textContent).toContain('false:')
+    );
+    act(() => masterBus.emit('SEAT_CASHED_OUT', { tableId: CLUSTER, occupancyId: HH_2 }));
+    expect(callsTo('fn_lightning_session_summary')).toHaveLength(1);
+    act(() => {
+      masterBus.emit('SEAT_CASHED_OUT', target);
+      masterBus.emit('SEAT_CASHED_OUT', target);
+    });
+    await waitFor(() => expect(callsTo('fn_lightning_session_summary')).toHaveLength(2));
+    await act(async () =>
+      finish({ data: { ...STATS, ended: true, hands: 99, current_stack: 478.5 }, error: null })
+    );
+    expect(screen.getByTestId('summary-probe').textContent).toBe('true:99:478.5');
+    act(() => masterBus.emit('SEAT_CASHED_OUT', target));
+    expect(callsTo('fn_lightning_session_summary')).toHaveLength(2);
+  });
+
+  it('clears unfinished numbers when the final cashout summary read fails', async () => {
+    rpc
+      .mockImplementationOnce(() =>
+        Promise.resolve({ data: { ...STATS, ended: false }, error: null })
+      )
+      .mockImplementationOnce(() => Promise.reject(new Error('summary unavailable')));
+    render(<SummaryProbe />);
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-probe').textContent).toContain('false:')
+    );
+    act(() => masterBus.emit('SEAT_CASHED_OUT', target));
+    await waitFor(() => expect(screen.getByTestId('summary-probe').textContent).toBe('failed'));
+  });
+
+  it('a stale initial response cannot overwrite the settled summary', async () => {
+    let initial: (value: unknown) => void = () => undefined;
+    rpc
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            initial = resolve;
+          })
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve({ data: { ...STATS, ended: true, hands: 99 }, error: null })
+      );
+    render(<SummaryProbe />);
+    act(() => masterBus.emit('SEAT_CASHED_OUT', target));
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-probe').textContent).toContain('true:99:')
+    );
+    await act(async () => initial({ data: { ...STATS, ended: false, hands: 1 }, error: null }));
+    expect(screen.getByTestId('summary-probe').textContent).toContain('true:99:');
+  });
+
+  it('a late old-pool response cannot update the next pool after navigation', async () => {
+    let old: (value: unknown) => void = () => undefined;
+    rpc
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            old = resolve;
+          })
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve({ data: { ...STATS, ended: true, hands: 77 }, error: null })
+      );
+    const view = render(<SummaryProbe />);
+    view.rerender(<SummaryProbe pool={POOL_B} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-probe').textContent).toContain('true:77:')
+    );
+    await act(async () => old({ data: { ...STATS, ended: false, hands: 1 }, error: null }));
+    expect(screen.getByTestId('summary-probe').textContent).toContain('true:77:');
+  });
+
   it('opens over the lobby, VIEW SESSION shows its hands, PLAY AGAIN only goes to the entry', async () => {
     render(
       <MemoryRouter initialEntries={['/']}>
@@ -521,15 +644,32 @@ describe('the session summary', () => {
     expect(screen.queryByTestId('lightning-summary-play-again')).toBeNull();
   });
 
-  it('TablePage: both leave doors of a Lightning room open the Lightning summary', () => {
+  it('TablePage: both leave doors and a remote exit open the matching Lightning summary', () => {
     const page = read('src/pages/TablePage.tsx');
-    expect(page.match(/openLightningSessionSummary\(\{/g)).toHaveLength(2);
-    expect(page).toMatch(
-      /const lightningSummaryRoom = lightningLeave \? lightningRoomRef\.current : null;/
-    );
-    expect(page).toMatch(
-      /const forceSummaryRoom = forceLightning \? lightningRoomRef\.current : null;/
-    );
+    expect(page).toMatch(/const lightningSummaryRoom = lightningRoomRef\.current;/);
+    expect(page).toMatch(/const forceSummaryRoom = lightningRoomRef\.current;/);
+    for (const [guard, room, seat] of [
+      [
+        'if (lightningLeave && lightningSummaryRoom && tableId)',
+        'lightningSummaryRoom',
+        'seatAtLeave',
+      ],
+      ['if (forceLightning && forceSummaryRoom && tableId)', 'forceSummaryRoom', 'forceHeroSeat'],
+    ]) {
+      const door = sliceBlockAfter(page, guard);
+      expect(door).toContain('openLightningSessionSummary({');
+      expect(door).toContain('poolSessionId: tableId,');
+      expect(door).toContain(`clusterId: ${room}.clusterId,`);
+      expect(door).toContain(`name: ${room}.meta?.name ?? null,`);
+      expect(door).toContain('closeTableId: tableId,');
+      expect(door).toContain(`closeSeat: ${seat},`);
+    }
+    const remoteExit = sliceBlockAfter(page, 'const presentRemoteSeatExit = () =>');
+    expect(remoteExit).toContain('openLightningSessionSummary({');
+    expect(remoteExit).toContain('poolSessionId: lightningRoom.poolSessionId,');
+    expect(remoteExit).toContain('clusterId: lightningRoom.clusterId,');
+    expect(remoteExit).toContain('closeTableId: tableId,');
+    expect(remoteExit).toContain('closeSeat: remoteSessionSeat,');
     expect(page).not.toContain('<LightningRoomTools');
   });
 });

@@ -25,6 +25,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import PageBar from '../components/help/PageBar';
 import { compactChips, formatWalletChips } from '../utils/format';
+import { exactChipFigure, parseTradeAmount } from '../utils/cashierAmount';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { platformFrozenMessage } from '../utils/platformFrozen';
 import { titleCase } from '../utils/titleCase';
@@ -398,11 +399,14 @@ export default function AgentPortalPage() {
     const scope = renderScope;
     const viewerId = user?.id;
     const clubId = agentClubId;
-    const amount = parseFloat(transferAmount);
     if (transferInFlight.current) return;
+    const parsed = parseTradeAmount(transferAmount);
+    if (!parsed.ok) {
+      if (isMounted.current) toast.error(parsed.error);
+      return;
+    }
+    const amount = parsed.value;
     if (
-      !Number.isFinite(amount) ||
-      amount <= 0 ||
       !viewerId ||
       !clubId ||
       !walletReady ||
@@ -430,7 +434,7 @@ export default function AgentPortalPage() {
       if (!isCurrent()) return;
       if (success) {
         if (isMounted.current)
-          toast.success(`Transferred ${compactChips(amount)} Chips To Play Wallet`);
+          toast.success(`Transferred ${exactChipFigure(amount)} Chips To Play Wallet`);
         setTransferModalOpen(false);
         setTransferAmount('');
         await loadWallet();
@@ -544,32 +548,24 @@ export default function AgentPortalPage() {
             >
               <h2 className={styles.glassHeading}>Credit Line</h2>
               <div className={styles.moneyRow}>
-                <span>Limit</span>
+                <span>Tracking Amount</span>
                 <b className="sc-ink--silver">
                   {wallet.isPrepaid ? 'Prepaid' : formatWalletChips(wallet.creditLimit)}
                 </b>
               </div>
               <div className={styles.moneyRow}>
-                <span>Used</span>
+                <span>Wallet Shortfall</span>
                 <b className="sc-ink--red">
                   {formatWalletChips(wallet.isPrepaid ? 0 : wallet.debt)}
-                </b>
-              </div>
-              <div className={styles.moneyRow}>
-                <span>Available</span>
-                <b className="sc-ink--green">
-                  {wallet.isPrepaid
-                    ? 'Not Applicable'
-                    : formatWalletChips(Math.max(0, wallet.creditLimit - wallet.debt))}
                 </b>
               </div>
               {!wallet.isPrepaid && wallet.debt > 0 && (
                 <div className={styles.debtRow} role="status">
                   <span>
-                    <strong className="sc-ink--red">Drawn Credit</strong>
+                    <strong className="sc-ink--red">Top-Up Before Rakeback</strong>
                     <small>
-                      {formatWalletChips(wallet.debt)} Chips Currently Used. Payable Invoices Appear
-                      Below.
+                      {formatWalletChips(wallet.debt)} Chips Needed To Restore The Agent Wallet.
+                      Weekly Invoices Exclude Rakeback And Appear Below.
                     </small>
                   </span>
                 </div>
@@ -676,9 +672,8 @@ export default function AgentPortalPage() {
                 <input
                   id="agent-transfer-amount"
                   className={styles.amountInput}
-                  type="number"
-                  min="1"
-                  step="1"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="Amount"
                   value={transferAmount}
                   onChange={(event) => setTransferAmount(event.target.value)}

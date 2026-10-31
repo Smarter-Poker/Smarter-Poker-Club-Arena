@@ -177,12 +177,12 @@ describe('the Diamond Spins offer is settled before the lobby is measured', () =
 
   it('is wired into the live lobby before any measurement', () => {
     const spec = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
-    const openLobby = sliceMethod(spec, 'async function openLobby(page: Page)');
+    const openLobby = sliceMethod(spec, 'async function openLobby(page: Page, openSection = true)');
     const order = [
       'const offer = diamondEntryRead(page);',
       'await page.goto(',
       'await prepareCashLobbyActions(page);',
-      'lobby-wallets-trigger',
+      "name: 'Cash Games'",
       'await settleDiamondSpinsOffer(page, offer);',
     ].map((needle) => openLobby.indexOf(needle));
     expect(order.every((at) => at >= 0)).toBe(true);

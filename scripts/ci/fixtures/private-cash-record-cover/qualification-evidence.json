@@ -1,0 +1,433 @@
+{
+  "qualification": "passed",
+  "case_count": 28,
+  "cases": [
+    "original_exact_cg_before_natural_heap_access",
+    "independent_original_cg_exact_count_sum_bad_mine",
+    "foreign_club_union_mixed_coordinator_NULL_nonNULL_time_bad_preserved",
+    "n0_and_non_cash_group_NULL_aggregates_preserved",
+    "zero_source_amount_and_all_foreign_skip_inputs_preserved",
+    "FULL10002record_original_cg_bag_independent_oracle_all_count_sum_bad_mine",
+    "maintained_CCI_parser_and_guarded_installer_preserve_controlled_authority_metadata",
+    "FULL10002record_original_cg_bag_byte_equal_before_after",
+    "all_original_raw_contract_rows_and_record_player_keys_byte_fingerprint_unchanged",
+    "full_table_columns_constraints_owner_RLS_ACL_and_all12_index_catalogs_unchanged",
+    "original_exact_cg_after_natural_IndexOnly_zeroheap_no_forcing",
+    "exact_nonpartial_one_key_five_scalar_include_catalog",
+    "original_nonfinite_negative_subcent_NULL_duplicate_refusals_atomic",
+    "original_anon_permission_refusal",
+    "maintained_CCI_replay_exact_catalog_no_source_changes",
+    "actual_installer_operator_refusal_atomic",
+    "actual_installer_override_refusal_atomic",
+    "actual_installer_source65_refusal_atomic",
+    "actual_installer_generation_refusal_atomic",
+    "actual_installer_freeze_refusal_atomic",
+    "actual_installer_break_refusal_atomic",
+    "actual_installer_boundary_refusal_atomic",
+    "actual_installer_table_ACL_refusal_atomic",
+    "actual_installer_default_refusal_atomic",
+    "actual_installer_constraint_refusal_atomic",
+    "actual_installer_existing_index_refusal_atomic",
+    "actual_installer_candidate_refusal_atomic",
+    "real_two_connection_repeatable_read_source_insert_snapshot_consistency"
+  ],
+  "candidate_sha256": "3679f13e3b155cf9b3e589469a81fc18919d9595008f526483be4c6fbf8a2d74",
+  "runner_sha256": "180174dd55cd76eb2949716a2e0d957bad0788ed9c799cb51988ea9afd859395",
+  "schema_fixture_sha256": "2be0868e6e83e4f548c49e3dcf2b8c0495adbf3c6d82d8ff1e634a9a31f16885",
+  "original_full_query_sha256": "83be356cf30c5da2e65e2987f4749cbeb137a855d053db2827a589306f7da9aa",
+  "exact_cg_sha256": "d661f8c2efcf05e88f6579206cd6f265693cee437f83d25f2e3a6b73625bcd16",
+  "before_plan": [
+    {
+      "Plan": {
+        "Node Type": "Subquery Scan",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Alias": "cg",
+        "Startup Cost": 28.23,
+        "Total Cost": 28.26,
+        "Plan Rows": 1,
+        "Plan Width": 32,
+        "Actual Startup Time": 0.062,
+        "Actual Total Time": 0.062,
+        "Actual Rows": 1,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 1,
+        "Shared Read Blocks": 3,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 3,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Aggregate",
+            "Strategy": "Plain",
+            "Partial Mode": "Simple",
+            "Parent Relationship": "Subquery",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Startup Cost": 28.23,
+            "Total Cost": 28.24,
+            "Plan Rows": 1,
+            "Plan Width": 49,
+            "Actual Startup Time": 0.051,
+            "Actual Total Time": 0.052,
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 1,
+            "Shared Read Blocks": 3,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 3,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Bitmap Heap Scan",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Relation Name": "accounting_cash_rake_sources",
+                "Alias": "s",
+                "Startup Cost": 4.46,
+                "Total Cost": 28.1,
+                "Plan Rows": 6,
+                "Plan Width": 60,
+                "Actual Startup Time": 0.04,
+                "Actual Total Time": 0.041,
+                "Actual Rows": 6,
+                "Actual Loops": 1,
+                "Recheck Cond": "(rake_record_id = '7c92cf1e-ee8d-99cc-85f8-355a3d6e4b86'::uuid)",
+                "Rows Removed by Index Recheck": 0,
+                "Exact Heap Blocks": 1,
+                "Lossy Heap Blocks": 0,
+                "Shared Hit Blocks": 1,
+                "Shared Read Blocks": 3,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 3,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Bitmap Index Scan",
+                    "Parent Relationship": "Outer",
+                    "Parallel Aware": false,
+                    "Async Capable": false,
+                    "Index Name": "accounting_cash_rake_sources_rake_record_id_player_id_key",
+                    "Startup Cost": 0.0,
+                    "Total Cost": 4.46,
+                    "Plan Rows": 6,
+                    "Plan Width": 0,
+                    "Actual Startup Time": 0.034,
+                    "Actual Total Time": 0.034,
+                    "Actual Rows": 6,
+                    "Actual Loops": 1,
+                    "Index Cond": "(rake_record_id = '7c92cf1e-ee8d-99cc-85f8-355a3d6e4b86'::uuid)",
+                    "Shared Hit Blocks": 1,
+                    "Shared Read Blocks": 2,
+                    "Shared Dirtied Blocks": 0,
+                    "Shared Written Blocks": 2,
+                    "Local Hit Blocks": 0,
+                    "Local Read Blocks": 0,
+                    "Local Dirtied Blocks": 0,
+                    "Local Written Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "Planning": {
+        "Shared Hit Blocks": 317,
+        "Shared Read Blocks": 4,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 4,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.535,
+      "Triggers": [],
+      "Execution Time": 0.088
+    }
+  ],
+  "after_plan": [
+    {
+      "Plan": {
+        "Node Type": "Subquery Scan",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Alias": "cg",
+        "Startup Cost": 4.66,
+        "Total Cost": 4.68,
+        "Plan Rows": 1,
+        "Plan Width": 32,
+        "Actual Startup Time": 0.049,
+        "Actual Total Time": 0.049,
+        "Actual Rows": 1,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 4,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Aggregate",
+            "Strategy": "Plain",
+            "Partial Mode": "Simple",
+            "Parent Relationship": "Subquery",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Startup Cost": 4.66,
+            "Total Cost": 4.67,
+            "Plan Rows": 1,
+            "Plan Width": 49,
+            "Actual Startup Time": 0.04,
+            "Actual Total Time": 0.04,
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 4,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Only Scan",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Scan Direction": "Forward",
+                "Index Name": "accounting_cash_private_record_facts_cover",
+                "Relation Name": "accounting_cash_rake_sources",
+                "Alias": "s",
+                "Startup Cost": 0.41,
+                "Total Cost": 4.52,
+                "Plan Rows": 6,
+                "Plan Width": 60,
+                "Actual Startup Time": 0.028,
+                "Actual Total Time": 0.029,
+                "Actual Rows": 6,
+                "Actual Loops": 1,
+                "Index Cond": "(rake_record_id = '7c92cf1e-ee8d-99cc-85f8-355a3d6e4b86'::uuid)",
+                "Rows Removed by Index Recheck": 0,
+                "Heap Fetches": 0,
+                "Shared Hit Blocks": 4,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          }
+        ]
+      },
+      "Planning": {
+        "Shared Hit Blocks": 348,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.578,
+      "Triggers": [],
+      "Execution Time": 0.069
+    }
+  ],
+  "index_catalog": {
+    "keys": 1,
+    "live": true,
+    "attrs": 6,
+    "ready": true,
+    "valid": true,
+    "unique": false,
+    "partial": false,
+    "definition": "CREATE INDEX accounting_cash_private_record_facts_cover ON public.accounting_cash_rake_sources USING btree (rake_record_id) INCLUDE (club_id, union_id, coordinator_union_id, earned_at, rake_credit)",
+    "expressions": false
+  },
+  "whole_original_cg_bag_count": 10002,
+  "whole_original_cg_bag_sha256": "dfb90ff895ac01a4a06e0419438e299851b0bea67d3fad8391f98c706f9cc4fd",
+  "original_key_bag": {
+    "md5": "ce6a2ca4c7b333be5b1673d27e38b78e",
+    "count": 60012
+  },
+  "raw_contract_row_fingerprint": "cfaaee57fdf8c50078e1cf8ab4adb34a",
+  "original_count_sum_bad_mine": [
+    {
+      "n": 6,
+      "total": "0.21000000000000000000",
+      "bad": 0,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "0.93000000000000000000",
+      "bad": 1,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "1.29000000000000000000",
+      "bad": 2,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "1.65000000000000000000",
+      "bad": 1,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "2.37000000000000000000",
+      "bad": 1,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "2.73000000000000000000",
+      "bad": 1,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "3.81000000000000000000",
+      "bad": 0,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "4.17000000000000000000",
+      "bad": 2,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "4.85000000000000000000",
+      "bad": 0,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "0.21000000000000000000",
+      "bad": 6,
+      "mine": false
+    },
+    {
+      "n": 6,
+      "total": "0.93000000000000000000",
+      "bad": 6,
+      "mine": false
+    },
+    {
+      "n": 6,
+      "total": "1.29000000000000000000",
+      "bad": 5,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "1.65000000000000000000",
+      "bad": 6,
+      "mine": false
+    },
+    {
+      "n": 6,
+      "total": "2.37000000000000000000",
+      "bad": 6,
+      "mine": false
+    },
+    {
+      "n": 6,
+      "total": "2.73000000000000000000",
+      "bad": 5,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "3.81000000000000000000",
+      "bad": 6,
+      "mine": false
+    },
+    {
+      "n": 6,
+      "total": "4.17000000000000000000",
+      "bad": 5,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "4.85000000000000000000",
+      "bad": 6,
+      "mine": false
+    },
+    {
+      "n": 0,
+      "total": null,
+      "bad": 0,
+      "mine": null
+    },
+    {
+      "n": 0,
+      "total": null,
+      "bad": 0,
+      "mine": null
+    },
+    {
+      "n": 6,
+      "total": "0.21000000000000000000",
+      "bad": 6,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": 0,
+      "bad": 0,
+      "mine": true
+    },
+    {
+      "n": 6,
+      "total": "3.00",
+      "bad": 6,
+      "mine": false
+    }
+  ],
+  "limits": "SOURCE ONLY. Current actual typed columns/defaults/NOTNULL/CHECK/PK/unique/FK and all12 indexes including14525; referenced FK tables are ID-only endpoints. Actual source producer/immutability/diamond triggers are catalog-preserved as evidence but not installed in this read-access fixture; INSERT/UPDATE refusal and MVCC cases qualify constraints/read semantics only, not producer acceptance. Exact original cash cg scalar aggregate extracted without rewrite. No tournament branch, ledger/verdict, whole summary, actual source65/GEN functions or external maintenance guards (controlled here), production timing or book closure qualification. Candidate changes no public function or permission; native controlled external authority metadata before/after is preserved, not actual full65/GEN execution. IndexOnly0heap demonstrated on vacuumed fixture; concurrent/dirty production pages can require visibility heap checks."
+}

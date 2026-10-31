@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { publisherJobKey } from './publisher-job-identity.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -166,7 +167,7 @@ export async function hydratePublisherProofs(
     throw new Error('Publisher receipt source identity is malformed.');
   const missing = payload.jobs.filter(
     (job) =>
-      ['publish-to-origin', 'retain-runtime'].includes(job.name) &&
+      publisherJobKey(job.name) !== null &&
       job.status === 'completed' &&
       job.conclusion === 'success' &&
       missingPublisherProofs(job.name, job.steps).length > 0
@@ -228,7 +229,7 @@ export async function hydratePublisherProofs(
   }
   const replacements = new Map();
   for (const job of missing) {
-    const name = receiptName(job.name, job.run_attempt);
+    const name = receiptName(publisherJobKey(job.name), job.run_attempt);
     const matches = artifacts.filter((artifact) => artifact.name === name);
     if (matches.length !== 1) throw new Error('Publisher receipt is absent or ambiguous.');
     const artifact = matches[0];

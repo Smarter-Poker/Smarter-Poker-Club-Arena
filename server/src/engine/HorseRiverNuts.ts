@@ -15,7 +15,11 @@ const valid = (c: Card) => c && RANKS.includes(c.rank) && SUITS.includes(c.suit)
  * for multiple boards, require them on every board. A nut low alone or a
  * nut hand on only one board is not a license to escalate the entire pot.
  */
-export function hasRiverNuts(hero: SeatPlayer, state: HorseGameStateV2): boolean {
+export function hasRiverNuts(
+  hero: SeatPlayer,
+  state: HorseGameStateV2,
+  requirePrivateValue = false
+): boolean {
   if (state.stage !== 'river' || !horsePolicyRegistration(state.gameVariant)) return false;
   const rules = variantInfo(state.gameVariant!);
   const expectedHole = rules.isOmaha ? rules.holeCount : 2;
@@ -34,6 +38,19 @@ export function hasRiverNuts(hero: SeatPlayer, state: HorseGameStateV2): boolean
   for (const board of boards) {
     if (new Set(board.map(key)).size !== 5 || board.some((c) => held.has(key(c)))) return false;
   }
+  // An unbeatable shared board guarantees a tie, not a value raise. Keep
+  // the mathematical nuts result for callers; forced value requires a hole
+  // card improving at least one board. Omaha must use two holes already.
+  if (
+    requirePrivateValue &&
+    !rules.isOmaha &&
+    boards.every(
+      (board) =>
+        scoreHoldem([...hero.cards, ...board], 7, rules.isShortDeck) ===
+        scoreHoldem(board, 5, rules.isShortDeck)
+    )
+  )
+    return false;
   const removed = new Set(known.map(key));
   const unseen: Card[] = [];
   for (const suit of SUITS)
@@ -139,7 +156,7 @@ export function riverNutsRaise(
     if (target === null) return decision;
     if (act === 'bet' && Number.isFinite(decision.amount) && decision.amount! >= target - 0.005)
       return decision;
-    if (!hasRiverNuts(hero, state)) return decision;
+    if (!hasRiverNuts(hero, state, true)) return decision;
     return { ...decision, action: 'bet', amount: target };
   }
 
@@ -147,7 +164,7 @@ export function riverNutsRaise(
     if (!state.legalActions.includes('raise') || !Number.isFinite(decision.amount)) return decision;
     const target = riverNutWagerTarget('raise', hero, state);
     if (target === null || decision.amount! >= target - 0.005) return decision;
-    if (!hasRiverNuts(hero, state)) return decision;
+    if (!hasRiverNuts(hero, state, true)) return decision;
     return { ...decision, amount: target };
   }
   if (act !== 'call' && act !== 'fold') return decision;
@@ -194,7 +211,7 @@ export function riverNutsRaise(
   ) {
     raise = { action: 'all_in', thinkTime: decision.thinkTime };
   }
-  if (!raise || !hasRiverNuts(hero, state)) return decision;
+  if (!raise || !hasRiverNuts(hero, state, true)) return decision;
   return { ...decision, ...raise, amount: raise.amount };
 }
 
@@ -240,5 +257,12 @@ export function fullPotNearPotWager(
     target === decision.amount
   )
     return decision;
+  // The final pot snap must keep the same canonical form the legalizer priced.
+  // A full physical stack is an all-in only when the authoritative menu permits it.
+  if (
+    target === Math.round((hero.bet + hero.stack) * 100) / 100 &&
+    state.legalActions.includes('all_in')
+  )
+    return { ...decision, action: 'all_in', amount: undefined };
   return { ...decision, amount: target };
 }

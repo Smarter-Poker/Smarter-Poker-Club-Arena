@@ -127,6 +127,16 @@ export class HorsePolicyGraph {
     }
   }
 
+  /** Decision-local proof: no node changed the original action, even away
+   * and back. Only reads this graph's own executed transitions. */
+  retainsReferenceAction(decision: HorseDecision): boolean {
+    if (this.failed || this.sealed || this.executing || this.transitions.length === 0) return false;
+    const expected = snapshot(decision);
+    return this.transitions.every(
+      (t) => same(t.after, expected) && (t.before === null || same(t.before, expected))
+    );
+  }
+
   finish(decision: HorseDecision): HorseDecision {
     if (
       this.failed ||

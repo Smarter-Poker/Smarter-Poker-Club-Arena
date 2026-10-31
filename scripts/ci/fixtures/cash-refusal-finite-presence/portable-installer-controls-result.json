@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "cases": [
+    "actual_source_header_UTC_ownversion_preowner_DDL5_post15_fullmetadata_pass",
+    "actual_source_role_and_JWT_refused_without_effect",
+    "actual_source_recorded_ownversion_replay_refused",
+    "wrong_DDL15_regression_refused",
+    "post_metadata_fault_rolls_back_actual_candidate_DDL",
+    "actual_full_paid40_paid5_GEN_guard_grammar_only_not_executed"
+  ],
+  "exact_native_catalog_OID_adapter_inverse": true,
+  "source_sha256": "8fb806c7bcd12fc7ed532e32ba6ff4fddb78a7a077294e12dc4f3b41922b05ec",
+  "financial_and_GEN_runtime_NOT_faked": true,
+  "production_install_or_capacity_proof": false
+}

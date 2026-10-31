@@ -3,12 +3,13 @@ import importlib.util
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('reader', ROOT/'scripts/ci/read-scoped-runtime-errors.py')
@@ -21,6 +22,374 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_rebuy_diagnostic_keeps_selected_generation_and_outcome_only(self):
+        value = {'schema': 'horse-rebuy-decision/v1', 'tournamentId': EVENT, 'userId': TABLE,
+                 'handNumber': 777, 'choice': True, 'phase': 'purchase_unproven',
+                 'bustAtMs': 1000, 'promptUntilMs': 31000, 'observedAtMs': 31001,
+                 'remainingMs': -1, 'elapsedMs': 500, 'sqlstate': '55000', 'failureClass': 'cutoff',
+                 'secret': 'PRIVATE', 'message': 'PRIVATE arbitrary error'}
+        raw = (STAMP+'[Tournament.horse_rebuy_decision] '+json.dumps(value)+'\n').encode()
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 1)
+        decision = result['records'][0]['rebuyDecision']
+        self.assertEqual(decision['handNumber'], 777)
+        self.assertEqual(decision['remainingMs'], -1)
+        self.assertEqual(decision['failureClass'], 'cutoff')
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        for key, invalid in [('phase', 'PRIVATE'), ('phase', []), ('tournamentId', []), ('handNumber', True), ('choice', 1),
+                             ('elapsedMs', 'PRIVATE'), ('tournamentId', TABLE)]:
+            changed = {**value, key: invalid}
+            self.assertIsNone(reader.rebuy_decision(['[Tournament.horse_rebuy_decision] '+json.dumps(changed)], {EVENT}))
+
+    def test_continuation_failure_retains_only_fixed_category_and_phase(self):
+        cases = [
+            ('Error: Hand Continuation Write Is Unproven',
+             '    at retainHandContinuation (/app/dist/services/supabase/handContinuation.js:41:15)',
+             'write_unproven', 'retain'),
+            ('Error: Hand Recovery Requires The External Runout Original',
+             '    at HandController.serializeRecoveryState (/app/dist/engine/HandController.js:12:3)',
+             'external_runout_original_required', 'capture'),
+            ('Error: PRIVATE player cards deck arbitrary error',
+             '    at ServerTableEngine.handleHandEvent (/app/dist/engine/ServerTableEngine.js:42:6)',
+             'unknown', 'dispatch'),
+        ]
+        for message, frame, category, phase in cases:
+            raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '+message+'\n'
+                   +STAMP+frame+'\n'+STAMP+'  PRIVATE credentials cards deck\n').encode()
+            result = reader.extract(raw, SCOPES)
+            self.assertEqual(result['matchingRecords'], 1)
+            record = result['records'][0]
+            self.assertEqual(record['context'], 'ServerTableEngine.hand_continuation_unproven')
+            self.assertEqual(record['continuationFailure'], {'category': category, 'phase': phase})
+            self.assertEqual(record['scopeIds'], [TABLE])
+            self.assertNotIn('PRIVATE', json.dumps(result))
+            self.assertNotIn('/app/', json.dumps(result))
+
+    def test_continuation_failure_requires_exact_selected_context_and_whole_message(self):
+        for context in [f'ServerTableEngine.{EVENT}.hand_continuation_unproven',
+                        f'ServerTableEngine.{TABLE}.hand_continuation_unproven_extra']:
+            raw = (STAMP+'['+context+'] Error: Hand Continuation Write Is Unproven\n').encode()
+            self.assertEqual(reader.extract(raw, SCOPES)['matchingRecords'], 0)
+        raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '
+               +'Error: Hand Continuation Write Is Unproven PRIVATE\n').encode()
+        record = reader.extract(raw, SCOPES)['records'][0]
+        self.assertEqual(record['continuationFailure'], {'category': 'unknown', 'phase': 'unknown'})
+        self.assertNotIn('PRIVATE', json.dumps(record))
+
+    def test_continuation_failure_does_not_infer_timeout_from_generic_refusal(self):
+        raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '
+               +'Error: Hand Continuation Write Is Unproven\n'
+               +STAMP+'    at arbitraryTimeout (/PRIVATE/path:1:2)\n').encode()
+        record = reader.extract(raw, SCOPES)['records'][0]
+        self.assertEqual(record['continuationFailure'], {'category': 'write_unproven', 'phase': 'unknown'})
+
+    def test_restart_read_requires_opt_in_and_original_window(self):
+        self.assertFalse(reader.restart_incident_requested(None, None))
+        window = {'since': '2026-10-28T23:00:00Z', 'until': '2026-10-28T23:15:00Z'}
+        self.assertTrue(reader.restart_incident_requested(True, window))
+        for value, selected in [(True, None), (False, window), (1, window), ('true', window)]:
+            with self.assertRaises(ValueError):
+                reader.restart_incident_requested(value, selected)
+
+    def test_restart_signs_do_not_export_arbitrary_fatal_payloads(self):
+        raw = (STAMP+'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory PRIVATE\n'
+               +STAMP+'unrelated PRIVATE text\n'
+               +'FATAL ERROR: Reached heap limit Allocation failed undated PRIVATE\n').encode()
+        result = reader.restart_log_signs(raw)
+        self.assertEqual(result['matchingRecords'], 2)
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        self.assertTrue(all(set(r) == {'timestamp', 'kind'} for r in result['records']))
+
+    def test_restart_sources_are_fixed_bounded_read_only_and_sanitized(self):
+        window = {'since': '2026-10-28T23:00:00Z', 'until': '2026-10-28T23:15:00Z'}
+        events = [{'Action': 'die', 'timeNano': 1793228940000000000,
+                   'Actor': {'Attributes': {'name': 'club-arena-engine', 'exitCode': '137', 'PRIVATE': 'SECRET'}}},
+                  {'Action': 'die', 'timeNano': 1, 'Actor': {'Attributes': {'name': 'other'}}}]
+        sources = [json.dumps({'Running': True, 'OOMKilled': False, 'ExitCode': 0,
+                               'StartedAt': '2026-10-28T23:09:14Z', 'Error': 'SECRET'}).encode(),
+                   ('\n'.join(json.dumps(e) for e in events)).encode(),
+                   (STAMP+'Container /club-arena-engine unhealthy - Restarting PRIVATE\n').encode(),
+                   json.dumps({'MESSAGE': 'Out of memory: Killed process PRIVATE',
+                               '__REALTIME_TIMESTAMP': '1793228940000000'}).encode()]
+        with patch.object(reader, 'capture', side_effect=sources) as capture:
+            result = reader.read_restart_incident(window, b'')
+        self.assertEqual(len(capture.call_args_list), 4)
+        for call in capture.call_args_list:
+            command = call.args[0]
+            self.assertNotIn('restart', command)
+            self.assertNotIn('exec', command)
+            self.assertEqual(call.kwargs, {'seconds': 4})
+        self.assertEqual(result['sources']['events']['records'], [
+            {'action': 'die', 'timeNano': 1793228940000000000, 'exitCode': 137}])
+        self.assertEqual(result['sources']['kernel']['records'][0]['engineAttribution'], 'unproven')
+        self.assertNotIn('SECRET', json.dumps(result))
+        self.assertNotIn('PRIVATE', json.dumps(result))
+        with patch.object(reader, 'capture', side_effect=OSError('SECRET')):
+            failed = reader.read_restart_incident(window, b'')
+        self.assertTrue(all(s == {'status': 'unavailable'} for s in failed['sources'].values()))
+
+    def test_failure_diagnostics_never_export_exception_or_transport_text(self):
+        cases = [(RuntimeError('PRIVATE host token query'), 'refused'),
+                 (ValueError('PRIVATE payload'), 'refused'),
+                 (OSError('PRIVATE path'), 'io_unavailable'),
+                 (subprocess.TimeoutExpired(['PRIVATE command'], 1, stderr=b'PRIVATE key'), 'timeout'),
+                 (RuntimeError('Log read exceeded bounded input'), 'input_bound'),
+                 (RuntimeError('Log read timed out'), 'timeout'),
+                 (RuntimeError('Public and host engine identity changed or differ'), 'identity_mismatch'),
+                 (Exception('PRIVATE unexpected'), 'unexpected')]
+        with patch.object(reader, 'FAILURE_STAGE', 'current_logs'):
+            for error, expected in cases:
+                result = reader.failure_diagnostic(error)
+                self.assertEqual(result, {'schema': 'scoped-runtime-failure/v1',
+                    'stage': 'current_logs', 'category': expected, 'readOnly': True})
+                self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_remote_failure_only_admits_exact_bounded_fixed_diagnostic(self):
+        valid = {'schema': 'scoped-runtime-failure/v1', 'stage': 'current_logs',
+                 'category': 'input_bound', 'readOnly': True}
+        variants = [valid, {**valid, 'payload': 'PRIVATE'}, {**valid, 'stage': 'PRIVATE'},
+                    {**valid, 'category': 'PRIVATE'}, {**valid, 'readOnly': False},
+                    {**valid, 'stage': []}, {**valid, 'category': {}},
+                    {**valid, 'schema': 'other'}]
+        for i, value in enumerate(variants):
+            reply = subprocess.CompletedProcess(['ssh'], 1, b'', json.dumps(value).encode())
+            result = reader.failure_diagnostic(reader.remote_failure(reply))
+            self.assertEqual(result['category'], 'input_bound' if i == 0 else 'transport_exit')
+            self.assertEqual(result['stage'], 'current_logs' if i == 0 else 'remote_transport')
+            self.assertNotIn('PRIVATE', json.dumps(result))
+        for code, stderr in [(255, b'PRIVATE auth host'), (1, b'x'*4097)]:
+            reply = subprocess.CompletedProcess(['ssh'], code, b'', stderr)
+            result = reader.failure_diagnostic(reader.remote_failure(reply))
+            self.assertEqual(result['category'], 'ssh_exit_255' if code == 255 else 'transport_exit')
+            self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_actual_failed_entry_emits_only_fixed_category_and_stage(self):
+        import base64
+        encoded = base64.b64encode(json.dumps({'scopes': 'PRIVATE_REQUEST',
+                                              'windowStart': None}).encode()).decode()
+        result = subprocess.run([sys.executable, str(ROOT/'scripts/ci/read-scoped-runtime-errors.py'),
+                                 '--remote', encoded], capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, '')
+        lines = result.stderr.splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(json.loads(lines[0]), {'schema': 'scoped-runtime-failure/v1',
+                         'stage': 'remote_admission', 'category': 'refused', 'readOnly': True})
+        self.assertNotIn('PRIVATE', result.stderr)
+        self.assertNotIn(encoded, result.stderr)
+
+    def test_lease_metrics_accepts_and_strips_deployed_target_labels(self):
+        config = (ROOT/'infra/monitoring/prometheus.yml').read_text()
+        job = config.split('  - job_name: engine_game_server\n', 1)[1].split('    scrape_interval:', 1)[0]
+        target_labels = dict(re.findall(r'^          (host|role|app): ([a-z0-9-]+)$', job, re.MULTILINE))
+        self.assertEqual(target_labels, {'host': 'engine-01', 'role': 'engine', 'app': 'club-arena-engine'})
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        start = datetime.datetime.fromisoformat(window['since'].replace('Z', '+00:00')).timestamp()
+        metric = {'__name__': 'poker_lease_heartbeat_outcomes_total', 'scope': 'tournament',
+                  'state': 'kept', 'job': 'engine_game_server', 'instance': 'PRIVATE_HOST', **target_labels}
+        source = {'status': 'success', 'data': {'resultType': 'matrix', 'result': [
+            {'metric': metric, 'values': [[start, '12']]}]}}
+        result = reader.extract_lease_metrics(source, window)
+        self.assertEqual(result['series'][0]['labels'], {'scope': 'tournament', 'state': 'kept'})
+        self.assertNotIn('PRIVATE_HOST', json.dumps(result))
+        for key in target_labels:
+            self.assertNotIn(key, result['series'][0]['labels'])
+            original = metric[key]
+            metric[key] = 'unexpected-target'
+            with self.assertRaises(ValueError):
+                reader.extract_lease_metrics(source, window)
+            metric[key] = original
+        metric['arbitrary_label'] = 'unexpected'
+        with self.assertRaises(ValueError):
+            reader.extract_lease_metrics(source, window)
+
+    def test_lease_metrics_requires_explicit_original_window(self):
+        self.assertFalse(reader.lease_metrics_requested(None, None))
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        self.assertTrue(reader.lease_metrics_requested(True, window))
+        for value, selected in [(True, None), (False, window), ('true', window), (1, window)]:
+            with self.assertRaises(ValueError):
+                reader.lease_metrics_requested(value, selected)
+
+    def test_lease_metrics_keeps_only_fixed_numeric_evidence(self):
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        start = datetime.datetime.fromisoformat(window['since'].replace('Z', '+00:00')).timestamp()
+        metric = {'__name__': 'poker_lease_heartbeat_outcomes_total', 'scope': 'tournament',
+                  'state': 'kept', 'job': 'PRIVATE_JOB', 'instance': 'PRIVATE_HOST'}
+        source = {'status': 'success', 'data': {'resultType': 'matrix', 'result': [
+            {'metric': metric, 'values': [[start, '12'], [start+15, 'NaN']]}]}}
+        result = reader.extract_lease_metrics(source, window)
+        self.assertEqual(result['status'], 'partial')
+        self.assertIn('poker_lease_renewal_loop_running', result['missingMetrics'])
+        self.assertEqual(result['series'][0]['labels'], {'scope': 'tournament', 'state': 'kept'})
+        self.assertEqual(result['series'][0]['values'], [[start, 12.0], [start+15, None]])
+        self.assertEqual(result['unknownSamples'], 1)
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        empty = {'status': 'success', 'data': {'resultType': 'matrix', 'result': []}}
+        self.assertEqual(reader.extract_lease_metrics(empty, window)['status'], 'no_series')
+        import copy
+        for mutate in [
+            lambda d: d['data']['result'][0]['metric'].update(user_id=EVENT),
+            lambda d: d['data']['result'][0]['metric'].update(__name__='private_metric'),
+            lambda d: d['data']['result'][0]['metric'].update(scope='PRIVATE_SECRET'),
+            lambda d: d['data']['result'][0].update(values=[[start-1, '1']]),
+            lambda d: d['data']['result'][0].update(values=[[start, 'PRIVATE_SECRET']]),
+            lambda d: d['data']['result'][0].update(values=[[start+15, '1'], [start, '2']]),
+            lambda d: d['data']['result'][0].update(values=[[start, '1']]*62),
+            lambda d: d['data']['result'][0].update(values=[[float('nan'), '1']]),
+            lambda d: d['data'].update(result=d['data']['result']*65),
+        ]:
+            changed = copy.deepcopy(source)
+            mutate(changed)
+            with self.assertRaises(ValueError):
+                reader.extract_lease_metrics(changed, window)
+
+    def test_lease_metrics_remote_entry_is_opt_in_and_identity_bracketed(self):
+        import base64
+        import io
+        now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+        start = now-datetime.timedelta(hours=1)
+        request = {'scopes': SCOPES, 'windowStart': start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                   'leaseIncidentMetrics': True}
+        encoded = base64.b64encode(json.dumps(request).encode()).decode()
+        calls = []
+        identity = {'version': 'abcdef012345', 'instanceId': 'fixture'}
+        output = io.StringIO()
+        with patch.object(reader, 'capture', return_value=b''), patch.object(reader, 'archived_window', return_value=([], {})), patch.object(reader, 'health', side_effect=lambda *_: calls.append('identity') or identity), patch.object(reader, 'read_lease_metrics', side_effect=lambda _: calls.append('metrics') or {'status': 'no_series', 'series': [], 'unknownSamples': 0}), patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(sys, 'stdout', output):
+            reader.main()
+        self.assertEqual(calls, ['identity', 'metrics', 'identity'])
+        self.assertEqual(json.loads(output.getvalue())['leaseIncidentMetrics']['status'], 'no_series')
+        del request['leaseIncidentMetrics']
+        encoded = base64.b64encode(json.dumps(request).encode()).decode()
+        output = io.StringIO()
+        with patch.object(reader, 'capture', return_value=b''), patch.object(reader, 'archived_window', return_value=([], {})), patch.object(reader, 'health', return_value=identity), patch.object(reader, 'read_lease_metrics') as metrics, patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(sys, 'stdout', output):
+            reader.main()
+        metrics.assert_not_called()
+        self.assertNotIn('leaseIncidentMetrics', json.loads(output.getvalue()))
+
+    def test_lease_metrics_transport_is_fixed_bounded_and_reports_unknown(self):
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        response = Mock()
+        response.status = 200
+        response.read.return_value = json.dumps({'status': 'success', 'data': {'resultType': 'matrix', 'result': []}}).encode()
+        context = Mock()
+        context.__enter__ = Mock(return_value=response)
+        context.__exit__ = Mock(return_value=False)
+        opener = Mock()
+        opener.open.return_value = context
+        with patch.object(reader.urllib.request, 'build_opener', return_value=opener) as build:
+            self.assertEqual(reader.read_lease_metrics(window)['status'], 'no_series')
+        self.assertIs(build.call_args.args[0], reader.NoRedirect)
+        with self.assertRaises(RuntimeError):
+            reader.NoRedirect().redirect_request(None, None, 302, '', {}, 'http://unrequested')
+        url = reader.urllib.parse.urlparse(opener.open.call_args.args[0])
+        self.assertEqual((url.scheme, url.netloc, url.path), ('http', '127.0.0.1:9090', '/api/v1/query_range'))
+        query = reader.urllib.parse.parse_qs(url.query)
+        self.assertEqual(set(query), {'query', 'start', 'end', 'step'})
+        self.assertEqual(query['start'], [window['since']])
+        self.assertEqual(query['end'], [window['until']])
+        self.assertEqual(query['step'], ['15s'])
+        self.assertEqual(query['query'], ['{job="engine_game_server",__name__=~"'+'|'.join(sorted(reader.LEASE_METRIC_NAMES))+'"}'])
+        self.assertEqual(opener.open.call_args.kwargs['timeout'], 5)
+        response.read.assert_called_once_with(262145)
+        for body in [b'PRIVATE_SECRET', b'x'*262145,
+                     b'{"status":"error","error":"PRIVATE_SECRET"}']:
+            response.read.return_value = body
+            with patch.object(reader.urllib.request, 'build_opener', return_value=opener):
+                result = reader.read_lease_metrics(window)
+            self.assertEqual(result['status'], 'unavailable')
+            self.assertNotIn('PRIVATE_SECRET', json.dumps(result))
+
+    def test_break_refusals_keep_only_named_guards_and_symbolic_codes(self):
+        prefix = '[Tournament:'+EVENT[:8]+'] Break abcdef12 '
+        lines = [prefix+'not begun: source_roster_unread:PRIVATE_SQL_PASSWORD',
+                 prefix+'members not dispatched: source_engine_absent',
+                 prefix+'not retired: members_unresolved:2_of_4',
+                 prefix+'not begun: movement_unproven:F06_MOVEMENT_WHOLE_ROSTER_REQUIRED',
+                 prefix+'not begun: PRIVATE_SECRET',
+                 prefix+'arbitrary: source_engine_absent',
+                 prefix+'not begun: source_engine_absent PRIVATE_SECRET']
+        result = reader.extract(('\n'.join(STAMP+x for x in lines)).encode(), SCOPES)
+        self.assertEqual(result['matchingRecords'], 4)
+        self.assertEqual(result['records'][0]['breakRefusal'],
+                         {'breakIdPrefix': 'abcdef12', 'stage': 'not begun', 'reason': 'source_roster_unread'})
+        self.assertEqual(result['records'][3]['symbolicErrors'], ['F06_MOVEMENT_WHOLE_ROSTER_REQUIRED'])
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        self.assertNotIn('2_of_4', json.dumps(result))
+
+    def test_balance_progress_admits_only_three_fixed_selected_transitions(self):
+        prefix = '[Tournament:'+EVENT[:8]+'] '
+        valid = [prefix+'Resumed - 23 tables, level 7',
+                 prefix+'consolidation outstanding - sweeps move to the consolidation lane',
+                 prefix+'consolidation finished - sweeps return to the general lanes']
+        invalid = [valid[0]+' PRIVATE_SECRET', prefix+'Resumed - 999999 tables, level 7',
+                   prefix+'arbitrary PRIVATE_SECRET',
+                   '[Tournament:deadbeef] Resumed - 23 tables, level 7']
+        result = reader.extract(('\n'.join(STAMP+x for x in valid+invalid)).encode(), SCOPES)
+        self.assertEqual(result['matchingRecords'], 3)
+        self.assertEqual(result['records'][0]['resumedBoard'], {'tables': 23, 'level': 7})
+        self.assertEqual([r['context'] for r in result['records']],
+                         ['Tournament.resumed', 'Tournament.consolidation_outstanding', 'Tournament.consolidation_finished'])
+        self.assertNotIn('PRIVATE_SECRET', json.dumps(result))
+        ambiguous = SCOPES+[{'tournamentId': '00000000-0000-4000-8000-000000000003', 'tableIds': []}]
+        self.assertEqual(reader.extract((STAMP+valid[0]).encode(), ambiguous)['records'], [])
+
+    def test_unrelated_archive_traffic_cannot_spend_the_selected_record_budget(self):
+        import base64
+        import io
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            window, path, _ = self.archive_fixture(directory)
+            stamp = window['since']+' '
+            noise = ''.join(stamp+'[Other] unrelated '+str(i)+'\n' for i in range(20001))
+            selected = (stamp+'[Tournament.atomic_move_refused_or_unknown] Error: F06_WHOLE_ROSTER_REQUIRED\n'
+                        +stamp+"  tournamentId: '"+EVENT+"', password: 'PRIVATE_SECRET'\n")
+            with gzip.open(path, 'wb') as out:
+                out.write((noise+selected).encode())
+            encoded = base64.b64encode(json.dumps({'scopes': SCOPES, 'windowStart': window['since']}).encode()).decode()
+            output = io.StringIO()
+            identity = {'version': 'abcdef012345', 'instanceId': 'fixture'}
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory), patch.object(reader, 'capture', return_value=b''), patch.object(reader, 'health', return_value=identity), patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(sys, 'stdout', output):
+                reader.main()
+            result = json.loads(output.getvalue())
+            self.assertEqual(result['matchingRecords'], 1)
+            self.assertEqual(result['records'][0]['symbolicErrors'], ['F06_WHOLE_ROSTER_REQUIRED'])
+            self.assertEqual(result['archiveRead']['archives'][0]['retainedPhysicalLines'], 2)
+            self.assertFalse(result['archiveRead']['truncated'])
+            self.assertFalse(result['archiveRead']['fullWindowCoverageProven'])
+            self.assertNotIn('PRIVATE_SECRET', output.getvalue())
+
+    def test_archive_owner_admits_yesterday_and_exact_shared_age_boundary(self):
+        now = datetime.datetime(2026, 10, 28, 21, tzinfo=datetime.timezone.utc)
+        class FixedDateTime(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+        with patch.object(reader.datetime, 'datetime', FixedDateTime):
+            for hours in [36, 48]:
+                start = now-datetime.timedelta(hours=hours)
+                window = reader.log_window(start.strftime('%Y-%m-%dT%H:%M:%SZ'), now)
+                ended = start+datetime.timedelta(minutes=15)
+                with tempfile.TemporaryDirectory() as name:
+                    directory = Path(name)
+                    filename = ('engine-'+ended.strftime('%Y%m%dT%H%M%SZ')+'-started'+
+                        (start-datetime.timedelta(hours=1)).strftime('%Y%m%dT%H%M%S')+
+                        '-abcdef123456-c3ed8648.log.gz')
+                    line = start.strftime('%Y-%m-%dT%H:%M:%SZ')+' [Tournament.read] F06_ORIGINAL_CHANGED '+EVENT+' PRIVATE_SECRET\n'
+                    with gzip.open(directory/filename, 'wb') as out:
+                        out.write(line.encode())
+                    with patch.object(reader, 'ARCHIVE_DIRECTORY', directory):
+                        sources, metadata = reader.archived_window(window, b'', scopes=SCOPES)
+                    self.assertEqual(len(sources), 1)
+                    self.assertEqual(sources[0][0], line.encode())
+                    self.assertFalse(metadata['fullWindowCoverageProven'])
+                    self.assertNotIn('PRIVATE_SECRET', json.dumps(reader.extract_sources(b'', sources, SCOPES)))
+            old = {'since': '2026-10-26T20:59:59Z', 'until': '2026-10-26T21:14:59Z'}
+            with patch.object(reader.os, 'open') as opened:
+                with self.assertRaises(ValueError):
+                    reader.archived_window(old, b'')
+                opened.assert_not_called()
+
     def test_archive_fallback_recovers_original_window_without_current_identity(self):
         now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
         start = now-datetime.timedelta(hours=1)
@@ -55,6 +424,23 @@ class NativeLogReader(unittest.TestCase):
             self.assertEqual(result['hostEngineBefore'], identity_now)
             self.assertEqual(result['hostEngineAfter'], identity_now)
             self.assertNotIn('PRIVATE_SECRET', output.getvalue())
+
+    def test_selected_archived_records_still_share_the_existing_input_bound(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            window, path, _ = self.archive_fixture(directory)
+            stamp = window['since']+' '
+            first = (stamp+'[Tournament.read] Error: F06_ORIGINAL_CHANGED\n'
+                     +stamp+'  tournamentId: '+EVENT+'\n')
+            second = stamp+'[Tournament.next] Error: F06_OTHER '+EVENT+'\n'
+            with gzip.open(path, 'wb') as out:
+                out.write((first+second).encode())
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory), patch.object(reader, 'MAX_PHYSICAL_LINES', 2):
+                sources, metadata = reader.archived_window(window, b'', scopes=SCOPES)
+            self.assertTrue(metadata['truncated'])
+            self.assertEqual(metadata['archives'][0]['status'], 'inputBound')
+            self.assertEqual(sources[0][0], first.encode())
+            self.assertEqual(reader.extract(sources[0][0], SCOPES)['matchingRecords'], 1)
 
     def archive_fixture(self, directory, *, ended_minutes=30, started_hours=2, suffix='abcdef123456-c3ed8648', raw=None):
         now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
@@ -282,6 +668,17 @@ class NativeLogReader(unittest.TestCase):
         self.assertEqual(result['records'][0]['attempt'], 4)
         self.assertEqual(reader.extract_mux_timings(b'')['records'], [])
 
+    def test_yesterdays_morning_and_exact_48_hour_boundary_remain_readable(self):
+        now = datetime.datetime(2026, 10, 28, 16, tzinfo=datetime.timezone.utc)
+        for value in ['2026-10-27T09:05:00Z', '2026-10-26T16:00:00Z']:
+            result = reader.log_window(value, now)
+            self.assertEqual(result['since'], value)
+            end = datetime.datetime.fromisoformat(result['until'].replace('Z', '+00:00'))
+            start = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+            self.assertEqual(end-start, datetime.timedelta(minutes=15))
+        with self.assertRaises(ValueError):
+            reader.log_window('2026-10-26T15:59:59Z', now)
+
     def test_historical_window_is_exactly_fifteen_minutes_and_recent(self):
         now = datetime.datetime(2026, 9, 27, 16, tzinfo=datetime.timezone.utc)
         start = '2026-09-27T14:25:00Z'
@@ -289,7 +686,7 @@ class NativeLogReader(unittest.TestCase):
             'since': start, 'until': '2026-09-27T14:40:00Z'})
         self.assertEqual(reader.log_window(None, now), None)
         for value in ['', {}, '2026-09-27T14:25:00Z; reboot', '2026-09-27T14:25:00+00:00',
-                      '2026-09-27T15:46:00Z', '2026-09-26T15:59:59Z', '2026-02-30T01:00:00Z']:
+                      '2026-09-27T15:46:00Z', '2026-09-25T15:59:59Z', '2026-02-30T01:00:00Z']:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 reader.log_window(value, now)
         command = reader.log_command(reader.log_window(start, now))
@@ -618,7 +1015,7 @@ class NativeLogReader(unittest.TestCase):
 
     def test_transport_admission_ephemeral_permissions_and_failure_cleanup(self):
         original_run = subprocess.run
-        for fail in ['none', 'transport', 'identity', 'host_identity', 'window', 'mux', 'missing_mux', 'extra_mux']:
+        for fail in ['none', 'transport', 'identity', 'host_identity', 'window', 'mux', 'missing_mux', 'extra_mux', 'lease', 'missing_lease', 'extra_lease']:
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as name:
                 directory = Path(name)
                 generated = directory/'fixture_key'
@@ -628,10 +1025,13 @@ class NativeLogReader(unittest.TestCase):
                 event = directory/'event.json'
                 payload = {'tournament_log_observation': SCOPES}
                 mux = fail in ['mux', 'missing_mux']
-                start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ') if mux else None
+                lease = fail in ['lease', 'missing_lease']
+                start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ') if mux or lease else None
                 window = reader.log_window(start)
                 if mux:
                     payload.update(tournament_log_window_start=start, mux_subscription_timing=True)
+                if lease:
+                    payload.update(tournament_log_window_start=start, leaseIncidentMetrics=True)
                 event.write_text(json.dumps({'action': 'audit-production-integrity', 'client_payload': payload}))
                 identity = {'version': 'abcdef012345', 'instanceId': '1-fixture'}
                 calls = []
@@ -648,17 +1048,19 @@ class NativeLogReader(unittest.TestCase):
                     self.assertIn('IdentitiesOnly=yes', args)
                     self.assertIn(f'ConnectTimeout={reader.CONNECT_TIMEOUT}', args)
                     self.assertGreater(kwargs['timeout'], 2 * reader.HEALTH_TIMEOUT + reader.CAPTURE_TIMEOUT + reader.CONNECT_TIMEOUT)
-                    self.assertLessEqual(kwargs['timeout'], 55)
+                    self.assertEqual(kwargs['timeout'], 60 if lease else 55)
                     self.assertEqual(args[-2], 'root@fixture.example')
                     self.assertRegex(args[-1], r"^python3 - --remote '[A-Za-z0-9+/=]+'$")
                     self.assertEqual(kwargs['input'], (ROOT/'scripts/ci/read-scoped-runtime-errors.py').read_bytes())
                     import base64
                     request = json.loads(base64.b64decode(args[-1].split("'")[1]))
-                    self.assertEqual(request, {'scopes': SCOPES, 'windowStart': start, **({'muxTiming': True} if mux else {})})
+                    self.assertEqual(request, {'scopes': SCOPES, 'windowStart': start, **({'muxTiming': True} if mux else {}), **({'leaseIncidentMetrics': True} if lease else {})})
                     host = {**identity, 'instanceId': 'other-host'} if fail == 'host_identity' else identity
                     output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'window': reader.window_description(window), 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
                     if fail in ['mux', 'extra_mux']:
                         output['muxSubscriptionTimings'] = reader.extract_mux_timings(self.mux_line(self.mux_record()).encode())
+                    if fail in ['lease', 'extra_lease']:
+                        output['leaseIncidentMetrics'] = {'status': 'no_series', 'series': []}
                     if fail == 'window':
                         output['window'] = {'since': 'unrequested'}
                     return subprocess.CompletedProcess(args, 1 if fail == 'transport' else 0, json.dumps(output).encode(), b'sensitive transport error')
@@ -669,7 +1071,7 @@ class NativeLogReader(unittest.TestCase):
                     env = {'GITHUB_EVENT_NAME': 'repository_dispatch', 'GITHUB_EVENT_PATH': str(event), 'RUNNER_TEMP': str(directory), 'HETZNER_HOST': 'fixture.example', 'HETZNER_SSH_PRIVATE_KEY': private, 'HETZNER_HOST_KEY': pin}
                     after = {**identity, 'instanceId': '2-changed'} if fail == 'identity' else identity
                     with patch.dict(os.environ, env), patch.object(sys, 'argv', [str(ROOT/'scripts/ci/read-scoped-runtime-errors.py')]), patch.object(reader, 'health', side_effect=[identity, after]), patch.object(subprocess, 'run', side_effect=transport):
-                        if fail in ['none', 'mux']:
+                        if fail in ['none', 'mux', 'lease']:
                             reader.main()
                         else:
                             with self.assertRaises(RuntimeError):
@@ -677,10 +1079,11 @@ class NativeLogReader(unittest.TestCase):
                     self.assertEqual(len(calls), 1)
                     self.assertFalse(list(directory.glob('scoped-engine-read-*')))
                     output = directory/'artifacts/scoped-runtime-errors/observation.json'
-                    self.assertEqual(output.exists(), fail in ['none', 'mux'])
+                    self.assertEqual(output.exists(), fail in ['none', 'mux', 'lease'])
                     if output.exists():
                         saved = json.loads(output.read_text())
                         self.assertEqual('muxSubscriptionTimings' in saved, mux)
+                        self.assertEqual('leaseIncidentMetrics' in saved, lease)
                         if mux:
                             self.assertEqual(saved['muxSubscriptionTimings']['matchingRecords'], 1)
                         self.assertNotIn(private, output.read_text())

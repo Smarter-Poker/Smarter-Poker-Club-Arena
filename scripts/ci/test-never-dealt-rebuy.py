@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Native PG17 original rebuy read-proof and ACL; no financial owner is mocked or called.
-Uses recorded current catalog column types and anonymous actual two-generation shapes.
-Full empty-catalog guards were separately qualified in isolated DR; this is scoped helper enforcement.
+"""Native PG17 original rebuy read-proof and ACL, followed by Lightning expiry proof.
+The original read-helper qualification calls no financial owner and retains its
+recorded catalog types, two-generation shapes and artifacts unchanged.
+Full empty-catalog guards were separately qualified in isolated DR. The separate
+Lightning proof then uses isolated retained canonical zero-cashout bodies and real
+seat-lock races; it never connects to production or invokes a real credit/refund.
 """
-import argparse,hashlib,json,signal,sys
+import argparse,hashlib,json,os,signal,subprocess,sys
 from pathlib import Path
 sys.dont_write_bytecode=True
 from satellite_qualifier_fixture import module
@@ -44,4 +47,9 @@ def main():
   e.report.update(status='passed',passed=True,synthetic_only=True,game_currency_generation_cases=40,game_currency_arrival_cases=20)
  finally:
   e.close();(out/'never-dealt-rebuy-report.json').write_text(json.dumps(e.report,indent=2)+'\n')
+ # Same required accounting-shard lifecycle; a failed expiry proof fails this entry.
+ run_lightning_expiry_proof(root,a.pg_bin,a.socket_root)
+def run_lightning_expiry_proof(root,pg_bin,socket_root):
+ subprocess.run([sys.executable,str(root/'scripts/ci/test-lightning-rebuy-expiry-postgres.py')],
+  env={**os.environ,'PG_BIN':str(pg_bin.resolve()),'TMPDIR':str(socket_root.resolve())},check=True)
 if __name__=='__main__':main()

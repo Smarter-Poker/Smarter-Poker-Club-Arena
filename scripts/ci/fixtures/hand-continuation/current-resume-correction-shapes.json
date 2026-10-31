@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "table",
+    "signature": "smarter_private.hand_submission_source_corrections",
+    "definition": "CREATE TABLE smarter_private.hand_submission_source_corrections (submission_id uuid NOT NULL, proof jsonb NOT NULL, admitted_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(), CONSTRAINT hand_submission_source_corrections_pkey PRIMARY KEY (submission_id));"
+  },
+  {
+    "kind": "table",
+    "signature": "smarter_private.hand_submission_correction_claims",
+    "definition": "CREATE TABLE smarter_private.hand_submission_correction_claims (submission_id uuid NOT NULL, request_hash text NOT NULL, instance_id text NOT NULL, lease_generation uuid NOT NULL, transaction_id bigint NOT NULL, claimed_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(), CONSTRAINT hand_submission_correction_claims_pkey PRIMARY KEY (submission_id));"
+  },
+  {
+    "kind": "table",
+    "signature": "smarter_private.hand_submission_correction_results",
+    "definition": "CREATE TABLE smarter_private.hand_submission_correction_results (submission_id uuid NOT NULL, result jsonb NOT NULL, recorded_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(), CONSTRAINT hand_submission_correction_results_pkey PRIMARY KEY (submission_id));"
+  },
+  {
+    "kind": "table",
+    "signature": "union_pnl_inventory_events",
+    "definition": "CREATE TABLE union_pnl_inventory_events (event_id bigint NOT NULL, source_name text NOT NULL, row_id uuid NOT NULL, observed_at timestamp with time zone NOT NULL, transaction_id xid8 NOT NULL, operation text NOT NULL, before_row jsonb, after_row jsonb);"
+  }
+]

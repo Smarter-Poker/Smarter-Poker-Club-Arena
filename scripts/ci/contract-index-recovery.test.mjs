@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import {
+  cashHashRetirementRequest,
+  cashHashSelectorStateCatalog,
+  validateCashHashSelectorState,
+  CASH_PROOF_HAND_INDEX,
+  CASH_PROOF_HAND_OID,
+  CASH_PROOF_HAND_DEFINITION,
+  cashHashRetirementCatalog,
+  validateCashHashRetirement,
+  cashHashRetirementStatement,
+  CASH_HASH_FILE,
+  CASH_HASH_INDEX,
+  CASH_HASH_FAILED_OID,
+  CASH_HASH_OLD_DEFINITION,
+  FUNDING_FILE,
+  FUNDING_INDEX,
   CHICAGO_FILE,
   CHICAGO_INDEX,
   recoveryCatalog,
@@ -390,31 +405,56 @@ test('current admission cannot filter readers using the historical failed-operat
 
 // The same required installer regression job covers the source-bound serial option.
 import {
-  SERIAL_JOURNAL_FILE, validateSerialJournalIndex, validateSerialJournalConnection,
-  bindSerialJournalIndex, serialJournalConnection,
+  SERIAL_JOURNAL_FILE,
+  validateSerialJournalIndex,
+  validateSerialJournalConnection,
+  bindSerialJournalIndex,
+  serialJournalConnection,
 } from './serial-journal-index.mjs';
-const serialSql = readFileSync(new URL('../../supabase/migrations/' + SERIAL_JOURNAL_FILE, import.meta.url), 'utf8');
-const serialRequest = { enabled: true, file: SERIAL_JOURNAL_FILE, sql: serialSql,
-  preamble: [{ schema: 'public', name: 'horse_adaptive_journal_metadata_cover' }], otherModes: false };
+const serialSql = readFileSync(
+  new URL('../../supabase/migrations/' + SERIAL_JOURNAL_FILE, import.meta.url),
+  'utf8'
+);
+const serialRequest = {
+  enabled: true,
+  file: SERIAL_JOURNAL_FILE,
+  sql: serialSql,
+  preamble: [{ schema: 'public', name: 'horse_adaptive_journal_metadata_cover' }],
+  otherModes: false,
+};
 test('serial option binds only the exact merged single-index migration', () => {
   assert.equal(validateSerialJournalIndex(serialRequest), true);
   assert.equal(validateSerialJournalIndex({ enabled: false }), false);
-  for (const bad of [{ file: '20261020170644_other.sql' }, { sql: serialSql + '\n' },
-    { otherModes: true }, { preamble: [] }, { preamble: [...serialRequest.preamble, ...serialRequest.preamble] },
-    { preamble: [{ schema: 'public', name: 'other' }] }])
+  for (const bad of [
+    { file: '20261020170644_other.sql' },
+    { sql: serialSql + '\n' },
+    { otherModes: true },
+    { preamble: [] },
+    { preamble: [...serialRequest.preamble, ...serialRequest.preamble] },
+    { preamble: [{ schema: 'public', name: 'other' }] },
+  ])
     assert.throws(() => validateSerialJournalIndex({ ...serialRequest, ...bad }));
 });
 test('serial option refuses transaction pool and unverified session hosts', () => {
-  validateSerialJournalConnection(new URL('postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:5432/postgres'));
-  for (const u of ['postgres://postgres@aws-0-us-west-2.pooler.supabase.com:6543/postgres',
+  validateSerialJournalConnection(
+    new URL(
+      'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:5432/postgres'
+    )
+  );
+  for (const u of [
+    'postgres://postgres@aws-0-us-west-2.pooler.supabase.com:6543/postgres',
     'postgres://postgres@localhost:5432/postgres',
     'postgres://postgres.otherproject@aws-0-us-west-2.pooler.supabase.com:5432/postgres',
     'postgres://postgres.kuklfnapbkmacvwxktbh@aws-1-us-west-2.pooler.supabase.com:5432/postgres',
-    'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:5432/other']) assert.throws(() => validateSerialJournalConnection(new URL(u)));
+    'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:5432/other',
+  ])
+    assert.throws(() => validateSerialJournalConnection(new URL(u)));
 });
 test('explicit serial mode selects only the configured provider session port', () => {
   for (const port of ['5432', '6543']) {
-    const configured = new URL(`postgres://postgres.kuklfnapbkmacvwxktbh:fixture%40password@aws-0-us-west-2.pooler.supabase.com:${port}/postgres?sslmode=require`);
+    const configured = new URL(
+      `postgres://postgres.kuklfnapbkmacvwxktbh:fixture%40password@aws-0-us-west-2.pooler.supabase.com:${port}/postgres?sslmode=require`
+    );
     const session = serialJournalConnection(configured);
     assert.equal(configured.port, port);
     assert.equal(session.port, '5432');
@@ -426,56 +466,132 @@ test('explicit serial mode selects only the configured provider session port', (
     'postgres://postgres.other@aws-0-us-west-2.pooler.supabase.com:6543/postgres',
     'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:6432/postgres',
     'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:6543/other',
-  ]) assert.throws(() => serialJournalConnection(new URL(raw)));
+  ])
+    assert.throws(() => serialJournalConnection(new URL(raw)));
 });
 test('existing hosted installer exposes the serial option through explicit dispatch only', () => {
-  const workflow = readFileSync(new URL('../../.github/workflows/apply-merged-migration.yml', import.meta.url), 'utf8');
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/apply-merged-migration.yml', import.meta.url),
+    'utf8'
+  );
   assert.match(workflow, /serial_journal_index:\s*\n\s*description:/);
   assert.match(workflow, /SERIAL_JOURNAL_INDEX: \$\{\{ inputs\.serial_journal_index \}\}/);
-  assert.match(workflow, /if \[\[ "\$\{SERIAL_JOURNAL_INDEX:-false\}" == "true" \]\]; then\s*recovery_args\+=\(--serial-journal-index\)/);
+  assert.match(
+    workflow,
+    /if \[\[ "\$\{SERIAL_JOURNAL_INDEX:-false\}" == "true" \]\]; then\s*recovery_args\+=\(--serial-journal-index\)/
+  );
   assert.doesNotMatch(workflow, /client_payload\.serial_journal_index/);
   assert.match(workflow, /recovery_args\+=\(--recover-index/);
-  assert.match(workflow, /group: apply-merged-migration-\$\{\{ inputs\.migration \|\| github\.event\.client_payload\.migration \}\}\s*cancel-in-progress: false/);
+  assert.match(
+    workflow,
+    /group: apply-merged-migration-\$\{\{ inputs\.migration \|\| github\.event\.client_payload\.migration \}\}\s*cancel-in-progress: false/
+  );
   const start = workflow.indexOf('          recovery_args=()');
   const end = workflow.indexOf('          node scripts/ci/apply-recorded-migration.mjs', start);
   assert.ok(start > 0 && end > start);
-  const env = { PATH: process.env.PATH, RECOVER_INDEX: '', RECOVER_OID: '',
-    RECOVER_BEFORE: '', RECOVER_TRANSIENT_OID: '', FINAL_TABLE_PAGES: '',
-    FINAL_TABLE_OPERATION: '', QUALIFY_RAKE_REPORT_HISTORY: 'false',
-    MAINTENANCE_THAW_REPAIR: 'false' };
+  const env = {
+    PATH: process.env.PATH,
+    RECOVER_INDEX: '',
+    RECOVER_OID: '',
+    RECOVER_BEFORE: '',
+    RECOVER_TRANSIENT_OID: '',
+    FINAL_TABLE_PAGES: '',
+    FINAL_TABLE_OPERATION: '',
+    QUALIFY_RAKE_REPORT_HISTORY: 'false',
+    MAINTENANCE_THAW_REPAIR: 'false',
+  };
   for (const value of [undefined, 'false', 'true', 'true; arbitrary command']) {
     const input = { ...env, ...(value === undefined ? {} : { SERIAL_JOURNAL_INDEX: value }) };
-    const result = spawnSync('bash', ['-eu', '-c', workflow.slice(start, end) + '\ndeclare -p recovery_args'], { env: input, encoding: 'utf8' });
+    const result = spawnSync(
+      'bash',
+      ['-eu', '-c', workflow.slice(start, end) + '\ndeclare -p recovery_args'],
+      { env: input, encoding: 'utf8' }
+    );
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.includes('--serial-journal-index'), value === 'true');
   }
-  const mixed = spawnSync('bash', ['-eu', '-c', workflow.slice(start, end) + '\ndeclare -p recovery_args'], { env: { ...env, SERIAL_JOURNAL_INDEX: 'true', RECOVER_INDEX: 'fixture' }, encoding: 'utf8' });
+  const mixed = spawnSync(
+    'bash',
+    ['-eu', '-c', workflow.slice(start, end) + '\ndeclare -p recovery_args'],
+    { env: { ...env, SERIAL_JOURNAL_INDEX: 'true', RECOVER_INDEX: 'fixture' }, encoding: 'utf8' }
+  );
   assert.equal(mixed.status, 0, mixed.stderr);
-  assert.ok(mixed.stdout.includes('--serial-journal-index') && mixed.stdout.includes('--recover-index'));
+  assert.ok(
+    mixed.stdout.includes('--serial-journal-index') && mixed.stdout.includes('--recover-index')
+  );
 });
 test('serial setting is applied and read back before the index, never assumed from startup', async () => {
-  for (const scenario of ['good', 'wrong-setting', 'different-backend', 'missing-row', 'set-error', 'wrong-user', 'replica', 'wrong-db']) {
+  for (const scenario of [
+    'good',
+    'wrong-setting',
+    'different-backend',
+    'missing-row',
+    'set-error',
+    'wrong-user',
+    'replica',
+    'wrong-db',
+  ]) {
     const calls = [];
-    const client = { async query(sql) {
-      calls.push(sql);
-      if (sql.startsWith('SET ')) { if (scenario === 'set-error') throw new Error('refused'); return {}; }
-      if (!sql.includes('current_setting')) return { rows: [{ pid: 42, session_user: scenario === 'wrong-user' ? 'other' : 'postgres', current_user: 'postgres', recovery: scenario === 'replica', database: scenario === 'wrong-db' ? 'other' : 'postgres' }] };
-      return { rows: scenario === 'missing-row' ? [] : [{ pid: scenario === 'different-backend' ? 43 : 42,
-        workers: scenario === 'wrong-setting' ? '8' : '0' }] };
-    } };
-    const send = async () => { await bindSerialJournalIndex(client); calls.push('CREATE INDEX'); };
-    if (scenario === 'good') { await send(); assert.equal(calls.at(-1), 'CREATE INDEX'); }
-    else { await assert.rejects(send); assert.ok(!calls.includes('CREATE INDEX')); }
-    if (!['wrong-user', 'replica', 'wrong-db'].includes(scenario)) assert.ok(calls.includes('SET max_parallel_maintenance_workers = 0'));
+    const client = {
+      async query(sql) {
+        calls.push(sql);
+        if (sql.startsWith('SET ')) {
+          if (scenario === 'set-error') throw new Error('refused');
+          return {};
+        }
+        if (!sql.includes('current_setting'))
+          return {
+            rows: [
+              {
+                pid: 42,
+                session_user: scenario === 'wrong-user' ? 'other' : 'postgres',
+                current_user: 'postgres',
+                recovery: scenario === 'replica',
+                database: scenario === 'wrong-db' ? 'other' : 'postgres',
+              },
+            ],
+          };
+        return {
+          rows:
+            scenario === 'missing-row'
+              ? []
+              : [
+                  {
+                    pid: scenario === 'different-backend' ? 43 : 42,
+                    workers: scenario === 'wrong-setting' ? '8' : '0',
+                  },
+                ],
+        };
+      },
+    };
+    const send = async () => {
+      await bindSerialJournalIndex(client);
+      calls.push('CREATE INDEX');
+    };
+    if (scenario === 'good') {
+      await send();
+      assert.equal(calls.at(-1), 'CREATE INDEX');
+    } else {
+      await assert.rejects(send);
+      assert.ok(!calls.includes('CREATE INDEX'));
+    }
+    if (!['wrong-user', 'replica', 'wrong-db'].includes(scenario))
+      assert.ok(calls.includes('SET max_parallel_maintenance_workers = 0'));
   }
 });
 test('maintained applier invokes the serial guard immediately before concurrent index send', () => {
   const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
   assert.match(source, /validateSerialJournalIndex\(\{/);
   assert.match(source, /connectionURL = serialJournalConnection\(connectionURL\)/);
-  assert.match(source, /if \(serialJournalIndex\) \{\s*try \{\s*await bindSerialJournalIndex\(client\);/);
+  assert.match(
+    source,
+    /if \(serialJournalIndex\) \{\s*try \{\s*await bindSerialJournalIndex\(client\);/
+  );
   const bound = source.indexOf('await bindSerialJournalIndex(client);');
-  const refusal = source.indexOf("refused('serial journal session identity or worker bound unproven. No index was sent.');", bound);
+  const refusal = source.indexOf(
+    "refused('serial journal session identity or worker bound unproven. No index was sent.');",
+    bound
+  );
   const send = source.indexOf('await client.query(ix.statement);', bound);
   assert.ok(bound > 0 && refusal > bound && send > refusal);
 });
@@ -524,4 +640,339 @@ test('installer binds and verifies backend identity after pool startup replaceme
   const bound = s.indexOf(`SET application_name = 'apply-recorded-migration'`, connected);
   const checked = s.indexOf(`identity.rows[0]?.name !== 'apply-recorded-migration'`, bound);
   assert.ok(connected < bound && bound < checked && checked < s.indexOf('let already;'));
+});
+
+test('funding source cover recovery binds exact bytes, OID, include columns and all original guards', () => {
+  const sql = readFileSync(
+    new URL('../../supabase/migrations/' + FUNDING_FILE, import.meta.url),
+    'utf8'
+  );
+  const r = recoveryRequest(FUNDING_FILE, sql, FUNDING_INDEX, '259578496', '2026-10-26T18:22:00Z');
+  const funding = {
+    ...row,
+    oid: r.oid,
+    name: 'accounting_cash_club_week_player_cover',
+    table_name: 'accounting_cash_rake_sources',
+    attribute_count: 4,
+    definition:
+      'CREATE INDEX accounting_cash_club_week_player_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (player_id, id)',
+  };
+  assert.equal(validateRecoveryCatalog([funding], r), funding);
+  for (const [key, value] of Object.entries({
+    oid: '259578497',
+    owner: 'other',
+    table_owner: 'other',
+    valid: true,
+    ready: false,
+    live: false,
+    replica_identity: true,
+    unique_index: true,
+    primary_index: true,
+    exclusion_index: true,
+    key_count: 3,
+    attribute_count: 3,
+    no_predicate: false,
+    no_expression: false,
+    no_constraints: false,
+    no_transients: false,
+    no_builder: false,
+    definition: funding.definition.replace('player_id, id', 'player_id'),
+  }))
+    assert.throws(() => validateRecoveryCatalog([{ ...funding, [key]: value }], r));
+  assert.throws(() => recoveryRequest(FUNDING_FILE, sql + ' ', FUNDING_INDEX, r.oid, r.before));
+  assert.throws(() =>
+    recoveryRequest(FUNDING_FILE, sql, FUNDING_INDEX, r.oid, r.before, '259578498')
+  );
+  assert.equal(recoveryStatement(r), 'REINDEX INDEX CONCURRENTLY ' + FUNDING_INDEX);
+  assert.throws(() => cleanupStatement(r));
+  assert.ok(recoveryCatalog(r).includes('accounting_cash_club_week_player_cover'));
+  assert.ok(!recoveryCatalog(r).includes('managed_game_contract_versions_game_id_id_idx'));
+  assert.equal(
+    validateRecoveryCatalog([{ ...funding, oid: '259578499', valid: true }], r, true).valid,
+    true
+  );
+  assert.throws(() => validateRecoveryCatalog([{ ...funding, valid: true }], r, true));
+});
+
+test('cash HASH replacement binds the one failed old OID and new exact file while preserving original proof CHECK', () => {
+  const sql = readFileSync(
+    new URL('../../supabase/migrations/' + CASH_HASH_FILE, import.meta.url),
+    'utf8'
+  );
+  const r = recoveryRequest(
+    CASH_HASH_FILE,
+    sql,
+    CASH_HASH_INDEX,
+    CASH_HASH_FAILED_OID,
+    '2026-10-28T23:29:32Z'
+  );
+  const hash = {
+    ...row,
+    oid: r.oid,
+    name: 'union_pnl_cash_links_valid_union_hash',
+    table_name: 'union_pnl_cash_outcome_link_resolutions',
+    definition: CASH_HASH_OLD_DEFINITION,
+    valid: false,
+    ready: false,
+    live: true,
+    key_count: 1,
+    attribute_count: 1,
+    no_predicate: false,
+    no_expression: false,
+    cash_proof_check_validated: true,
+    transient_names: [],
+  };
+  assert.equal(validateRecoveryCatalog([hash], r), hash);
+  for (const [key, value] of Object.entries({
+    oid: '1',
+    owner: 'other',
+    table_owner: 'other',
+    valid: true,
+    ready: true,
+    live: false,
+    replica_identity: true,
+    unique_index: true,
+    primary_index: true,
+    exclusion_index: true,
+    key_count: 2,
+    attribute_count: 2,
+    no_predicate: true,
+    no_expression: true,
+    no_constraints: false,
+    no_transients: false,
+    no_builder: false,
+    cash_proof_check_validated: false,
+    definition: 'other',
+    transient_names: ['unexpected'],
+  }))
+    assert.throws(() => validateRecoveryCatalog([{ ...hash, [key]: value }], r));
+  assert.throws(() => recoveryRequest(CASH_HASH_FILE, sql + ' ', CASH_HASH_INDEX, r.oid, r.before));
+  assert.throws(() => recoveryRequest(CASH_HASH_FILE, sql, CASH_HASH_INDEX, '1', r.before));
+  assert.throws(() => recoveryRequest(CASH_HASH_FILE, sql, CASH_HASH_INDEX, r.oid, r.before, '2'));
+  assert.equal(recoveryStatement(r), 'DROP INDEX CONCURRENTLY ' + CASH_HASH_INDEX);
+  assert.deepEqual(validateRecoveryCatalog([], r, true), { oid: 'absent' });
+  assert.throws(() => validateRecoveryCatalog([hash], r, true));
+  assert.throws(() => cleanupStatement(r));
+  assert.ok(recoveryCatalog(r).includes('cash_proof_check_validated'));
+  assert.ok(recoveryCatalog(r).includes('union_pnl_cash_outcome_link_resolutions_check'));
+});
+test('cash HASH drop and replacement share the original 600-second cap and fresh exact pre-drop catalog', () => {
+  const s = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  assert.ok(s.includes('if (isCashHashRecovery(recovery)) cashHashRecoveryDeadline = deadline'));
+  assert.ok(s.includes('Math.floor(cashHashRecoveryDeadline - performance.now())'));
+  assert.ok(s.includes('shared 600s cash HASH recovery/build budget exhausted'));
+  const recheck = s.indexOf('if (isCashHashRecovery(recovery))\n      validateRecoveryCatalog');
+  assert.ok(
+    recheck > 0 && recheck < s.indexOf('await sendOnce(recoveryStatement(recovery))', recheck)
+  );
+  assert.ok(s.includes('validateRecoverySnapshots(snapshots)'));
+});
+
+test('valid old proof index retires only after exact valid replacement and full dependency/constraint inventory', () => {
+  const sql = readFileSync(
+    new URL('../../supabase/migrations/' + CASH_HASH_FILE, import.meta.url),
+    'utf8'
+  );
+  const r = cashHashRetirementRequest(CASH_HASH_FILE, sql, '275976999', '2026-10-28T23:29:32Z');
+  const table = JSON.parse(
+    readFileSync(
+      new URL('./fixtures/cash-link-union-proof-index/actual-tables.json', import.meta.url),
+      'utf8'
+    )
+  )[1];
+  const valid = {
+    ...row,
+    oid: CASH_PROOF_HAND_OID,
+    name: 'union_pnl_cash_links_valid_proof_hand',
+    table_name: table.name,
+    definition: CASH_PROOF_HAND_DEFINITION,
+    valid: true,
+    ready: true,
+    live: true,
+    key_count: 1,
+    attribute_count: 3,
+    no_predicate: false,
+    no_expression: true,
+    no_incoming_dependencies: true,
+    exact_auto_dependencies: true,
+    new_selector_valid: true,
+    new_selector_oid: r.selectorOid,
+    transient_names: [],
+    original_constraints: table.constraints.map((c) => [c.name, c.definition, c.validated]),
+    original_indexes: table.indexes,
+  };
+  assert.equal(validateCashHashRetirement([valid], r), valid);
+  for (const [key, value] of Object.entries({
+    oid: '1',
+    observer_authorized: false,
+    owner: 'other',
+    table_owner: 'other',
+    definition: 'wrong',
+    valid: false,
+    ready: false,
+    live: false,
+    replica_identity: true,
+    unique_index: true,
+    primary_index: true,
+    exclusion_index: true,
+    key_count: 2,
+    attribute_count: 2,
+    no_predicate: true,
+    no_expression: false,
+    no_constraints: false,
+    no_transients: false,
+    no_builder: false,
+    no_incoming_dependencies: false,
+    exact_auto_dependencies: false,
+    new_selector_valid: false,
+    original_constraints: [],
+    original_indexes: [],
+  }))
+    assert.throws(() => validateCashHashRetirement([{ ...valid, [key]: value }], r));
+  assert.equal(
+    cashHashRetirementStatement(r),
+    'DROP INDEX CONCURRENTLY public.union_pnl_cash_links_valid_proof_hand'
+  );
+  assert.doesNotThrow(() => validateCashHashRetirement([], r, true));
+  assert.throws(() => validateCashHashRetirement([valid], r, true));
+  assert.ok(cashHashRetirementCatalog(r).includes('ARRAY[1,2,3,10,11]'));
+  const s = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  assert.ok(s.lastIndexOf('if (cashHashRecoveryDeadline !== null) {') > s.indexOf('if (!valid)'));
+  assert.ok(
+    s.replace(/\s+/g, '').includes('Math.floor(cashHashRecoveryDeadline-performance.now())')
+  );
+  assert.ok(
+    s.indexOf('validateCashHashRetirement') <
+      s.indexOf('await client.query(cashHashRetirementStatement(retirement))')
+  );
+});
+
+test('explicit retirement-only resume binds fresh valid selector OID and dry-run exits before all DDL', () => {
+  const sql = readFileSync(
+    new URL('../../supabase/migrations/' + CASH_HASH_FILE, import.meta.url),
+    'utf8'
+  );
+  const r = recoveryRequest(
+    CASH_HASH_FILE,
+    sql,
+    CASH_PROOF_HAND_INDEX,
+    CASH_PROOF_HAND_OID,
+    '2026-10-28T23:29:32Z',
+    null,
+    '275976999'
+  );
+  assert.equal(r.retirementOnly, true);
+  assert.throws(() => recoveryStatement(r));
+  assert.throws(() => recoveryCatalog(r));
+  assert.throws(() => validateRecoveryCatalog([], r));
+  assert.doesNotThrow(() => cashHashRetirementCatalog(r));
+  assert.equal(r.selectorOid, '275976999');
+  for (const selector of [
+    null,
+    '0',
+    '-1',
+    CASH_HASH_FAILED_OID,
+    CASH_PROOF_HAND_OID,
+    '4294967296',
+    'bad',
+  ])
+    assert.throws(() =>
+      recoveryRequest(
+        CASH_HASH_FILE,
+        sql,
+        CASH_PROOF_HAND_INDEX,
+        CASH_PROOF_HAND_OID,
+        r.before,
+        null,
+        selector
+      )
+    );
+  assert.throws(() =>
+    recoveryRequest(CASH_HASH_FILE, sql, CASH_PROOF_HAND_INDEX, '1', r.before, null, r.selectorOid)
+  );
+  assert.throws(() =>
+    recoveryRequest(
+      CASH_HASH_FILE,
+      sql + ' ',
+      CASH_PROOF_HAND_INDEX,
+      CASH_PROOF_HAND_OID,
+      r.before,
+      null,
+      r.selectorOid
+    )
+  );
+  const s = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  const entry = s.indexOf('if (recovery?.retirementOnly) {'),
+    exit = entry + s.slice(entry).search(/if\s*\(DRY_RUN\)/),
+    drop = s.indexOf('await client.query(cashHashRetirementStatement');
+  assert.ok(entry > 0 && exit > entry && exit < drop);
+  assert.ok(
+    s
+      .replace(/\s+/g, '')
+      .includes(
+        'constindexPreamble=recovery?.retirementOnly||cashHashExistingSelectorOid?[]:preamble'
+      )
+  );
+  assert.ok(
+    s
+      .replace(/\s+/g, '')
+      .includes('if(cashHashMigration&&valid)cashHashBuiltSelectorOid=rows[0].oid')
+  );
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/apply-merged-migration.yml', import.meta.url),
+    'utf8'
+  );
+  assert.ok(workflow.includes('recover_selector_oid:'));
+  assert.ok(workflow.includes('--recover-selector-oid "$RECOVER_SELECTOR_OID"'));
+});
+
+test('completed physical state resumes only pure qualification/history with exact selector and surviving catalog', () => {
+  const sql = readFileSync(
+    new URL('../../supabase/migrations/' + CASH_HASH_FILE, import.meta.url),
+    'utf8'
+  );
+  const r = cashHashRetirementRequest(CASH_HASH_FILE, sql, '275976999', '2026-10-28T23:29:32Z');
+  const table = JSON.parse(
+    readFileSync(
+      new URL('./fixtures/cash-link-union-proof-index/actual-tables.json', import.meta.url),
+      'utf8'
+    )
+  )[1];
+  const done = {
+    observer_authorized: true,
+    table_owner: 'postgres',
+    selector_oid: r.selectorOid,
+    old_proof_present: false,
+    new_selector_valid: true,
+    no_builder: true,
+    remaining_indexes_valid: true,
+    original_constraints: table.constraints.map((c) => [c.name, c.definition, c.validated]),
+    remaining_indexes: table.indexes.filter(
+      (x) => !x.startsWith('CREATE INDEX union_pnl_cash_links_valid_proof_hand ')
+    ),
+  };
+  assert.equal(validateCashHashSelectorState([done], r, true), done);
+  for (const [key, value] of Object.entries({
+    observer_authorized: false,
+    table_owner: 'other',
+    selector_oid: '1',
+    old_proof_present: true,
+    new_selector_valid: false,
+    no_builder: false,
+    remaining_indexes_valid: false,
+    original_constraints: [],
+    remaining_indexes: [],
+  }))
+    assert.throws(() => validateCashHashSelectorState([{ ...done, [key]: value }], r, true));
+  assert.ok(cashHashSelectorStateCatalog().includes('remaining_indexes_valid'));
+  const s = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8'),
+    compact = s.replace(/\s+/g, '');
+  assert.ok(compact.includes('if(cashHashMigration&&(!recovery||recovery.retirementOnly))'));
+  assert.ok(s.includes('no CCI or DROP replayed'));
+  assert.ok(compact.includes('validateCashHashSelectorState(completed,retirement,true)'));
+  assert.ok(
+    s.indexOf('const completed=') === -1 ||
+      s.indexOf('const completed=') <
+        s.indexOf('await client.query(cashHashRetirementStatement(retirement))')
+  );
 });

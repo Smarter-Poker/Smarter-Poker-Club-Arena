@@ -106,6 +106,39 @@ describe('a seated late-registration table is never starved by the sweep budget'
     }
   });
 
+  it('does not admit after the event finishes while the receipt read is in flight', async () => {
+    for (const flag of ['tournamentFinished', 'finalTableDealHandled']) {
+      const { self } = manager();
+      const query = receiptsQuery([]);
+      query.limit.mockImplementation(async () => {
+        // A terminal callback can run while admission awaits the database.
+        self[flag] = true;
+        return {
+          data: [{ table_id: TABLE_ID, created_at: '2026-10-26T13:29:24.186Z' }],
+          error: null,
+        };
+      });
+      transport.from.mockReturnValue(query);
+      await admit.call(self);
+      expect(self.startCapacityTableEngine).not.toHaveBeenCalled();
+      expect(transport.rpc).not.toHaveBeenCalled();
+      expect(self.broadcast).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not announce expansion after a finish during acknowledgement', async () => {
+    for (const flag of ['tournamentFinished', 'finalTableDealHandled']) {
+      const { self } = manager();
+      transport.rpc.mockImplementation(async () => {
+        self[flag] = true;
+        return { data: { ok: true, requested: 1, newly_admitted: 1 }, error: null };
+      });
+      await admit.call(self);
+      expect(self.startCapacityTableEngine).toHaveBeenCalledWith(TABLE_ID);
+      expect(self.broadcast).not.toHaveBeenCalled();
+    }
+  });
+
   it('stops for a stopped manager or an aborted sweep', async () => {
     const stopped = manager({ running: false });
     await admit.call(stopped.self);

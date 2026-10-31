@@ -22,7 +22,7 @@ import {
   simulateEquity,
   variantInfo,
 } from './HorseEval.js';
-import { Deck } from './PokerEngine.js';
+import { Deck, calculateRake } from './PokerEngine.js';
 import { isPostflopManiac, maniacRaiseWidth } from './HorseOpponentExploit.js';
 import {
   controllerDecisionState,
@@ -46,12 +46,49 @@ export interface PressureOptions {
   pairedBoardFold?: boolean;
 }
 
+/** New public investment after hero's latest raise changes the continuation question.
+ * Pending seats and forced contributions alone are not new voluntary evidence. */
+export function hasNewThirdPartyPreflopContribution(
+  history: readonly { stage: string; action: string; userId?: string; amount?: number }[],
+  heroId: string,
+  targetId: string
+): boolean {
+  const pre = history.filter((a) => a.stage === 'preflop');
+  let latestHeroRaise = -1;
+  for (let i = 0; i < pre.length; i++) {
+    const a = pre[i];
+    if (a.userId === heroId && ['raise', 'bet', 'all_in'].includes(a.action)) latestHeroRaise = i;
+  }
+  return (
+    latestHeroRaise >= 0 &&
+    pre
+      .slice(latestHeroRaise + 1)
+      .some(
+        (a) =>
+          !!a.userId &&
+          a.userId !== heroId &&
+          a.userId !== targetId &&
+          ['call', 'raise', 'all_in'].includes(a.action) &&
+          Number.isFinite(a.amount) &&
+          (a.amount ?? 0) > 0
+      )
+  );
+}
+
+/** Independent smoke-test cost: a nonterminal call still has streets to play.
+ * The synthetic potter bets every hand, so its selection penalty is zero.
+ * This is a uniform-policy benchmark, not a calibrated public-range oracle. */
+export function uniformPolicyContinuationCost(street: string, call: number, stack: number): number {
+  if (call >= stack) return 0;
+  return street === 'flop' ? 0.05 : street === 'turn' ? 0.03 : 0;
+}
+
 export interface PressureTally {
   /** facing the maniac's preflop all-in, hero not yet in voluntarily */
   vsJam: { call: number; fold: number; callScores: number[]; foldScores: number[] };
   /** facing the maniac's shove with nobody else in yet: every fold, with
    *  hero's true equity against the shover's real holding (any hand) */
-  jamFoldsAlone: { equity: number; price: number }[];
+  jamFoldsAlone: { equity: number; price: number; hand: number; hole: Card[] }[];
   /** hands in which a horse raised/bet voluntarily and later folded */
   raiseThenFold: number;
   /** hands in which a horse raised/bet voluntarily against the maniac */
@@ -62,14 +99,21 @@ export interface PressureTally {
   engagedFrom: number | null;
   /** raise-then-fold by street of the fold, and by street of the horse's last aggression */
   rtfByStreet: Record<string, number>;
+  /** Preflop raise-folds with no new third-party voluntary contribution. */
+  unchangedPublicLinePreflopRaiseFolds: number;
   /**
    * Postflop, heads-up against the maniac's bet: every fold with hero's true
    * equity against a RANDOM holding (the jammer / potter plays every hand)
-   * and the price. A fold with equity above the price is a fold the maniac
-   * profits from.
+   * and the raw price. Showdown equity alone does not price a nonterminal
+   * continuation: retain its independent realization cost separately.
    */
   /** pairedBoardRule: the fold Dan ordered on 2026-10-25 (HorsePloPairedBoardFold) */
-  postflopFolds: { equity: number; price: number; pairedBoardRule: boolean }[];
+  postflopFolds: {
+    equity: number;
+    price: number;
+    continuationCost: number;
+    pairedBoardRule: boolean;
+  }[];
   postflopCalls: number;
   /** 2026-10-22: per hand, at its start, is the seat read as a preflop maniac */
   maniacReadByHand: boolean[];
@@ -101,6 +145,7 @@ export function playManiacPressure(
     hands: 0,
     engagedFrom: null,
     rtfByStreet: {},
+    unchangedPublicLinePreflopRaiseFolds: 0,
     postflopFolds: [],
     postflopCalls: 0,
     maniacReadByHand: [],
@@ -165,7 +210,10 @@ export function playManiacPressure(
       HorseMind.setDecisionScope(readScopeOf(variant, seats), variant);
       const startRead = HorseMind.opponentRead(PRESSURE_MANIAC);
       HorseMind.setDecisionScope(null);
-      tally.maniacReadByHand.push(maniacRaiseWidth(startRead) !== null);
+      // Read-speed evidence counts observed engagement, not the common starting prior.
+      tally.maniacReadByHand.push(
+        startRead?.presumed !== true && maniacRaiseWidth(startRead) !== null
+      );
       tally.postflopManiacByHand.push(isPostflopManiac(startRead));
       for (let step = 0; step < 200; step++) {
         const live = c.getState();
@@ -286,7 +334,18 @@ export function playManiacPressure(
                 const eq = simulateEquity(spot.hero.cards, [], 1, variantInfo(variant), 1500);
                 restoreFastRandom(saved);
                 const call = Math.min(menu.toCall, spot.hero.stack);
-                tally.jamFoldsAlone.push({ equity: eq, price: call / (spot.state.pot + call) });
+                // This fixture's equal starting stacks have no side pots.
+                // Independently price the award using its controller config;
+                // the cap remains charged even when marginal rake is zero.
+                const gross = spot.state.pot + call;
+                const rake =
+                  mode === 'cash' ? calculateRake(gross, true, config.rakeConfig!, seats) : 0;
+                tally.jamFoldsAlone.push({
+                  equity: eq,
+                  price: call / (gross - rake),
+                  hand,
+                  hole: spot.hero.cards,
+                });
               }
               tally.vsJam.fold++;
               tally.vsJam.foldScores.push(score);
@@ -330,7 +389,14 @@ export function playManiacPressure(
                 });
               tally.postflopFolds.push({
                 equity: eq,
-                price: call / (spot.state.pot + call),
+                continuationCost: uniformPolicyContinuationCost(street, call, spot.hero.stack),
+                price:
+                  call /
+                  (spot.state.pot +
+                    call -
+                    (mode === 'cash'
+                      ? calculateRake(spot.state.pot + call, true, config.rakeConfig!, seats)
+                      : 0)),
                 pairedBoardRule,
               });
             } else tally.postflopCalls++;
@@ -355,6 +421,15 @@ export function playManiacPressure(
           if (counted) {
             const k = `${aggrStreet.get(spot.hero.user_id)}->${street}`;
             tally.rtfByStreet[k] = (tally.rtfByStreet[k] ?? 0) + 1;
+            if (
+              k === 'preflop->preflop' &&
+              !hasNewThirdPartyPreflopContribution(
+                spot.state.actionHistory ?? [],
+                spot.hero.user_id,
+                PRESSURE_MANIAC
+              )
+            )
+              tally.unchangedPublicLinePreflopRaiseFolds++;
           }
         }
         let done = false;

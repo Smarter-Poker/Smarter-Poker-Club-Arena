@@ -45,6 +45,8 @@ function simpleRow(overrides: Record<string, unknown>) {
       selected={false}
       onSelect={vi.fn()}
       columns={new Set(defaultRosterWorkspace().columns)}
+      winLoss={{ cash: -20, mtt: 5, net: -15, fees: 12_345.67, downline_fees: 2_500 }}
+      feeLabel="Fees This Week"
       simpleMode
     />
   );
@@ -53,21 +55,50 @@ function simpleRow(overrides: Record<string, unknown>) {
 describe('Player Management shows fees generated', () => {
   it('prints the fee figure and never the wallet in Simple mode', () => {
     render(simpleRow({}));
-    expect(screen.getByText('Fees Generated')).toBeVisible();
-    expect(screen.getByText('12.3K')).toBeVisible();
+    expect(screen.getByText('Fees This Week')).toBeVisible();
+    expect(screen.getByText('12,345.67')).toBeVisible();
     expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
     expect(screen.queryByText('274.6K')).not.toBeInTheDocument();
   });
 
   it('adds downline fees for an agent with a downline', () => {
     render(simpleRow({ role: 'agent', downline_total: 4, downline_fees: 2_500 }));
-    expect(screen.getByText('Downline 2.5K')).toBeVisible();
+    expect(screen.getByText('Downline 2,500.00')).toBeVisible();
   });
 
+  it.each([true, false])(
+    'uses period fees rather than lifetime fees in Simple=%s',
+    (simpleMode) => {
+      const row = simpleRow({ total_fees: 987654, downline_total: 4, downline_fees: 999999 });
+      render({
+        ...row,
+        props: {
+          ...row.props,
+          simpleMode,
+          winLoss: { cash: -20, mtt: 5, net: -15, fees: 66.63, downline_fees: 155.09 },
+        },
+      });
+      expect(screen.getByText('66.63')).toBeVisible();
+      expect(screen.queryByText('987.6K')).not.toBeInTheDocument();
+      expect(screen.queryByText('999.9K')).not.toBeInTheDocument();
+    }
+  );
+  it.each([false, true])(
+    'never falls back to lifetime fees while loading or failed (failed=%s)',
+    (failed) => {
+      const row = simpleRow({ total_fees: 987654 });
+      render({ ...row, props: { ...row.props, winLoss: undefined, winLossUnavailable: failed } });
+      expect(screen.queryByText('987.6K')).not.toBeInTheDocument();
+      expect(screen.getAllByText(failed ? 'Unavailable' : '...').length).toBeGreaterThan(0);
+    }
+  );
+
   it('does not floor small fees to zero', () => {
-    expect(feeFigure(0.5)).toBe('0.5');
+    expect(feeFigure(0.5)).toBe('0.50');
     expect(feeFigure(999.25)).toBe('999.25');
-    expect(feeFigure(1_200)).toBe('1.2K');
+    expect(feeFigure(1_200)).toBe('1,200.00');
+    expect(feeFigure(3.5)).toBe('3.50');
+    expect(feeFigure(31_400.25)).toBe('31,400.25');
     expect(feeFigure(null)).toBe('Restricted');
   });
 
@@ -101,12 +132,14 @@ describe('Player Management shows fees generated', () => {
     expect(sql).toContain('greatest(coalesce(p_from, public.fn_ca_fee_counting_start()),');
     expect(sql).toContain('d.day >= b.from_day');
     expect(sql).toContain('t.day >= b.from_day');
-    const body = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION public.ca_club_member_fee_totals'));
+    const body = sql.slice(
+      sql.indexOf('CREATE OR REPLACE FUNCTION public.ca_club_member_fee_totals')
+    );
     expect(body.slice(0, body.indexOf('$function$;'))).not.toContain('fn_ca_fee_week_start');
     expect(sql).not.toMatch(/\b(DELETE|TRUNCATE|UPDATE)\b/);
   });
 
-  it('counts fees from this week\'s Monday reset only, without touching the ledgers', () => {
+  it("counts fees from this week's Monday reset only, without touching the ledgers", () => {
     const sql = readFileSync(
       resolve(
         process.cwd(),

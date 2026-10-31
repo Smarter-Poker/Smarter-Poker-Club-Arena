@@ -335,7 +335,7 @@ export class TableBalancer {
         let deficit = under.target - under.playerCount;
 
         while (excess > 0 && deficit > 0 && movablePlayers.length > 0) {
-          const player = movablePlayers.shift()!;
+          const player = movablePlayers[0];
           const sourceHops =
             sourceBB === null ? null : hopsToBigBlind(sourceRing, sourceBB, player.seat);
           const { seat: toSeat } = this.findOpenSeat(under, {
@@ -343,8 +343,9 @@ export class TableBalancer {
             sourceHops,
           });
 
-          if (toSeat === -1) break; // No open seats
+          if (toSeat === -1) break; // Keep this player for the next destination.
 
+          movablePlayers.shift();
           moves.push({
             playerId: player.userId,
             fromTableId: over.tableId,
@@ -598,10 +599,8 @@ export class TableBalancer {
    *     gain free hands, so we take the SOONEST big blind instead.
    *   - the two seats the big blind has only just passed (the destination's
    *     button and small blind for the next hand) are held back unless nothing
-   *     else is free. Those are the free-orbit seats, and they are also the two
-   *     the engine charges an arriving tournament player for, so keeping moved
-   *     players out of them is what stops a balance move from ever colliding
-   *     with that charge.
+   *     else is free. This preserves position fairness; tournament arrivals
+   *     never owe an entry post, including when only the button is available.
    *   - with no blind order to work from (button unknown, table too small) the
    *     old lowest-free-seat behaviour stands.
    *

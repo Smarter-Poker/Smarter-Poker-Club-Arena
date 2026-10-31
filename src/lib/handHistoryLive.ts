@@ -40,6 +40,8 @@ export interface RefetchDecisionInput {
   tableId: string | null | undefined;
   now: number;
   staleMs?: number;
+  /** Empty results are re-read on an explicit reopen, even within the normal freshness window. */
+  handCount?: number;
 }
 
 /** Whether opening the panel or the modal should hit the network. */
@@ -47,6 +49,7 @@ export function shouldRefetchHandHistory(input: RefetchDecisionInput): boolean {
   const staleMs = input.staleMs ?? HAND_HISTORY_STALE_MS;
   if (input.state === 'loading') return false;
   if (input.state !== 'ready') return true;
+  if (input.handCount === 0) return true;
   if (input.fetchedAt === null) return true;
   if ((input.fetchedTableId ?? null) !== (input.tableId ?? null)) return true;
   return input.now - input.fetchedAt >= staleMs;
@@ -55,6 +58,16 @@ export function shouldRefetchHandHistory(input: RefetchDecisionInput): boolean {
 export interface HandLike {
   id: string;
   handNumber: number;
+}
+
+/** Pages and live refreshes share immutable hand identities, never row offsets. */
+export function mergeHandHistoryPages<T extends HandLike>(
+  retained: readonly T[],
+  incoming: readonly T[]
+): T[] {
+  const byId = new Map(retained.map((hand) => [hand.id, hand]));
+  for (const hand of incoming) byId.set(hand.id, hand);
+  return [...byId.values()].sort((a, b) => (b.handNumber || 0) - (a.handNumber || 0));
 }
 
 /**

@@ -193,7 +193,9 @@ describe('a row says whether it opens', () => {
     // A club owner holds no downline of their own, so 'agent' is not among the
     // scopes they are offered - and the fallback that keeps an operator out of
     // scopes they do not hold would fire on the very next render.
-    expect(tsx).toMatch(/if \(scope === 'agent' && crumbs\.length > 0\) return;/);
+    expect(tsx).toMatch(/\(savedScope === 'agent' && crumbs\.length > 0\)/);
+    expect(tsx).toContain('available.includes(savedScope)');
+    expect(tsx).not.toContain('setScope(available[0])');
   });
 
   it('backing out of a drill returns where it started', () => {

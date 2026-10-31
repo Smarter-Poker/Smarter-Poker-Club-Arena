@@ -10,12 +10,14 @@ import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
  */
 
 import { supabase } from '../services/supabase.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import { fieldIsStillLive } from './recoveryFieldGuard.js';
 import { noHandWasEverDealt } from './recoveryRankEvidence.js';
+import { readCompletingBoard } from './completingBoard.js';
 import {
   requestSatelliteSettlementReceipt,
   SatelliteSettlementRefusedError,
@@ -30,7 +32,7 @@ function uuid(value: unknown): string | null {
   return typeof value === 'string' && UUID.test(value) ? value : null;
 }
 
-interface RecoveryTournament {
+interface RecoveryTournament extends Record<string, unknown> {
   format_contract?: unknown;
   id: string;
   name: string | null;
@@ -92,11 +94,25 @@ async function readRecoveryField(
   tournamentId: string
 ): Promise<{ rows: RecoveryPlayer[] | null; error: unknown }> {
   try {
-    const { data, error } = await supabase
-      .from('tournament_players')
-      .select('id, user_id, status, position, chips, eliminated_at, elimination_sequence')
-      .eq('tournament_id', tournamentId);
-    return { rows: !error && Array.isArray(data) ? (data as RecoveryPlayer[]) : null, error };
+    const result = await fetchAllRows<RecoveryPlayer & Record<string, unknown>>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournament_players')
+          .select('id, user_id, status, position, chips, eliminated_at, elimination_sequence')
+          .eq('tournament_id', tournamentId)
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor !== null) query = query.gt('id', cursor);
+        return query;
+      },
+      {
+        label: 'TournamentRecovery.field',
+        shouldContinue: () => !isMaintenanceFrozen(),
+      }
+    );
+    return result.complete
+      ? { rows: result.rows, error: null }
+      : { rows: null, error: new Error('recovery field read incomplete') };
   } catch (error) {
     return { rows: null, error };
   }
@@ -191,19 +207,13 @@ export async function recoverStuckCompletingTournaments(
   onlyTournamentId?: string
 ): Promise<void> {
   try {
-    let query = supabase
-      .from('tournaments')
-      .select(
-        'format_contract, id, name, status, payout_structure, variant, tournament_type, satellite_target_id, started_at'
-      )
-      .eq('status', 'COMPLETING');
-    if (onlyTournamentId) query = query.eq('id', onlyTournamentId);
-    const { data: stuck, error: stuckError } = await query;
-    if (stuckError || !Array.isArray(stuck)) {
+    const stuck = await readCompletingBoard<RecoveryTournament>(
+      'format_contract, id, name, status, payout_structure, variant, tournament_type, satellite_target_id, started_at',
+      { tournamentId: onlyTournamentId }
+    );
+    if (!stuck) {
       reportError(
-        new Error(
-          `[GameServer] recoverStuckCompleting (${reason}): scan failed: ${stuckError?.message ?? 'invalid result'}`
-        ),
+        new Error(`[GameServer] recoverStuckCompleting (${reason}): scan incomplete or unreadable`),
         'GameServer.recoverStuckCompleting_scan_failed'
       );
       return;

@@ -1,3 +1,7 @@
+import { recheckHorseFeaturesBeforeAcceptance } from '../engine/HorseFeatureAuthority.js';
+import { recheckHorseQualifiedBeforeAcceptance } from '../engine/HorseQualifiedAcceptance.js';
+
+import { publicHandStatsFrame } from '../engine/presentation/publicHandStats.js';
 import {
   recheckHorsePhase14BeforeAcceptance,
   observeHorsePhase14Execution,
@@ -1116,6 +1120,7 @@ export class LightningHandHost {
       big_blind: Number(rules.big_blind),
       variant: String(rules.game_variant || 'nlh'),
       fast_fold_available: state ? this.foldAvailable(playerId, state) : false,
+      fold_on_turn: true,
       // LIGHTNING PHASE 13: which of the two controls the Cluster offers at all.
       ...this.foldFlagFields(),
     };
@@ -1595,6 +1600,28 @@ export class LightningHandHost {
     const userId = player.user_id;
     // Every horse still to act that now owes chips takes its first look at
     // this street the moment the fast fold is open to it.
+    const pending = this.pendingFolds.get(userId);
+    if (pending) {
+      // This is the first moment the old hand may expose the private intent.
+      // The player may already be in a different hand; this controller still
+      // owns the old seat, cards, pot and ordered action record.
+      const folded = this.applyAction(
+        userId,
+        'fold',
+        undefined,
+        pending.origin,
+        'fast',
+        pending.onAccepted
+      );
+      if (folded.success) {
+        this.pendingFolds.delete(userId);
+        return;
+      }
+      this.logger.error(
+        `[LightningHost:${this.instanceId}] queued fold rejected for ${userId}`,
+        folded
+      );
+    }
     this.offerHorseEarlyLooks(userId);
     if (this.preActions.hasPreAction(this.timerKey, userId)) {
       // The seat lights up for a readable beat (the engine's 250 ms), then the
@@ -1790,9 +1817,15 @@ export class LightningHandHost {
             retireHorseExecutionWitness(witness, 'turn_abandoned');
             return;
           }
-          const run = () => this.executeHorseFastFold(userId, decision);
-          const landed = decision.fast ? lane().runWithDispatchBarrier(run) : run();
-          if (!landed) retireHorseExecutionWitness(witness, 'action_rejected');
+          let transferred = false;
+          const run = () => (transferred = this.executeHorseFastFold(userId, decision));
+          try {
+            const landed = decision.fast ? lane().runWithDispatchBarrier(run) : run();
+            if (!landed) retireHorseExecutionWitness(witness, 'action_rejected');
+          } catch (error) {
+            if (!transferred) retireHorseExecutionWitness(witness, 'turn_abandoned');
+            throw error;
+          }
         };
         pressTimer = setTimeout(press, Math.max(0, decisionAt + reactionMs - this.now()));
         (pressTimer as { unref?: () => void }).unref?.();
@@ -1804,12 +1837,16 @@ export class LightningHandHost {
    * A horse's fold that it was already making, through the SAME door a
    * person's Lightning Fold uses (handlePlayerAction 'fast_fold': the hand
    * context, the operator's fast-fold switch, foldAvailable, then
-   * performImmediateFold off the turn or the turn fold on it), recorded as
+   * private intent off the turn or the ordered turn fold on it), recorded as
    * the horse's own decision ('horse_policy') with fold_type 'fast'. Its
    * receipts settle against the controller record, as every horse action's
    * do. True when the fold landed.
    */
   private executeHorseFastFold(userId: string, decision: LightningHorseDecision): boolean {
+    if (decision.fast) {
+      const result = this.recheckHorseDecisionAtDoor(userId, decision, true);
+      if (!result || result.checked.action !== 'fold') return false;
+    }
     const acceptedActions: HorseAcceptedAction[] = [];
     const out = this.handlePlayerAction(
       userId,
@@ -1818,14 +1855,18 @@ export class LightningHandHost {
       `lightning-hand:${this.handId}`,
       {
         origin: 'horse_policy',
-        onAccepted: (record) => acceptedActions.push({ record, intended: true }),
+        onAccepted: (record) => {
+          acceptedActions.push({ record, intended: true });
+          settleHorseExecutionWitness(decision.fast?.decision.executionWitness, {
+            applied: true,
+            acceptedActions,
+          });
+        },
+        onAbandoned: () =>
+          retireHorseExecutionWitness(decision.fast?.decision.executionWitness, 'turn_abandoned'),
       }
     );
     if (!out.success) return false;
-    settleHorseExecutionWitness(decision.fast?.decision.executionWitness, {
-      applied: true,
-      acceptedActions,
-    });
     return true;
   }
 
@@ -1869,7 +1910,8 @@ export class LightningHandHost {
     handId?: string
   ): { success: boolean; error?: string; code?: string } {
     if (this.state !== 'dealing' || !this.hc) return { success: false, error: 'No active hand' };
-    if (!this.watching.has(userId)) return { success: false, error: 'You have left this hand' };
+    if (!this.watching.has(userId) || this.pendingFolds.has(userId))
+      return { success: false, error: 'You have left this hand' };
     if (action === 'clear') {
       this.preActions.clearPreAction(this.timerKey, userId);
       return { success: true };
@@ -2069,8 +2111,13 @@ export class LightningHandHost {
         // As at a physical table, the plan commit enters the lane's effect
         // lane, ahead of older unposted work and of any decision the next
         // turn enqueues.
-        if (decision.fast) lane().runWithDispatchBarrier(execute);
-        else execute();
+        try {
+          if (decision.fast) lane().runWithDispatchBarrier(execute);
+          else execute();
+        } catch (error) {
+          retireHorseExecutionWitness(decision.fast?.decision.executionWitness, 'turn_abandoned');
+          throw error;
+        }
       }, delay);
       (this.horseTimer as { unref?: () => void }).unref?.();
     };
@@ -2145,8 +2192,14 @@ export class LightningHandHost {
               }
               if (foldingOnTurn()) {
                 abort.signal.removeEventListener('abort', abandon);
-                const run = () => this.executeHorseFastFold(userId, decision);
-                if (decision.fast ? lane().runWithDispatchBarrier(run) : run()) return;
+                let transferred = false;
+                const run = () => (transferred = this.executeHorseFastFold(userId, decision));
+                try {
+                  if (decision.fast ? lane().runWithDispatchBarrier(run) : run()) return;
+                } catch (error) {
+                  if (!transferred) abandon();
+                  throw error;
+                }
                 if (!current()) {
                   abandon();
                   return;
@@ -2163,6 +2216,44 @@ export class LightningHandHost {
         ordinary(decision, abandon);
       })
       .catch(() => undefined /* aborted: the turn moved on */);
+  }
+
+  private recheckHorseDecisionAtDoor(
+    userId: string,
+    decision: LightningHorseDecision,
+    asIfToAct = false
+  ) {
+    if (!decision.fast || !this.hc) return null;
+    const hc = this.hc;
+    const current = hc.getState();
+    const hero = current.players.find((p) => p.user_id === userId);
+    const auth = hc.getAuthoritativeActionState(userId, { asIfToAct });
+    if (!hero || !auth?.canAct) {
+      retireHorseExecutionWitness(decision.fast.decision.executionWitness, 'turn_abandoned');
+      return null;
+    }
+    const qualified = recheckHorseQualifiedBeforeAcceptance(decision.fast.decision, {
+      player: hero,
+      gameState: {
+        players: current.players,
+        communityCards: current.communityCards,
+        communityCards2: current.communityCards2,
+        communityCards3: current.communityCards3,
+        stage: current.stage,
+        currentBet: current.currentBet,
+        pot: current.pot,
+        minRaise: current.minRaise,
+        ...hc.getBlindSnapshot(),
+        gameMode: 'cash',
+        gameVariant: String(this.rules?.game_variant ?? 'nlh'),
+        toCall: auth.toCall,
+      } as import('../engine/HorseLogic.js').HorseGameStateV2,
+    });
+    const beforeFeatureCheck = recheckHorsePhase14BeforeAcceptance(qualified);
+    const checked = recheckHorseFeaturesBeforeAcceptance(beforeFeatureCheck, auth.toCall);
+    const featureRefused = checked !== beforeFeatureCheck && !!checked.featureAuthority;
+    decision.fast.decision = checked;
+    return { checked, featureRefused };
   }
 
   /**
@@ -2188,80 +2279,100 @@ export class LightningHandHost {
     allInOrFold: boolean,
     lane: () => LiveHorseDecisionLane
   ): void {
-    const hc = this.hc!;
-    if (decision.fast) {
-      const checked = recheckHorsePhase14BeforeAcceptance(decision.fast.decision);
-      decision.fast.decision = checked;
-      decision = { ...decision, action: checked.action, amount: checked.amount };
-    }
-    const shaped = shapeLightningHorseAction(hc, userId, decision, allInOrFold);
-    const fast = decision.fast;
     const acceptedActions: HorseAcceptedAction[] = [];
-    let intended = true;
-    // Always observed: the controller record, not the submission or the
-    // boolean, says what landed.
-    const observe = (record: Readonly<ActionRecord>) => acceptedActions.push({ record, intended });
-    const r = this.applyAction(
-      userId,
-      shaped.action,
-      shaped.amount,
-      decision.workerFallback ? 'horse_fallback' : 'horse_policy',
-      undefined,
-      observe
-    );
-    if (
-      r.success &&
-      fast &&
-      fast.planBinding !== null &&
-      fast.planIssueDisposition === 'issued' &&
-      fast.effects.length > 0
-    ) {
-      const submitted = { action: shaped.action, amount: shaped.amount ?? null };
-      const exact =
-        (shaped.action === 'bet' || shaped.action === 'raise') &&
-        horsePlanWagerAcceptedExactly({
-          issued: fast.decision,
-          submitted,
-          acceptedActions,
-          witness: fast.decision.executionWitness,
-        });
-      if (exact) {
-        noteFire('lightning_phase15_plan_accepted_exact');
-        void lane()
-          .commitDecisionEffects(
-            fast,
-            // Phase 15.1: the exact accepted wager joins the durable receipt.
-            horsePlanAcceptanceFromController(
-              acceptedActions[0]?.record,
-              submitted,
-              fast.decision.executionWitness?.identity
-            )
-          )
-          .catch((err) =>
-            this.logger.error(
-              `[LightningHost:${this.instanceId}] horse decision effects not committed`,
-              err
-            )
-          );
-      } else noteFire('lightning_phase15_plan_retired_inexact');
-    }
-    let applied = r.success;
-    if (!r.success && this.hc) {
-      intended = false;
-      const auth = this.hc.getAuthoritativeActionState(userId);
-      applied = this.applyAction(
+    let applied = false;
+    try {
+      const hc = this.hc!;
+      let featureRefused = false;
+      if (decision.fast) {
+        const result = this.recheckHorseDecisionAtDoor(userId, decision);
+        if (!result) return;
+        featureRefused = result.featureRefused;
+        decision = {
+          ...decision,
+          action: result.checked.action,
+          amount: result.checked.amount,
+          workerFallback: decision.workerFallback || featureRefused,
+        };
+      }
+      // A rejected candidate has no qualified aggressive substitute. Do not let
+      // AoF shaping convert its free check into an all-in wager.
+      const shaped = featureRefused
+        ? { action: decision.action, amount: undefined }
+        : shapeLightningHorseAction(hc, userId, decision, allInOrFold);
+      const fast = decision.fast;
+      let intended = true;
+      // Always observed: the controller record, not the submission or the
+      // boolean, says what landed.
+      const observe = (record: Readonly<ActionRecord>) =>
+        acceptedActions.push({ record, intended });
+      const r = this.applyAction(
         userId,
-        auth?.legalActions.includes('check') ? 'check' : 'fold',
-        undefined,
-        'horse_fallback',
+        shaped.action,
+        shaped.amount,
+        decision.workerFallback ? 'horse_fallback' : 'horse_policy',
         undefined,
         observe
-      ).success;
+      );
+      if (
+        r.success &&
+        fast &&
+        fast.planBinding !== null &&
+        fast.planIssueDisposition === 'issued' &&
+        fast.effects.length > 0
+      ) {
+        const submitted = { action: shaped.action, amount: shaped.amount ?? null };
+        const exact =
+          (shaped.action === 'bet' || shaped.action === 'raise') &&
+          horsePlanWagerAcceptedExactly({
+            issued: fast.decision,
+            submitted,
+            acceptedActions,
+            witness: fast.decision.executionWitness,
+          });
+        if (exact) {
+          noteFire('lightning_phase15_plan_accepted_exact');
+          void lane()
+            .commitDecisionEffects(
+              fast,
+              // Phase 15.1: the exact accepted wager joins the durable receipt.
+              horsePlanAcceptanceFromController(
+                acceptedActions[0]?.record,
+                submitted,
+                fast.decision.executionWitness?.identity
+              )
+            )
+            .catch((err) =>
+              this.logger.error(
+                `[LightningHost:${this.instanceId}] horse decision effects not committed`,
+                err
+              )
+            );
+        } else noteFire('lightning_phase15_plan_retired_inexact');
+      }
+      applied = r.success;
+      if (!r.success && this.hc) {
+        intended = false;
+        const auth = this.hc.getAuthoritativeActionState(userId);
+        applied = this.applyAction(
+          userId,
+          auth?.legalActions.includes('check') ? 'check' : 'fold',
+          undefined,
+          'horse_fallback',
+          undefined,
+          observe
+        ).success;
+      }
+      // After the commit decision, so an accepted batch is already committing
+      // and only a non-exact one is retired by the finalizer.
+      settleHorseExecutionWitness(fast?.decision.executionWitness, { applied, acceptedActions });
+      if (fast) observeHorsePhase14Execution(fast.decision);
+    } finally {
+      settleHorseExecutionWitness(decision.fast?.decision.executionWitness, {
+        applied,
+        acceptedActions,
+      });
     }
-    // After the commit decision, so an accepted batch is already committing
-    // and only a non-exact one is retired by the finalizer.
-    settleHorseExecutionWitness(fast?.decision.executionWitness, { applied, acceptedActions });
-    if (fast) observeHorsePhase14Execution(fast.decision);
   }
 
   // ─── ACTIONS ────────────────────────────────────────────────────────────
@@ -2283,6 +2394,7 @@ export class LightningHandHost {
     as?: {
       origin: 'horse_policy';
       onAccepted?: (record: Readonly<ActionRecord>) => void;
+      onAbandoned?: () => void;
     }
   ): { success: boolean; error?: string; code?: string } {
     const receivedAt = this.now();
@@ -2328,7 +2440,8 @@ export class LightningHandHost {
       else if (!had) this.foldRequestedAt.delete(userId);
       return out;
     }
-    if (!this.watching.has(userId)) return { success: false, error: 'You have left this hand' };
+    if (!this.watching.has(userId) || this.pendingFolds.has(userId))
+      return { success: false, error: 'You have left this hand' };
     if (
       actionContext !== undefined &&
       (typeof actionContext !== 'string' || actionContext !== playerActionContext(this.hc))
@@ -2355,21 +2468,33 @@ export class LightningHandHost {
     return out;
   }
 
-  /** Validate, commit the fold, then free the player through the original door. */
+  /** Private intent is separate from the hand's ordered fold action. */
+  private pendingFolds = new Map<
+    string,
+    {
+      origin: 'player' | 'horse_policy';
+      onAccepted?: (record: Readonly<ActionRecord>) => void;
+      onAbandoned?: () => void;
+    }
+  >();
+
   private requestFold(
     userId: string,
     type: 'fast',
-    as?: { origin: 'horse_policy'; onAccepted?: (record: Readonly<ActionRecord>) => void }
+    as?: {
+      origin: 'horse_policy';
+      onAccepted?: (record: Readonly<ActionRecord>) => void;
+      onAbandoned?: () => void;
+    }
   ): { success: boolean; error?: string; code?: string } {
     const hc = this.hc!;
     const st = hc.getState();
     const me = st.players.find((p) => p.user_id === userId);
-    if (!me || !this.watching.has(userId))
+    if (!me || !this.watching.has(userId) || this.pendingFolds.has(userId))
       return { success: false, error: 'You have left this hand' };
     if (me.is_folded) return { success: false, error: 'Already folded' };
-    if (me.is_all_in) return { success: false, error: 'Fold is not available' };
-    if (!BETTING_STAGES.has(st.stage)) return { success: false, error: 'Fold is not available' };
-    if (!this.foldAvailable(userId, st)) return { success: false, error: 'Fold is not available' };
+    if (me.is_all_in || !BETTING_STAGES.has(st.stage) || !this.foldAvailable(userId, st))
+      return { success: false, error: 'Fold is not available' };
     if (st.currentPlayerSeat === me.seat)
       return this.applyAction(
         userId,
@@ -2379,41 +2504,20 @@ export class LightningHandHost {
         type,
         as?.onAccepted
       );
-    // Commit the fold in the real hand before releasing its reservation.
-    // A queued fold could otherwise become the last live player and win.
     if (this.actionLock)
       return { success: false, error: 'Action already being processed - try again' };
-    this.foldTypes.set(userId, type);
-    this.actionLock = true;
-    let accepted = false;
-    try {
-      accepted = hc.performImmediateFold(me.seat, as?.origin ?? 'player', as?.onAccepted);
-    } finally {
-      this.actionLock = false;
-    }
-    if (!accepted) {
-      this.foldTypes.delete(userId);
-      return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
-    }
+    this.pendingFolds.set(userId, {
+      origin: as?.origin ?? 'player',
+      onAccepted: as?.onAccepted,
+      onAbandoned: as?.onAbandoned,
+    });
     this.preActions.clearPreAction(this.timerKey, userId);
-    const current = hc.getState();
-    const actor = current.players.find((p) => p.seat === current.currentPlayerSeat);
-    if (
-      !this.isTerminal() &&
-      current.stage === st.stage &&
-      current.currentPlayerSeat === st.currentPlayerSeat &&
-      actor &&
-      this.turnUser === actor.user_id &&
-      this.participants.get(actor.user_id)?.isHorse &&
-      !this.clientControls(actor.user_id)
-    ) {
-      // Refresh the horse's public opponents without extending its live clock.
-      this.scheduleHorse(
-        actor.user_id,
-        playerActionContext(hc),
-        this.turnLookFirst === actor.user_id
-      );
-    }
+    // A priced fold cannot win a walk: the live bettor must still remain.
+    // Its committed exposure is fixed, so the existing reservation door can
+    // release it now without changing the controller or opponents' views.
+    // A free-check seat stays reserved until its turn (or a legitimate walk),
+    // avoiding an early reservation release followed by a pot award.
+    if (st.currentBet > me.bet) this.afterFold(userId, type);
     return { success: true };
   }
 
@@ -2447,6 +2551,12 @@ export class LightningHandHost {
       typeof amount === 'number' &&
       amount >= player.bet + player.stack - 0.005
     ) {
+      // The controller's explicit ALL IN tolerance may become a call when
+      // betting cannot reopen. A sized wager did not choose that call: refuse
+      // it before timers or chips change, matching the Classic action door.
+      if (!hc.getAuthoritativeActionState(userId)?.legalActions.includes('all_in')) {
+        return { success: false, error: 'Sized wager cannot be a legal all-in' };
+      }
       a = 'all_in';
       amount = undefined;
     }
@@ -2465,16 +2575,26 @@ export class LightningHandHost {
         : null;
     this.actionLock = true;
     let ok = false;
+    let accepted = false;
+    const observeAccepted = (record: Readonly<ActionRecord>) => {
+      accepted = true;
+      onAccepted?.(record);
+    };
     try {
       this.disconnect.recordPlayerActed(this.timerKey, userId);
       if (this.timeBankActive || this.timeBank.isArmed(this.timerKey, userId)) {
         this.timeBank.playerActed(this.timerKey, userId);
       }
       this.timer.cancelTimer(this.timerKey, userId);
-      ok = hc.performAction(player.seat, a as ActionType, amount, origin, onAccepted);
+      ok = hc.performAction(player.seat, a as ActionType, amount, origin, observeAccepted);
+    } catch (error) {
+      reportError(error, 'LightningHandHost.acceptedAction');
     } finally {
       this.actionLock = false;
     }
+    // An accepted chip mutation survives a later event/advance exception or
+    // contradictory return. Never submit a second action for that mutation.
+    ok = ok || accepted;
     if (!ok) {
       if (a === 'fold' && foldType) this.foldTypes.delete(userId);
       // The clock keeps running for the decision that is still owed.
@@ -2497,8 +2617,8 @@ export class LightningHandHost {
    * After a committed fold, record it and release the player. Historic watch
    * records remain readable, but new player requests never create one.
    */
-  private afterFold(userId: string): void {
-    const type = this.foldTypes.get(userId) ?? 'normal';
+  private afterFold(userId: string, requestedType?: LightningFoldType): void {
+    const type = requestedType ?? this.foldTypes.get(userId) ?? 'normal';
     this.foldTypes.set(userId, type);
     if (this.releasedOrRecorded.has(userId)) return;
     this.releasedOrRecorded.add(userId);
@@ -2825,6 +2945,7 @@ export class LightningHandHost {
         holeCards: this.holeCards,
         players: state.players,
         stacksBefore: new Map(participants.map((p) => [p.playerId, p.stackBefore])),
+        allInRunoutWitness: this.hc?.getAllInRunoutWitness() ?? null,
         winners: this.winners,
         actions: this.actions,
         participants,
@@ -2952,6 +3073,26 @@ export class LightningHandHost {
       });
       if (out.ok) {
         this.state = 'complete';
+        const publicFrame = publicHandStatsFrame({
+          tableId: '',
+          handNumber: this.handNumber,
+          handId: out.value.handHistoryId,
+          facts: statsFacts?.facts,
+          timestamp: this.now(),
+          actions: handRow.actions as ReadonlyArray<Record<string, unknown>>,
+          bigBlind: Number(this.rules?.big_blind) || 2,
+        });
+        if (publicFrame) {
+          this.emitAll(publicFrame);
+          // A player who folded early still receives the original hand's
+          // committed public result, even if their room has advanced already.
+          for (const participant of this.participants.values())
+            if (!this.watching.has(participant.playerId))
+              this.deps.hub.emitEvent(participant.poolSessionId, {
+                ...publicFrame,
+                table_id: participant.poolSessionId,
+              });
+        }
         // EVERY LIGHTNING HAND TEACHES THE HORSES (2026-10-24): the physical
         // path's observeCompletedHand, sent the moment the money is committed
         // and before anyone is released, so the next hand any of these players
@@ -3223,6 +3364,8 @@ export class LightningHandHost {
     if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
     this.keepaliveTimer = null;
     this.clearTurn();
+    for (const pending of this.pendingFolds.values()) pending.onAbandoned?.();
+    this.pendingFolds.clear();
     for (const p of this.participants.values()) {
       this.recordBank(p.playerId);
       this.timer.cancelTimer(this.timerKey, p.playerId);

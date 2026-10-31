@@ -24,7 +24,7 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
         self.workspace = Path('/owned/checkout')
         self.commit = 'a' * 40
         self.source = 'b' * 40
-        self.env = dict(GITHUB_ACTIONS='true', CI='true', GITHUB_REPOSITORY=ci.REPOSITORY,
+        self.env = dict(GITHUB_ACTIONS='true', CI='true', GITHUB_REPOSITORY=ci.REPOSITORY, GITHUB_REPOSITORY_ID=ci.REPOSITORY_ID,
                         GITHUB_JOB='accounting_postgres', GITHUB_SERVER_URL='https://github.com',
                         GITHUB_WORKFLOW_REF=ci.WORKFLOW+'refs/pull/42/merge', GITHUB_SHA=self.commit,
                         GITHUB_WORKSPACE=str(self.workspace), GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='1',
@@ -353,15 +353,15 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             run.bind_job_timing(None)
         with tempfile.TemporaryDirectory() as directory, patch.object(ci.time,'time',return_value=1000):
             run.output=Path(directory)
-            timing={**run.identity,'job_started_at_unix':990,'job_deadline_unix':3390,
+            timing={**run.identity,'job_started_at_unix':990,'job_deadline_unix':3990,
                     'case_execution_seconds':600,'cleanup_reserve_seconds':120}
             for mutation in ({'run_id':'other'}, {'job_deadline_unix':2000}, {'job_deadline_unix':1890}, {'job_deadline_unix':2190},
-                             {'cleanup_reserve_seconds':1900},
-                             {'job_started_at_unix':1001,'job_deadline_unix':3401}):
+                             {'cleanup_reserve_seconds':2500},
+                             {'job_started_at_unix':1001,'job_deadline_unix':4001}):
                 with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
                     run.bind_job_timing({**timing,**mutation})
             run.bind_job_timing(timing)
-            with patch.object(ci.time,'time',return_value=2700), self.assertRaises(RuntimeError):
+            with patch.object(ci.time,'time',return_value=3300), self.assertRaises(RuntimeError):
                 run.require_case_time()
 
     def budget(self, execution=20, cleanup=10):
@@ -636,6 +636,46 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
         self.assertEqual(len(calls),3)
         self.assertNotIn('status',disposal)
 
+    def test_transferred_repository_keeps_exact_hosted_runner_and_identity(self):
+        from caller import IDENTITY_TESTS
+        self.assertEqual(set(unittest.TestLoader().getTestCaseNames(type(self))), IDENTITY_TESTS)
+        env = {**self.env, 'GITHUB_REPOSITORY': ci.TRANSFERRED_REPOSITORY,
+               'GITHUB_WORKFLOW_REF': ci.TRANSFERRED_REPOSITORY + '/.github/workflows/ci.yml@' + self.env['GITHUB_REF']}
+        event = copy.deepcopy(self.event)
+        for role in ('head', 'base'):
+            event['pull_request'][role]['repo']['full_name'] = ci.TRANSFERRED_REPOSITORY
+        current = self.identity(env, event)
+        body = self.job_response()
+        # Both fixed accounting_postgres routes in ci.yml are approved; retain
+        # the provider's exact selected singleton in the timing receipt.
+        for labels in (['ca-linux-8core'], ['ubuntu-latest']):
+            body['jobs'][0]['labels'] = labels
+            selected, timing = ci.timing_observation(current, body, 1000)
+            self.assertEqual(selected['labels'], labels)
+            self.assertEqual(timing['job_deadline_unix'], 3990)
+            for mutation in ({'run_id': 124}, {'runner_name': 'different'}, {'head_sha': 'd' * 40},
+                             {'status': 'completed'}, {'completed_at': '1970-01-01T00:16:40Z'}):
+                changed = copy.deepcopy(body)
+                changed['jobs'][0].update(mutation)
+                with self.subTest(labels=labels, mutation=mutation), self.assertRaises(ci.TimingRequestRefused):
+                    ci.timing_observation(current, changed, 1000)
+        self.assertIn('/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/', ci.timing_url(current))
+        for labels in (None, [], 'ubuntu-latest', ['ca-linux-4core'], ['ubuntu-24.04'],
+                       ['self-hosted'], ['ca-linux-8core', 'self-hosted'],
+                       ['ubuntu-latest', 'self-hosted'], ['self-hosted', 'ubuntu-latest'],
+                       ['ca-linux-8core', 'ubuntu-latest'], ['ubuntu-latest', 'ca-linux-8core'],
+                       ['ubuntu-latest', 'ubuntu-latest']):
+            body['jobs'][0]['labels'] = labels
+            with self.subTest(labels=labels), self.assertRaises(ci.TimingRequestRefused) as caught:
+                ci.timing_observation(current, body, 1000)
+            self.assertEqual(caught.exception.identity_mismatch_fields, ['labels'])
+        # The historical repository does not gain the transferred paid route.
+        body['jobs'][0]['labels'] = ['ca-linux-8core']
+        with self.assertRaises(ci.TimingRequestRefused):
+            ci.timing_observation(self.identity(), body, 1000)
+        for bad in ({'GITHUB_REPOSITORY_ID': '42'}, {'GITHUB_REPOSITORY': 'evil/Smarter-Poker-Club-Arena'}):
+            with self.assertRaises(RuntimeError): self.identity({**env, **bad}, event)
+
     def job_response(self):
         return {'total_count':1,'jobs':[{'id':42,'run_id':123,'name':ci.ACCOUNTING_JOB_NAME,
                 'runner_name':self.env['RUNNER_NAME'],'head_sha':self.source,'status':'in_progress',
@@ -646,14 +686,14 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
         selected,timing=ci.timing_observation(self.identity(),self.job_response(),1000)
         self.assertEqual(selected['id'],42)
         self.assertEqual(timing['job_started_at_unix'],990)
-        self.assertEqual(timing['job_deadline_unix'],3390)
+        self.assertEqual(timing['job_deadline_unix'],3990)
         workflow=(Path(__file__).resolve().parents[5]/'.github/workflows/ci.yml').read_text()
         job=workflow.split('\n  accounting_postgres:',1)[1].split('\n  server_shards:',1)[0]
         limits=re.findall(r'^    timeout-minutes: ([0-9]+)$',job,re.MULTILINE)
-        self.assertEqual(limits,['40'])
+        self.assertEqual(limits,['50'])
         self.assertEqual(ci.JOB_SECONDS,int(limits[0])*60)
         self.assertEqual((timing['case_execution_seconds'],timing['cleanup_reserve_seconds']),(300,90))
-        with self.assertRaises(RuntimeError):ci.timing_observation(self.identity(),self.job_response(),3001)
+        with self.assertRaises(RuntimeError):ci.timing_observation(self.identity(),self.job_response(),3601)
 
     def test_timing_refuses_ambiguous_or_wrong_current_job(self):
         mutations=({'run_id':124},{'head_sha':'d'*40},{'runner_name':'different'},

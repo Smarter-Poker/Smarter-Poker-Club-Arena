@@ -1,3 +1,4 @@
+import { publishedCashPricing as publishedLeagueCashPricing } from '../config/leagueCashPricing.js';
 import {
   REMAINING_VARIANT_PACKS,
   REMAINING_VARIANT_DOMAIN,
@@ -7,6 +8,7 @@ import {
 } from '../engine/remainingVariants/RemainingVariantPolicyPack.js';
 import type {
   Card,
+  ActionRecord,
   HandConfig,
   HandEvent,
   HorseDecision,
@@ -22,9 +24,14 @@ import {
   type HumanCalibratedSpot,
 } from './HumanCalibratedPopulation.js';
 import { HandController } from '../engine/HandController.js';
-import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
-import { HorseMind } from '../engine/HorseMind.js';
-import { restoreFastRandom, saveFastRandom, seedFastRandom } from '../engine/HorseEval.js';
+import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../engine/HorseLogic.js';
+import { HorseMind, type HorseMindSandbox } from '../engine/HorseMind.js';
+import {
+  fastRandom,
+  restoreFastRandom,
+  saveFastRandom,
+  seedFastRandom,
+} from '../engine/HorseEval.js';
 import { calculateContestablePot } from '../engine/PokerEngine.js';
 import { horseVariantRulesFor } from '../engine/VariantRules.js';
 import {
@@ -41,7 +48,7 @@ import {
   uniqueCards,
 } from './OmahaReference.js';
 import { effectiveBbjDrop, effectiveRake } from '../config/rakeSpec.js';
-import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
+import { getFullRakeConfig } from '../config/RakeConfig.js';
 import {
   PLO4_DIVERGENCE_STREETS,
   PLO4_STRENGTH_BB,
@@ -86,8 +93,62 @@ export function plo4LeagueSeating(index: number, seats: number) {
   return { heroSeat, button, relativePosition: (heroSeat - button + seats) % seats };
 }
 
+/** Offline, public-information opponent. No callback receives another seat's cards. */
+export const FEATURE_ABLATION_POLICY_DAY_MS = Date.UTC(2026, 9, 26);
+export interface Plo4AblationPopulation {
+  id: string;
+  decide(player: SeatPlayer, gs: HorseGameStateV2, rng: () => number): HorseDecision;
+  initializeSandbox?(
+    sandbox: HorseMindSandbox,
+    players: readonly SeatPlayer[],
+    heroSeat: number,
+    profile: Readonly<Plo4LeagueProfile>
+  ): void;
+}
+export type Plo4AblationFlags = Readonly<
+  Pick<
+    HorseDecideOpts,
+    | 'v24PloDefense'
+    | 'v53Pressure'
+    | 'comboDrawPressure'
+    | 'v54RiverBluff'
+    | 'riverPositionDefense'
+    | 'riverBluffCheckRaise'
+    | 'barrelContinuationOutlook'
+    | 'smallPotNearNutRiverValue'
+    | 'multiwayRiverBluffCheckRaise'
+  >
+>;
+/** A maintained current-brain adapter owns admission. The physical league must
+ * never substitute the older phase-off/candidate league options for it. */
+export interface Plo4AblationBrain {
+  beginHand?(): void | Promise<void>;
+  endHand?(): void | Promise<void>;
+  takeEvaluationFires?(): Record<string, number>;
+  takePlanDispositions?(): Record<string, number>;
+  id: string;
+  decide(
+    player: SeatPlayer,
+    gs: HorseGameStateV2,
+    style: HorseStyle,
+    opts: HorseDecideOpts,
+    sandbox: HorseMindSandbox,
+    coordinate: Readonly<{ tableId: string; handNumber: number }>
+  ): HorseDecision | Promise<HorseDecision>;
+  /** Receives only records actually appended by this controller submission. */
+  accepted?(
+    decision: HorseDecision,
+    records: readonly Readonly<ActionRecord>[]
+  ): void | Promise<void>;
+}
 // Shared physical controller/paired accounting. Each variant supplies its own pack and fixed population.
 export interface Plo4LeagueProfile {
+  /** Explicit flag experiment; absent on every existing phase league path. */
+  ablation?: {
+    heroOpts: Plo4AblationFlags;
+    brain: Plo4AblationBrain;
+    population?: Plo4AblationPopulation;
+  };
   variant?: OmahaPolicyVariant | RemainingPolicyVariant | 'nlh' | 'plo4';
   jointPolicy?: boolean;
   /** P10.2 contract profiles: the table's max_players (cap ladder). */
@@ -220,6 +281,10 @@ export interface Plo4HandChecks {
   multiBoardChecked?: boolean;
 }
 export interface Plo4HandReceipt {
+  ablationPlanDispositions?: Record<string, number>;
+  ablationBrainExceptions?: number;
+  ablationHeroDecisions?: number;
+  ablationEvaluationFires?: { hero: Record<string, number>; opponents: Record<string, number> };
   checks?: Plo4HandChecks;
   joint?: {
     seen: number;
@@ -283,6 +348,14 @@ export async function playPlo4PolicyHand(
           },
         }
       : {}),
+    ...(profile.ablation
+      ? {
+          ablationEvaluationFires: { hero: {}, opponents: {} },
+          ablationPlanDispositions: {},
+          ablationBrainExceptions: 0,
+          ablationHeroDecisions: 0,
+        }
+      : {}),
     complete: false,
     net: [],
     rake: 0,
@@ -307,7 +380,9 @@ export async function playPlo4PolicyHand(
   };
   const players: SeatPlayer[] = Array.from({ length: profile.seats }, (_, index) => ({
     seat: index + 1,
-    user_id: `plo4-league-${index + 1}`,
+    user_id: profile.ablation
+      ? `00000000-0000-4000-8000-${('00000000000' + (index + 1)).slice(-12)}`
+      : `plo4-league-${index + 1}`,
     username: `Seat ${index + 1}`,
     stack: profile.stackBB * BB,
     bet: 0,
@@ -318,12 +393,16 @@ export async function playPlo4PolicyHand(
     is_sitting_out: false,
     // Condition (b) monitoring: a human-calibrated seat is seated as a human.
     is_horse: !(
-      profile.opponentPopulation === HUMAN_CALIBRATED_POPULATION_ID && index + 1 !== heroSeat
+      (profile.opponentPopulation === HUMAN_CALIBRATED_POPULATION_ID ||
+        profile.ablation?.population !== undefined) &&
+      index + 1 !== heroSeat
     ),
   }));
   const config: HandConfig = {
-    tableId: `${remainingVariant ? 'phase12' : profile.variant ? 'phase11' : 'phase10'}-offline-league`,
-    handNumber: 1,
+    tableId: profile.ablation
+      ? '00000000-0000-4000-8000-000000000024'
+      : `${remainingVariant ? 'phase12' : profile.variant ? 'phase11' : 'phase10'}-offline-league`,
+    handNumber: profile.ablation ? 1000000 + seed : 1,
     gameVariant: variant,
     smallBlind: 1,
     bigBlind: BB,
@@ -374,8 +453,10 @@ export async function playPlo4PolicyHand(
     }
   });
   const sandbox = HorseMind.createSandbox();
+  profile.ablation?.population?.initializeSandbox?.(sandbox, players, heroSeat, profile);
   const rng = saveFastRandom();
   try {
+    if (profile.ablation) await profile.ablation.brain.beginHand?.();
     controller.start();
     for (
       let step = 0;
@@ -443,15 +524,24 @@ export async function playPlo4PolicyHand(
           cards: [],
           ...(variant === 'pineapple' ? { knownDeadCards: undefined } : {}),
         })),
+        ...(profile.opponentPopulation === HUMAN_CALIBRATED_POPULATION_ID ||
+        profile.ablation?.population
+          ? {
+              humanUserIds: state.players.filter((p) => p.is_horse === false).map((p) => p.user_id),
+            }
+          : {}),
         communityCards: state.communityCards,
+        // Match the live worker's public pricing snapshot in every policy
+        // league, not only joint-policy hands. Settlement already charges
+        // these fees; the decision must see their units and dealt census.
+        dealtSeatIds: state.players.filter((p) => p.cards.length > 0).map((p) => p.seat),
+        ...controller.getChipRulesSnapshot(),
         ...(profile.jointPolicy
           ? {
               communityCards2: state.communityCards2,
               communityCards3: state.communityCards3,
               bombPot: Boolean(profile.bombBoards),
               boardCount: controller.getActiveBoardCount(),
-              dealtSeatIds: state.players.filter((p) => p.cards.length > 0).map((p) => p.seat),
-              ...controller.getChipRulesSnapshot(),
             }
           : {}),
         pot: state.pot,
@@ -468,6 +558,11 @@ export async function playPlo4PolicyHand(
         format: profile.tournament ? 'sng' : 'cash',
         gameVariant: variant,
         bigBlind: BB,
+        ...(profile.ablation &&
+        ('smallPotNearNutRiverValue' in profile.ablation.heroOpts ||
+          'multiwayRiverBluffCheckRaise' in profile.ablation.heroOpts)
+          ? { smallBlind: config.smallBlind }
+          : {}),
         ante: config.ante,
         straddleActive: profile.straddle,
         ...(!profile.jointPolicy ? { boardCount: 1 } : {}),
@@ -476,8 +571,14 @@ export async function playPlo4PolicyHand(
         minRaiseTo: menu.minRaiseTo,
         maxRaiseTo: menu.maxRaiseTo,
         bettingStructure: menu.structure,
-        ...(remainingVariant
-          ? { fixedBetSize: menu.fixedBetSize, wagersCapped: menu.wagersCapped }
+        ...(remainingVariant || profile.ablation
+          ? {
+              fixedBetSize: menu.fixedBetSize,
+              wagersCapped: menu.wagersCapped,
+              ...(profile.ablation
+                ? { commitmentCapRemaining: null, fixedLimitSmallBet: null }
+                : {}),
+            }
           : {}),
         pots: controller.computeLivePots(),
         contestablePot: calculateContestablePot(state.players, hero.user_id, menu.toCall),
@@ -526,43 +627,84 @@ export async function playPlo4PolicyHand(
       assertFixedBudget();
       const humanSeat =
         profile.opponentPopulation === HUMAN_CALIBRATED_POPULATION_ID && hero.seat !== heroSeat;
-      const baseline: HorseDecision = humanSeat
-        ? humanCalibratedSeatDecision(hero, state, menu, variant, profile, receipt)
-        : HorseMind.runInSandbox(sandbox, () =>
-            HorseLogic.decide(
+      const ablation = profile.ablation;
+      const style = profile.productionStyles
+        ? plo4StrengthSeatStyle(seed, hero.seat)
+        : hero.seat === heroSeat
+          ? 'balanced'
+          : profile.opponentStyle;
+      const baseline: HorseDecision = ablation
+        ? hero.seat !== heroSeat && ablation.population
+          ? ablation.population.decide(hero, gs, fastRandom)
+          : await ablation.brain.decide(
               hero,
               gs,
-              profile.productionStyles
-                ? plo4StrengthSeatStyle(seed, hero.seat)
-                : hero.seat === heroSeat
-                  ? 'balanced'
-                  : profile.opponentStyle,
-              {},
+              style,
               {
                 mind: true,
                 telemetry: false,
-                decisionTimeMs: profile.moodClock ? omahaVariantMoodClockMs(seed) : 0,
+                decisionTimeMs:
+                  FEATURE_ABLATION_POLICY_DAY_MS +
+                  (profile.moodClock ? omahaVariantMoodClockMs(seed) : 0),
                 v9Mood: Boolean(profile.moodClock),
-                phase8Postflop: 'off',
-                phase10Plo4:
-                  !profile.jointPolicy && !profile.variant && hero.seat === heroSeat ? mode : 'off',
-                phase10EvidenceMode: true,
-                phase11Omaha:
-                  !profile.jointPolicy &&
-                  profile.variant &&
-                  !remainingVariant &&
-                  hero.seat === heroSeat
-                    ? mode
-                    : 'off',
-                phase11EvidenceMode: true,
-                phase12Remaining:
-                  !profile.jointPolicy && remainingVariant && hero.seat === heroSeat ? mode : 'off',
-                phase12EvidenceMode: true,
-                phase13Joint: profile.jointPolicy && hero.seat === heroSeat ? mode : 'off',
-                phase13EvidenceMode: true,
-              }
+                ...(hero.seat === heroSeat ? ablation.heroOpts : {}),
+              },
+              sandbox,
+              { tableId: config.tableId, handNumber: config.handNumber }
             )
-          );
+        : humanSeat
+          ? humanCalibratedSeatDecision(hero, state, menu, variant, profile, receipt)
+          : HorseMind.runInSandbox(sandbox, () =>
+              HorseLogic.decide(
+                hero,
+                gs,
+                profile.productionStyles
+                  ? plo4StrengthSeatStyle(seed, hero.seat)
+                  : hero.seat === heroSeat
+                    ? 'balanced'
+                    : profile.opponentStyle,
+                {},
+                {
+                  mind: true,
+                  telemetry: false,
+                  decisionTimeMs: profile.moodClock ? omahaVariantMoodClockMs(seed) : 0,
+                  v9Mood: Boolean(profile.moodClock),
+                  phase8Postflop: 'off',
+                  phase10Plo4:
+                    !profile.jointPolicy && !profile.variant && hero.seat === heroSeat
+                      ? mode
+                      : 'off',
+                  phase10EvidenceMode: true,
+                  phase11Omaha:
+                    !profile.jointPolicy &&
+                    profile.variant &&
+                    !remainingVariant &&
+                    hero.seat === heroSeat
+                      ? mode
+                      : 'off',
+                  phase11EvidenceMode: true,
+                  phase12Remaining:
+                    !profile.jointPolicy && remainingVariant && hero.seat === heroSeat
+                      ? mode
+                      : 'off',
+                  phase12EvidenceMode: true,
+                  phase13Joint: profile.jointPolicy && hero.seat === heroSeat ? mode : 'off',
+                  phase13EvidenceMode: true,
+                }
+              )
+            );
+      if (ablation && !(hero.seat !== heroSeat && ablation.population)) {
+        const counts = ablation.brain.takeEvaluationFires?.() ?? {};
+        const target =
+          hero.seat === heroSeat
+            ? receipt.ablationEvaluationFires!.hero
+            : receipt.ablationEvaluationFires!.opponents;
+        for (const [feature, count] of Object.entries(counts))
+          target[feature] = (target[feature] ?? 0) + count;
+      }
+      if (ablation && hero.seat === heroSeat) receipt.ablationHeroDecisions!++;
+      if (ablation && baseline.policyFallback === 'brain_exception')
+        receipt.ablationBrainExceptions!++;
       const selected = baseline;
       if (gs.stage !== 'preflop') {
         const work = String(equitySampleSizeOfLastCall());
@@ -604,12 +746,39 @@ export async function playPlo4PolicyHand(
       }
       if (!shouldContinue()) return receipt;
       receipt.decisions++;
+      const acceptedRecords: Readonly<ActionRecord>[] = [];
       if (
         !menu.legalActions.includes(selected.action) ||
-        !controller.performAction(hero.seat, selected.action, selected.amount)
+        !(ablation
+          ? controller.performAction(
+              hero.seat,
+              selected.action,
+              selected.amount,
+              'horse_policy',
+              (record) => acceptedRecords.push(record)
+            ) || acceptedRecords.length > 0
+          : controller.performAction(hero.seat, selected.action, selected.amount))
       ) {
         receipt.illegalActions++;
         return receipt;
+      }
+      if (ablation && !(hero.seat !== heroSeat && ablation.population)) {
+        await ablation.brain.accepted?.(selected, acceptedRecords);
+        // Accepted-effect evidence is emitted only after the controller and
+        // original worker ACK agree. The pre-action drain already consumed
+        // ordinary evaluation counters, so these cannot be counted twice.
+        const acceptedCounters = ablation.brain.takeEvaluationFires?.() ?? {};
+        const acceptedTarget =
+          hero.seat === heroSeat
+            ? receipt.ablationEvaluationFires!.hero
+            : receipt.ablationEvaluationFires!.opponents;
+        for (const [feature, count] of Object.entries(acceptedCounters))
+          acceptedTarget[feature] = (acceptedTarget[feature] ?? 0) + count;
+        for (const [disposition, count] of Object.entries(
+          ablation.brain.takePlanDispositions?.() ?? {}
+        ))
+          receipt.ablationPlanDispositions![disposition] =
+            (receipt.ablationPlanDispositions![disposition] ?? 0) + count;
       }
     }
     if (!finished) {
@@ -639,23 +808,10 @@ export async function playPlo4PolicyHand(
       receipt.conservationErrors++;
     receipt.complete = !receipt.cardErrors && !receipt.conservationErrors;
     if (contractChecks)
-      receipt.checks = profile.jointPolicy
-        ? // P13.2: every physical board, every variant (JointBoardReference).
-          jointIndependentHandChecks(variant as JointStrengthVariant, {
-            end,
-            startStack: profile.stackBB * BB,
-            rake: receipt.rake,
-            bbj: receipt.bbj,
-            config,
-            publishedRake: Boolean(profile.publishedRake),
-            tableSeats: profile.tableSeats ?? profile.seats,
-            boardCount: controller.getActiveBoardCount(),
-            knownDeadCards: end.players.flatMap((p) =>
-              controller.getPineappleKnownDeadCards(p.seat)
-            ),
-          })
-        : remainingVariant
-          ? remainingVariantIndependentHandChecks(variant, {
+      receipt.checks =
+        profile.jointPolicy || (profile.ablation && variant === 'nlh')
+          ? // P13.2: every physical board, every variant (JointBoardReference).
+            jointIndependentHandChecks(variant as JointStrengthVariant, {
               end,
               startStack: profile.stackBB * BB,
               rake: receipt.rake,
@@ -663,13 +819,28 @@ export async function playPlo4PolicyHand(
               config,
               publishedRake: Boolean(profile.publishedRake),
               tableSeats: profile.tableSeats ?? profile.seats,
+              boardCount: controller.getActiveBoardCount(),
               knownDeadCards: end.players.flatMap((p) =>
                 controller.getPineappleKnownDeadCards(p.seat)
               ),
             })
-          : plo4IndependentHandChecks(profile, end, receipt, config);
+          : remainingVariant
+            ? remainingVariantIndependentHandChecks(variant, {
+                end,
+                startStack: profile.stackBB * BB,
+                rake: receipt.rake,
+                bbj: receipt.bbj,
+                config,
+                publishedRake: Boolean(profile.publishedRake),
+                tableSeats: profile.tableSeats ?? profile.seats,
+                knownDeadCards: end.players.flatMap((p) =>
+                  controller.getPineappleKnownDeadCards(p.seat)
+                ),
+              })
+            : plo4IndependentHandChecks(profile, end, receipt, config);
     return receipt;
   } finally {
+    if (profile.ablation) await profile.ablation.brain.endHand?.();
     controller.cancelPineappleSettle();
     restoreFastRandom(rng);
   }
@@ -853,26 +1024,13 @@ export function runPlo4PolicyLeague(
 /** The engine's own cash pricing for the published 1/2 game of the profile's
  * variant (PLO4 when the profile names none), built the way
  * ServerTableEngineBase builds a cash hand config. */
+
 function publishedCashPricing(
   profile: Plo4LeagueProfile
 ): Pick<HandConfig, 'rakeConfig' | 'bbjConfig'> {
   if (profile.tournament || BB !== PLO4_STRENGTH_BB)
     throw new Error('Published PLO4 pricing is the cash 1/2 game only');
-  const full = getFullRakeConfig(1, BB, profile.variant ?? 'plo4');
-  return {
-    rakeConfig: {
-      percent: full.rakePercent,
-      cap: full.rakeCap,
-      noFlopNoDrop: true,
-      playerCountCaps: getPlayerCountCaps(full.rakeCap, profile.tableSeats ?? profile.seats),
-    },
-    bbjConfig: {
-      enabled: full.bbjEnabled,
-      feeBB: full.bbjFeeBB,
-      minPotBB: full.rules.minPotBB,
-      minPlayersDealt: full.rules.minPlayersDealt,
-    },
-  };
+  return publishedLeagueCashPricing(profile);
 }
 
 /** Independent per-hand settlement and deduction checks (Phase 9 rules). The

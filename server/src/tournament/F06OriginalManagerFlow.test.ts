@@ -4,6 +4,12 @@ import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { GameServer } from '../GameServer.js';
 import { TournamentRetirementCustody } from '../services/TournamentRetirementCustody.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
+import { HandController } from '../engine/HandController.js';
+import {
+  encodePrivateHandContinuation,
+  type PrivateHandContinuation,
+} from '../engine/PrivateHandContinuation.js';
+import * as continuationService from '../services/supabase/handContinuation.js';
 import { supabase } from '../services/supabase.js';
 const id = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const event = id(1),
@@ -43,6 +49,7 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
     calls: { name: string; p: any }[] = [];
   const clone = () => JSON.parse(JSON.stringify(durable));
   const engine: any = new ServerTableEngine(source);
+  engine.retainOriginalBatch = vi.fn(async () => {});
   const server: any = Object.create(GameServer.prototype);
   Object.assign(server, {
     running: true,
@@ -691,6 +698,7 @@ it.each(['committed', 'absent', 'pending_reserved'])(
       expect((await f.beginResult).ok).toBe(false);
     }
     const next: any = new ServerTableEngine(destination);
+    next.retainOriginalBatch = vi.fn(async () => {});
     const roster = [
       {
         user_id: moved.user_id,
@@ -1429,6 +1437,154 @@ it.each(['accepted', 'pending', 'lost owner'])(
     } finally {
       replacement.preciseTimer.dispose();
       f.engine.preciseTimer.dispose();
+    }
+  }
+);
+
+it.each(['durable', 'legacy', 'changed hash', 'changed permit', 'changed evidence', 'lost owner'])(
+  'Manager admission preserves the original continuation: %s',
+  async (mode) => {
+    const f = await fixture('', 'committed');
+    const originalGeneration = id(50);
+    const replacement = new ServerTableEngine(source, {
+      scope: 'tournament',
+      verified: true,
+      generation: lease,
+      tournamentId: event,
+      proofDeadlineMonotonicMs: performance.now() + 60_000,
+    }) as any;
+    Object.defineProperty(replacement, 'ready', { value: Promise.resolve(true) });
+    const start = vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
+    const recovery = vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
+    f.manager.tableEngines.set(source, replacement);
+    f.server.tableEngines.set(source, replacement);
+    const controller = new HandController(
+      {
+        tableId: source,
+        handNumber: 1000001,
+        gameVariant: 'nlh',
+        smallBlind: 1,
+        bigBlind: 2,
+        isTournament: true,
+        rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+      },
+      [user, id(21)].map((user_id, index) => ({
+        user_id,
+        username: 'Original player',
+        seat: index + 1,
+        stack: 100,
+        bet: 0,
+        totalInvested: 0,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      })),
+      1
+    );
+    const original = { ...f.permit.binding, lease_generation: originalGeneration };
+    const value: PrivateHandContinuation = {
+      version: 1,
+      original,
+      seats: [user, id(21)].map((user_id, index) => ({
+        user_id,
+        seat_id: id(70 + index),
+        seat_joined_at: '2026-10-28T23:00:00Z',
+        stack_before: 100,
+      })),
+      batch: {
+        version: 1,
+        sequence: 0,
+        controller: controller.serializeRecoveryState(),
+        events: [],
+        engine: { fields: {} },
+      },
+    };
+    const encoded = encodePrivateHandContinuation(value);
+    if (mode === 'legacy')
+      vi.spyOn(continuationService, 'claimLegacyRiverContinuation').mockResolvedValue(value);
+    const order: string[] = [];
+    const admissionRpc = async (name: string) => {
+      order.push(name);
+      if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
+      if (name === 'fn_f06_hand_number_state')
+        return {
+          data: {
+            ok: true,
+            table_id: source,
+            lifecycle: '1',
+            can_reserve: false,
+            blocked_reason: 'hand_permit_unresolved',
+            used_hand_number_max: '1000001',
+            next_hand_number_candidate: null,
+            unresolved_permit: {
+              ...original,
+              generation: originalGeneration,
+              permit_id: mode === 'changed permit' ? id(51) : original.permit_id,
+              state: 'reserved',
+              evidence_id: mode === 'changed evidence' ? id(52) : null,
+            },
+          },
+          error: null,
+        };
+      if (name === 'fn_f06_claim_hand_continuation') {
+        if (mode === 'lost owner') f.manager.tableEngines.delete(source);
+        return {
+          data: {
+            ok: true,
+            table_id: source,
+            writer_generation: lease,
+            continuation:
+              mode === 'legacy'
+                ? null
+                : {
+                    payload: encoded.payload,
+                    sha256: mode === 'changed hash' ? 'f'.repeat(64) : encoded.sha256,
+                    sequence: '0',
+                    hand_number: '1000001',
+                  },
+          },
+          error: null,
+        };
+      }
+      throw new Error('Unexpected recovered admission RPC ' + name);
+    };
+    f.rpc.mockImplementation(((name: string) => {
+      const request = admissionRpc(name);
+      return Object.assign(request, { abortSignal: () => request });
+    }) as any);
+    try {
+      f.manager.startManagedTableEngine(replacement, 'original continuation admission');
+      await Promise.allSettled([
+        ...f.manager.tableEngineRunJobs,
+        ...f.manager.tableEngineStartJobs,
+      ]);
+      const admitted = mode === 'durable' || mode === 'legacy';
+      expect(start).toHaveBeenCalledTimes(admitted ? 1 : 0);
+      expect(recovery).toHaveBeenCalledTimes(admitted ? 0 : 1);
+      expect(order).not.toContain('fn_f06_abort_abandoned_generation');
+      expect(order).not.toContain('fn_f06_allocate_hand_number');
+      expect(order).not.toContain('fn_f06_begin_hand');
+      if (admitted) {
+        expect(replacement.pendingOriginalContinuation).toEqual(value);
+        expect(replacement.f06Allocator).toBeTypeOf('function');
+        expect(replacement.f06CurrentPermit.binding).toEqual(original);
+        expect(replacement.f06CurrentPermit.recoveryState()).toBe('attempted');
+        f.manager.wireEliminationWake(replacement);
+        f.manager.abandonedGenerationAskedAt.set(originalGeneration, {
+          at: Date.now(),
+          ask: 'refused',
+        });
+        replacement.handCompleteCallback(source, []);
+        expect(f.manager.abandonedGenerationAskedAt.has(originalGeneration)).toBe(true);
+        replacement.f06CurrentPermit = null;
+        replacement.handCompleteCallback(source, []);
+        expect(f.manager.abandonedGenerationAskedAt.has(originalGeneration)).toBe(false);
+      }
+    } finally {
+      f.engine.running = false;
+      f.engine.preciseTimer.dispose();
+      replacement.preciseTimer.dispose();
     }
   }
 );

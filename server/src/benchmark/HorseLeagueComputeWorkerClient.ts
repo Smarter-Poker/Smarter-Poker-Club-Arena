@@ -1,3 +1,7 @@
+import {
+  validateTournamentFlagRequest,
+  tournamentFlagResultValid,
+} from './HorseTournamentFlagContract.js';
 /**
  * Main-thread client for the isolated Horse League compute process.
  *
@@ -26,9 +30,14 @@ import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
 import { HUMAN_FIELD_COMPONENT_SCENARIOS } from './HorseLeagueHumanField.js';
 import {
   pairedConfidence99,
+  tournamentPolicyFamily,
+  tournamentPolicyVersion,
+  tournamentPolicyWorkKind,
   tournamentRunCanPromote,
+  tournamentGuardCountsAreValid,
   tournamentLeagueEntrants,
   MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS,
+  TOURNAMENT_PRE_ELIGIBILITY_REASONS,
   type TournamentLeagueRequest,
   type TournamentLeagueResult,
 } from './HorseTournamentLeague.js';
@@ -348,6 +357,56 @@ const continuationWorkCounts = [
   'levelBounds',
 ] as const;
 
+function validTournamentOpportunities(r: Record<string, unknown>): boolean {
+  if (!('opportunityDiagnostics' in r)) return true; // Original schema-1 receipts remain valid.
+  const d = r.opportunityDiagnostics;
+  const counts = [
+    'decisions',
+    'designatedHeroDecisions',
+    'otherActorDecisions',
+    'heroPreflopDecisions',
+    'heroPostflopDecisions',
+    'heroOtherStreetDecisions',
+    'heroPostflopWithinSeatBudget',
+    'heroPostflopLedgerMissing',
+    'heroPostflopEligible',
+  ];
+  if (
+    !isRecord(d) ||
+    !hasExactKeys(d, ['version', 'arm', ...counts, 'preEligibleRefusals']) ||
+    d.version !== 1 ||
+    d.arm !== 'evaluated' ||
+    !counts.every((k) => isNonnegativeSafeInteger(d[k])) ||
+    !isRecord(d.preEligibleRefusals) ||
+    !Object.entries(d.preEligibleRefusals).every(
+      ([reason, n]) =>
+        TOURNAMENT_PRE_ELIGIBILITY_REASONS.some((known) => known === reason) &&
+        isNonnegativeSafeInteger(n) &&
+        n > 0
+    )
+  )
+    return false;
+  const refused = Object.values(d.preEligibleRefusals).reduce<number>(
+    (sum, n) => sum + Number(n),
+    0
+  );
+  return (
+    Number.isSafeInteger(refused) &&
+    Number(d.decisions) <= Number(r.decisions) &&
+    d.decisions === Number(d.designatedHeroDecisions) + Number(d.otherActorDecisions) &&
+    d.designatedHeroDecisions ===
+      Number(d.heroPreflopDecisions) +
+        Number(d.heroPostflopDecisions) +
+        Number(d.heroOtherStreetDecisions) &&
+    Number(d.heroPostflopWithinSeatBudget) <= Number(d.heroPostflopDecisions) &&
+    (r.phase8PolicyFamily === 'catastrophe_guard_v1' ||
+      Number(d.heroPostflopEligible) <= Number(d.heroPostflopWithinSeatBudget)) &&
+    d.heroPostflopDecisions ===
+      Number(d.heroPostflopLedgerMissing) + Number(d.heroPostflopEligible) + refused &&
+    d.heroPostflopEligible === r.eligible
+  );
+}
+
 function validTournamentCompletion(r: Record<string, unknown>): boolean {
   if (
     r.completionSchemaVersion !== 1 ||
@@ -381,6 +440,8 @@ function validTournamentCompletion(r: Record<string, unknown>): boolean {
         'reason',
         'latencyMs',
         'work',
+        ...('workKind' in row ? ['workKind'] : []),
+        ...('guardWork' in row ? ['guardWork'] : []),
       ]) ||
       !['flop', 'turn', 'river'].includes(String(row.street)) ||
       !isNonnegativeSafeInteger(row.localPlayers) ||
@@ -390,7 +451,15 @@ function validTournamentCompletion(r: Record<string, unknown>): boolean {
       row.fieldPlayers < 1 ||
       typeof row.completed !== 'boolean' ||
       (row.completed
-        ? !['candidate_changed', 'baseline_retained'].includes(String(row.reason))
+        ? !(
+            r.phase8PolicyFamily === 'catastrophe_guard_v1'
+              ? [
+                  'guard_candidate_changed',
+                  'guard_baseline_retained',
+                  'guard_safe_candidate_unavailable',
+                ]
+              : ['candidate_changed', 'baseline_retained']
+          ).includes(String(row.reason))
         : !completionRefusalReasons.has(String(row.reason))) ||
       !isFiniteNumber(row.latencyMs, 0) ||
       !isRecord(row.work) ||
@@ -400,6 +469,27 @@ function validTournamentCompletion(r: Record<string, unknown>): boolean {
       ) ||
       !['exact_mh', 'plackett_luce_mc', 'unavailable'].includes(String(row.work.icmMethod)) ||
       !['none', 'sample', 'future_rollout', 'icm'].includes(String(row.work.budgetStop))
+    )
+      return false;
+    if (r.phase8PolicyFamily === 'catastrophe_guard_v1') {
+      if (
+        row.workKind !== 'phase7_candidate_guard' ||
+        !isRecord(row.guardWork) ||
+        !hasExactKeys(row.guardWork, ['assessmentCompleted', 'candidateCount']) ||
+        row.guardWork.assessmentCompleted !== row.completed ||
+        !isNonnegativeSafeInteger(row.guardWork.candidateCount) ||
+        row.guardWork.candidateCount < 1 ||
+        row.guardWork.candidateCount > 16 ||
+        continuationWorkCounts.some(
+          (key) => Number((row.work as Record<string, unknown>)[key]) !== 0
+        ) ||
+        row.work.icmMethod !== 'unavailable' ||
+        row.work.budgetStop !== 'none'
+      )
+        return false;
+    } else if (
+      'guardWork' in row ||
+      ('workKind' in row && row.workKind !== 'future_hand_continuation')
     )
       return false;
     if (row.completed) observedCompleted++;
@@ -705,6 +795,7 @@ export function horseLeagueComputeResponseIsValid(
         !hasExactKeys(r, [
           ...numeric,
           'version',
+          ...('phase8PolicyFamily' in r ? ['phase8PolicyFamily', 'workKind'] : []),
           'candidateMode',
           'evidenceMode',
           'objective',
@@ -721,10 +812,28 @@ export function horseLeagueComputeResponseIsValid(
           'completionRefusals',
           'completionDiagnostics',
           'completionDiagnosticsDropped',
+          ...('opportunityDiagnostics' in r ? ['opportunityDiagnostics'] : []),
+          ...('flagCard' in r
+            ? ['flagCard', 'gameVariant', 'firstPair', 'cardDecisions', 'cardChanged', 'cardPairs']
+            : []),
           ...('opponentPopulation' in r ? ['opponentPopulation', 'humanResponses'] : []),
         ])
       )
         return false;
+      if (
+        'phase8PolicyFamily' in r &&
+        !['continuation_v2', 'catastrophe_guard_v1'].includes(String(r.phase8PolicyFamily))
+      )
+        return false;
+      const family = tournamentPolicyFamily(r.phase8PolicyFamily);
+      if (
+        r.version !== tournamentPolicyVersion(family) ||
+        ('workKind' in r && r.workKind !== tournamentPolicyWorkKind(family))
+      )
+        return false;
+      if (!tournamentGuardCountsAreValid(r)) return false;
+      if (!tournamentFlagResultValid(r as unknown as TournamentLeagueResult)) return false;
+      if (!validTournamentOpportunities(r)) return false;
       // Condition (b) monitoring: a human-calibrated field reports its
       // population and its response counts per node, counts only.
       if (
@@ -748,7 +857,6 @@ export function horseLeagueComputeResponseIsValid(
         !isNonnegativeSafeInteger(r.pairs) ||
         !isNonnegativeSafeInteger(r.requestedPairs) ||
         (r.pairs as number) > (r.requestedPairs as number) ||
-        r.version !== PHASE8_POLICY.version ||
         !['mtt', 'sng', 'spin', 'satellite', 'pko', 'mystery'].includes(String(r.objective)) ||
         typeof r.complete !== 'boolean' ||
         typeof r.promotionEligible !== 'boolean' ||
@@ -955,6 +1063,8 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     request: TournamentLeagueRequest,
     shouldContinue: () => boolean = () => true
   ): Promise<TournamentLeagueResult> {
+    tournamentPolicyFamily(request.phase8PolicyFamily);
+    validateTournamentFlagRequest(request);
     return this.dispatch<TournamentLeagueResult>(
       { type: 'RUN_TOURNAMENT', request },
       shouldContinue
@@ -1132,10 +1242,14 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     if (message.type === 'TOURNAMENT_RESULT' && pending.job.tournamentRequest) {
       const request = pending.job.tournamentRequest;
       if (
+        message.result.flagCard !== request.flagCard ||
+        message.result.firstPair !== (request.flagCard ? (request.firstPair ?? 0) : undefined) ||
         message.result.seed !== request.seed ||
         message.result.objective !== request.objective ||
         message.result.requestedPairs !== request.pairs ||
         message.result.candidateMode !== (request.candidateMode ?? 'candidate') ||
+        tournamentPolicyFamily(message.result.phase8PolicyFamily) !==
+          tournamentPolicyFamily(request.phase8PolicyFamily) ||
         message.result.evidenceMode !== (request.evidenceMode ?? 'fixture') ||
         message.result.opponentPopulation !== request.opponentPopulation
       ) {

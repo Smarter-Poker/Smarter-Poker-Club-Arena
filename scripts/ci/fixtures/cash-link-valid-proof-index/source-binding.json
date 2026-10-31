@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "scope": "Physical fixed-width original proof predicate index; native22, unchanged original helper/fullcontracts; no production runtime certificate",
+  "sourceFiles": {
+    "scripts/ci/fixtures/cash-link-valid-proof-index/qualification-evidence.json": "ad234388e26739be9a2c5ca3b4b7fb327813b880f4c89ac4f15813b141a1ef8d",
+    "scripts/ci/fixtures/cash-link-valid-proof-index/README.md": "1461a89c83eb513be0c7e146450f7d80d23ef8c5a0254f10195c88c7b52e01bc",
+    "scripts/ci/fixtures/cash-link-valid-proof-index/native-fixture.sql": "45ac89a5d655991189967615a52e0403e8a6c5f26925e130420e2c017fca6c79",
+    "scripts/ci/fixtures/cash-link-valid-proof-index/actual-tables.json": "896bb54a358317979ae1e0d9d988f6588e98952f11c06bdf5160874af071058c",
+    "scripts/ci/fixtures/cash-link-valid-proof-index/original-linked.sql": "b85a3e318732bffd9543853a9ca31cdfd2967f8d37fd1383cd82798e0b7dfd66",
+    "supabase/migrations/20261028065332_original_cash_links_read_valid_proofs_from_their_index.sql": "35a855c7bde5d9e713eaf6729f6ffe59b3c4b0787d90ffb897822cb802284901",
+    "scripts/ci/test-cash-link-valid-proof-index-postgres.py": "b11cffe16a9cd6264c42f519b8eb779054a56e6992d7ba87ef212b4f936421ee",
+    "tests/cash-link-index-keeps-the-original-proof.law.test.ts": "443138226b857a46e67472f88a8ec794ee212c23bf42abd94fb5fb4e38e6a481",
+    "docs/laws.d/cash-link-index-keeps-the-original-proof.md": "7866d0b5911e64e4af1ed29dd400417a363f48909642c8b21631ffb569e69966",
+    "docs/changelog/2026-10-28-cash-link-original-proof-index.md": "9d1cad7c248091753cdc85a59242ae2375f0f175119a1e1d3fe568fbb61c5705",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639"
+  },
+  "cashLinkPhysicalProofWorkflowComposition20261028": {
+    "review": "Preserves current63816 ordered-key and every prior native command plus the independently qualified65332 physical partial-index lane. Only active combined workflow identity renewed; no financial assertion or historical receipt restamp.",
+    "execution_performed": false
+  },
+  "cashLinkUnionHashWorkflowComposition20261028": {
+    "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
+    "execution_performed": false
+  }
+}

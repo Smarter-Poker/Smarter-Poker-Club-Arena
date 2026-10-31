@@ -28,6 +28,60 @@ import { functionBody, latestDeclaring } from './helpers/migrations';
 const body = (fn: string) => functionBody(latestDeclaring(fn).sql, fn);
 const src = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
+// The horse input device may decline a new purchase before choosing a wallet.
+// Remove only that bounded, side-effect-free choice, then preserve the entire
+// captured economic wrapper and the original prohibition on identity pricing.
+// Permit only the reviewed no-purchase timing refusal. Keeping this exact means
+// a wallet write, changed predicate or receipt bypass still breaks the economic
+// wrapper comparison below; this is not a general allowance for another branch.
+const horseTimingChoice = `
+  -- Owner October 28: no new scheduled MTT horse buy-in before T-10.
+  -- The existing acquisition lock is held. Paid receipt retries remain valid;
+  -- no ticket is redeemed and no wallet is charged on an early refusal.
+  IF EXISTS (
+    SELECT 1 FROM public.tournaments t
+     WHERE t.id=p_tournament_id
+       AND NOT public.fn_ca_horse_mtt_purchase_window_open(
+         t.format_contract,t.status,t.start_time,clock_timestamp())
+  ) AND NOT EXISTS (
+    SELECT 1 FROM public.tournament_players paid
+     WHERE paid.tournament_id=p_tournament_id AND paid.user_id=p_user_id
+       AND paid.status IN ('registered','playing')
+  ) THEN
+    RETURN jsonb_build_object('ok',false,'reason','horse_registration_not_open');
+  END IF;
+`;
+
+function assertHorseFundingRule(fn: string) {
+  const timing = fn.includes(horseTimingChoice) ? horseTimingChoice : '';
+  if (timing) {
+    expect(fn.indexOf(timing)).toBeGreaterThan(fn.indexOf('RETURN v_gate;'));
+    expect(fn.indexOf(timing)).toBeLessThan(
+      fn.indexOf('v_paying := public.fn_ca_entry_paying_club')
+    );
+    fn = fn.replace(timing, '');
+  }
+  const choice = fn.match(
+    /\n {2}-- A horse's purchase choice,[\s\S]*?RETURN jsonb_build_object\('ok',false,'reason','horse_tournament_reservation_budget'\);\n {2}END IF;\n/
+  );
+  if (choice) {
+    expect(choice[0]).not.toMatch(
+      /\b(?:INSERT|UPDATE|DELETE)\b|set_config|fn_ca_entry_paying_club|before_terminal_gate/i
+    );
+    expect(choice[0].match(/\bis_horse\b/g)).toHaveLength(1);
+    expect(fn.indexOf(choice[0])).toBeLessThan(
+      fn.indexOf('v_paying := public.fn_ca_entry_paying_club')
+    );
+  }
+  const economic = choice ? fn.replace(choice[0], '') : fn;
+  expect(economic).not.toMatch(/is_horse/);
+  const captured = functionBody(
+    src('tests/sql/fixtures/horse-future-purchase-before.sql'),
+    'fn_register_horse_for_tournament'
+  );
+  expect(economic.replace(/\s+/g, ' ').trim()).toBe(captured.replace(/\s+/g, ' ').trim());
+}
+
 describe('cash: the buy-in is charged to a wallet that can pay', () => {
   it('atomic_table_buyin names the paying club to the gate when the default cannot cover it', () => {
     const fn = body('atomic_table_buyin');
@@ -80,9 +134,8 @@ describe('tournaments: the entry is charged to a wallet that can pay', () => {
   it('a horse is charged by the identical rule (CLAUDE.md 10.5)', () => {
     const person = body('fn_register_for_tournament');
     const horse = body('fn_register_horse_for_tournament');
-    for (const fn of [person, horse]) {
-      expect(fn).not.toMatch(/is_horse/);
-    }
+    expect(person).not.toMatch(/is_horse/);
+    assertHorseFundingRule(horse);
     for (const helper of [
       'fn_ca_entry_paying_club',
       'fn_ca_union_wallet_that_can_pay',
@@ -91,6 +144,38 @@ describe('tournaments: the entry is charged to a wallet that can pay', () => {
       'fn_ca_cash_entry_need',
     ]) {
       expect(body(helper), helper).not.toMatch(/is_horse/);
+    }
+  });
+
+  it('the input-choice allowance cannot hide an identity branch in wallet funding', () => {
+    const horse = body('fn_register_horse_for_tournament');
+    expect(() =>
+      assertHorseFundingRule(
+        horse.replace('v_paying :=', 'IF is_horse THEN RETURN NULL; END IF; v_paying :=')
+      )
+    ).toThrow();
+    expect(() =>
+      assertHorseFundingRule(
+        horse.replace('RETURN v_result;', 'IF is_horse THEN RETURN NULL; END IF; RETURN v_result;')
+      )
+    ).toThrow();
+  });
+
+  it('the timing-choice allowance cannot hide a wallet write or a changed refusal predicate', () => {
+    const horse = body('fn_register_horse_for_tournament');
+    expect(horse).toContain(horseTimingChoice);
+    for (const changed of [
+      horse.replace(
+        "'horse_registration_not_open');",
+        "'horse_registration_not_open'); UPDATE public.profiles SET diamonds=0;"
+      ),
+      horse.replace(
+        'AND NOT EXISTS (\n    SELECT 1 FROM public.tournament_players paid',
+        'AND EXISTS (\n    SELECT 1 FROM public.tournament_players paid'
+      ),
+      horse.replace('clock_timestamp())', "clock_timestamp() + interval '1 hour')"),
+    ]) {
+      expect(() => assertHorseFundingRule(changed)).toThrow();
     }
   });
 

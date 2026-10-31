@@ -53,7 +53,21 @@ jobs:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
           owner: Smarter-Poker
-          repositories: Smarter-Poker-Club-Arena,Smarter-Poker-World-Hub
+          repositories: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'Smarter-Poker-World-Hub' || 'Smarter-Poker-Club-Arena,Smarter-Poker-World-Hub' }}
+
+      # A GitHub App installation token cannot span personal and organization owners.
+      - name: Mint transferred Club Arena read token
+        if: github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872'
+        id: club-arena-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Smarter-Poker-Club-Arena
+          permission-contents: read
+          permission-actions: read
+          permission-issues: read
 
       - name: Gather and deliver
         env:
@@ -61,6 +75,8 @@ jobs:
           # repo); issue writes on GITHUB_TOKEN, the same split as the
           # read-only audits, because the App deliberately has no issues scope.
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN_CA: ${{ steps.club-arena-token.outputs.token }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
           GH_TOKEN_ISSUES: ${{ github.token }}
           REPO: ${{ github.repository }}
           WH_REPO: Smarter-Poker/Smarter-Poker-World-Hub

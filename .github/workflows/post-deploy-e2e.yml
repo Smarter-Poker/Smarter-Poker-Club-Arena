@@ -78,7 +78,9 @@ jobs:
   # Explicit one-client transport proof. This never publishes or changes source flags.
   private-record-client-proof:
     needs: certification-cleanup-safety
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
+    # The focused event skips publication-gate; require successful cleanup
+    # explicitly so that skipped ancestor cannot suppress the actual proof.
+    if: always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
     name: Exact published private record client failover proof
     runs-on: ubuntu-latest
     timeout-minutes: 15

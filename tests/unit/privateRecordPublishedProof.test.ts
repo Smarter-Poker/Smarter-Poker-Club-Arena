@@ -316,8 +316,14 @@ describe('finite published record client proof admission and verdict', () => {
     route(socket);
     expect(socket.connectToServer).toHaveBeenCalledTimes(2);
   });
-  it('the existing provider owns one explicit browser proof without enabling exposure', () => {
+  it('the existing provider owns one explicit browser proof without enabling exposure', async () => {
     const workflow = readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8');
+    const { parse } = await import('yaml');
+    const job = parse(workflow).jobs['private-record-client-proof'];
+    expect(job.needs).toBe('certification-cleanup-safety');
+    expect(job.if).toBe(
+      "always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'"
+    );
     expect(workflow).toContain('private-record-client-proof:');
     expect(workflow).toContain(
       'npx playwright test tests/e2e/production-private-record-failover.spec.ts'

@@ -1,5 +1,7 @@
 # Lightning Rollout Plan
 
+> **Owner update, 2026-10-31: the Lightning Internal Pilot is removed.** Lightning runs live in Midway Union. Owner: "REMOVE THE LIGHTNING INTERNAL PILOT, AND ANY AND ALL TRACES OF IT IF ITS NO LONGER NEEDED FOR ANYTHING." Club 95087 is retired (migration `20261031184340`), and its tooling, workflows, engine seat scope and database objects are gone. Every pilot step, run and target below is history only; nothing here should be dispatched again.
+
 The staged path from dark to general availability, the evidence that must exist before each stage begins, and the way back from each stage. Written for Lightning Phase 13 (specification Phase 22) on 2026-10-09. The machinery it relies on is migration `20261009235505_lightning_phase_13_rollout_drain_and_rollback.sql`: the operator control door `fn_lightning_operator_control`, the emergency drain, matcher version rollback and the readiness verdict `fn_lightning_rollout_readiness`.
 
 Enabling Lightning for real players is the single biggest outward action in the program. Every stage is entered by an operator action through the control door (reason required, a fresh request id, one audited `operator_<action>` event), never by editing a row by hand, and every stage has a rehearsed way back.

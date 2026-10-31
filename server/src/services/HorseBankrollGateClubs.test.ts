@@ -73,7 +73,7 @@ describe('an unknown roll is unknown, not zero', () => {
        that a failed canSit REFUSES: the counter may sit between, a `return
        false` may not go missing. */
     expect(SRC).toMatch(
-      /if \(!canSit\(roll, ref, seatPolicyFor\(h\.id, seatClub\)\)\) \{[^{}]*return false;\s*\}/
+      /if \(!canSit\(roll, ref, bankrollPolicyFor\(h\.id\)\)\) \{[^{}]*return false;\s*\}/
     );
   });
 });

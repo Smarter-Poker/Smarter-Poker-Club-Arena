@@ -79,8 +79,3 @@ while IFS= read -r proof; do
  [ "$("${psql[@]}" -At -c "SELECT ($proof)")" = t ] || { echo "FAIL: live proof: $proof"; exit 1; }
 done < <(sed -n 's/^-- @live-proof: //p' "$root/supabase/migrations/20261020005222_lightning_only_on_six_seat_action_and_madness.sql")
 echo 'PASS: six-seat Action/Madness keep Lightning; every other size refused by name at the constraint, hand trigger, operator door, readiness, thresholds and formation; ordinary games keep every ordinary state; live proofs hold'
-
-# Owner approval 2026-10-22: the two private six-seat pilots switch at six-seat
-# pool math (ON 12 / OFF 8). Its own disposable cluster, chained here so the
-# required native step (matcher parity -> template -> six-seat) runs it.
-bash "$root/scripts/dev/test-lightning-pilot-thresholds.sh"

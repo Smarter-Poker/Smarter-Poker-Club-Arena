@@ -47,8 +47,7 @@
       "requirement": "6-max 18 threshold works",
       "qualificationFiles": [
         "scripts/dev/test-lightning-phase4-population.sh",
-        "scripts/dev/test-lightning-phase6-matcher.sh",
-        "scripts/dev/test-lightning-pilot-thresholds.sh"
+        "scripts/dev/test-lightning-phase6-matcher.sh"
       ]
     },
     {
@@ -86,8 +85,7 @@
       "requirement": "Threshold hysteresis works",
       "qualificationFiles": [
         "scripts/dev/test-lightning-phase7-reversion.sh",
-        "scripts/dev/test-lightning-phase13-operator-recovery.sh",
-        "scripts/dev/test-lightning-pilot-thresholds.sh"
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh"
       ]
     },
     {
@@ -339,8 +337,7 @@
       "qualificationFiles": [
         "server/src/lightning/LightningPhase12LoadChaos.test.ts",
         "server/src/lightning/LightningLatencyLedger.ts",
-        "scripts/dev/test-lightning-phase12-operator-alerts.sh",
-        "scripts/ops/lightning-latency-qualification.mjs"
+        "scripts/dev/test-lightning-phase12-operator-alerts.sh"
       ]
     },
     {
@@ -349,8 +346,7 @@
       "qualificationFiles": [
         "server/src/lightning/LightningPhase12LoadChaos.test.ts",
         "server/src/lightning/LightningLatencyLedger.ts",
-        "scripts/dev/test-lightning-phase12-operator-alerts.sh",
-        "scripts/ops/lightning-latency-qualification.mjs"
+        "scripts/dev/test-lightning-phase12-operator-alerts.sh"
       ]
     },
     {

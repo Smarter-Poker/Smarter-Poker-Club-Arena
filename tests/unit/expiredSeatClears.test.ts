@@ -4,7 +4,7 @@ import { isLightningObserverSnapshot } from '../../src/utils/mapEngineSnapshot';
 import { describe, expect, it, vi } from 'vitest';
 
 const source = readFileSync('src/pages/TablePage.tsx', 'utf8');
-const ast = ts.createSourceFile(
+const routeAst = ts.createSourceFile(
   'TablePage.tsx',
   source,
   ts.ScriptTarget.Latest,
@@ -13,6 +13,16 @@ const ast = ts.createSourceFile(
 );
 
 function callback(marker: string, variable = false) {
+  const ast =
+    marker === 'const enginePlayers ='
+      ? ts.createSourceFile(
+          'useEngineHeroSeatInvariant.ts',
+          readFileSync('src/hooks/useEngineHeroSeatInvariant.ts', 'utf8'),
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TS
+        )
+      : routeAst;
   let found: ts.Node | undefined;
   const visit = (node: ts.Node) => {
     if (variable && ts.isVariableDeclaration(node) && node.name.getText(ast) === marker) {
@@ -40,6 +50,8 @@ function execute(code: string, deps: Record<string, unknown>) {
     lightningObserver: false,
     engineSnapshotRef: { current: null },
     isLightningObserverSnapshot,
+    tableId: deps.tableId,
+    appliedSnapshot: { snapshot: deps.engineSnapshot, tableId: deps.tableId, userId: deps.userId },
     ...deps,
   };
   return new Function(...Object.keys(scoped), code)(...Object.values(scoped));
@@ -76,6 +88,7 @@ function fixture() {
 }
 
 function seatRead() {
+  const ast = routeAst;
   let found: ts.Node | undefined;
   const visit = (node: ts.Node) => {
     if (

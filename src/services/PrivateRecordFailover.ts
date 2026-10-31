@@ -2,7 +2,7 @@ import type { PrivateRecordMessage } from './EngineStateClient';
 interface RecordTransport {
   onPrivateRecord(topic: string, callback: (message: PrivateRecordMessage) => void): () => void;
 }
-/** Event-driven transport choice. Standby has no subscription while primary is READY. */
+/** Keep an acknowledged transport until it fails; a recovering peer cannot evict it. */
 export class PrivateRecordFailover {
   constructor(
     private primary: RecordTransport,
@@ -11,6 +11,7 @@ export class PrivateRecordFailover {
   onPrivateRecord(topic: string, callback: (message: PrivateRecordMessage) => void): () => void {
     let alive = true;
     let primaryReady = false;
+    let primaryStatus: PrivateRecordMessage | null = null;
     let standbyStatus: PrivateRecordMessage | null = null;
     let standbyGeneration = 0;
     let stopStandby: (() => void) | null = null;
@@ -25,11 +26,13 @@ export class PrivateRecordFailover {
       if (!alive || primaryReady || stopStandby) return;
       const generation = ++standbyGeneration;
       const stop = this.standby.onPrivateRecord(topic, (message) => {
-        if (!alive || primaryReady || generation !== standbyGeneration || message.topic !== topic)
-          return;
+        if (!alive || generation !== standbyGeneration || message.topic !== topic) return;
         if (message.type === 'PRIVATE_RECORD_STATUS') {
           standbyStatus = message;
-          callback(message);
+          if (!message.ready && primaryReady && primaryStatus) {
+            retireStandby();
+            callback(primaryStatus);
+          } else callback(message);
         } else if (standbyStatus?.ready === true) callback(message);
       });
       if (alive && !primaryReady && generation === standbyGeneration) stopStandby = stop;
@@ -38,12 +41,16 @@ export class PrivateRecordFailover {
     const stopPrimary = this.primary.onPrivateRecord(topic, (message) => {
       if (!alive || message.topic !== topic) return;
       if (message.type === 'PRIVATE_RECORD_STATUS') {
+        primaryStatus = message;
         primaryReady = message.ready === true;
+        // The serving legacy engine can acknowledge and then evict this socket
+        // at its per-user cap. Never discard a healthy independent listener
+        // for that transient recovery, or every cycle creates another outage.
+        if (standbyStatus?.ready === true) return;
         if (primaryReady) retireStandby();
-        // A primary reconnect must not demote an independently healthy standby.
-        callback(!primaryReady && standbyStatus?.ready === true ? standbyStatus : message);
+        callback(message);
         if (!primaryReady) startStandby();
-      } else if (primaryReady) callback(message);
+      } else if (primaryReady && standbyStatus?.ready !== true) callback(message);
     });
     if (!primaryReady) startStandby();
     return () => {

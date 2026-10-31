@@ -51,20 +51,11 @@
  * The derivation below is the FALLBACK, kept for an engine build that predates
  * `prizeRank`. It reaches the same answer from the same data:
  *
- * A mystery head is drawn ONCE at registration and stored on
- * tournament_players.current_bounty. supabase/migrations/20260821_mystery_-
- * bounty_true_advertised_range.sql records the draw table:
+ * The inventory RPC returns every distinct chest tier, including claimed
+ * chests. Pre-phase heads are a different pool and cannot rank a chest.
+ * Duplicate quantities never truncate this aggregate at a REST row limit.
  *
- *     60% x0.5    25% x1    10% x2    4% x3    1% x13
- *
- * applied to tournaments.bounty_amount - production bears this out exactly
- * (a base of 10 gives heads of 130 / 30 / 20 / 10 / 5). fn_collect_bounty
- * zeroes a head when it is claimed and writes the amount to
- * tournament_bounties, so the FULL prize ladder for an event is the distinct
- * values across both tables. The top three of those are the top three prizes,
- * and a pull qualifies when its amount reaches the third rung.
- *
- * The ladder is loaded once, from the database, before anything can fire. If
+ * The ladder is loaded on mount and on activation from the database. If
  * it cannot be loaded, NOTHING is celebrated: a guessed threshold would either
  * interrupt play for a routine head (which Dan explicitly ruled out) or stay
  * silent through a jackpot.
@@ -93,6 +84,7 @@ import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
 import { masterBus } from '../../core/MasterBus';
 import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
+import { MysteryBountyService } from '../../services/MysteryBountyService';
 import { TOURNAMENT_ARENA_EMBED } from '../../services/TournamentService';
 import { tournamentRowUnitCents, type TournamentArenaEmbed } from './details/types';
 import {
@@ -230,6 +222,34 @@ function EventMysteryBountyCelebration({ tournamentId }: { tournamentId: string 
     timersRef.current = [];
   };
 
+  const ladderRequestRef = useRef(0);
+  const loadChestLadder = useCallback(async () => {
+    const request = ++ladderRequestRef.current;
+    try {
+      const inventory = await MysteryBountyService.getInventory(tournamentId, { strict: true });
+      if (!liveRef.current || request !== ladderRequestRef.current) return;
+      const tiers = inventory?.tiers ?? [];
+      if (
+        tiers.some(
+          (tier) =>
+            !Number.isSafeInteger(tier.amountCents) ||
+            tier.amountCents <= 0 ||
+            !Number.isSafeInteger(tier.original) ||
+            tier.original <= 0
+        )
+      ) {
+        throw new Error('Mystery chest inventory is unreadable');
+      }
+      ladderRef.current = [...new Set(tiers.map((tier) => tier.amountCents / 100))].sort(
+        (a, b) => b - a
+      );
+    } catch (error) {
+      if (!liveRef.current || request !== ladderRequestRef.current) return;
+      ladderRef.current = [];
+      reportError(error, 'MysteryBountyCelebration.ladder_load_failed');
+    }
+  }, [tournamentId]);
+
   /* ── LOAD THE LADDER ──────────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -250,31 +270,7 @@ function EventMysteryBountyCelebration({ tournamentId }: { tournamentId: string 
         unitCentsRef.current = tournamentRowUnitCents(row as TournamentArenaEmbed | null);
         if (!isMysteryEventRef.current) return;
 
-        /* Every prize this event ever held: the heads still sealed on live
-           players, plus every head already pulled. */
-        const [live, claimed] = await Promise.all([
-          supabase
-            .from('tournament_players')
-            .select('current_bounty')
-            .eq('tournament_id', tournamentId)
-            .gt('current_bounty', 0),
-          supabase
-            .from('tournament_bounties')
-            .select('bounty_amount')
-            .eq('tournament_id', tournamentId),
-        ]);
-        if (!active) return;
-
-        const values = new Set<number>();
-        for (const r of live.data || []) {
-          const v = Math.round(num((r as { current_bounty: unknown }).current_bounty) * 100) / 100;
-          if (v > 0) values.add(v);
-        }
-        for (const r of claimed.data || []) {
-          const v = Math.round(num((r as { bounty_amount: unknown }).bounty_amount) * 100) / 100;
-          if (v > 0) values.add(v);
-        }
-        ladderRef.current = [...values].sort((a, b) => b - a);
+        await loadChestLadder();
       } catch (e) {
         if (!active) return;
         // No ladder means no celebration. Silence is the correct failure here:
@@ -288,7 +284,7 @@ function EventMysteryBountyCelebration({ tournamentId }: { tournamentId: string 
       active = false;
       liveRef.current = false;
     };
-  }, [tournamentId]);
+  }, [tournamentId, loadChestLadder]);
 
   /* ── RANK A PULL ──────────────────────────────────────────────────────── */
 
@@ -359,6 +355,10 @@ function EventMysteryBountyCelebration({ tournamentId }: { tournamentId: string 
 
       const envelope = (message as { payload?: TournamentEventEnvelope })?.payload;
       const type = envelope?.type;
+      if (type === 'mystery_bounty_activated') {
+        void loadChestLadder();
+        return;
+      }
       const data = (envelope?.payload || {}) as BountyRevealPayload;
       if (!isMysteryPull(type, data)) return;
 
@@ -412,7 +412,7 @@ function EventMysteryBountyCelebration({ tournamentId }: { tournamentId: string 
          it forever would pin the socket open for the life of the session. */
       masterBus.removeRegisteredChannel(channelKey, channel);
     };
-  }, [tournamentId, rankOf, raise]);
+  }, [tournamentId, rankOf, raise, loadChestLadder]);
 
   if (!current) return null;
 

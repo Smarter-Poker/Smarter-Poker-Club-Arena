@@ -670,7 +670,9 @@ describe('Tournament details snapshot recovery', () => {
     expect(fixture.navigate).not.toHaveBeenCalled();
     tables.resolve({ data: [{ id: 'table-a', status: 'running' }], error: null });
     await flush();
-    expect(fixture.navigate).toHaveBeenCalledWith('/table/table-a');
+    expect(fixture.navigate).toHaveBeenCalledWith('/table/table-a', {
+      state: { tournamentSeat: { tournamentId: 'a', lobbyTabId: null } },
+    });
   });
   it('does not replay a patch received before the entry query over newer database rows', async () => {
     rows('tournament_players', { data: [entry()], error: null });

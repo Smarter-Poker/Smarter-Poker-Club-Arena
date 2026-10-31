@@ -47,7 +47,7 @@ describe('the clock comes from the row, not from this browser', () => {
        otherwise tell a seat that is LEAVING from one that is merely sitting
        out, and painted a departing player their own sit-out bar. */
     expect(TABLE_PAGE).toMatch(
-      /select\('user_id, occupancy_id, is_sitting_out, sit_out_at, leave_pending, stack'\)/
+      /select\(\s*'user_id, seat_number, occupancy_id, is_sitting_out, sit_out_at, leave_pending, stack'\s*\)/
     );
   });
 

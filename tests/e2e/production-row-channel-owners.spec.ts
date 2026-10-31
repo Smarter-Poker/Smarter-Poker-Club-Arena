@@ -145,8 +145,9 @@ test('both club views keep receiving rows and one survives the other unmounting'
     .filter({ has: page.locator('.arena-game-card') })
     .getByRole('button', { name: CASH_SPECTATOR_ACTION })
     .click();
-  // View awaits real roster and engine preparation (25s warm ownership),
-  // just like the seat-notice proof. The default 5s assertion races that gate.
+  // View awaits token preparation (up to 15s), then the mux initial-state
+  // gate (up to 15s). The roster's 5s read starts concurrently; it is not
+  // another sequential allowance. A refusal still leaves this assertion red.
   await expect(page).toHaveURL(new RegExp(`/table/${subject.tableId}(?:[?#]|$)`), {
     timeout: 30_000,
   });

@@ -478,12 +478,12 @@ describe('6. new faces arrive painted, a moved face arrives too, early cards are
     );
   });
 
-  it('the hole-card door keeps them in a Lightning room only, and replays them through itself', () => {
+  it('the hole-card door keeps early cards on every table and replays them through itself', () => {
     expect(PAGE).toMatch(
-      /\} else if \(lightningRoomRef\.current\) \{[\s\S]{0,700}lightningEarlyHeroCardsRef\.current = \{ hand: dealtHandNumber, row \};/
+      /\} else \{[\s\S]{0,850}earlyHeroCardsRef\.current = \{ hand: dealtHandNumber, row \};/
     );
     expect(PAGE).toMatch(
-      /if \(decision === 'apply' && early && lightningRoomRef\.current\) \{\s*handleHoleCardPayload\(\{ new: early\.row \}\);/
+      /if \(decision === 'apply' && early\) \{\s*handleHoleCardPayload\(\{ new: early\.row \}\);/
     );
   });
 });

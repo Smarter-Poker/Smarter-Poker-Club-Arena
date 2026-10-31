@@ -2278,7 +2278,7 @@ export class ScheduledTournamentService {
         isSng || isSpin ? Math.min(10, Math.max(2, maxPlayers)) : 9
       ),
       accelerated_mtt: asBool(cfg.acceleratedMtt),
-      addon_break_minutes: clampInt(cfg.addonBreakMinutes, 1, 10, 1),
+      addon_break_minutes: 1,
       big_blind_ante: asBool(cfg.bigBlindAnte),
       authorized_to_register: asBool(cfg.authorizedToRegister),
       early_bird_enabled: asBool(cfg.earlyBirdEnabled),

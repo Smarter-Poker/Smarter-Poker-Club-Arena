@@ -143,3 +143,16 @@ test('unavailable cleanup preserves the first refusal and marks cleanup unknown'
   assert.ok(await target.discoverTarget(),'failed readback cannot certify closure');
   assert.equal(target.child.exitCode,null);
 });
+
+
+test('invalid sample refusals distinguish missing nodes, nonfinite and negative deltas without exposing values',()=>{
+  const nodes=[{id:1,callFrame:{functionName:'witness',url:'node:events',lineNumber:0}}];
+  for(const [samples,timeDeltas,reason] of [
+    [[2],[1],'profile_sample_invalid_node'],
+    [[1],[NaN],'profile_sample_invalid_delta'],
+    [[1],[-1],'profile_sample_invalid_negative_delta'],
+  ]) {
+    let error;try{summarize({nodes,samples,timeDeltas});}catch(caught){error=caught;}
+    assert.equal(failureReason(error),reason);
+  }
+});

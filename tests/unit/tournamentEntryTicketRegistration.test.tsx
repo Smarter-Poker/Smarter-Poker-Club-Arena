@@ -28,6 +28,7 @@ vi.mock('../../src/services/TournamentService', () => ({
 }));
 
 vi.mock('../../src/context/InTabLobbyContext', () => ({
+  useInTabLobby: () => null,
   useAppNavigate: () => mocks.navigate,
 }));
 
@@ -154,7 +155,9 @@ describe('human tournament registration with entry-only tickets', () => {
       'ticket-exact-1'
     );
     expect(mocks.emit).not.toHaveBeenCalledWith('BALANCE_UPDATED', expect.anything());
-    expect(mocks.navigate).toHaveBeenCalledWith('/table/table-1');
+    expect(mocks.navigate).toHaveBeenCalledWith('/table/table-1', {
+      state: { tournamentSeat: { tournamentId: 'tournament-1', lobbyTabId: null } },
+    });
   });
 
   it('fails closed before confirmation when the ticket selector errors', async () => {

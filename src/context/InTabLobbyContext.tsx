@@ -68,6 +68,8 @@ export interface InTabTournamentTarget {
 }
 
 export interface InTabLobbyNav {
+  /** Snapshot the lobby pill before an asynchronous registration begins. */
+  getLobbyTabId?: () => string | null;
   /**
    * Render this tournament INSIDE the current lobby tab instead of navigating
    * to /tournaments/:id. Returns true when the container took it; false means

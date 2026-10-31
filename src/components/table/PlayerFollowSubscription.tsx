@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useEffect, useRef } from 'react';
+import { subscribeTournamentStandings } from '../../services/tournamentStandingsUpdates';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import type { FollowTournamentPlayer } from '../../utils/followTournamentPlayer';
@@ -24,15 +24,12 @@ interface Props {
 
 /** Read on admission/reconnect and assignment events. No polling or game mutation. */
 export default function PlayerFollowSubscription(props: Props) {
-  const instance = useId();
   const latest = useRef(props);
   latest.current = props;
   const { target, accountId } = props;
   useEffect(() => {
     let disposed = false;
     let revision = 0;
-    let signature = '';
-    const channelKey = `player-follow-${instance.replace(/[^a-zA-Z0-9]/g, '')}`;
     const unavailable = (error: unknown) => {
       reportError(error, 'PlayerFollowSubscription');
       latest.current.onUnavailable();
@@ -59,7 +56,6 @@ export default function PlayerFollowSubscription(props: Props) {
           latest.current.onEnd(latest.current.tableId, target);
           return;
         }
-        signature = `${player.status}:${player.table_id || ''}`;
         // A balancer can clear the old assignment before publishing the new one.
         if (!player.table_id || player.table_id === latest.current.tableId) return;
         const { data: table, error: tableError } = await supabase
@@ -98,51 +94,21 @@ export default function PlayerFollowSubscription(props: Props) {
         if (current()) unavailable(error);
       }
     };
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void refresh();
-    };
+    // tournament_players is deliberately excluded from WAL Realtime. The
+    // existing engine tournament feed carries committed-hand and lifecycle
+    // invalidations, reconnect and visibility recovery for every reader.
+    let stop = () => {};
     try {
-      masterBus
-        .getOrCreateChannel(channelKey)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tournament_players',
-            filter: `tournament_id=eq.${target.tournamentId}`,
-          },
-          (payload: {
-            eventType: string;
-            new?: Record<string, unknown>;
-            old?: Record<string, unknown>;
-          }) => {
-            const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
-            if (row?.user_id !== target.userId) return;
-            if (row.tournament_id && row.tournament_id !== target.tournamentId) return;
-            const next = `${row.status}:${row.table_id || ''}`;
-            if (payload.eventType !== 'DELETE' && next === signature) return;
-            signature = next;
-            void refresh();
-          }
-        )
-        .subscribe((status: string, error?: Error) => {
-          if (disposed) return;
-          if (status === 'SUBSCRIBED') void refresh();
-          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')
-            unavailable(error || new Error(status));
-        });
+      stop = subscribeTournamentStandings(target.tournamentId, () => void refresh());
       void refresh();
     } catch (error) {
       unavailable(error);
     }
-    document.addEventListener('visibilitychange', onVisible);
     return () => {
       disposed = true;
       revision++;
-      document.removeEventListener('visibilitychange', onVisible);
-      masterBus.removeRegisteredChannel(channelKey);
+      stop();
     };
-  }, [target.tournamentId, target.userId, accountId, instance]);
+  }, [target.tournamentId, target.userId, accountId]);
   return null;
 }

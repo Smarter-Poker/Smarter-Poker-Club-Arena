@@ -12,33 +12,20 @@ const fake = vi.hoisted(() => ({
   error: null as any,
   seat: null as any,
 }));
-vi.mock('../../src/core/MasterBus', () => ({
-  masterBus: {
-    getOrCreateChannel: () => ({
-      on: (_kind: string, _filter: unknown, callback: any) => {
-        fake.change = callback;
-        return {
-          subscribe: (callback: any) => {
-            fake.status = callback;
-          },
-        };
-      },
-    }),
-    removeRegisteredChannel: fake.remove,
+vi.mock('../../src/services/tournamentStandingsUpdates', () => ({
+  subscribeTournamentStandings: (_id: string, callback: () => void) => {
+    fake.change = callback;
+    fake.status = callback;
+    return fake.remove;
   },
 }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { from: fake.from } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: fake.report }));
 const target = { tournamentId: 'event', userId: 'player', username: 'Player' };
 const callbacks = () => ({ onMove: vi.fn(), onEnd: vi.fn(), onUnavailable: vi.fn() });
-const change = (tableId: string | null, status = 'playing', userId = 'player') => {
+const change = (tableId: string | null, status = 'playing') => {
   fake.player = { table_id: tableId, status };
-  act(() =>
-    fake.change({
-      eventType: 'UPDATE',
-      new: { user_id: userId, tournament_id: 'event', ...fake.player },
-    })
-  );
+  act(() => fake.change());
 };
 beforeEach(() => {
   vi.clearAllMocks();
@@ -70,9 +57,10 @@ async function mount() {
   return { ...calls, ...view };
 }
 describe('the real follow subscription', () => {
-  it('moves on an assignment event, not another player or chip-only update', async () => {
+  it('reads the watched player on a committed tournament event', async () => {
     const calls = await mount();
-    change('new', 'playing', 'other');
+    change('old');
+    await act(async () => {});
     expect(calls.onMove).not.toHaveBeenCalled();
     change('new');
     await waitFor(() =>
@@ -86,9 +74,6 @@ describe('the real follow subscription', () => {
         false
       )
     );
-    const reads = fake.from.mock.calls.length;
-    change('new');
-    expect(fake.from.mock.calls).toHaveLength(reads);
   });
   it('catches a missed move on reconnect', async () => {
     const calls = await mount();

@@ -129,7 +129,14 @@ export function validateData(read, data) {
     assert.ok(Number.isSafeInteger(data.seat_count) && data.seat_count >= 0);
     assert.ok(Array.isArray(data.rows) && data.rows.length <= 2);
     for (const row of data.rows) {
-      keys(row, ['hand_number', 'pot_size', 'rake_amount', 'action_count', 'player_count']);
+      keys(row, [
+        'hand_number',
+        'pot_size',
+        'rake_amount',
+        'action_count',
+        'player_count',
+        'public_actions',
+      ]);
       assert.ok(Number.isSafeInteger(row.hand_number) && row.hand_number > 0);
       for (const key of ['pot_size', 'rake_amount'])
         assert.ok(
@@ -137,6 +144,27 @@ export function validateData(read, data) {
             row[key].length <= 80 &&
             /^-?[0-9]+(?:\.[0-9]+)?$/.test(row[key])
         );
+      assert.ok(Array.isArray(row.public_actions) && row.public_actions.length <= 128);
+      for (const a of row.public_actions) {
+        keys(a, ['ordinal', 'user_id', 'seat', 'action', 'amount', 'street', 'origin']);
+        assert.ok(Number.isSafeInteger(a.ordinal) && a.ordinal > 0);
+        assert.match(a.user_id, uuid);
+        assert.ok(Number.isSafeInteger(a.seat) && a.seat >= 1 && a.seat <= 10);
+        assert.ok(['raise', 'call', 'all_in', 'fold'].includes(a.action));
+        assert.ok(Number.isFinite(a.amount) && a.amount >= 0);
+        assert.ok(['preflop', 'flop', 'turn', 'river'].includes(a.street));
+        assert.ok(
+          a.origin === null ||
+            [
+              'player',
+              'pre_action',
+              'horse_policy',
+              'horse_fallback',
+              'forced',
+              'unknown',
+            ].includes(a.origin)
+        );
+      }
       for (const key of ['action_count', 'player_count'])
         assert.ok(row[key] === null || (Number.isSafeInteger(row[key]) && row[key] >= 0));
     }
@@ -186,5 +214,101 @@ export function verifyObservedHandFacts(facts, hand) {
     actions: row.action_count,
     players: row.player_count,
     seat_count: facts.seat_count,
+  };
+}
+
+/** Same owned hand, actual browser requests and public engine events, then the
+ * saved producer's exact raise-TO/all-in-TO amounts. No card or guessed result. */
+export function verifyBrowserActionHistory({ tableId, hand, facts, actions, events }) {
+  verifyObservedHandFacts(facts, hand);
+  assert.equal(actions.length, 4);
+  const stored = facts.rows[0].public_actions;
+  assert.equal(stored.length, 4, 'BROWSER_ACTION_HISTORY_EXTRA_OR_MISSING');
+  let priorEventIndex = -1;
+  const types = ['raise', 'call', 'all_in', 'fold'];
+  assert.match(tableId, uuid);
+  const keysSeen = new Set(),
+    contextsSeen = new Set();
+  for (let i = 0; i < 4; i++) {
+    const a = actions[i],
+      row = stored[i];
+    assert.equal(a.table_id, tableId);
+    assert.equal(a.action, types[i]);
+    assert.equal(a.hand_number, hand.hand_number);
+    assert.equal(a.status, 200);
+    assert.equal(a.success, true);
+    assert.equal(a.requests, 1, 'BROWSER_ACTION_REPLAY_OR_DUPLICATE');
+    assert.ok(typeof a.idempotency_key === 'string' && a.idempotency_key.length > 0);
+    assert.ok(!keysSeen.has(a.idempotency_key));
+    keysSeen.add(a.idempotency_key);
+    assert.ok(typeof a.action_context === 'string' && a.action_context.length > 0);
+    assert.ok(!contextsSeen.has(a.action_context));
+    contextsSeen.add(a.action_context);
+    assert.equal(row.user_id, a.user_id);
+    assert.equal(row.seat, a.seat);
+    assert.equal(row.action, a.action);
+    assert.equal(row.origin, 'player');
+    assert.equal(row.street, i < 2 ? 'preflop' : 'flop');
+    assert.equal(row.street, a.street);
+    assert.equal(row.amount, a.amount);
+    if (i) assert.ok(row.ordinal > stored[i - 1].ordinal);
+    assert.ok(Number.isFinite(a.before_stack) && a.before_stack > 0);
+    assert.ok(Number.isFinite(a.before_bet) && a.before_bet >= 0);
+    assert.ok(Number.isFinite(a.before_current_bet) && a.before_current_bet >= 0);
+    if (a.action === 'raise')
+      assert.ok(a.amount > a.before_current_bet && a.amount < a.before_stack + a.before_bet);
+    if (a.action === 'call') {
+      assert.equal(a.amount, a.before_current_bet - a.before_bet);
+      assert.ok(a.amount > 0 && a.amount < a.before_stack);
+    }
+    if (a.action === 'all_in') {
+      assert.equal(a.amount, a.before_stack + a.before_bet);
+      assert.ok(a.amount > a.before_current_bet);
+    }
+    if (a.action === 'fold') {
+      assert.equal(a.amount, 0);
+      assert.ok(a.before_current_bet > a.before_bet);
+    }
+    const matched = events.filter(
+      (e) =>
+        e.type === 'player_action' &&
+        e.hand_number === a.hand_number &&
+        e.user_id === a.user_id &&
+        e.action === a.action
+    );
+    assert.equal(matched.length, 1, 'BROWSER_ACTION_EVENT_EXTRA_OR_MISSING');
+    const event = matched[0];
+    const eventIndex = events.indexOf(event);
+    assert.ok(eventIndex > priorEventIndex);
+    priorEventIndex = eventIndex;
+    assert.equal(event.table_id, tableId);
+    assert.notEqual(event.replayed, true);
+    assert.equal(event.seat, a.seat);
+    assert.equal(event.stage, a.street);
+    assert.equal(event.amount, a.amount);
+  }
+  assert.equal(actions[0].user_id, actions[3].user_id);
+  assert.equal(actions[1].user_id, actions[2].user_id);
+  assert.notEqual(actions[0].user_id, actions[1].user_id);
+  return {
+    table_id: tableId,
+    hand_number: hand.hand_number,
+    accepted_http_count: actions.filter(
+      (a) => a.status === 200 && a.success === true && a.requests === 1
+    ).length,
+    wire_event_count: actions.reduce(
+      (n, a) =>
+        n +
+        events.filter(
+          (e) =>
+            e.type === 'player_action' &&
+            e.hand_number === a.hand_number &&
+            e.user_id === a.user_id &&
+            e.action === a.action
+        ).length,
+      0
+    ),
+    history_count: facts.count,
+    actions: stored.map((a) => ({ ...a })),
   };
 }

@@ -100,7 +100,13 @@ describe('Short Deck, Omaha Hi-Lo and Pineapple never run Lightning (owner, 2026
 
   it('the lobby gives the Lightning mark only to a variant that may run Lightning', () => {
     const table = read('src/components/lobby/LobbyTable.tsx');
-    expect(table).toContain("=== 'madness' && !e.game?.noLightning");
+    const identity = table.match(
+      /function isLightningCashRow\(entry: LobbyEntry\): boolean \{([\s\S]*?)\n\}/
+    )?.[1];
+    expect(identity).toContain("entry.kind === 'cash'");
+    expect(identity).toContain('!entry.game?.noLightning');
+    expect(identity).toContain("cashTemplateKey(entry.game?.template ?? '') === 'madness'");
+    expect(table.match(/isLightningCashRow\(entry\)/g)?.length).toBe(3);
     for (const v of EXCLUDED) expect(entry(v).game?.noLightning, v).toBe(true);
     for (const v of ALLOWED) expect(entry(v).game?.noLightning, v).toBeUndefined();
   });

@@ -41,6 +41,24 @@ class NativeObservationAuthority(unittest.TestCase):
                 with self.subTest(key=key), patch.dict(os.environ, {key: value}), self.assertRaises(RuntimeError):
                     MODULE.context(sha)
 
+    def test_separate_web_and_engine_sources_require_the_actual_protected_publisher(self):
+        from copy import deepcopy
+        web_sha, engine_sha = 'a' * 40, 'b' * 40
+        run = {'head_sha': web_sha, 'repository': {'id': MODULE.native.REPOSITORY_ID},
+               'head_repository': {'id': MODULE.native.REPOSITORY_ID}, 'event': 'push',
+               'head_branch': 'main', 'conclusion': 'success',
+               'path': '.github/workflows/publish-club-arena.yml'}
+        info = {'name': 'club-arena-dist-' + web_sha}
+        self.assertEqual(MODULE.published_web_source(run, info, engine_sha), web_sha)
+        for field, value in [('head_sha', engine_sha), ('head_sha', 'invalid'),
+                ('head_branch', 'unmerged'), ('event', 'pull_request'), ('conclusion', 'failure'),
+                ('repository', {'id': 42}), ('head_repository', {'id': 42}), ('path', 'other.yml')]:
+            bad = deepcopy(run); bad[field] = value
+            with self.subTest(field=field), self.assertRaises(RuntimeError):
+                MODULE.published_web_source(bad, info, engine_sha)
+        with self.assertRaises(RuntimeError): MODULE.published_web_source(run, {'name':'club-arena-dist-'+engine_sha},engine_sha)
+        with self.assertRaises(RuntimeError): MODULE.published_web_source(run, info, 'guessed')
+
     def test_candidate_uses_actual_producer_build_run_key_and_exact_original_bytes(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {'RUNNER_TEMP': temporary}):
             folder = Path(temporary) / 'isolated-schema-candidate'

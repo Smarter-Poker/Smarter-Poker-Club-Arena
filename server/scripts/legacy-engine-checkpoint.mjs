@@ -1,4 +1,4 @@
-export const LEGACY_CENSUS_NATIVE_SOURCE_SHA256 = '4188fe96998d59bf5450d778a3a4f08f5bc3cd9dabc55ae1259e0066056f3ea6';
+export const LEGACY_CENSUS_NATIVE_SOURCE_SHA256 = 'cbd7279fc6595a31bd2044769d2ad85684d63713351acd0bb602dbfcdbdce31e';
 // Concatenated after the exact guard by the owning release transaction.
 // Importing this module only exposes the isolated fixture seam.
 import { setTimeout as checkpointDelay } from 'node:timers/promises';

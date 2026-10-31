@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES, connectionFailureCode, dumpFailureKind, safeDumpDiagnostic } from '../schema-snapshot.mjs';
+import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES, connectionFailureCode, dumpFailureKind, safeDumpDiagnostic, remainingDumpBudget } from '../schema-snapshot.mjs';
 import { assertSchemaOnly, composeSchema, dumpObjects, schemaHash } from '../schema-compose.mjs';
 import { schemaCatalogue, schemaCataloguePayload } from '../../native/component-semantic-observations.mjs';
 import { APPLICATION_TRIGGER_WITNESSES } from '../schema-application-hooks.mjs';
@@ -45,6 +45,15 @@ test('dump diagnostics classify only fixed categories and bounded scalar facts',
   const result=safeDumpDiagnostic({kind:'private-secret',exit_code:999,signal:'private-host',elapsed_ms:-1,
     stdout_bytes:Infinity,stderr_bytes:NaN,message:'private-provider-secret'});
   assert.deepEqual(result,{kind:'UNKNOWN',exit_code:null,signal:'UNKNOWN',elapsed_ms:null,stdout_bytes:null,stderr_bytes:null});
+});
+
+test('capture export uses only the original total deadline minus metadata time and finalization reserve', () => {
+  assert.equal(remainingDumpBudget(45000,3000),37000);
+  assert.equal(remainingDumpBudget(45000,0),40000);
+  assert.equal(remainingDumpBudget(45000,39999),1);
+  for(const now of [40000,45000,50000,NaN,Infinity,0.5])
+    assert.throws(()=>remainingDumpBudget(45000,now),/CAPTURE_REFUSED/);
+  assert.throws(()=>remainingDumpBudget(45001,0),/CAPTURE_REFUSED/);
 });
 
 test('only the exact canonical manual main caller can capture', () => {

@@ -21,7 +21,7 @@ describe('exact weekly recompute qualification reaches required CI', () => {
       (item: { id?: string }) => item.id === 'weekly_recompute_split'
     );
     expect(step).toMatchObject({
-      if: 'matrix.shard == 2',
+      if: 'matrix.shard == 5',
       env: { PG_BIN: '/usr/lib/postgresql/17/bin' },
     });
     expect(step.run).toContain(
@@ -32,7 +32,7 @@ describe('exact weekly recompute qualification reaches required CI', () => {
       (item: { name?: string }) => item.name === 'Retain exact weekly recompute qualification'
     );
     expect(artifact.if).toContain('always()');
-    expect(artifact.if).toContain('matrix.shard == 2');
+    expect(artifact.if).toContain('matrix.shard == 5');
     expect(ci.jobs.accounting_postgres['timeout-minutes']).toBe(50);
     expect(
       ci.jobs.accounting_postgres.steps.filter(

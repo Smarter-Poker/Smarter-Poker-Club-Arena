@@ -521,11 +521,21 @@ describe('D-15: the amount is read from its spelling', () => {
 
 describe('S-04: the ledger CSV cannot carry a formula', () => {
   it('prefixes formula triggers, keeps figures raw and writes the BOM', async () => {
+    const ledger = deferred<{ data: ReturnType<typeof ledgerPage>; error: null }>();
+    const original = fx.rpc.getMockImplementation()!;
+    fx.rpc.mockImplementation((name: string, args: Record<string, unknown>) =>
+      name === 'fn_club_bank_ledger' ? ledger.promise : original(name, args)
+    );
     await openCashier();
     fireEvent.click(screen.getByText('Transaction Ledger'));
-    await waitFor(() => expect(screen.getByText('Export CSV')).toBeTruthy());
-    fireEvent.click(screen.getByText('Export CSV'));
-    expect(fx.downloads).toHaveLength(1);
+    const exportButton = await screen.findByRole('button', { name: 'Export CSV' });
+    // The control is rendered before its rows arrive. Visibility is not readiness.
+    await waitFor(() => expect(exportButton).toBeDisabled());
+    expect(fx.downloads).toHaveLength(0);
+    await act(async () => ledger.resolve({ data: ledgerPage(), error: null }));
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    fireEvent.click(exportButton);
+    await waitFor(() => expect(fx.downloads).toHaveLength(1));
     const text = await fx.downloads[0].blob.text();
     expect(text.startsWith('﻿')).toBe(true);
     expect(text.endsWith('\r\n')).toBe(true);

@@ -600,13 +600,13 @@ describe('owner requirements, 2026-09-20', () => {
     );
   });
 
-  it('a Free Buy keeps the add-on break length its from-the-start window uses', () => {
+  it('a Free Buy always uses one minute despite a stale saved setting', () => {
     const c = buildTournamentConfig(
       { ...base, buyIn: 0, addOnMultiplier: 0, addOnBreakLengthMinutes: 7 },
       'nlh'
     );
     expect(c.addOnAvailable).toBe(true);
-    expect(c.addonBreakMinutes).toBe(7);
+    expect(c.addonBreakMinutes).toBe(1);
   });
 
   it('an MTT still has no entry ceiling', () => {

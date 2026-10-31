@@ -172,6 +172,10 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
     'preserves the one-shot intent until the installed prerequisite passes (exit %s)',
     (status) => {
       const requestRoot = mkdtempSync(join(tmpdir(), 'legacy-custody-prerequisite-'));
+      // Supply one fixture instant without starting Node twice inside the
+      // three-second subprocess budget. Real Python admission and durable
+      // intent writes still execute; the actual deadline guards are unchanged.
+      const now = Date.now();
       try {
         const block = checkpointShell.slice(
           checkpointShell.indexOf('# Installed SQL is a prerequisite'),
@@ -196,7 +200,7 @@ CONTROL_DIR=/immutable-reviewed-control
 LEGACY_SHA=${predecessor8825}
 REQUEST_ROOT="$PREREQUISITE_ROOT"
 RUN_ID=35405450271-1
-date() { if [ "$1" = +%s%3N ]; then "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; else command date "$@"; fi; }
+date() { if [ "$1" = +%s%3N ]; then printf '%s\\n' "$CHECKPOINT_TEST_NOW_MS"; else command date "$@"; fi; }
 CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
 CHECKPOINT_BREAK_END_EPOCH="$CHECKPOINT_TEST_BREAK_END"
 NATIVE_DESCRIPTOR='${nativeDescriptor}'
@@ -213,8 +217,8 @@ printf '%s' inspector-boundary-reached
             timeout: 3000,
             env: {
               ...process.env,
-              CHECKPOINT_TEST_NODE: process.execPath,
-              CHECKPOINT_TEST_BREAK_END: String(Math.floor(Date.now() / 1000) + 299),
+              CHECKPOINT_TEST_NOW_MS: String(now),
+              CHECKPOINT_TEST_BREAK_END: String(Math.floor(now / 1000) + 299),
               PREREQUISITE_STATUS: String(status),
               PREREQUISITE_ROOT: requestRoot,
               PREREQUISITE_HEALTH: JSON.stringify({
@@ -229,7 +233,7 @@ printf '%s' inspector-boundary-reached
                   phase: 'counting_down',
                   durableConfirmed: true,
                   remainingMs: 299000,
-                  breakEndsAt: Math.floor(Date.now() / 1000) * 1000 + 299000,
+                  breakEndsAt: Math.floor(now / 1000) * 1000 + 299000,
                 },
               }),
             },

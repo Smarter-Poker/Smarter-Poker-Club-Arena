@@ -96,11 +96,12 @@ LEASE_METRIC_TARGET_LABELS = {
     'host': 'engine-01', 'role': 'engine', 'app': 'club-arena-engine',
 }
 MAX_WINDOW_AGE = datetime.timedelta(hours=48)
+MAX_METRICS_WINDOW_AGE = datetime.timedelta(days=7)
 COMMAND = ['docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine']
 
 
-def log_window(value, now=None):
-    """One original incident window, never a wider or caller-chosen command."""
+def completed_window(value, maximum_age, now=None):
+    """One completed fifteen-minute interval with a fixed admission age."""
     if value is None:
         return None
     if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):
@@ -110,9 +111,46 @@ def log_window(value, now=None):
     end = start + datetime.timedelta(minutes=15)
     # A next-day digest can name yesterday morning more than 24 hours later.
     # Keep one completed 15-minute interval and every existing transport bound.
-    if start < now - MAX_WINDOW_AGE or end > now:
+    if start < now - maximum_age or end > now:
         raise ValueError('Observation window is not a completed recent interval')
     return {'since': value, 'until': end.strftime('%Y-%m-%dT%H:%M:%SZ')}
+
+
+def log_window(value, now=None):
+    """Ordinary Docker and archive reads retain their 48-hour admission limit."""
+    return completed_window(value, MAX_WINDOW_AGE, now)
+
+
+def observation_request(request, now=None):
+    """Identical admission at dispatch and host; historical opt-in never reads logs."""
+    if isinstance(request, list):
+        return selection(request), None, False, False, False, False, False
+    allowed = {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming',
+               'leaseIncidentMetrics', 'restartIncident', 'leaseHistoricalMetricsOnly'}
+    if not isinstance(request, dict) or not {'scopes', 'windowStart'} <= set(request) <= allowed:
+        raise ValueError('Invalid observation request')
+    scopes = selection(request['scopes'])
+    historical = 'leaseHistoricalMetricsOnly' in request
+    if historical:
+        if (request['leaseHistoricalMetricsOnly'] is not True
+                or request.get('leaseIncidentMetrics') is not True
+                or set(request) != {'scopes', 'windowStart', 'leaseIncidentMetrics', 'leaseHistoricalMetricsOnly'}):
+            raise ValueError('Historical metrics require exclusive explicit opt-in')
+        window = completed_window(request['windowStart'], MAX_METRICS_WINDOW_AGE, now)
+        if window is None:
+            raise ValueError('Historical metrics require a completed incident window')
+    else:
+        window = log_window(request['windowStart'], now)
+    return (scopes, window, mux_timing_requested(request.get('muxTiming'), window),
+            lightning_fold_timing_requested(request.get('lightningFoldTiming'), window),
+            lease_metrics_requested(request.get('leaseIncidentMetrics'), window),
+            restart_incident_requested(request.get('restartIncident'), window), historical)
+
+
+def observation_window_description(window, historical):
+    if historical:
+        return {**window, 'durationMinutes': 15, 'maximumAgeDays': 7, 'logsRequested': False}
+    return window_description(window)
 
 
 def log_command(window):
@@ -1016,32 +1054,27 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
         FAILURE_STAGE = 'remote_admission'
         request = json.loads(base64.b64decode(sys.argv[2], validate=True))
-        if isinstance(request, list):
-            scopes, window, mux_timing, fold_timing, lease_metrics, restart_incident = selection(request), None, False, False, False, False
-        elif isinstance(request, dict) and {'scopes', 'windowStart'} <= set(request) <= {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming', 'leaseIncidentMetrics', 'restartIncident'}:
-            scopes, window = selection(request['scopes']), log_window(request['windowStart'])
-            mux_timing = mux_timing_requested(request.get('muxTiming'), window)
-            fold_timing = lightning_fold_timing_requested(request.get('lightningFoldTiming'), window)
-            lease_metrics = lease_metrics_requested(request.get('leaseIncidentMetrics'), window)
-            restart_incident = restart_incident_requested(request.get('restartIncident'), window)
-        else:
-            raise ValueError('Invalid observation request')
+        scopes, window, mux_timing, fold_timing, lease_metrics, restart_incident, historical = observation_request(request)
         FAILURE_STAGE = 'host_health_before'
         before = health('http://127.0.0.1:8080')
-        capture_started = time.monotonic()
-        FAILURE_STAGE = 'current_logs'
-        raw = capture(log_command(window))
-        # Docker's --tail bounds current physical lines. Enforce the same
-        # shared ceiling even if a source violates that contract.
-        if len(raw.splitlines()) > MAX_PHYSICAL_LINES:
-            raise RuntimeError('Log read exceeded bounded physical lines')
-        FAILURE_STAGE = 'archives'
-        archives, archive_metadata = archived_window(
-            window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)),
-            # Explicit anonymous timing reads retain their existing framing.
-            scopes=None if mux_timing or fold_timing or restart_incident else scopes)
-        current_raw = raw
-        raw += b''.join(source for source, _identity in archives)
+        if historical:
+            raw, current_raw, archives = b'', b'', []
+            archive_metadata = {'status': 'not_requested'}
+        else:
+            capture_started = time.monotonic()
+            FAILURE_STAGE = 'current_logs'
+            raw = capture(log_command(window))
+            # Docker's --tail bounds current physical lines. Enforce the same
+            # shared ceiling even if a source violates that contract.
+            if len(raw.splitlines()) > MAX_PHYSICAL_LINES:
+                raise RuntimeError('Log read exceeded bounded physical lines')
+            FAILURE_STAGE = 'archives'
+            archives, archive_metadata = archived_window(
+                window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)),
+                # Explicit anonymous timing reads retain their existing framing.
+                scopes=None if mux_timing or fold_timing or restart_incident else scopes)
+            current_raw = raw
+            raw += b''.join(source for source, _identity in archives)
         FAILURE_STAGE = 'lease_metrics'
         metric_evidence = read_lease_metrics(window) if lease_metrics else None
         restart_evidence = read_restart_incident(window, raw) if restart_incident else None
@@ -1055,26 +1088,40 @@ def main():
             extra['lightningFoldTimings'] = extract_lightning_fold_timings(raw)
         if lease_metrics:
             extra['leaseIncidentMetrics'] = metric_evidence
+        if historical:
+            extra.update(leaseHistoricalMetricsOnly=True, logRead='not_requested')
         if restart_incident:
             extra['restartIncident'] = restart_evidence
+        records = ({'records': [], 'matchingRecords': 0, 'omittedRecords': 0, 'oversizedRecords': 0,
+                    'absenceMeans': 'unknown; metrics-only read does not read logs; historical retention and source identity are unproven'}
+                   if historical else extract_sources(current_raw, archives, scopes))
         print(json.dumps({'schema': 'scoped-runtime-errors/v1', 'readOnly': True,
-                          'window': window_description(window),
+                          'window': observation_window_description(window, historical),
                           'hostEngineBefore': before, 'hostEngineAfter': after,
                           'perRecordEngineIdentity': 'unproven; the retained window may include an earlier process',
                           'inputBytes': len(raw), 'archiveRead': archive_metadata,
-                          **extract_sources(current_raw, archives, scopes), **extra}))
+                          **records, **extra}))
         return
     if len(sys.argv) != 1 or os.environ.get('GITHUB_EVENT_NAME') != 'repository_dispatch':
         raise RuntimeError('Explicit observation dispatch required')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     if event.get('action') != 'audit-production-integrity':
         raise RuntimeError('Wrong event')
-    scopes = selection(event.get('client_payload', {}).get('tournament_log_observation'))
-    window = log_window(event.get('client_payload', {}).get('tournament_log_window_start'))
-    mux_timing = mux_timing_requested(event.get('client_payload', {}).get('mux_subscription_timing'), window)
-    fold_timing = lightning_fold_timing_requested(event.get('client_payload', {}).get('lightningFoldTiming'), window)
-    lease_metrics = lease_metrics_requested(event.get('client_payload', {}).get('leaseIncidentMetrics'), window)
-    restart_incident = restart_incident_requested(event.get('client_payload', {}).get('restartIncident'), window)
+    payload = event.get('client_payload', {})
+    if ('leaseHistoricalMetricsOnly' in payload
+            and set(payload) != {'tournament_log_observation', 'tournament_log_window_start',
+                                 'leaseIncidentMetrics', 'leaseHistoricalMetricsOnly'}):
+        raise ValueError('Historical metrics require exclusive explicit opt-in')
+    request = {'scopes': payload.get('tournament_log_observation'),
+               'windowStart': payload.get('tournament_log_window_start')}
+    for public, remote in [('mux_subscription_timing', 'muxTiming'),
+                           ('lightningFoldTiming', 'lightningFoldTiming'),
+                           ('leaseIncidentMetrics', 'leaseIncidentMetrics'),
+                           ('restartIncident', 'restartIncident'),
+                           ('leaseHistoricalMetricsOnly', 'leaseHistoricalMetricsOnly')]:
+        if public in payload:
+            request[remote] = payload[public]
+    scopes, window, mux_timing, fold_timing, lease_metrics, restart_incident, historical = observation_request(request)
     host = os.environ.get('HETZNER_HOST', '')
     key = os.environ.get('HETZNER_SSH_PRIVATE_KEY', '')
     pin = os.environ.get('HETZNER_HOST_KEY', '')
@@ -1101,6 +1148,8 @@ def main():
             request['leaseIncidentMetrics'] = True
         if restart_incident:
             request['restartIncident'] = True
+        if historical:
+            request['leaseHistoricalMetricsOnly'] = True
         encoded = base64.b64encode(json.dumps(request).encode()).decode()
         # Only validated UUID scope and an exact recent fifteen-minute interval
         # enter the fixed reader. Host, account, container and command stay fixed.
@@ -1119,7 +1168,7 @@ def main():
         result = json.loads(reply.stdout)
         if result.get('schema') != 'scoped-runtime-errors/v1' or result.get('readOnly') is not True:
             raise RuntimeError('Observation contract unavailable')
-        if result.get('window') != window_description(window):
+        if result.get('window') != observation_window_description(window, historical):
             raise RuntimeError('Observation window differs')
         if ('muxSubscriptionTimings' in result) != mux_timing:
             raise RuntimeError('Anonymous timing observation differs')
@@ -1129,6 +1178,12 @@ def main():
             raise RuntimeError('Lease metric observation differs')
         if ('restartIncident' in result) != restart_incident:
             raise RuntimeError('Restart observation differs')
+        if ('leaseHistoricalMetricsOnly' in result) != historical:
+            raise RuntimeError('Historical metric observation differs')
+        if historical and (result.get('leaseHistoricalMetricsOnly') is not True or result.get('logRead') != 'not_requested'
+                           or result.get('records') != [] or result.get('inputBytes') != 0
+                           or result.get('archiveRead') != {'status': 'not_requested'}):
+            raise RuntimeError('Historical metric log exclusion differs')
         FAILURE_STAGE = 'public_health_after'
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:

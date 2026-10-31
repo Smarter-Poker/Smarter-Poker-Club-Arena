@@ -732,6 +732,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V61'
   ),
   flag(
+    'v64RiverRaiseNeedsTwoPair',
+    '2026-10-31 Hold em river raise discipline: facing a river wager on one board, one pair, high card and board-paired two pair never value-raise or bluff-raise (a measured over-folder read keeps the blocker bluff-raise); they fall through to the V38 call verdict with the V61 shade. Live review: one-pair raises won 34% (-4,184bb cash), air raises 7% (-1,696bb cash), two pair+ raises about +16,000bb; explicit off arm retained',
+    'V64'
+  ),
+  flag(
     'v62RiverBettorPolarity',
     '2026-10-30 Hold\'em river bettor polarity: a river wager\'s sampled hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum by bet size; OPT-IN since 18:50 UTC after the mirror league resolved it negative against horses (-3.67 +/- 1.02 bb/100 at 200bb) while V61 alone resolved +1.30 +/- 0.41; re-enable only after a recalibrated stratum resolves positive',
     'V62'
@@ -2138,6 +2143,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V61',
     'decide',
     0.001
+  ),
+  receipt(
+    'v64_river_raise_needs_two_pair',
+    'HorseLogic (V64)',
+    'Hold em bluff-catch class redirected from a river raise to the call verdict',
+    'V64',
+    'decide',
+    0.0001
   ),
   receipt(
     'v38_river_fold',

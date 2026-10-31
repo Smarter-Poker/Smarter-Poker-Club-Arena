@@ -2053,6 +2053,15 @@ export interface HorseDecideOpts {
    * points against the price unless the bettor's read says they over-bluff.
    * Default on; explicit false keeps the unshaded V38 verdict. */
   v61RiverOnePairShade?: boolean;
+  /** V64 (2026-10-31): on a single-board hold'em river, a hand in the
+   * bluff-catch class (one pair, high card, or two pair that shares the
+   * board's pair) never raises a wager; it falls through to the V38 call
+   * verdict with the V61 shade. Measured over the latest 10,973 NLH review
+   * hands: horse river raises holding one pair were called 85-95% of the
+   * time and won 34% (-4,184bb cash), air raises won 7% (-1,696bb cash),
+   * while raises with two pair or better earned about +16,000bb. Default
+   * on; explicit false keeps the old value-raise and blocker bluff-raise. */
+  v64RiverRaiseNeedsTwoPair?: boolean;
   /** V55: river Omaha sets/trips on a board permitting stronger hands do
    * not turn a qualified call into a raise. Opt-in until the separate
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
@@ -9844,6 +9853,37 @@ export class HorseLogic {
     // raises for value, and the domination premium gates the raise band too
     // (QQ on AKx was sailing straight into this branch off inflated
     // no-reads equity and calling/raising the barrel off).
+    // ═══ V64 RIVER RAISE NEEDS TWO PAIR (2026-10-31) ═══ Hold'em, one
+    // board, river, facing a wager: a hand in V61's bluff-catch class (one
+    // pair, high card, or two pair that shares the board's pair) does not
+    // raise. eq15 for one pair against a river bettor reads 0.72+ because
+    // the range read is too bluff-heavy, the same cause V61 corrected on
+    // the call side, so second pair was raising a 0.7-pot wager 3-4x in 16
+    // of 20 seeds while third pair called. Live (latest 10,973 NLH review
+    // hands, |net| >= 20bb): horse river raises with one pair were called
+    // 85-95% of the time and won 34% (cash n=109, -4,184bb); with air they
+    // won 7% (cash n=42, -1,696bb, called 35 of 37 in the 0.4-0.85 pot
+    // class); MTT one-pair and air raises were negative too. Raises with
+    // two pair or better earned about +16,000bb. The class falls through to
+    // the V38 call verdict with the V61 shade; two pair of both hole cards
+    // and better keep raising exactly as before. Flop and turn, Omaha,
+    // short deck, multi-board and bomb pots are untouched. The read is of
+    // hero's own hand and the board only, never of who is betting.
+    const bluffCatch64 =
+      (opts.v64RiverRaiseNeedsTwoPair ?? true) !== false &&
+      isRiver &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !multiBoard36 &&
+      !gs.bombPot &&
+      cat > 0 &&
+      (cat <= 2 || (cat === 3 && pairedBoard));
+    // The one read that keeps a river bluff-raise alive: the opponent's
+    // measured fold-to-aggression rate is high enough that HorseMind already
+    // scales bluffs up into them (bluffMod > 1 needs 8+ observed spots at a
+    // 62%+ fold rate). It is a read of public play, never of a label.
+    const overFolder64 = exploit.bluffMod > 1.05;
     const valueRaiseThresh =
       0.68 +
       mw +
@@ -9855,7 +9895,9 @@ export class HorseLogic {
       // bluff-catcher that calls and lets them keep firing (the trap and
       // call-down reads own it); raising it only folds out their air.
       (pressure53 && cat >= 3 ? pressure53.valueBarDrop : 0);
-    if (eq15 >= valueRaiseThresh) {
+    if (bluffCatch64 && eq15 >= valueRaiseThresh) {
+      if (tele15) noteFire('v64_river_raise_needs_two_pair');
+    } else if (eq15 >= valueRaiseThresh) {
       // V8 O8: never raise into a likely quarter — flat and see the split.
       if (quartered) return { action: 'call', amount: toCall, thinkTime: 0 };
       // V8 PLO: raising the river without a nut-class hand is the classic
@@ -10003,10 +10045,17 @@ export class HorseLogic {
       betRatio <= (opts.v16Ratio === true ? 1.5 : 0.6) &&
       fastRandom() < params.bluffFreq * params.aggression * 0.25 * Math.min(1.2, bluffScale)
     ) {
-      // V13: same as above — a check-raise bluff is the start of a story.
-      planBarrel(equity);
-      const raiseToAmt = currentBet + (pot + toCall) * (0.85 + fastRandom() * 0.25);
-      return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      // V64: on the river this is a bluff-raise with a bluff-catcher or
+      // air, and those are called 85-95% of the time live. The roll above
+      // is consumed either way so the seeds of every other street agree.
+      if (bluffCatch64 && !overFolder64) {
+        if (tele15) noteFire('v64_river_raise_needs_two_pair');
+      } else {
+        // V13: same as above — a check-raise bluff is the start of a story.
+        planBarrel(equity);
+        const raiseToAmt = currentBet + (pot + toCall) * (0.85 + fastRandom() * 0.25);
+        return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      }
     }
     // V8 NLH: river blocker raise-bluff — polarizing raise with air that
     // blocks the nuts. Low frequency; makes the value raises unexploitable.
@@ -10028,8 +10077,17 @@ export class HorseLogic {
       potFrac <= 0.75 &&
       fastRandom() < params.bluffFreq * 0.35 * Math.min(1.2, bluffScale)
     ) {
-      const raiseToAmt = currentBet + (pot + toCall) * (1.0 + fastRandom() * 0.3);
-      return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      // V64: live, air raises on the river were called 35 of 37 times in
+      // this sizing class and won 7%. The blocker bluff-raise survives only
+      // against a measured over-folder (the fold-to-aggression read that
+      // already scales bluffScale); every other bettor is bluff-caught or
+      // folded to by the call verdict below.
+      if (bluffCatch64 && !overFolder64) {
+        if (tele15) noteFire('v64_river_raise_needs_two_pair');
+      } else {
+        const raiseToAmt = currentBet + (pot + toCall) * (1.0 + fastRandom() * 0.3);
+        return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      }
     }
 
     // V34: every raise gate above has had its roll. The solver's range said

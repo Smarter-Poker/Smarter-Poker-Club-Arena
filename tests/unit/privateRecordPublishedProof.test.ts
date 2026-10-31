@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { getByRole, queryByRole } from '@testing-library/dom';
 import {
   hasLiveGatewayReady,
   type PrivateRecordObservation,
@@ -480,4 +481,25 @@ it('requires one actual roster row for both the authoritative number and exact a
   ])
     expect(() => assertPrivateRecordFixtureRoster({ items }, id, '001042')).toThrow();
   expect(() => assertPrivateRecordFixtureRoster({}, id, '001042')).toThrow();
+});
+
+it('uses the actual roster native search role with a bounded fill before cleanup', () => {
+  const pageSource = readFileSync('src/pages/ClubMembersPage.tsx', 'utf8');
+  const inputSource = pageSource.match(/<input\b[^>]*aria-label="Search Club Members"/s)?.[0];
+  expect(inputSource).toBeDefined();
+  const type = inputSource!.match(/type="([^"]+)"/)?.[1];
+  const label = inputSource!.match(/aria-label="([^"]+)"/)?.[1];
+  expect(type).toBe('search');
+  const surface = document.createElement('div');
+  const input = document.createElement('input');
+  input.type = type!;
+  input.setAttribute('aria-label', label!);
+  surface.append(input);
+  // Native browser semantics distinguish searchbox from textbox, even when
+  // the same label names both. This is the actual production input contract.
+  expect(getByRole(surface, 'searchbox', { name: label })).toBe(input);
+  expect(queryByRole(surface, 'textbox', { name: label })).toBeNull();
+  const proofSource = readFileSync('tests/e2e/production-private-record-failover.spec.ts', 'utf8');
+  expect(proofSource).toContain("getByRole('searchbox', { name: 'Search Club Members' })");
+  expect(proofSource).toContain('.fill(playerNumber, { timeout: 15_000 })');
 });

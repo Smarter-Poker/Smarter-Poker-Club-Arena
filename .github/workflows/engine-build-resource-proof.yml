@@ -11,6 +11,10 @@ on:
       - server/src/**
       - server/scripts/build-engine-image.sh
       - server/scripts/engine-image-archive.py
+      - server/scripts/native/**
+      - server/scripts/legacy-engine-checkpoint.mjs
+      - tests/operations/legacy-census-native.mjs
+      - tests/operations/legacy-census-source.test.mjs
       - tests/operations/engine-image-archive.test.py
       - tests/operations/engine-build-resource-proof.py
       - tests/operations/engine-build-resource-proof.test.py
@@ -38,6 +42,7 @@ jobs:
         run: |
           python3 tests/operations/engine-image-archive.test.py
           python3 tests/operations/engine-build-resource-proof.test.py
+          node --test tests/operations/legacy-census-source.test.mjs
       - name: Produce the reference runtime with the full TypeScript check
         working-directory: server
         run: |

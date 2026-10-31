@@ -3,6 +3,7 @@
 Only docker-exec transport is substituted; no Docker or production access.
 """
 import os
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -122,6 +123,135 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, '')
         self.assertEqual(json.loads(result.stdout), ['fixture-instance', 'fixture-sha', 'fixture-intent', '40000'])
+
+
+class NativeArtifactPackagingTests(unittest.TestCase):
+    """Execute maintained artifact verifier/cleanup, without Docker or dlopen."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='legacy-artifact-', dir=ROOT.parent)
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.control = self.root / 'control'
+        self.control.mkdir()
+        self.pin = 'd' * 64
+        (self.control / 'legacy-engine-checkpoint.mjs').write_text(
+            "export const LEGACY_CENSUS_NATIVE_SOURCE_SHA256 = '" + self.pin + "';\n")
+        self.binary = self.root / 'legacy-census.node'
+        self.binary.write_bytes(b'isolated fixture; never loaded')
+        self.manifest = dict(schema='legacy-native-census-build/v1', node='v22.23.2',
+            v8='12.4.254.21-node.56', modules='127', platform='linux', arch='x64',
+            pointerCompression=0, sourceSHA256=self.pin, headersSHA256='e'*64,
+            binarySHA256=hashlib.sha256(self.binary.read_bytes()).hexdigest(),
+            compiler='fixture only', maxMatches=22096, managedOutputBytes=772608,
+            qualification='unqualified-build-only')
+
+    def verify(self):
+        self.binary.chmod(0o400)
+        if self.binary.with_suffix('.node.json').exists(): self.binary.with_suffix('.node.json').chmod(0o600)
+        self.binary.with_suffix('.node.json').write_text(json.dumps(self.manifest))
+        self.binary.with_suffix('.node.json').chmod(0o400)
+        function = CHECKPOINT[CHECKPOINT.index('verify_native_artifacts() {'):
+                              CHECKPOINT.index('verify_native_candidate() {')]
+        # Portable fixture simulates root uid only, preserving real modes, file
+        # kinds and all hashes. No native binary is loaded or production read.
+        bootstrap = ('import os,sys;original=os.lstat;'
+            'os.lstat=lambda p:os.stat_result(tuple(original(p))[:4]+(0,)+tuple(original(p))[5:]);'
+            'sys.argv.pop(1);exec(sys.stdin.read())')
+        command = ('native_artifact_read() { "$@"; }; '
+                   'python3() { command python3 -c ' + shlex.quote(bootstrap) + ' "$@"; };\n' +
+                   function + '\nCONTROL_DIR=' + shlex.quote(str(self.control)) + '\n' +
+                   'verify_native_artifacts ' + shlex.quote(str(self.root)) + ' ' +
+                   'a'*40 + ' sha256:' + 'b'*64 + ' ' + 'c'*40 + ' 123-1')
+        return subprocess.run(['bash', '-c', command], text=True, capture_output=True, timeout=5)
+
+    def test_binds_exact_pair_and_candidate_without_loading_it(self):
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        descriptor = json.loads(result.stdout)
+        self.assertEqual(descriptor['schema'], 'legacy-native-census-artifact/v1')
+        self.assertEqual(descriptor['path'], '/app/.legacy-census-checkpoint-123-1/legacy-census.node')
+        self.assertEqual(descriptor['sourceSHA256'], self.pin)
+        self.assertEqual(descriptor['binarySHA256'], self.manifest['binarySHA256'])
+        self.assertEqual(descriptor['candidateSHA'], 'a'*40)
+
+    def test_abi_source_hash_and_payload_mismatches_refuse(self):
+        for field, bad in [('modules','128'), ('v8','wrong'), ('sourceSHA256','f'*64),
+                           ('binarySHA256','f'*64), ('platform','darwin')]:
+            with self.subTest(field=field):
+                old = self.manifest[field]
+                self.manifest[field] = bad
+                self.assertNotEqual(self.verify().returncode, 0)
+                self.manifest[field] = old
+
+    def test_missing_binary_refuses_before_any_load(self):
+        self.binary.unlink()
+        function = CHECKPOINT[CHECKPOINT.index('verify_native_artifacts() {'):
+                              CHECKPOINT.index('verify_native_candidate() {')]
+        result = subprocess.run(['bash', '-c', 'native_artifact_read() { "$@"; };\n' + function +
+            '\nCONTROL_DIR=' + shlex.quote(str(self.control)) + '\nverify_native_artifacts ' +
+            shlex.quote(str(self.root)) + ' ' + 'a'*40 + ' sha256:'+'b'*64+' '+'c'*40+' 123-1'],
+            text=True, capture_output=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('FileNotFoundError', result.stderr)
+
+    def test_extraction_ack_loss_cleans_only_exact_nonrunning_owner(self):
+        function = CHECKPOINT[CHECKPOINT.index('    cleanup_extraction() {'):
+                              CHECKPOINT.index("    trap 'extraction_exit=$?")]
+        for token, running in [('owned',False), ('foreign',False), ('owned',True)]:
+            with self.subTest(token=token, running=running):
+                stage = self.root / ('extract-'+token+str(running))
+                stage.mkdir()
+                metadata = json.dumps({'Image':'sha256:'+'a'*64,'Id':'b'*64,
+                    'Config':{'Labels':{'sp.legacy-census.extraction':token}},
+                    'State':{'Running':running}})
+                script = ('timeout() { shift 2; "$@"; }; '
+                    'docker() { if [ "$1" = inspect ]; then printf "%s\\n" '+shlex.quote(metadata)+
+                    '; elif [ "$1" = rm ]; then printf "%s\\n" "$2" > '+shlex.quote(str(stage/'removed'))+
+                    '; else return 95; fi; };\n'+function+
+                    '\nextraction_attempted=1\nextraction_name=fixture\nextraction_token=owned\nimage=sha256:'+'a'*64+
+                    '\nstage='+shlex.quote(str(stage))+'\ncleanup_extraction')
+                result = subprocess.run(['bash','-c',script], text=True, capture_output=True, timeout=5)
+                if token == 'owned' and not running:
+                    self.assertEqual(result.returncode,0,result.stderr)
+                    self.assertFalse(stage.exists())
+                else:
+                    self.assertNotEqual(result.returncode,0)
+                    self.assertTrue(stage.exists())
+                    self.assertFalse((stage/'removed').exists())
+
+    def test_lost_creation_ack_still_cleans_only_matching_ownership(self):
+        function = CHECKPOINT[CHECKPOINT.index('cleanup_native_capture() {'):
+                              CHECKPOINT.index("trap 'native_exit=$?")]
+        real_node = shutil.which('node')
+        bootstrap = ('const fs=require("node:fs"),original=fs.lstatSync;'
+            'fs.lstatSync=(...a)=>{const s=original(...a);s.uid=0;return s};'
+            'const code=process.argv[1];process.argv.splice(1,1);eval(code)')
+        for marker in ['owned', 'foreign', None]:
+            with self.subTest(marker=marker):
+                directory = self.root / ('capture-' + str(marker))
+                directory.mkdir()
+                payload = directory / 'legacy-census.node'
+                payload.write_bytes(b'not loaded')
+                if marker is not None:
+                    (directory / '.ownership').write_text(marker+'\n')
+                script = ('checkpoint_final_read() { "$@"; }; '
+                    'docker() { shift 2; "$@"; }; '
+                    'node() { ' + shlex.quote(real_node) + ' -e ' + shlex.quote(bootstrap) + ' "$2" "${@:3}"; };\n' +
+                    function + '\nCONTAINER_ID=fixture\nNATIVE_CAPTURE_ATTEMPTED=1\nNATIVE_CAPTURE_TOKEN=owned\nNATIVE_CAPTURE_DIR=' +
+                    shlex.quote(str(directory)) + '\ncleanup_native_capture')
+                # env executes Node through PATH, so expose only this neutral
+                # wrapper in the fixture; no real Docker command is available.
+                wrapper = self.root / 'node'
+                wrapper.write_text('#!/bin/bash\n[ "$1" = --no-inspect ] && shift\n[ "$1" = -e ] || exit 95\nshift\nexec '+shlex.quote(real_node)+' -e '+shlex.quote(bootstrap)+' "$@"\n')
+                wrapper.chmod(0o700)
+                result = subprocess.run(['bash','-c',script], text=True, capture_output=True, timeout=5,
+                    env={**os.environ,'PATH':str(self.root)+os.pathsep+os.environ['PATH']})
+                if marker == 'owned':
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertFalse(directory.exists())
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertTrue(payload.exists())
 
 
 if __name__ == '__main__':

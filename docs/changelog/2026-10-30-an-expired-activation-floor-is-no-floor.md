@@ -24,10 +24,12 @@ passed is read exactly as a target with no manifest (`None`), and the helper
 says so on stderr - `activation floor <schema> (<window or daily>) expired at
 epoch N; the routine daily maintenance route applies`. Every fresh read goes
 through it (`prepare`, `admit`, `wait`, `publish`, `entry-check`,
-`disposition`, `entry`, `announcement-entry`). The two in-flight owner reads
-(`reservation`, `checkpoint-no-action`) keep the exact record, because they
-recover an entry that was already owned inside the window; an existing entry
-is also still read before any Git work, as before.
+`disposition`, `entry`, `announcement-entry`). The in-flight owner reads keep the
+exact record: `reservation`, `checkpoint-no-action`, and any entry mode where
+this run already holds an activation entry (an announced owner being promoted
+to runtime is judged by `check_window` against its real window, never
+downgraded to `legacy`); an existing entry is also still read before any Git
+work, as before.
 
 Downstream nothing needed to change: a legacy record already means the
 routine route everywhere. The receiver skips the pre-floor image preparation

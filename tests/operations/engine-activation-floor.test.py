@@ -551,6 +551,24 @@ echo CHECKPOINT_MUST_NOT_RUN
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), 'legacy')
         self.assertFalse((requests / '123-1.activation-entry').exists())
+        # An owner that ANNOUNCED inside the window keeps its exact record on
+        # the promoting `entry` read even after the window has expired: the
+        # expired-floor fallback is for fresh reads only.
+        o_root = self.repo / 'owner-requests'
+        o_root.mkdir()
+        floor.entry_state(o, str(o_root), '77-1', True, o['activationEpoch'], o['expiresEpoch'] + 100, True)
+        with patch.object(floor, 'policy', return_value=o), patch('time.time', return_value=float(o['expiresEpoch'] + 1)):
+            import io
+            from contextlib import redirect_stdout
+            out = io.StringIO()
+            with redirect_stdout(out), patch('sys.argv', ['floor', 'entry', '--repo', str(self.repo), '--target', o['targetSha'],
+                                                         '--control', o['controlSha'], '--deadline', str(o['expiresEpoch'] + 100),
+                                                         '--request-root', str(o_root), '--run-id', '77-1']):
+                with self.assertRaises(ValueError):
+                    # Promotion past expiry is refused by check_window with the
+                    # exact record - not silently downgraded to 'legacy'.
+                    floor.main()
+            self.assertNotIn('legacy', out.getvalue())
         # A manifest that is malformed is still a refusal, never a fallback.
         (self.repo / MANIFEST).write_text(json.dumps({**DAILY, 'schema': 'engine-release-activation-floor/v9'}))
         bad = self.commit()

@@ -1,3 +1,15 @@
+-- The earlier money fixture uses current_date for its six cash hands. Pin
+-- only those existing fixture hands inside these fixed UTC receipt bounds;
+-- otherwise UTC midnight moves cash rake outside October 26..29.
+DO $$ DECLARE changed integer; BEGIN
+ UPDATE public.ca_hand_facts SET played_at='2026-10-29 03:00:00Z'::timestamptz
+ WHERE club_id='60000000-0000-0000-0000-000000000001'
+   AND user_id='60000000-0000-0000-0000-000000000002'
+   AND hand_id::text LIKE '60000000-0000-0000-0002-%'
+   AND tournament_id IS NULL;
+ GET DIAGNOSTICS changed=ROW_COUNT;
+ IF changed<>6 THEN RAISE EXCEPTION 'Variant cash fixture must contain exactly six hands'; END IF;
+END $$;
 CREATE TABLE accounting_tournament_fee_sources(club_id uuid,player_id uuid,tournament_id uuid,charged_at timestamptz,rake_credit numeric);
 CREATE INDEX ON accounting_tournament_fee_sources(club_id,player_id);
 -- Registration, rebuy and add-on are distinct receipts; one row is one charge.

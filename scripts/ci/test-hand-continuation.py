@@ -120,6 +120,7 @@ def main():
     inputs += [Path('supabase/migrations/20261029231647_retained_original_hands_share_their_tournament_table_lane.sql'),Path('supabase/migrations/20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl.sql'),Path('supabase/migrations/20261019151125_tournament_table_writers_wait_for_their_shared_lane.sql')]
     inputs += [Path('scripts/ci/test-accepted-hand-roster.py'),chain.LIGHTNING,chain.RETIRED_CASH,chain.RAKED_DIAMOND,chain.CAPTURE,chain.MIGRATION]
     inputs += sorted(p.relative_to(ROOT) for p in (ROOT/'scripts/ci/fixtures/played-clock-floor').rglob('*') if p.is_file())
+    inputs += [Path('supabase/migrations/20261031031334_retained_hand_permit_readers_allow_settlement_foreign_keys.sql')]
     source=dict(manifest['source_sha256']);source.update({str(p):sha(ROOT/p) for p in inputs})
     e.report.update(source_sha256=source,installation_refusals=[],races=[],scope='private original continuation on exact production-captured atomic/stack/retention functions and maintained real financial/F06 closure; not live activation')
     for sig in native.CANCELLATION_SIGNALS:signal.signal(sig,native.interrupted)

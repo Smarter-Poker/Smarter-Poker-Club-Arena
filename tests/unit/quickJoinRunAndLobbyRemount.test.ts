@@ -76,7 +76,9 @@ describe('a stale "+" press writes nothing', () => {
   it('the failure catch checks before taking a lobby exit', () => {
     const tail = handler.slice(handler.lastIndexOf('} catch {'));
     expect(tail.indexOf('if (stale()) return;')).toBeGreaterThan(-1);
-    expect(tail.indexOf('if (stale()) return;')).toBeLessThan(tail.indexOf('openLobbyTabOn'));
+    expect(tail.indexOf('if (stale()) return;')).toBeLessThan(
+      tail.indexOf("masterBus.emit('OPEN_LOBBY_TAB', {});")
+    );
   });
 
   it('the spin read is timed', () => {

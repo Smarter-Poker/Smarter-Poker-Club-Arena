@@ -7,10 +7,11 @@ import type { ActionResult } from '../services/GameServerAPI';
 export async function submitTableDecision(input: {
   actionContext: string | undefined;
   allowContextless: boolean;
+  clientStateStale?: boolean;
   send: (context: string | undefined) => Promise<ActionResult>;
-  refresh: () => Promise<void>;
-}): Promise<ActionResult> {
-  if (!input.allowContextless && !input.actionContext) {
+  refresh: () => Promise<boolean>;
+}): Promise<ActionResult & { outcomeUnconfirmed?: true }> {
+  if (input.clientStateStale || (!input.allowContextless && !input.actionContext)) {
     await input.refresh();
     return {
       success: false,
@@ -23,9 +24,16 @@ export async function submitTableDecision(input: {
     result.code === 'ACTION_CONTEXT_REQUIRED' ||
     result.code === 'STALE_ACTION' ||
     result.code === 'ACTION_NOT_DELIVERED' ||
-    result.code === 'ACTION_STATE_PENDING'
+    result.code === 'ACTION_STATE_PENDING' ||
+    result.code === 'ACTION_NOT_ACCEPTED'
   ) {
-    await input.refresh();
+    const observed = await input.refresh();
+    if (
+      observed !== true &&
+      (result.code === 'ACTION_NOT_DELIVERED' || result.code === 'ACTION_STATE_PENDING')
+    ) {
+      return { ...result, outcomeUnconfirmed: true };
+    }
   }
   if (result.code === 'ACTION_CONTEXT_REQUIRED') {
     return {

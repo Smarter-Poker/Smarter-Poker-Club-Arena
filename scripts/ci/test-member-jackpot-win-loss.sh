@@ -30,3 +30,19 @@ echo 'MEMBER_JACKPOT PASS: before/after, all readers, retained ownership, DST/cu
 "${psql[@]}" -f "$repo/supabase/migrations/20261031044413_preserve_every_paid_jackpot_reporting_owner_and_wallet_recei.sql"
 "${psql[@]}" -f "$fixture/everyone-assertions.sql"
 echo 'EVERYONE_JACKPOT PASS: Main/Mini, all three recipient roles, seat/wallet, exact historical wallet receipt, display-only seed exclusion, immutable owner/variant, duplicate/rollback, six private signals'
+
+"${psql[@]}" -f "$fixture/history-bootstrap.sql"
+history="$repo/supabase/migrations/20261031053131_retain_historical_paid_jackpot_clubs_from_original_seat_occu.sql"
+if "${psql[@]}" -f "$fixture/history-assertions.sql" > "$work/history-before.log" 2>&1; then echo 'Historical regression unexpectedly passed'; exit 1; fi
+grep -q 'Historical seat recovery missed/duplicated or guessed ownership' "$work/history-before.log"
+"${psql[@]}" -f "$history" -f "$fixture/history-assertions.sql"
+# Re-running the original capture must neither overwrite nor signal/pay again.
+"${psql[@]}" -f "$history" -f "$fixture/history-assertions.sql"
+"${psql[@]}" <<'SQL'
+DELETE FROM table_seats;
+DO $$ BEGIN
+ IF ca_club_member_jackpot_money('10000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000002',NULL,NULL)<>20 THEN
+  RAISE EXCEPTION 'Original seat retention changed historical winnings'; END IF;
+END $$;
+SQL
+echo 'HISTORY_JACKPOT PASS: original occupancy, agreeing duplicates, conflicts, time bounds, missing club, seed exclusion, existing owner, immutable amounts, replay, retained witnesses and signals'

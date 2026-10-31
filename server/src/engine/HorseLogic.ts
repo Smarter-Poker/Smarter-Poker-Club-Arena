@@ -10121,13 +10121,13 @@ export class HorseLogic {
           if ((opts.v43Tempo ?? true) !== false && isRiver && potFrac >= 0.75) {
             const wagerTs = currentWager.record.timestamp;
             const betTs = typeof wagerTs === 'number' && isFinite(wagerTs) ? wagerTs : null;
-            let prevTs: number | null = null;
-            for (let index = 0; index < currentWager.index; index++) {
-              const a = hist[index];
-              const ts =
-                typeof a.timestamp === 'number' && isFinite(a.timestamp) ? a.timestamp : null;
-              if (ts !== null) prevTs = ts;
-            }
+            // Tempo is measured from the immediately preceding action. An
+            // unknown adjacent clock cannot borrow an older known timestamp.
+            const previousTimestamp = hist[currentWager.index - 1]?.timestamp;
+            const prevTs =
+              typeof previousTimestamp === 'number' && isFinite(previousTimestamp)
+                ? previousTimestamp
+                : null;
             const gap = betTs !== null && prevTs !== null ? betTs - prevTs : null;
             if (gap !== null && gap >= 0) {
               const tendency =

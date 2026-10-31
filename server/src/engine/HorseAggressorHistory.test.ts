@@ -125,7 +125,10 @@ function decideAfterLastAction(
   );
 }
 
-function decideTempoLine(wagerTimestamp: number | undefined, precedingTimestamp = 1060) {
+function decideTempoLine(
+  wagerTimestamp: number | undefined,
+  precedingTimestamp: number | undefined
+) {
   return decideAfterLastAction(['nlh', ['As', 'Ad']], 'call', 1000, undefined, {
     mind: true,
     bet: 1000,
@@ -136,7 +139,7 @@ function decideTempoLine(wagerTimestamp: number | undefined, precedingTimestamp 
       action(1, 'check', 0, 'river', { timestamp: 900 }),
       action(2, 'bet', 10, 'river', { timestamp: 1000, isFullRaise: true }),
       action(3, 'raise', 30, 'river', { timestamp: 1050, isFullRaise: true }),
-      action(1, 'call', 30, 'river', { timestamp: precedingTimestamp }),
+      action(1, 'call', 30, 'river', { timestamp: precedingTimestamp as number }),
       action(2, 'raise', 1000, 'river', {
         timestamp: wagerTimestamp as number,
         isFullRaise: true,
@@ -181,7 +184,7 @@ describe('current-bettor reads use the wager being faced', () => {
     vi.spyOn(HorseMind, 'bigBetValueTendency').mockReturnValue(null);
     const snap = vi.spyOn(HorseMind, 'snapBetValueTendency').mockReturnValue(null);
     const tank = vi.spyOn(HorseMind, 'tankBetValueTendency').mockReturnValue(null);
-    decideTempoLine(10000);
+    decideTempoLine(10000, 1060);
     expect(tank).toHaveBeenCalledWith('p2');
     expect(snap).not.toHaveBeenCalled();
   });
@@ -210,6 +213,23 @@ describe('current-bettor reads use the wager being faced', () => {
       const snap = vi.spyOn(HorseMind, 'snapBetValueTendency').mockReturnValue(null);
       const tank = vi.spyOn(HorseMind, 'tankBetValueTendency').mockReturnValue(null);
       decideTempoLine(wagerTimestamp, previousTimestamp);
+      expect(snap).not.toHaveBeenCalled();
+      expect(tank).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ['missing', undefined],
+    ['invalid', NaN],
+  ] as const)(
+    'keeps a %s immediate predecessor timestamp unknown',
+    (_reason, previousTimestamp) => {
+      vi.spyOn(HorseMind, 'targetingOf').mockReturnValue(0);
+      vi.spyOn(HorseMind, 'opponentRead').mockReturnValue(null);
+      vi.spyOn(HorseMind, 'bigBetValueTendency').mockReturnValue(null);
+      const snap = vi.spyOn(HorseMind, 'snapBetValueTendency').mockReturnValue(null);
+      const tank = vi.spyOn(HorseMind, 'tankBetValueTendency').mockReturnValue(null);
+      decideTempoLine(10000, previousTimestamp);
       expect(snap).not.toHaveBeenCalled();
       expect(tank).not.toHaveBeenCalled();
     }

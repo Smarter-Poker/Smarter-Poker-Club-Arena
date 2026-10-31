@@ -1112,5 +1112,5 @@ registerMobileActionStripCases();
 
 registerCssPreloadRetryCase();
 
-import { registerSpectatorSocketProbeCase } from './support/spectatorSocketProbeCases';
-registerSpectatorSocketProbeCase();
+import { registerObserverUpstreamGuardCases } from './support/observerUpstreamGuardCases';
+registerObserverUpstreamGuardCases();

@@ -1,6 +1,6 @@
 import {
   isReadOnlySpectatorSocketType,
-  installReadOnlySocketProbe,
+  requestObserverForegroundProbe,
 } from './support/spectatorSocketRead';
 import { openLobbyGameSection } from './support/lobbyGameSections';
 import { readFile } from 'node:fs/promises';
@@ -233,7 +233,6 @@ test('the published table explains controlled seat moves without moving a player
     );
     expect(new URL(page.url()).pathname).toMatch(/^\/hub\/club-arena\/clubs\//);
     await expect(page.locator('.club-home')).toBeVisible({ timeout: 30_000 });
-    await page.evaluate(installReadOnlySocketProbe, ENGINE_HOST);
     await prepareCashLobbyActions(page);
     await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
@@ -425,8 +424,8 @@ test('the published table explains controlled seat moves without moving a player
       String(seat)
     );
     expect(heroDiagnostics).toEqual([]);
+    await page.evaluate(requestObserverForegroundProbe);
     await page.evaluate(async () => {
-      (window as unknown as { __a14ReadOnlySocketProbe: () => void }).__a14ReadOnlySocketProbe();
       // A nonread against a nonexistent static path proves the HTTP guard
       // without touching any money, seat, telemetry or backend mutation API.
       await fetch('/hub/club-arena/__a14_ui_only_refusal_probe__', {

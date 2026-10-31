@@ -7,15 +7,6 @@ import { isReadOnlySpectatorSocketType } from '../e2e/support/spectatorSocketRea
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('production observer socket boundary', () => {
-  it('installs the refusal probe on the routed page factory after navigation', () => {
-    const proof = read('tests/e2e/production-seat-move-announcement.spec.ts');
-    const navigation = proof.indexOf('await page.goto(`clubs/${CLUB_ID}`');
-    const install = proof.indexOf('await page.evaluate(installReadOnlySocketProbe, ENGINE_HOST)');
-    expect(navigation).toBeGreaterThan(-1);
-    expect(install).toBeGreaterThan(navigation);
-    expect(proof).not.toContain('WebSocket.prototype.send =');
-  });
-
   it('accepts the actual lobby subscription lifecycle without participation', () => {
     expect(isReadOnlySpectatorSocketType('JOIN_LOBBY')).toBe(true);
     expect(isReadOnlySpectatorSocketType('LEAVE_LOBBY')).toBe(true);
@@ -156,6 +147,13 @@ describe('production observer socket boundary', () => {
       expect(source).toContain("from './support/spectatorSocketRead'");
       expect(source).toContain('if (!isReadOnlySpectatorSocketType(type))');
     }
+  });
+
+  it('uses the real application foreground path without retaining a native backing socket', () => {
+    const source = read('tests/e2e/production-seat-move-announcement.spec.ts');
+    expect(source).toContain('await page.evaluate(requestObserverForegroundProbe)');
+    expect(source).not.toContain('WebSocket.prototype');
+    expect(source).not.toContain('__a14ReadOnlySocketProbe');
   });
 
   it('refuses every synthetic upstream frame before the natural observer allowlist', () => {

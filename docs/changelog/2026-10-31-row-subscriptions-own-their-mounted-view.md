@@ -24,3 +24,11 @@ cleanup assertions remain required. The existing workflow law covers this target
 Real-time law: row updates arrive through the existing discrete Postgres Changes
 subscription; no snapshot diff or polling is introduced. TypeScript and live
 publication evidence are recorded in the task checkpoint.
+
+The existing production mobile lobby suite also retains a targeted live case:
+its reserved observer opens an embedded club lobby, returns to the same club
+route to mount a second view, observes both join acknowledgments and natural
+row events, then returns to the persistent view after the other unmounts.
+Only topic ownership and event counts are retained, with both public client
+stamps. No member rows, credentials, synthetic traffic or financial writes
+are introduced.

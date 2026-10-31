@@ -93,6 +93,11 @@ import { describe, expect, it, vi } from 'vitest';
 // and same reasoning as tests/legacyEngineCheckpointAdmission.test.ts.
 vi.setConfig({ testTimeout: 90_000 });
 
+// Valid immutable-artifact input supplied by the original preparation stage.
+// These cases isolate intent/deadline semantics; packaging has its own real fixture.
+const nativeDescriptor =
+  '{"schema":"legacy-native-census-artifact/v1","path":"/app/.legacy-census-checkpoint-123/legacy-census.node","manifestPath":"/app/.legacy-census-checkpoint-123/legacy-census.node.json","binarySHA256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","manifestSHA256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","sourceSHA256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","candidateSHA":"dddddddddddddddddddddddddddddddddddddddd","candidateImageId":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","candidateSourceTree":"ffffffffffffffffffffffffffffffffffffffff"}';
+
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
 const entryRead = transaction.slice(
@@ -336,7 +341,7 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
     // created nothing. This is the exact shape that ended run 35615604946.
     const block = checkpointShell.slice(
       checkpointShell.indexOf('INSTANCE="$(checkpoint_entry_read curl'),
-      checkpointShell.indexOf('{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs";')
+      checkpointShell.indexOf('# Staging is inside the original one-shot intent')
     );
     const root = mkdtempSync(join(tmpdir(), 'release-window-defer-'));
     try {
@@ -372,6 +377,7 @@ RUN_ID=35615604946-1
 date() { if [ "$1" = +%s%3N ]; then "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; else command date "$@"; fi; }
 CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
 CHECKPOINT_BREAK_END_EPOCH="$CHECKPOINT_TEST_BREAK_END"
+NATIVE_DESCRIPTOR='${nativeDescriptor}'
 REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
 CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
 STARTED_AT=2026-09-18T21:55:50.88305198Z
@@ -439,7 +445,7 @@ printf '%s' inspector-boundary-reached
     // can never be mistaken for a deferral
     const raise = transaction.indexOf('LEGACY_CHECKPOINT_ATTEMPTED=1\n    legacy_entry_trace');
     const invoke = transaction.indexOf(
-      '"$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))" "$LEGACY_ENTRY_BREAK_END_EPOCH"\n    LEGACY_CHECKPOINT_RC'
+      '"$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))" "$LEGACY_ENTRY_BREAK_END_EPOCH" "$SHA" "$TARGET_IMAGE_ID" "$EXPECTED_SERVER_TREE"\n    LEGACY_CHECKPOINT_RC'
     );
     expect(raise).toBeGreaterThan(0);
     expect(raise).toBeLessThan(invoke);

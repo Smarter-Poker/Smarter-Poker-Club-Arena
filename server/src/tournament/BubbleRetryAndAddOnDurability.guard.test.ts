@@ -60,7 +60,9 @@ describe('the add-on window follows durable database truth', () => {
   });
 
   it('rejects an impossible requested deadline before attempting the compare-and-set', () => {
-    const deadline = trigger.indexOf('const requestedEndMs = fromStart');
+    const deadline = trigger.indexOf(
+      'const requestedEndMs = requestedStartMs + this.addOnBreakDurationMs()'
+    );
     const validation = trigger.indexOf('requestedEndMs <= requestedStartMs', deadline);
     const update = trigger.indexOf('.update({', validation);
     expect(deadline).toBeGreaterThanOrEqual(0);

@@ -272,3 +272,38 @@ it('mobile top-cap cards stay below the visible page edge', async () => {
   const card = row.querySelector('.seat__card')!.getBoundingClientRect();
   expect(card.top).toBeGreaterThanOrEqual(page.top + 8);
 });
+
+it('retains shown-card geometry only after the deal animation reaches rest', async () => {
+  stubGeometry();
+  const previous = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getAnimations');
+  let dealing = true;
+  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
+    configurable: true,
+    value() {
+      return dealing
+        ? [{ playState: 'running', effect: { getComputedTiming: () => ({ iterations: 1 }) } }]
+        : [];
+    },
+  });
+  try {
+    const h = render(<Fixture revealed count={2} boardTop={500} />);
+    const row = h.container.querySelector<HTMLElement>('.seat__cards--revealed')!;
+    const duringDeal = row.style.translate;
+    dealing = false;
+    await act(async () =>
+      h.rerender(<Fixture revealed count={2} revision="deal-finished" boardTop={310} />)
+    );
+    await settle(row);
+    expect(row.style.translate).not.toBe(duringDeal);
+    const resting = row.style.translate;
+    await act(async () =>
+      h.rerender(<Fixture revealed count={2} revision="river" boardTop={500} />)
+    );
+    await settle(row);
+    expect(row.style.translate).toBe(resting);
+  } finally {
+    cleanup();
+    if (previous) Object.defineProperty(HTMLElement.prototype, 'getAnimations', previous);
+    else Reflect.deleteProperty(HTMLElement.prototype, 'getAnimations');
+  }
+});

@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 260243,
-      "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
+      "bytes": 260263,
+      "sha256": "f2eccd7b1c58bf3677f9647bcfea51831f647be47b19c41b64bf2e65f0bc9693"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1753,6 +1753,22 @@
       "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
     },
     "execution_performed": false,
+    "qualificationStateChanged": false
+  },
+  "isolatedConnectedUiSourceAudit20261031": {
+    "scope": "Current source identity only for isolated connected UI qualification; no financial qualification, SQL, oracle, profile or historical evidence restamped.",
+    "file": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 260243,
+      "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
+    },
+    "current": {
+      "bytes": 260263,
+      "sha256": "f2eccd7b1c58bf3677f9647bcfea51831f647be47b19c41b64bf2e65f0bc9693"
+    },
+    "reason": "Add actions:read only to the existing native reusable caller permission ceiling; all other CI jobs and financial behavior unchanged.",
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false
   }
 }

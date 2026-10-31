@@ -45,3 +45,11 @@ schema. Seven legacy2017/2018 production history rows are not copied or fabricat
 the fresh service must execute its own genuine migrations. Historical native
 v2.196/70 evidence remains historical and cannot qualify this changed provider.
 Affected Auth source regressions18PASS; actual new-provider native proof pending.
+
+The first normal push refused eight current source bindings. Their exact CI/test
+entries and two nested binding references are now restamped in the same PR with
+explicit per-binding before/after audits. The CI change is one read-only Actions
+permission; the test change pins that ceiling and the protected private-capture
+route. All financial source inputs, oracles, assertions and historical audit
+values remain unchanged. The cheap maintained binding verifier checks all1814
+pins; this identity repair is not financial recertification.

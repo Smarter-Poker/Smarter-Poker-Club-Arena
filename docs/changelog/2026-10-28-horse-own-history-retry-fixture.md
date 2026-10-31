@@ -1,0 +1,5 @@
+# Own-history retry fixture uses the settled failure clock
+
+The actual worker integration test scheduled its recovery request from the earlier decision snapshot plus 60,001 ms. The cache correctly starts its cooldown when the failed load settles, so a delayed settlement under CPU load could make that alleged retry arrive before eligibility. A snapshot 200 ms behind the wall clock reproduces both failed-history cases deterministically at the unchanged two-load assertion.
+
+The test now observes explicit unavailable state, verifies the in-cooldown request keeps one load, and derives the eligible request cutoff from the observed post-settlement clock plus the exported cooldown. Subsequent snapshots remain monotonic. The same two-load, public-history, live-tail, deduplication, independent-read, packet and per-request transport assertions remain. This changes test timing only: no production cache, cooldown, deadline, strategy, seating or release behavior changes, and no sleep or retry loop is added.

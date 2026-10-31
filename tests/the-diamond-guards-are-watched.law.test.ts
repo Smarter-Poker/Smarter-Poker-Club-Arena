@@ -37,7 +37,8 @@
  * THIS migration's own text, which is what it was always about.
  */
 import { describe, expect, it } from 'vitest';
-import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
+import { migrationCorpus } from './helpers/migrationCorpus';
+import { watchlistDefinitions } from './helpers/watchlistDefinitions';
 
 const SUFFIX = '_the_diamond_guards_are_watched.sql';
 
@@ -53,15 +54,16 @@ const executable = () =>
     .sql.replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/--[^\n]*/g, ' ');
 
-/** The names the newest definition of the list carries. */
+/** Read actual declarations; frozen catalog images never widen the live list. */
+let definitionsCache: Array<{ name: string; names: string[] }> | undefined;
+const watchlistHistory = () =>
+  (definitionsCache ??= migrationCorpus().flatMap((migration) =>
+    watchlistDefinitions(migration.sql).map((names) => ({ name: migration.name, names }))
+  ));
 const newestWatchlist = (): string[] => {
-  const defs = migrationsMentioning('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist').sort(
-    (a, b) => a.name.localeCompare(b.name)
-  );
-  const newest = defs[defs.length - 1]!;
-  const start = newest.sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist');
-  const body = newest.sql.slice(start, newest.sql.indexOf('$function$;', start));
-  return [...new Set([...body.matchAll(/'(fn_[a-z0-9_]+)'/g)].map((m) => m[1]!))];
+  const definitions = watchlistHistory();
+  expect(definitions.length).toBeGreaterThanOrEqual(2);
+  return definitions[definitions.length - 1]!.names;
 };
 
 const DIAMOND_DOORS = [
@@ -81,6 +83,38 @@ const UNIT_RULES = [
   'fn_ca_recovery_fee_cents',
 ];
 
+describe('Watchlist declaration boundaries', () => {
+  const ddl = (names: string[]) =>
+    `CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist() RETURNS text[] LANGUAGE sql AS $body$ SELECT ARRAY[${names.map((name) => `'${name}'`).join(',')}]::text[] $body$;`;
+  it('reads both real definitions, including an actual narrowing', () => {
+    expect(watchlistDefinitions(ddl(['fn_a', 'fn_b']) + ddl(['fn_a']))).toEqual([
+      ['fn_a', 'fn_b'],
+      ['fn_a'],
+    ]);
+  });
+  it('ignores JSON catalog images, expected-definition literals and comments', () => {
+    const saved = JSON.stringify({ definition: ddl(['fn_fake']) });
+    const source = `-- ${ddl(['fn_comment'])}\nDO $guard$ DECLARE expected jsonb := $saved$${saved}$saved$::jsonb; BEGIN PERFORM $old$${ddl(['fn_literal'])}$old$; END $guard$;`;
+    expect(watchlistDefinitions(source + ddl(['fn_real']))).toEqual([['fn_real']]);
+  });
+  it('refuses dynamic and malformed watchlist declarations', () => {
+    expect(() =>
+      watchlistDefinitions(`DO $guard$ BEGIN EXECUTE $ddl$${ddl(['fn_hidden'])}$ddl$; END $guard$;`)
+    ).toThrow('Dynamic watchlist DDL');
+    const saved = JSON.stringify({ definition: ddl(['fn_hidden']) });
+    expect(() =>
+      watchlistDefinitions(
+        `DO $guard$ DECLARE saved jsonb := $saved$${saved}$saved$::jsonb; BEGIN EXECUTE saved->>'definition'; END $guard$;`
+      )
+    ).toThrow('Dynamic watchlist DDL');
+    expect(() =>
+      watchlistDefinitions(
+        'CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist() AS $unfinished$'
+      )
+    ).toThrow('Unreadable');
+  });
+});
+
 describe('LAW: the Diamond guards are watched', () => {
   it('names every Diamond door and unit rule on the newest definition of the list', () => {
     // "Newest", not "this one". A later migration is allowed - encouraged - to
@@ -95,20 +129,13 @@ describe('LAW: the Diamond guards are watched', () => {
   it('widens the list and never narrows it, at every step', () => {
     // Every definition in order keeps every name the one before it carried, so
     // a name cannot be lost by the newest migration OR by any one between.
-    const defs = migrationsMentioning(
-      'CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist'
-    ).sort((a, b) => a.name.localeCompare(b.name));
+    const defs = watchlistHistory();
     expect(defs.length).toBeGreaterThanOrEqual(2);
-    const namesOf = (m: (typeof defs)[number]): string[] => {
-      const start = m.sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist');
-      const body = m.sql.slice(start, m.sql.indexOf('$function$;', start));
-      return [...new Set([...body.matchAll(/'(fn_[a-z0-9_]+)'/g)].map((x) => x[1]!))];
-    };
     for (let i = 1; i < defs.length; i += 1) {
-      const before = namesOf(defs[i - 1]!);
-      const after = namesOf(defs[i]!);
-      for (const g of before) {
-        expect(after, `${g} was dropped from the watchlist by ${defs[i]!.name}`).toContain(g);
+      for (const g of defs[i - 1]!.names) {
+        expect(defs[i]!.names, `${g} was dropped from the watchlist by ${defs[i]!.name}`).toContain(
+          g
+        );
       }
     }
     // and this migration refuses to apply if the database disagrees

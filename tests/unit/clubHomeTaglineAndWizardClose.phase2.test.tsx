@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   setupCalls: 0,
   tagline: null as string | null,
   tournaments: [] as any[],
+  tables: [] as any[],
   register: vi.fn(),
 }));
 
@@ -158,6 +159,7 @@ beforeEach(() => {
   h.setupCalls = 0;
   h.tagline = null;
   h.tournaments = [];
+  h.tables = [];
   h.rpc.mockImplementation((name: string) => {
     if (name === 'fn_club_opening_checklist_state') {
       return Promise.resolve({
@@ -188,7 +190,10 @@ beforeEach(() => {
     q.then = (resolve: any, reject: any) =>
       (
         result?.promise ??
-        Promise.resolve({ data: table === 'tournaments' ? h.tournaments : [], error: null })
+        Promise.resolve({
+          data: table === 'tournaments' ? h.tournaments : table === 'tables' ? h.tables : [],
+          error: null,
+        })
       ).then(resolve, reject);
     return q;
   });
@@ -199,10 +204,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function mountLobby() {
+async function mountLobby(query = '') {
   const read = h.clubReads.length;
   render(
-    <MemoryRouter initialEntries={['/clubs/club-a']}>
+    <MemoryRouter initialEntries={['/clubs/club-a' + query]}>
       <Routes>
         <Route path="/clubs/:clubId" element={<ClubHomePage />} />
         <Route
@@ -284,7 +289,8 @@ describe('the tournament row reviews every lobby-admitted status', () => {
         },
       ];
       await mountLobby();
-      fireEvent.click(screen.getByRole('tab', { name: 'MTT', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Tournaments', exact: true }));
+      fireEvent.click(screen.getByRole('tab', { name: "MTT'S", exact: true }));
       await flush();
       const row = document.querySelector('.lt-row[data-kind="mtt"][data-id="event-a"]');
       expect(row, 'the actual lobby did not render the synthetic admitted event').not.toBeNull();
@@ -302,4 +308,152 @@ describe('the tournament row reviews every lobby-admitted status', () => {
       ).toBe(false);
     }
   );
+});
+
+describe('Find Your Game starts with two separate sections', () => {
+  it('requires a choice, separates controls and results, switches and closes', async () => {
+    h.setupReads = [DONE];
+    h.tables = [
+      {
+        id: 'cash-a',
+        club_id: 'club-a',
+        name: 'Cash Fixture',
+        game_variant: 'nlh',
+        status: 'running',
+        max_players: 6,
+        current_players: 2,
+        small_blind: 1,
+        big_blind: 2,
+        min_buy_in: 40,
+        max_buy_in: 200,
+      },
+    ];
+    h.tournaments = [
+      {
+        id: 'event-a',
+        club_id: 'club-a',
+        name: 'Tournament Fixture',
+        format_contract: 'mtt-v1',
+        variant: 'mtt',
+        game_type: 'NLH',
+        status: 'REGISTERING',
+        start_time: new Date().toISOString(),
+        current_players: 2,
+        buy_in_amount: 10,
+        buy_in_fee: 1,
+        starting_chips: 1000,
+        table_size: 9,
+      },
+    ];
+    await mountLobby();
+    const cash = screen.getByRole('button', { name: 'Cash Games', exact: true });
+    const tournaments = screen.getByRole('button', { name: 'Tournaments', exact: true });
+    expect(cash.getAttribute('aria-expanded')).toBe('false');
+    expect(tournaments.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('tablist', { name: 'Game Type' })).toBeNull();
+    expect(document.querySelector('.club-home__games')?.hasAttribute('hidden')).toBe(true);
+    expect(screen.queryByText('Live Club Schedule')).toBeNull();
+    expect(document.querySelector('.lobby-controls__total')).toBeNull();
+
+    fireEvent.click(cash);
+    await flush();
+    const names = () =>
+      within(screen.getByRole('tablist', { name: 'Game Type' }))
+        .getAllByRole('tab')
+        .map((t) => t.textContent);
+    expect(names()).toEqual(['ALL', 'NLH', 'PLO', 'LIMIT']);
+    expect(
+      within(screen.getByLabelText('Game Status'))
+        .getAllByRole('button')
+        .map((t) => t.textContent)
+    ).toEqual(['All', 'Running']);
+    expect(document.querySelector('.lt-row[data-id="cash-a"]')).not.toBeNull();
+    expect(document.querySelector('.lt-row[data-id="event-a"]')).toBeNull();
+    expect(document.querySelector('.club-home__games')?.hasAttribute('hidden')).toBe(false);
+    fireEvent.click(screen.getByRole('tab', { name: 'PLO', exact: true }));
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters And Sort', exact: true }));
+    await flush();
+    const filterTabs = within(screen.getByRole('dialog', { name: 'Advanced Filters' })).getByRole(
+      'group',
+      { name: 'Game Type' }
+    );
+    expect(
+      within(filterTabs)
+        .getAllByRole('button')
+        .map((t) => t.textContent)
+    ).not.toContain("MTT'S");
+    fireEvent.click(screen.getByRole('button', { name: 'Close Game Filters' }));
+    await flush();
+    fireEvent.click(tournaments);
+    await flush();
+    expect(names()).toEqual(["MTT'S", 'SPINS', "SIT N GO'S", 'SATELLITES']);
+    expect(document.querySelector('.lt-row[data-id="event-a"]')).not.toBeNull();
+    expect(document.querySelector('.lt-row[data-id="cash-a"]')).toBeNull();
+    expect(cash.getAttribute('aria-expanded')).toBe('false');
+    expect(tournaments.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(tournaments);
+    await flush();
+    expect(screen.queryByRole('tablist', { name: 'Game Type' })).toBeNull();
+    expect(document.querySelector('.club-home__games')?.hasAttribute('hidden')).toBe(true);
+    expect(h.register).not.toHaveBeenCalled();
+  });
+});
+
+it('opens the saved cash section and tab immediately on return', async () => {
+  h.setupReads = [DONE];
+  localStorage.setItem(
+    'ca_lobby_view_viewer:club-a',
+    JSON.stringify({ tab: 'OMAHA', sortByTab: {}, favoritesOnly: false })
+  );
+  await mountLobby();
+  expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  expect(screen.getByRole('tab', { name: 'PLO', exact: true }).getAttribute('aria-selected')).toBe(
+    'true'
+  );
+});
+
+it('shows only recorded MTT and SNG satellites when Satellites is selected', async () => {
+  h.setupReads = [DONE];
+  const row = {
+    club_id: 'club-a',
+    game_type: 'NLH',
+    status: 'REGISTERING',
+    start_time: new Date().toISOString(),
+    current_players: 0,
+    buy_in_amount: 10,
+    buy_in_fee: 1,
+    starting_chips: 1000,
+    table_size: 9,
+  };
+  h.tournaments = [
+    {
+      ...row,
+      id: 'sat-mtt',
+      name: 'MTT Qualifier',
+      format_contract: 'mtt-v1',
+      tournament_type: 'SATELLITE',
+    },
+    {
+      ...row,
+      id: 'sat-sng',
+      name: 'SNG Qualifier',
+      format_contract: 'seat-first-satellite-v1',
+      max_players: 2,
+    },
+    { ...row, id: 'regular-mtt', name: 'Satellite Name Only', format_contract: 'mtt-v1' },
+    { ...row, id: 'regular-sng', name: 'Regular SNG', format_contract: 'sng-v1', max_players: 6 },
+  ];
+  await mountLobby();
+  fireEvent.click(screen.getByRole('button', { name: 'Tournaments', exact: true }));
+  fireEvent.click(screen.getByRole('tab', { name: 'SATELLITES', exact: true }));
+  await flush();
+  for (const id of ['sat-mtt', 'sat-sng'])
+    expect(document.querySelector(`.lt-row[data-id="${id}"]`)).not.toBeNull();
+  for (const id of ['regular-mtt', 'regular-sng'])
+    expect(document.querySelector(`.lt-row[data-id="${id}"]`)).toBeNull();
+  expect(h.register).not.toHaveBeenCalled();
 });

@@ -1,0 +1,226 @@
+{
+  "triggers": [
+    {
+      "name": "tournament_cancellation_receipts_append_only",
+      "relation": "tournament_cancellation_receipts",
+      "definition": "CREATE TRIGGER tournament_cancellation_receipts_append_only BEFORE DELETE OR UPDATE ON public.tournament_cancellation_receipts FOR EACH ROW EXECUTE FUNCTION fn_tournament_cancellation_receipts_append_only()"
+    },
+    {
+      "name": "tournament_spin_cancellation_unwinds_append_only",
+      "relation": "tournament_spin_cancellation_unwinds",
+      "definition": "CREATE TRIGGER tournament_spin_cancellation_unwinds_append_only BEFORE DELETE OR UPDATE ON public.tournament_spin_cancellation_unwinds FOR EACH ROW EXECUTE FUNCTION fn_tournament_cancellation_receipts_append_only()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_players",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tables",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_obligations",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_obligations FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_payouts",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_payouts FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "chip_ledger",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_rake_settlements",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_rake_settlements FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "rake_records",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_guarantee_overlays",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_guarantee_overlays FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_escrow",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_escrow FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_refund_entitlements",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_refund_entitlements FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_refund_tranches",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_refund_tranches FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "spin_reserve_ledger",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.spin_reserve_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "relation": "tournament_spin_cancellation_unwinds",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_spin_cancellation_unwinds FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_seat_is_immutable",
+      "relation": "table_seats",
+      "definition": "CREATE TRIGGER cancelled_tournament_seat_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_seat_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_wallet_is_immutable",
+      "relation": "wallet_transactions",
+      "definition": "CREATE TRIGGER cancelled_tournament_wallet_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_wallet_is_immutable()"
+    },
+    {
+      "name": "cancelled_tournament_parent_is_immutable",
+      "relation": "tournaments",
+      "definition": "CREATE TRIGGER cancelled_tournament_parent_is_immutable BEFORE DELETE OR UPDATE OF status, variant, tournament_type, satellite_target_id, satellite_target, satellite_seats, prize_pool, prize_pool_finalized, bounty_pool, bounty_pool_paid, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_pool_cents, club_id, ended_at, total_rake, current_players, on_break, break_started_at, break_ends_at ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_parent_is_immutable()"
+    },
+    {
+      "name": "tournaments_cancel_must_refund",
+      "relation": "tournaments",
+      "definition": "CREATE CONSTRAINT TRIGGER tournaments_cancel_must_refund AFTER UPDATE ON public.tournaments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((upper(COALESCE(new.status, ''::text)) = ANY (ARRAY['CANCELLED'::text, 'CANCELED'::text])) AND (upper(COALESCE(old.status, ''::text)) IS DISTINCT FROM upper(COALESCE(new.status, ''::text))))) EXECUTE FUNCTION trg_tournaments_cancel_must_refund()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_players",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_obligations",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_obligations FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_payouts",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_payouts FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "chip_ledger",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_rake_settlements",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_rake_settlements FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "rake_records",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.rake_records FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_bounty_chests",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_bounty_chests FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_bounty_awards",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_bounty_awards FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_guarantee_overlays",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_guarantee_overlays FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_satellite_awards",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_satellite_awards FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_satellite_remainders",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_satellite_remainders FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_refund_entitlements",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_refund_entitlements FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_refund_tranches",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_refund_tranches FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "spin_reserve_ledger",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.spin_reserve_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "relation": "tournament_spin_cancellation_unwinds",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_spin_cancellation_unwinds FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "name": "terminal_tournament_seat_is_immutable",
+      "relation": "table_seats",
+      "definition": "CREATE TRIGGER terminal_tournament_seat_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_seat_is_immutable()"
+    }
+  ],
+  "functions": [
+    {
+      "signature": "fn_ca_has_committed_tournament_receipt(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_has_committed_tournament_receipt(p_tournament_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT COALESCE((\n    SELECT (upper(COALESCE(t.status::text,'')) = 'COMPLETED'\n       AND (EXISTS (\n              SELECT 1 FROM public.tournament_terminal_settlements h\n               WHERE h.tournament_id = t.id)\n         OR EXISTS (\n              SELECT 1 FROM public.tournament_satellite_settlements h\n               WHERE h.tournament_id = t.id)))\n       OR (upper(COALESCE(t.status::text,'')) IN ('CANCELLED','CANCELED')\n       AND EXISTS (\n              SELECT 1 FROM public.tournament_cancellation_receipts h\n               WHERE h.tournament_id = t.id))\n      FROM public.tournaments t\n     WHERE t.id = p_tournament_id\n  ),false)\n$function$\n",
+      "definition_md5": "9158c2424a5ae75e3ca9fcdb13339d12"
+    },
+    {
+      "signature": "fn_cancelled_tournament_evidence_is_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cancelled_tournament_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_tournament_id uuid;\n  v_new_tournament_id uuid;\n  v_tournament_id uuid;\nBEGIN\n IF TG_OP='INSERT' AND TG_TABLE_NAME='chip_ledger' AND to_jsonb(NEW)->'metadata'->>'entry_kind'='launch_closing_position' THEN RETURN NEW; END IF;\n  IF TG_OP<>'INSERT' THEN\n    v_old_tournament_id:=NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  END IF;\n  IF TG_OP<>'DELETE' THEN\n    v_new_tournament_id:=NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;\n  END IF;\n  IF TG_OP='UPDATE' AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN\n    RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME\n      USING ERRCODE='55000';\n  END IF;\n  v_tournament_id:=COALESCE(v_new_tournament_id,v_old_tournament_id);\n  IF v_tournament_id IS NULL THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF TG_TABLE_NAME='chip_ledger' AND TG_OP<>'INSERT' THEN\n    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'\n      USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='INSERT' THEN\n    PERFORM 1 FROM public.tournaments t\n     WHERE t.id=v_tournament_id FOR KEY SHARE;\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts h\n              WHERE h.tournament_id=v_tournament_id) THEN\n    RAISE EXCEPTION 'cancelled tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\nEND;\n$function$\n",
+      "definition_md5": "c361537b74dd7b12f05cc58bd0d2ef4f"
+    },
+    {
+      "signature": "fn_cancelled_tournament_parent_is_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cancelled_tournament_parent_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts h\n              WHERE h.tournament_id=OLD.id) THEN\n    RAISE EXCEPTION 'receipted cancellation % is immutable',OLD.id\n      USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\nEND;\n$function$\n",
+      "definition_md5": "45afe1986ef3e5a382aab017dcf3689c"
+    },
+    {
+      "signature": "fn_cancelled_tournament_seat_is_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cancelled_tournament_seat_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_tournament_id uuid;\n  v_new_tournament_id uuid;\nBEGIN\n  IF TG_OP<>'INSERT' THEN\n    SELECT tb.tournament_id INTO v_old_tournament_id\n      FROM public.tables tb WHERE tb.id=OLD.table_id;\n  END IF;\n  IF TG_OP<>'DELETE' THEN\n    SELECT tb.tournament_id INTO v_new_tournament_id\n      FROM public.tables tb WHERE tb.id=NEW.table_id;\n  END IF;\n  IF TG_OP='UPDATE' AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN\n    RAISE EXCEPTION 'seat % cannot move between tournament owners',OLD.id\n      USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='INSERT' AND v_new_tournament_id IS NOT NULL THEN\n    PERFORM 1 FROM public.tournaments t\n     WHERE t.id=v_new_tournament_id FOR KEY SHARE;\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts h\n              WHERE h.tournament_id=COALESCE(v_new_tournament_id,v_old_tournament_id)) THEN\n    RAISE EXCEPTION 'cancelled tournament seat evidence is immutable'\n      USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\nEND;\n$function$\n",
+      "definition_md5": "97fd52cab28c046053764ece6e6a808a"
+    },
+    {
+      "signature": "fn_cancelled_tournament_wallet_is_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cancelled_tournament_wallet_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_tournament_id uuid;\n  v_new_tournament_id uuid;\nBEGIN\n  IF TG_OP<>'INSERT' THEN v_old_tournament_id:=OLD.related_entity_id; END IF;\n  IF TG_OP<>'DELETE' THEN v_new_tournament_id:=NEW.related_entity_id; END IF;\n  IF TG_OP='INSERT' AND v_new_tournament_id IS NOT NULL\n     AND EXISTS (SELECT 1 FROM public.tournaments t\n                  WHERE t.id=v_new_tournament_id) THEN\n    PERFORM 1 FROM public.tournaments t\n     WHERE t.id=v_new_tournament_id FOR KEY SHARE;\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts h\n              WHERE h.tournament_id=v_old_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts h\n                 WHERE h.tournament_id=v_new_tournament_id) THEN\n    RAISE EXCEPTION 'cancelled tournament wallet evidence is immutable'\n      USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\nEND;\n$function$\n",
+      "definition_md5": "50e0c7764f3a250f8116e0c6010d1503"
+    },
+    {
+      "signature": "fn_terminal_tournament_evidence_is_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_terminal_tournament_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\n  v_status text;\n  v_receipted boolean := false;\n  v_old_marker timestamptz;\n  v_new_marker timestamptz;\nBEGIN\n IF TG_OP='INSERT' AND TG_TABLE_NAME='chip_ledger' AND to_jsonb(NEW)->'metadata'->>'entry_kind'='launch_closing_position' THEN RETURN NEW; END IF;\n  IF TG_OP<>'DELETE' AND public.fn_ca_legacy_fee_resolution_write_is_exact(TG_TABLE_NAME,TG_OP,CASE WHEN TG_OP='INSERT' THEN NULL ELSE to_jsonb(OLD) END,to_jsonb(NEW)) THEN RETURN NEW; END IF;\n  IF TG_OP = 'INSERT' THEN\n    v_tournament_id := NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;\n  ELSIF TG_OP = 'UPDATE' THEN\n    IF NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid IS DISTINCT FROM\n       NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid THEN\n      RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME\n        USING ERRCODE = '55000';\n    END IF;\n    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  ELSE\n    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  END IF;\n\n  IF v_tournament_id IS NULL THEN\n    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n    RETURN NEW;\n  END IF;\n  IF TG_OP <> 'INSERT' AND to_jsonb(OLD) ? 'terminal_closed_at' THEN\n    v_old_marker := NULLIF(to_jsonb(OLD)->>'terminal_closed_at','')::timestamptz;\n  END IF;\n  IF TG_OP <> 'DELETE' AND to_jsonb(NEW) ? 'terminal_closed_at' THEN\n    v_new_marker := NULLIF(to_jsonb(NEW)->>'terminal_closed_at','')::timestamptz;\n  END IF;\n  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN\n    RAISE EXCEPTION '% rows cannot supply a terminal marker',TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN\n    RAISE EXCEPTION 'terminal tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN\n    IF public.fn_ca_terminal_marker_transition_is_exact(\n         to_jsonb(OLD),to_jsonb(NEW),v_tournament_id) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION '% terminal marker transition is not canonical',TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  -- A journal row is durable testimony from the instant it names a\n  -- tournament. Refuse its UPDATE/DELETE without taking a child-to-parent\n  -- lock; a row trigger already owns the child tuple at this point. INSERT is\n  -- the only operation that takes the root lock, which preserves the\n  -- parent-to-child order used by both terminal authorities.\n  IF TG_TABLE_NAME = 'chip_ledger' AND TG_OP <> 'INSERT' THEN\n    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' THEN\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id\n     FOR SHARE;\n  ELSE\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id;\n  END IF;\n  SELECT EXISTS (\n           SELECT 1 FROM public.tournament_terminal_settlements h\n            WHERE h.tournament_id = v_tournament_id)\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_satellite_settlements h\n            WHERE h.tournament_id = v_tournament_id)\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_cancellation_receipts h\n            WHERE h.tournament_id = v_tournament_id)\n    INTO v_receipted;\n  IF v_status IN ('COMPLETED','CANCELLED','CANCELED')\n     AND (TG_OP = 'INSERT' OR v_receipted) THEN\n    RAISE EXCEPTION\n      'terminal tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "definition_md5": "1b3ab2bd7823977943d1baa0816997d0"
+    },
+    {
+      "signature": "fn_terminal_tournament_seat_is_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_terminal_tournament_seat_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_tournament_id uuid;\n  v_new_tournament_id uuid;\n  v_status text;\n  v_marker timestamptz;\n  v_receipted boolean := false;\n  v_old_marker timestamptz;\n  v_new_marker timestamptz;\nBEGIN\n  IF TG_OP <> 'INSERT' THEN\n    SELECT tb.tournament_id INTO v_old_tournament_id\n      FROM public.tables tb WHERE tb.id = OLD.table_id;\n  END IF;\n  IF TG_OP = 'UPDATE' AND NEW.table_id IS NOT DISTINCT FROM OLD.table_id THEN\n    -- Same table on both sides: one lookup answers for both (2026-09-10).\n    v_new_tournament_id := v_old_tournament_id;\n  ELSIF TG_OP <> 'DELETE' THEN\n    SELECT tb.tournament_id INTO v_new_tournament_id\n      FROM public.tables tb WHERE tb.id = NEW.table_id;\n  END IF;\n  IF TG_OP <> 'INSERT' THEN v_old_marker := OLD.terminal_closed_at; END IF;\n  IF TG_OP <> 'DELETE' THEN v_new_marker := NEW.terminal_closed_at; END IF;\n\n  -- A CASH SEAT WITH NO TERMINAL MARKER HAS NOTHING TO BE IMMUTABLE ABOUT\n  -- (2026-09-10). With no tournament on either side and no marker on either\n  -- side, every check below passes and the row is returned; return it here\n  -- instead of after a status lookup and three receipt scans on a NULL id.\n  IF v_old_tournament_id IS NULL AND v_new_tournament_id IS NULL\n     AND v_old_marker IS NULL AND v_new_marker IS NULL THEN\n    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n    RETURN NEW;\n  END IF;\n\n  IF TG_OP = 'UPDATE'\n     AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN\n    RAISE EXCEPTION 'seat % cannot move between tournament owners',OLD.id\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN\n    RAISE EXCEPTION 'new tournament seat % cannot supply a terminal marker',NEW.id\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN\n    RAISE EXCEPTION 'terminal tournament seat % is immutable',OLD.id\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN\n    IF public.fn_ca_terminal_marker_transition_is_exact(\n         to_jsonb(OLD),to_jsonb(NEW),v_old_tournament_id) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION 'seat % terminal marker transition is not canonical',OLD.id\n      USING ERRCODE = '55000';\n  END IF;\n\n  IF TG_OP = 'INSERT' AND v_new_tournament_id IS NOT NULL THEN\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_new_tournament_id\n     FOR SHARE;\n    SELECT tb.terminal_closed_at INTO v_marker\n      FROM public.tables tb\n     WHERE tb.id = NEW.table_id\n       AND tb.tournament_id = v_new_tournament_id\n     FOR SHARE;\n  ELSE\n    SELECT upper(COALESCE(t.status::text,'')),tb.terminal_closed_at\n      INTO v_status,v_marker\n      FROM public.tables tb\n      LEFT JOIN public.tournaments t ON t.id = tb.tournament_id\n     WHERE tb.id = CASE WHEN TG_OP = 'DELETE' THEN OLD.table_id ELSE NEW.table_id END;\n  END IF;\n  SELECT EXISTS (\n           SELECT 1 FROM public.tournament_terminal_settlements h\n            WHERE h.tournament_id = COALESCE(v_new_tournament_id,v_old_tournament_id))\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_satellite_settlements h\n            WHERE h.tournament_id = COALESCE(v_new_tournament_id,v_old_tournament_id))\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_cancellation_receipts h\n            WHERE h.tournament_id = COALESCE(v_new_tournament_id,v_old_tournament_id))\n    INTO v_receipted;\n  IF v_status IN ('COMPLETED','CANCELLED','CANCELED')\n     AND (TG_OP = 'INSERT' OR v_receipted) THEN\n    RAISE EXCEPTION 'terminal tournament seat % is immutable',\n      CASE WHEN TG_OP = 'INSERT' THEN NEW.id ELSE OLD.id END\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "definition_md5": "10a5d9082f7770127359f9eca7068ed6"
+    },
+    {
+      "signature": "fn_tournament_cancellation_receipts_append_only()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_cancellation_receipts_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  RAISE EXCEPTION\n    'tournament cancellation receipt is immutable; % refused for tournament %',\n    TG_OP, OLD.tournament_id USING ERRCODE = '55000';\nEND;\n$function$\n",
+      "definition_md5": "fae27fa0a4d44ff04516e0bf069f6f9c"
+    },
+    {
+      "signature": "trg_tournaments_cancel_must_refund()",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_tournaments_cancel_must_refund()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_receipt jsonb;\nBEGIN\n  v_receipt:=public.fn_ca_tournament_cancellation_receipt(NEW.id,NULL);\n  IF COALESCE((v_receipt->>'fully_settled')::boolean,false) IS NOT TRUE\n     OR v_receipt->>'status' IS DISTINCT FROM 'CANCELLED' THEN\n    RAISE EXCEPTION 'Tournament % cannot be CANCELLED without its exact receipt',\n      NEW.id USING ERRCODE='55000';\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n",
+      "definition_md5": "a4643c9ed980e3008369884e3ac2a96c"
+    }
+  ]
+}

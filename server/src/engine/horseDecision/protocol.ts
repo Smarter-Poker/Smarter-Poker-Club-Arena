@@ -1,3 +1,4 @@
+import type { IsolateMemorySample } from '../../observability/isolateMemory.js';
 import type {
   HorsePlanBatchBinding,
   HorsePlanContext,
@@ -167,11 +168,14 @@ export function validatedHorsePolicySamplingKey(
     'prizeUnitCents',
     'finalizedPrizeLadder',
   ];
-  const gameState =
+  const capturedState =
     !tournament ||
     !captureKeys.some((key) => (tournament as Record<string, unknown>)[key] !== undefined)
       ? input.gameState
       : { ...input.gameState, tournament: project(tournament, captureKeys) };
+  // Exact SB is admission/read context, newly captured without resampling the
+  // existing baseline strategy. The full request key still binds its bytes.
+  const gameState = project(capturedState, ['smallBlind'])!;
   return mods === input.mods &&
     opts === input.opts &&
     gameState === input.gameState &&
@@ -192,6 +196,8 @@ export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
   /** Private individual read hydration, not a caller policy control or action authority. */
   ownPublicHistory?: import('./ownPublicHistory.js').HorseOwnPublicHistoryPacket;
   ownPublicHistoryState?: 'pending' | 'available' | 'unavailable';
+  /** Original request-bound cache diagnostic, not a loaded-history qualification. */
+  ownPublicHistoryProvenance?: import('./ownPublicHistoryProvenance.js').HorseHistoryReadProvenance;
   /** Existing nearest-size evidence, separately validated at the same <=10 cap. */
   durableOpponentDonorProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
@@ -439,6 +445,7 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
   /** P10.3: the worker's Phase 10 (PLO4) authority after this decision; the
    * same receipt shape and laws as Phase 8. Absent is never usable authority. */
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  featureAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   /** P11.3: the worker's authority receipt for each Phase 11 pack after this
    * decision (one holder per pack, the Phase 8 shape and laws). Absent is
    * never usable authority. */
@@ -491,6 +498,7 @@ export interface DeepHorseDecisionResult extends HorseDecisionFence {
   phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase8GuardAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  featureAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase11Authority?: HorsePhase11AuthorityReceipts;
   phase12Authority?: HorsePhase12AuthorityReceipts;
   phase13Authority?: HorsePhase13AuthorityReceipts;
@@ -516,6 +524,8 @@ export interface HorseDecisionWorkerAck extends HorseDecisionFence {
 
 export interface HorseDecisionWorkerStatusResult extends HorseDecisionFence {
   type: 'STATUS_RESULT';
+  /** Optional diagnostic, independent of readiness and policy authority. */
+  isolateMemory?: IsolateMemorySample | null;
   requestId: number;
   solverStores: HorseDecisionWorkerReady['solverStores'];
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'];
@@ -563,3 +573,6 @@ export type HorseDecisionWorkerResponse =
   | HorseDecisionWorkerCancelled
   | HorseDecisionWorkerError
   | { type: 'STOPPED' };
+
+/** Administrative control is separate from fenced action/FIFO request types. */
+export type { V31ControlRequest, V31ControlAck } from './v31ReloadControl.js';

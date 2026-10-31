@@ -1,0 +1,14 @@
+[
+  {
+    "relation": "hand_state_snapshots",
+    "name": "hand_submission_snapshot_guard",
+    "enabled": "O",
+    "definition": "CREATE TRIGGER hand_submission_snapshot_guard AFTER INSERT OR UPDATE OF is_complete ON public.hand_state_snapshots FOR EACH ROW EXECUTE FUNCTION smarter_private.hand_submission_snapshot_guard()"
+  },
+  {
+    "relation": "smarter_private.f06_hand_permits",
+    "name": "f06_retained_submission_guard",
+    "enabled": "O",
+    "definition": "CREATE TRIGGER f06_retained_submission_guard AFTER UPDATE OF state ON smarter_private.f06_hand_permits FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_retained_submission_guard()"
+  }
+]

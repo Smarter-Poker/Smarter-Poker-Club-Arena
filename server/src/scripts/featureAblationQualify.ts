@@ -1,3 +1,4 @@
+import type { FeatureAblationTarget } from '../benchmark/FeatureAblationQualification.js';
 /** Manual, protected, contract-only provider runner. It never calls the DEV
  * export and has no production database credentials, writer or activation. */
 import { createHash } from 'node:crypto';
@@ -23,6 +24,15 @@ for (const key of ['target', 'source-sha', 'output'])
 if (!planOnly && !args.has('cell')) throw Error('Missing registered cell');
 if (planOnly && args.has('cell')) throw Error('Plan mode never selects or deals a cell');
 const {
+  assertIncrementalWorkerFlags,
+  authenticateIncrementalPlan,
+  authenticateFeatureAblationProviderAttempt,
+  incrementalQualificationRules,
+  isIncrementalQualificationTarget,
+} = await import('../benchmark/IncrementalPressureQualification.js');
+const { buildIncrementalWarmRecords } =
+  await import('../benchmark/IncrementalPressureDevelopment.js');
+const {
   qualificationPlan,
   qualificationPlanDigest,
   assertProtectedFeatureAblationSource,
@@ -46,19 +56,24 @@ try {
   const { HORSE_PHASE12_VARIANTS } = await import('../engine/HorsePhase12Authority.js');
   const { HORSE_PHASE14_DOMAINS } = await import('../engine/HorsePhase14Authority.js');
   const hash = (v: string | Buffer) => createHash('sha256').update(v).digest('hex');
-  const target = args.get('target') as 'plo6_v24' | 'v53_pressure',
+  const target = args.get('target') as FeatureAblationTarget,
     plan = qualificationPlan(target),
     planDigest = qualificationPlanDigest(plan),
     sourceSha = args.get('source-sha')!;
   const source = assertProtectedFeatureAblationSource(plan, sourceSha);
+  await authenticateIncrementalPlan(plan, args.get('cell'));
+  const incremental = isIncrementalQualificationTarget(target)
+    ? incrementalQualificationRules(target)
+    : null;
   const store = await hydrateFrozenFeatureAblationStores();
   if (hash(featureQualificationCanonical(store)) !== plan.storeInputsDigest)
     throw Error('Frozen loader identity changed');
   const warmByProfile = new Map<string, ReturnType<typeof buildPressureWarmRecords>>();
   const historyByProfile: Record<string, unknown> = {};
   for (const p of plan.profiles) {
-    const records =
-      target === 'v53_pressure'
+    const records = isIncrementalQualificationTarget(target)
+      ? buildIncrementalWarmRecords(p.variant, p.seats, target)
+      : target === 'v53_pressure'
         ? buildPressureWarmRecords({
             variant: p.variant,
             seats: p.seats,
@@ -67,8 +82,10 @@ try {
         : [];
     warmByProfile.set(p.id, records);
     historyByProfile[p.id] = {
-      kind: target === 'v53_pressure' ? 'fixed_public_warm_v1' : 'fresh_empty_public_v1',
-      warmSeed: target === 'v53_pressure' ? plan.clock.warmSeed : null,
+      kind:
+        incremental?.historyVersion ??
+        (target === 'v53_pressure' ? 'fixed_public_warm_v1' : 'fresh_empty_public_v1'),
+      warmSeed: incremental || target === 'v53_pressure' ? plan.clock.warmSeed : null,
       records: records.length,
       digest: featureAblationHistoryDigest(records),
       pooledPublicProfiles: plan.pooledPublicProfiles,
@@ -147,60 +164,16 @@ try {
       featureQualificationCanonical(attempt.identity) !== featureQualificationCanonical(expected)
     )
       throw Error('Original pre-deal attempt binding refused');
-    async function verifyProvider() {
-      const op = attempt.operation,
-        repo = process.env.GITHUB_REPOSITORY,
-        run = process.env.GITHUB_RUN_ID,
-        runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT),
-        token = process.env.GITHUB_TOKEN;
-      if (
-        repo !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
-        String(op.providerRunId) !== run ||
-        op.runAttempt !== runAttempt ||
-        !/^\d+$/.test(String(op.jobId)) ||
-        !token ||
-        runAttempt > plan.maxAttempts
-      )
-        throw Error('Actual provider attempt unavailable');
-      const get = async (suffix: string) => {
-        const r = await fetch(`https://api.github.com/repos/${repo}${suffix}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/vnd.github+json',
-          },
-          signal: AbortSignal.timeout(20000),
-        });
-        if (!r.ok) throw Error('Provider identity read refused');
-        const body: unknown = await r.json();
-        if (!body || typeof body !== 'object' || Array.isArray(body))
-          throw Error('Provider identity shape refused');
-        return body as Record<string, unknown>;
-      };
-      const [j, r] = await Promise.all([
-        get(`/actions/jobs/${op.jobId}`),
-        get(`/actions/runs/${run}`),
-      ]);
-      const createdAt = j.created_at ?? r.created_at,
-        createdAtSource = j.created_at ? 'job.created_at' : 'run.created_at';
-      if (
-        String(j.id) !== String(op.jobId) ||
-        String(j.run_id) !== run ||
-        j.run_attempt !== runAttempt ||
-        j.name !== `Cell ${cell!.key}` ||
-        r.path !== '.github/workflows/horse-feature-ablation-qualification.yml' ||
-        r.event !== 'workflow_dispatch' ||
-        r.head_branch !== 'main' ||
-        op.createdAt !== createdAt ||
-        op.createdAtSource !== createdAtSource
-      )
-        throw Error('Original provider job identity mismatch');
-    }
     let authorized: Promise<void> | undefined;
     const authorizedGuard = () =>
       (authorized ??= (async () => {
         assertProtectedFeatureAblationSource(plan, sourceSha);
         verifyAdmissions();
-        await verifyProvider();
+        await authenticateFeatureAblationProviderAttempt(
+          attempt.operation,
+          cell.key,
+          plan.maxAttempts
+        );
       })());
     await authorizedGuard(); // The mandatory private-core wrapper repeats this guard before dealing.
     const physicalRake = getFullRakeConfig(1, 2, profile.variant);
@@ -234,6 +207,8 @@ try {
     enableBrainTelemetry();
     const brain = createFeatureAblationWorker(
       (r) => {
+        if (isIncrementalQualificationTarget(target))
+          assertIncrementalWorkerFlags(target, r.inputFlags);
         receiptHash.update(JSON.stringify(r) + '\n');
         receiptCount++;
         if (samples.length < 8) samples.push(r);
@@ -262,7 +237,11 @@ try {
       brain,
       candidate: plan.flags.candidate,
       reference: plan.flags.reference,
-      ...(target === 'v53_pressure' ? { population: V53_PRESSURE_POPULATION } : {}),
+      ...(incremental
+        ? { population: incremental.population }
+        : target === 'v53_pressure'
+          ? { population: V53_PRESSURE_POPULATION }
+          : {}),
     };
     const league = await import('../benchmark/FeatureAblationLeague.js'),
       runContract = Reflect.get(league, 'runFeatureAblationContract');

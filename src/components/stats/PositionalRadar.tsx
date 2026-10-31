@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * PositionalRadar — VPIP / PFR / 3-Bet plotted across every position.
  *
@@ -94,7 +95,7 @@ const METRICS: MetricDef[] = [
      * and the 15% ceiling below. It was per hand dealt, so a healthy 7% 3-bet
      * plotted at roughly 1.5% against a dashed reference drawn at 7% - the
      * denominator collision statBenchmarks.ts exists to prevent. Payloads
-     * without three_bet_opps fall back to per hand dealt and say so.
+     * without positive three_bet_opps remain unmeasured.
      */
     key: 'three_bet',
     label: '3-Bet',
@@ -102,9 +103,7 @@ const METRICS: MetricDef[] = [
     ceiling: 15,
     count: (r) => r.three_bet_count,
     denom: (r) =>
-      typeof r.three_bet_opps === 'number' && r.three_bet_opps > 0
-        ? r.three_bet_opps
-        : r.hands_played,
+      typeof r.three_bet_opps === 'number' && r.three_bet_opps > 0 ? r.three_bet_opps : 0,
   },
 ];
 
@@ -157,12 +156,20 @@ function toPath(values: number[]): string {
 const pct = (n: number, d: number): number => (d > 0 ? (n / d) * 100 : 0);
 
 export default function PositionalRadar({ positions, minHands = 30 }: Props) {
-  const [visible, setVisible] = useState<Record<MetricKey, boolean>>({
-    vpip: true,
-    pfr: true,
-    three_bet: false,
-  });
-  const [showReference, setShowReference] = useState(true);
+  const [visible, setVisible] = usePlayerPreference<Record<MetricKey, boolean>>(
+    'positionalRadar.visibleMetrics',
+    {
+      vpip: true,
+      pfr: true,
+      three_bet: false,
+    },
+    'global'
+  );
+  const [showReference, setShowReference] = usePlayerPreference(
+    'positionalRadar.showReference',
+    true,
+    'global'
+  );
   const [focused, setFocused] = useState<number | null>(null);
 
   const rows = useMemo(() => {
@@ -219,6 +226,9 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
     );
   }
 
+  const drawableMetrics = METRICS.filter(
+    (m) => visible[m.key] && rows.every((r) => m.denom(r) > 0)
+  );
   const lowSample = rows.filter((r) => r.hands_played < minHands);
   const activeRow = focused !== null ? rows[focused] : null;
 
@@ -241,7 +251,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
             role="img"
             aria-label={
               METRICS.some((m) => visible[m.key])
-                ? `Radar Chart Of ${METRICS.filter((m) => visible[m.key])
+                ? `Radar Chart Of ${drawableMetrics
                     .map((m) => m.label)
                     .join(', ')} Across ${total} Positions`
                 : `Radar Chart Across ${total} Positions, No Metrics Currently Shown`
@@ -284,7 +294,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
             {/* Reference shape, dashed and behind the data */}
             {showReference &&
               referenceComplete &&
-              METRICS.filter((m) => visible[m.key]).map((m) => (
+              drawableMetrics.map((m) => (
                 <path
                   key={`ref-${m.key}`}
                   className="pos-radar-reference"
@@ -295,7 +305,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
               ))}
 
             {/* Data polygons */}
-            {METRICS.filter((m) => visible[m.key]).map((m) => (
+            {drawableMetrics.map((m) => (
               <path
                 key={`data-${m.key}`}
                 d={toPath(series[m.key])}
@@ -308,7 +318,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
             ))}
 
             {/* Vertices — hover/focus targets */}
-            {METRICS.filter((m) => visible[m.key]).map((m) =>
+            {drawableMetrics.map((m) =>
               series[m.key].map((v, i) => {
                 const [x, y] = pointAt(i, total, Math.max(0, Math.min(1, v)) * R);
                 return (
@@ -430,7 +440,9 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
                   <td>{r.hands_played.toLocaleString()}</td>
                   {METRICS.filter((m) => visible[m.key]).map((m) => (
                     <td key={m.key} style={{ color: m.color }}>
-                      {pct(m.count(r), m.denom(r)).toFixed(1)}%
+                      {m.denom(r) > 0
+                        ? `${pct(m.count(r), m.denom(r)).toFixed(1)}%`
+                        : 'Not Yet Measured'}
                     </td>
                   ))}
                 </tr>
@@ -445,7 +457,9 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
           <strong>{activeRow.position}</strong>: {activeRow.hands_played.toLocaleString()} Hands,
           VPIP {pct(activeRow.vpip_count, activeRow.hands_played).toFixed(1)}%, PFR{' '}
           {pct(activeRow.pfr_count, activeRow.hands_played).toFixed(1)}%, 3-Bet{' '}
-          {pct(activeRow.three_bet_count, activeRow.hands_played).toFixed(1)}%
+          {(activeRow.three_bet_opps ?? 0) > 0
+            ? `${pct(activeRow.three_bet_count, activeRow.three_bet_opps!).toFixed(1)}%`
+            : 'Not Yet Measured'}
         </p>
       )}
 

@@ -1,3 +1,4 @@
+import { customCashGameName } from '../../utils/customCashGameName';
 import { cashGameNeverMovesPlayers } from '../../config/classicNeverMovesPlayers';
 import {
   getTournamentEntryCapacity,
@@ -1097,7 +1098,10 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
       ? { key: 'running', label: status === 'COMPLETING' ? 'Finishing' : 'Running' }
       : { key: 'closed', label: 'Entry Unavailable' };
   }
-  if (status === 'RUNNING') {
+  if (
+    status === 'RUNNING' ||
+    (t.started_at && ['REGISTERING', 'ANNOUNCED', 'STARTING_SOON'].includes(status))
+  ) {
     if (
       isInLateRegistration(
         {
@@ -1175,8 +1179,8 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
       return { key: 'registering', label: 'Open Seats' };
     }
 
-    // House rule (tournamentFilters): overdue-but-still-registering is the
-    // most "starting soon" thing in the lobby, so no lower bound here.
+    // A passed schedule is not evidence of a start. Only started_at or the
+    // running lifecycle above can declare an event running.
     const startMs = t.start_time ? new Date(t.start_time).getTime() : NaN;
     if (Number.isFinite(startMs) && startMs - Date.now() <= STARTING_SOON_MS)
       return { key: 'starting_soon', label: 'Starting Soon' };
@@ -2037,7 +2041,11 @@ export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle:
      'ACTION' OR 'MADNESS'." */
   const templateLabel = entry.game?.style?.label ?? cashTemplateLabel(entry.game?.template);
   if (templateLabel) {
-    return { headline: headline || String(entry.name || ''), subtitle: templateLabel };
+    const customName = customCashGameName(entry.name);
+    return {
+      headline: headline || String(entry.name || ''),
+      subtitle: customName ? `${templateLabel} · ${customName}` : templateLabel,
+    };
   }
   /* Strip in BOTH orders. A host may type "NLH 1/2 Late Night" or
      "1/2 NLH Late Night", and stripping only variant-then-stakes left the

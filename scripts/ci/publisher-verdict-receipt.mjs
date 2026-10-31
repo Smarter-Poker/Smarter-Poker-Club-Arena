@@ -1,3 +1,5 @@
+import { publisherJobKey } from './publisher-job-identity.mjs';
+import { isClubArenaRepository } from './repository-identity.mjs';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,7 +49,7 @@ export function validateReceipt(receipt) {
   )
     fail('invalid schema');
   if (
-    receipt.repository !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    !isClubArenaRepository(receipt.repository, receipt.repositoryId) ||
     receipt.workflowRef !==
       `${receipt.repository}/.github/workflows/publish-club-arena.yml@refs/heads/main` ||
     ![receipt.repositoryId, receipt.runId, receipt.runAttempt].every(
@@ -101,7 +103,7 @@ export function validateReceipt(receipt) {
 
 /** Inspect original metadata without replacing any present proof or accepting corruption. */
 export function missingPublisherProofs(jobKey, steps) {
-  const names = PROOFS[jobKey];
+  const names = PROOFS[publisherJobKey(jobKey)];
   if (!names || !Array.isArray(steps)) fail('invalid present step metadata');
   const seen = new Set();
   for (const step of steps) {
@@ -187,7 +189,7 @@ export function mergePublisherReceipt(
     !job ||
     !ID.test(String(job.id)) ||
     String(job.run_id) !== receipt.runId ||
-    job.name !== receipt.jobKey ||
+    publisherJobKey(job.name) !== receipt.jobKey ||
     job.status !== 'completed' ||
     job.conclusion !== 'success' ||
     job.head_sha !== triggerSha ||

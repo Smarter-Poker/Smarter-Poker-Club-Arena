@@ -189,8 +189,8 @@ describe('a known maniac is a maniac at every table size', () => {
   });
 });
 
-describe('PLO: every person is an aggressive raiser until proven otherwise', () => {
-  it('a brand-new person is a pressure target from the first hand at every PLO size', () => {
+describe('PLO: every opponent is an aggressive raiser until proven otherwise', () => {
+  it('a brand-new opponent retains the common range prior without observed opener pressure', () => {
     for (const variant of ['plo4', 'plo5', 'plo6', 'plo8']) {
       for (const scope of ['omaha:hu', 'omaha:short', 'omaha:full'] as const) {
         HorseMind.setDecisionScope(scope, variant, 'cash', [HUMAN]);
@@ -198,7 +198,7 @@ describe('PLO: every person is an aggressive raiser until proven otherwise', () 
         expect(read?.presumed, `${variant} ${scope}`).toBe(true);
         expect(maniacRaiseWidth(read)).toBeGreaterThanOrEqual(0.35);
         expect(aggressiveBettorPressure(read)).not.toBeNull();
-        expect(aggressiveOpenerPressure(read, true)).not.toBeNull();
+        expect(aggressiveOpenerPressure(read, true)).toBeNull();
         HorseMind.setDecisionScope(null);
       }
     }
@@ -251,17 +251,33 @@ describe('PLO: every person is an aggressive raiser until proven otherwise', () 
     expect(HorseMind.opponentRead(HUMAN)).toBeNull();
   });
 
-  it('seats not on the roster as people, and decisions with no roster, are never presumed', () => {
-    HorseMind.setDecisionScope('omaha:short', 'plo5', 'cash', [HUMAN]);
-    expect(HorseMind.opponentRead(HORSE)).toBeNull();
-    HorseMind.setDecisionScope('omaha:short', 'plo5', 'cash');
-    expect(HorseMind.opponentRead(HUMAN)).toBeNull();
+  it('uses the same default for every opponent with any roster metadata', () => {
+    for (const mode of ['cash', 'tournament'] as const) {
+      for (const roster of [[HUMAN], [HORSE], [], null]) {
+        HorseMind.setDecisionScope('omaha:short', 'plo5', mode, roster);
+        const person = HorseMind.opponentRead(HUMAN);
+        const horse = HorseMind.opponentRead(HORSE);
+        expect(person?.presumed).toBe(true);
+        expect(horse).toEqual(person);
+      }
+    }
   });
 
-  it('the roster clears with the decision', () => {
+  it('uses identical measured passive reads for people and horses', () => {
+    remember(HUMAN, 'plo5', 'full', TIGHT_PLO5_FULL);
+    remember(HORSE, 'plo5', 'full', TIGHT_PLO5_FULL);
+    HorseMind.setDecisionScope('omaha:full', 'plo5', 'cash', [HUMAN]);
+    expect(HorseMind.opponentRead(HORSE)).toEqual(HorseMind.opponentRead(HUMAN));
+    expect(HorseMind.opponentRead(HORSE)?.presumed).toBeUndefined();
+  });
+
+  it('clears the active scope without retaining a roster-specific strategy', () => {
     HorseMind.setDecisionScope('omaha:short', 'plo5', 'cash', [HUMAN]);
     HorseMind.setDecisionScope(null);
-    HorseMind.setDecisionScope('omaha:short', 'plo5', 'cash');
     expect(HorseMind.opponentRead(HUMAN)).toBeNull();
+    expect(HorseMind.opponentRead(HORSE)).toBeNull();
+    HorseMind.setDecisionScope('omaha:short', 'plo5', 'cash');
+    expect(HorseMind.opponentRead(HUMAN)?.presumed).toBe(true);
+    expect(HorseMind.opponentRead(HORSE)).toEqual(HorseMind.opponentRead(HUMAN));
   });
 });

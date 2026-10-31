@@ -18,7 +18,7 @@ function env(job = 'publish-to-origin', verdict = 'publish') {
   return {
     GITHUB_JOB: job,
     GITHUB_REPOSITORY: repository,
-    GITHUB_REPOSITORY_ID: '42',
+    GITHUB_REPOSITORY_ID: '1132369872',
     GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main`,
     GITHUB_WORKFLOW_SHA: sha,
     GITHUB_SHA: sha,
@@ -46,7 +46,7 @@ function env(job = 'publish-to-origin', verdict = 'publish') {
 }
 function trusted(jobKey = 'publish-to-origin') {
   return {
-    repositoryId: '42',
+    repositoryId: '1132369872',
     triggerSha: sha,
     workflowSha: sha,
     run: {
@@ -57,7 +57,7 @@ function trusted(jobKey = 'publish-to-origin') {
       head_branch: 'main',
       head_sha: sha,
       path: '.github/workflows/publish-club-arena.yml',
-      repository: { id: 42, full_name: repository },
+      repository: { id: 1132369872, full_name: repository },
     },
     job: {
       id: 456,
@@ -75,8 +75,8 @@ function trusted(jobKey = 'publish-to-origin') {
       name: receiptName(jobKey, 1),
       workflow_run: {
         id: 123,
-        repository_id: 42,
-        head_repository_id: 42,
+        repository_id: 1132369872,
+        head_repository_id: 1132369872,
         head_sha: sha,
         head_branch: 'main',
       },
@@ -102,7 +102,9 @@ describe('original publisher verdict receipt', () => {
   ])('executes the maintained %s %s producer shell with actual bound outputs', (job, verdict) => {
     const dir = mkdtempSync(join(tmpdir(), 'publisher-verdict-wiring-'));
     try {
-      const workflow = parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
+      const workflow = parse(
+        readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
+      );
       const writer = workflow.jobs[job].steps.find(
         (s: any) =>
           s.name ===
@@ -117,7 +119,7 @@ describe('original publisher verdict receipt', () => {
           ? ['retained_verified', 'retained_recorded']
           : ['verdict', 'immutable_publish', 'verified'];
       const bindings: Record<string, string> = {
-        'needs.publish-needed.outputs.target_sha': selected,
+        'inputs.target_sha': selected,
         'steps.verdict.outputs.verdict': verdict,
         'steps.verified.outputs.sha': e.RECEIPT_VERIFIED_SHA,
         'steps.verdict.outputs.theirs': sha,
@@ -322,7 +324,7 @@ describe('original publisher verdict receipt', () => {
     expect(() => validateReceipt(r)).toThrow();
   });
   it('captures original outcomes and genuine verification output in the existing producer', () => {
-    const source = readFileSync('.github/workflows/publish-club-arena.yml', 'utf8');
+    const source = readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8');
     expect(source).toContain(
       'steps.verdict.conclusion, steps.immutable_publish.conclusion, steps.verified.conclusion'
     );
@@ -339,4 +341,28 @@ describe('original publisher verdict receipt', () => {
       source.indexOf('Remove origin credentials and control sockets')
     );
   });
+});
+
+it('accepts approved organization name only with the original immutable repository ID', () => {
+  const e = env();
+  e.GITHUB_REPOSITORY = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
+  e.GITHUB_WORKFLOW_REF = `${e.GITHUB_REPOSITORY}/.github/workflows/publish-club-arena.yml@refs/heads/main`;
+  expect(() => createReceipt(e)).not.toThrow();
+  expect(() => createReceipt({ ...e, GITHUB_REPOSITORY_ID: '42' })).toThrow();
+  expect(() =>
+    createReceipt({ ...e, GITHUB_REPOSITORY: 'evil/Smarter-Poker-Club-Arena' })
+  ).toThrow();
+});
+
+it('binds the exact transaction display name while keeping logical receipt identity', () => {
+  for (const key of ['publish-to-origin', 'retain-runtime']) {
+    const t = trusted(key);
+    const r = createReceipt(env(key, key === 'retain-runtime' ? 'retained' : 'publish'));
+    t.job.name = `production / ${key}`;
+    expect(mergePublisherReceipt(r, t).steps).toEqual(r.steps);
+    for (const bad of [`other / ${key}`, `production / nested / ${key}`]) {
+      t.job.name = bad;
+      expect(() => mergePublisherReceipt(r, t)).toThrow();
+    }
+  }
 });

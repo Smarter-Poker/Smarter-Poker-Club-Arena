@@ -45,7 +45,9 @@ describe('cashier navigation and ledger controls stay operational', () => {
   });
 
   it('searches on the server and filters direction locally without widening the money path', () => {
-    expect(PAGE).toContain("useState<'all' | 'in' | 'out' | 'managed'>('all')");
+    expect(PAGE).toMatch(
+      /usePlayerPreference<'all' \| 'in' \| 'out'>\(\s*'CashierTradePage:recordDirection',\s*'all'/
+    );
     // The search reaches the whole history on the server (a name or an invoice number).
     expect(PAGE).toContain('p_search: historySearch || null,');
     expect(PAGE).toContain("recordDirection === 'all' || row.direction === recordDirection");

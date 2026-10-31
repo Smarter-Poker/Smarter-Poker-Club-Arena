@@ -90,6 +90,36 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
     ).toBe(191_096);
   });
 
+  it('rejects the recorded setup rollover into the synchronized break window', () => {
+    const observed = Date.parse('2026-10-29T05:44:12.139Z');
+    const recorded = {
+      ...row,
+      current_level: 19,
+      synchronized_breaks: true,
+      level_started_at: '2026-10-29T05:35:52.154Z',
+      blind_structure: Array.from({ length: 24 }, () => ({ durationMinutes: 10 })),
+    };
+    expect(eligibleHudClock(recorded, observed)?.remainingMs).toBe(100_015);
+    expect(selectableHudClock(recorded, observed)).toBeNull();
+    expect(
+      selectableHudClock({ ...recorded, synchronized_breaks: false }, observed)
+    ).not.toBeNull();
+    const earlier = Date.parse('2026-10-29T05:04:12.139Z');
+    expect(
+      selectableHudClock({ ...recorded, level_started_at: '2026-10-29T04:55:52.154Z' }, earlier)
+    ).not.toBeNull();
+    expect(
+      selectableHudClock(
+        {
+          ...recorded,
+          blind_structure: Array.from({ length: 24 }, () => ({ durationMinutes: 2 })),
+          level_started_at: '2026-10-29T05:43:00Z',
+        },
+        observed
+      )
+    ).not.toBeNull();
+  });
+
   it('keeps delivery/render reserve outside synchronized breaks and resumes after the hour', () => {
     const at = Date.parse('2026-10-23T04:53:00Z');
     const clockRow = {

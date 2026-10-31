@@ -48,6 +48,7 @@ export interface StatsMetricAvailabilityContract {
   wtsd: boolean;
   wtsd_opportunities: number;
   hours_played: boolean;
+  cash_hours_played?: boolean;
 }
 
 export interface StatsCoverageContract {
@@ -169,7 +170,8 @@ export const STATS_METRIC_DEFINITIONS: Readonly<Record<string, StatsMetricDefini
     unit: 'percent',
     source: 'hand_facts',
     minimumSample: 50,
-    definition: 'Accepted 3-bets divided by exact opportunities to make the third full raise.',
+    definition:
+      'Accepted Preflop Re-Raises Over An Opening Raise Divided By Recorded Opportunities To Re-Raise.',
   },
   cbet_flop: {
     key: 'cbet_flop',
@@ -297,6 +299,7 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
         wtsd: metricAvailability.wtsd === true,
         wtsd_opportunities: Math.max(0, Math.floor(finite(metricAvailability.wtsd_opportunities))),
         hours_played: metricAvailability.hours_played === true,
+        cash_hours_played: metricAvailability.cash_hours_played === true,
       },
       live_tail_included: quality.live_tail_included === true,
     },

@@ -1,0 +1,9 @@
+# Frozen original custody attestation
+
+The serving EED engine can retain unfinished originals but its claim door correctly refuses every write during the maintenance freeze. Its service identity also cannot select the private continuation table. That leaves the existing release checkpoint unable to verify native custody before stopping an old controller.
+
+This change adds a distinct service-only, read-only PostgreSQL function. It requires the existing actor and current unexpired tournament lease, a genuine durable counting-down freeze, the exact capsule sequence and digest, the original reserved permit and lifecycle, and the retained disposition. A later hand, final submission, atomic commit, changed binding or unknown identity refuses the read. The response contains only identities, digests and the existing maintenance timestamps. Private controller, deck, event, seat and engine payloads remain inaccessible.
+
+The function does not claim or retain a hand, modify financial or lease rows, stop a controller or certify a restart. The checkpoint must still prove the actual in-memory controller, complete physical custody and the same maintenance owner before and after every await. Runtime checkpoint installation and affected live play are separate delivery requirements.
+
+The existing isolated PostgreSQL continuation driver covers a real service-role READ ONLY transaction, unchanged public/private data and catalogs, original metadata privacy, installation rollback and fourteen freeze, lease, actor, capsule, original-binding, accepted/later-permit and public-role refusals. The catalog witness is false before installation and true only for the exact qualified function body and permissions afterward. Existing native original-hand and settlement cases remain enforced in the same required accounting route.

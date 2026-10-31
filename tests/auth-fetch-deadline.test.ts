@@ -1,3 +1,4 @@
+import { buildSync } from 'esbuild';
 import { GoTrueClient } from '@supabase/auth-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchAuthWithDeadline, AUTH_FETCH_DEADLINE_MS } from '../src/lib/authFetchDeadline';
@@ -135,5 +136,27 @@ describe('the real auth SDK releases its lock after a stalled refresh', () => {
     expect((await client.refreshSession()).error).toBeNull();
     expect(JSON.parse(storage.get(key)!).refresh_token).toBe('rotated-refresh');
     await client.stopAutoRefresh();
+  });
+});
+
+describe('auth deadline is available before shared session ownership', () => {
+  it('bundles the deadline eagerly so an auth request never waits for a helper chunk', () => {
+    const { metafile } = buildSync({
+      entryPoints: ['src/lib/supabase.ts'],
+      bundle: true,
+      splitting: true,
+      format: 'esm',
+      platform: 'browser',
+      packages: 'external',
+      outdir: 'auth-deadline-fixture',
+      write: false,
+      metafile: true,
+      logLevel: 'silent',
+    });
+    const helper = 'src/lib/authFetchDeadline.ts';
+    const outputs = Object.values(metafile!.outputs);
+    expect(outputs.some((output) => output.entryPoint === helper)).toBe(false);
+    const client = outputs.find((output) => output.entryPoint === 'src/lib/supabase.ts');
+    expect(client?.inputs[helper]?.bytesInOutput).toBeGreaterThan(0);
   });
 });

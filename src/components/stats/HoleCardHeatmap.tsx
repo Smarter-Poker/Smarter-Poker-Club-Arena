@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * HoleCardHeatmap — the 169-cell starting-hand grid.
  *
@@ -106,9 +107,21 @@ export default function HoleCardHeatmap({
   const [readError, setReadError] = useState<string | null>(null);
   const [drillError, setDrillError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [mode, setMode] = useState<ViewMode>('frequency');
-  const [position, setPosition] = useState<string | null>(null);
-  const [variant, setVariant] = useState<string | null>(null);
+  const [mode, setMode] = usePlayerPreference<ViewMode>(
+    'holeCardHeatmap.mode',
+    'frequency',
+    'global'
+  );
+  const [position, setPosition] = usePlayerPreference<string | null>(
+    'holeCardHeatmap.position',
+    null,
+    'global'
+  );
+  const [variant, setVariant] = usePlayerPreference<string | null>(
+    'holeCardHeatmap.variant',
+    null,
+    'global'
+  );
   const [hovered, setHovered] = useState<string | null>(null);
   const [activeCell, setActiveCell] = useState('AA');
   const gridRef = useRef<HTMLDivElement>(null);

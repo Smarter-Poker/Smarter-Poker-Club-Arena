@@ -51,6 +51,11 @@ on:
         required: false
         default: ''
         type: string
+      recover_selector_oid:
+        description: 'Observed VALID replacement selector OID; exact proof-hand retirement-only recovery'
+        required: false
+        default: ''
+        type: string
       recover_before:
         description: 'Inspected original operation timestamp (provenance only; admission uses fresh server time)'
         required: false
@@ -139,6 +144,7 @@ jobs:
           RECOVER_INDEX: ${{ inputs.recover_index }}
           RECOVER_OID: ${{ inputs.recover_oid }}
           RECOVER_BEFORE: ${{ inputs.recover_before }}
+          RECOVER_SELECTOR_OID: ${{ inputs.recover_selector_oid }}
           RECOVER_TRANSIENT_OID: ${{ inputs.recover_transient_oid }}
           MAINTENANCE_THAW_REPAIR: ${{ inputs.maintenance_thaw_repair }}
           QUALIFY_RAKE_REPORT_HISTORY: ${{ inputs.qualify_rake_report_history }}
@@ -188,6 +194,9 @@ jobs:
           fi
           if [[ -n "$RECOVER_TRANSIENT_OID" ]]; then
             recovery_args+=(--recover-transient-oid "$RECOVER_TRANSIENT_OID")
+          fi
+          if [[ -n "${RECOVER_SELECTOR_OID:-}" ]]; then
+            recovery_args+=(--recover-selector-oid "$RECOVER_SELECTOR_OID")
           fi
           if [[ -n "$FINAL_TABLE_PAGES" || -n "$FINAL_TABLE_OPERATION" ]]; then
             recovery_args+=(--final-table-pages "$FINAL_TABLE_PAGES" --final-table-operation "$FINAL_TABLE_OPERATION")

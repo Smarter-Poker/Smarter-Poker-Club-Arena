@@ -14,6 +14,11 @@ vi.mock('../services/supabase/client.js', () => ({
             .filter(Boolean);
         return q;
       };
+      q.gt = (column: string, cursor: string) => {
+        q.cursorColumn = column;
+        q.cursor = cursor;
+        return q;
+      };
       q.limit = (n: number) => {
         q.limitTo = n;
         return q;
@@ -241,3 +246,136 @@ describe('accepted entries awaiting chairs are seated through the database door'
     expect(transport.rpc).not.toHaveBeenCalled();
   });
 });
+
+describe('large MTT launch proof', () => {
+  it.each([
+    { count: 1000, fault: '', expected: true },
+    { count: 1001, fault: '', expected: true },
+    { count: 9001, fault: '', expected: true },
+    { count: 1001, fault: 'last-stack', expected: false },
+    { count: 1001, fault: 'roster-page', expected: false },
+    { count: 1001, fault: 'seat-page', expected: false },
+  ])('proves the full $count-player field with $fault', async ({ count, fault, expected }) => {
+    const players = Array.from({ length: count }, (_, i) => ({
+      id: id(10000 + i),
+      user_id: id(20000 + i),
+      status: 'playing',
+      table_id: id(30000 + Math.floor(i / 9)),
+      seat_number: (i % 9) + 1,
+      chips: 1000,
+    }));
+    const tables = Array.from({ length: Math.ceil(count / 9) }, (_, i) => ({
+      id: id(30000 + i),
+      status: 'waiting',
+      max_players: 9,
+      current_players: Math.min(9, count - i * 9),
+    }));
+    const seats = players.map((p, i) => ({ ...p, id: id(40000 + i), stack: p.chips }));
+    if (fault === 'last-stack') seats.at(-1)!.stack = 0;
+    transport.read.mockImplementation((table: string, q: any) => {
+      if (
+        q.cursor &&
+        ((fault === 'roster-page' && table === 'tournament_players') ||
+          (fault === 'seat-page' && table === 'table_seats'))
+      ) {
+        return { data: null, error: { message: 'page unavailable' } };
+      }
+      if (table === 'tournaments')
+        return { data: { status: 'REGISTERING', started_at: null }, error: null };
+      const rows = ({ tournament_players: players, tables, table_seats: seats } as any)[table];
+      if (!rows) throw new Error(`Unexpected table ${table}`);
+      return {
+        data: rows
+          .filter((r: any) => !q.cursor || r[q.cursorColumn] > q.cursor)
+          .slice(0, Math.min(q.limitTo ?? 1000, 1000)),
+        error: null,
+      };
+    });
+    const manager: any = Object.create(TournamentManagerBase.prototype);
+    manager.tournamentId = tournamentId;
+    manager.tableEngines = new Map(tables.map((t) => [t.id, {}]));
+    manager.assertLifecycleCurrent = () => undefined;
+    manager.lifecycleIsCurrent = () => true;
+    manager.captureLifecycleToken = () => ({});
+    if (fault === 'roster-page' || fault === 'seat-page') {
+      await expect(manager.createTablesAndSeatPlayers(mtt())).rejects.toThrow('read incomplete');
+      expect(transport.rpc).not.toHaveBeenCalled();
+    }
+    if (!fault) {
+      await expect(manager.createTablesAndSeatPlayers(mtt())).resolves.toBeUndefined();
+      for (const table of ['tournament_players', 'table_seats']) {
+        expect(transport.read.mock.calls.some(([name, q]) => name === table && q.cursor)).toBe(
+          true
+        );
+      }
+      expect(transport.rpc).not.toHaveBeenCalled();
+    }
+    expect(
+      await manager.proveTournamentLaunchSetup(
+        {},
+        mtt(),
+        2,
+        players.map((p) => p.user_id),
+        count,
+        null,
+        start,
+        players.map((p) => p.id)
+      )
+    ).toBe(expected);
+  });
+});
+
+describe('balancing sees every occupied tournament table', () => {
+  it.each([1000, 1001, 1009, 9001])('includes all tables holding %i seats', async (count) => {
+    const tables = Array.from({ length: Math.ceil(count / 9) }, (_, i) => ({ id: id(50000 + i) }));
+    const seats = Array.from({ length: count }, (_, i) => ({
+      id: id(60000 + i),
+      table_id: tables[Math.floor(i / 9)].id,
+    }));
+    transport.read.mockImplementation((table: string, q: any) => ({
+      data: (table === 'tables' ? tables : seats)
+        .filter((r: any) => !q.cursor || r.id > q.cursor)
+        .slice(0, Math.min(q.limitTo ?? 1000, 1000)),
+      error: null,
+    }));
+    const manager: any = Object.create(TournamentManagerBase.prototype);
+    manager.tournamentId = tournamentId;
+    manager.captureLifecycleToken = () => ({});
+    manager.lifecycleIsCurrent = () => true;
+    expect(await manager.liveTournamentTableIdsWithPlayers()).toEqual(tables.map((t) => t.id));
+    expect(transport.rpc).not.toHaveBeenCalled();
+  });
+});
+
+it.each(['table-page', 'seat-page', 'withdrawn'])(
+  'keeps a partial live field unknown: %s',
+  async (fault) => {
+    let current = true;
+    const manager: any = Object.create(TournamentManagerBase.prototype);
+    manager.tournamentId = tournamentId;
+    manager.captureLifecycleToken = () => ({});
+    manager.lifecycleIsCurrent = () => current;
+    transport.read.mockImplementation((table: string, q: any) => {
+      if (
+        q.cursor &&
+        ((fault === 'table-page' && table === 'tables') ||
+          (fault === 'seat-page' && table === 'table_seats'))
+      ) {
+        return { data: null, error: new Error('later page unavailable') };
+      }
+      if (fault === 'withdrawn') current = false;
+      const rows =
+        table === 'tables'
+          ? Array.from({ length: fault === 'table-page' ? 1001 : 1 }, (_, i) => ({
+              id: id(50000 + i),
+            }))
+          : Array.from({ length: 1001 }, (_, i) => ({ id: id(60000 + i), table_id: id(50000) }));
+      return {
+        data: rows.filter((r) => !q.cursor || r.id > q.cursor).slice(0, q.limitTo ?? 1000),
+        error: null,
+      };
+    });
+    expect(await manager.liveTournamentTableIdsWithPlayers()).toBeNull();
+    expect(transport.rpc).not.toHaveBeenCalled();
+  }
+);

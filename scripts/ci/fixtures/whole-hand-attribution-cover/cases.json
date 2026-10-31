@@ -1,0 +1,169 @@
+[
+  ["clean", "", [0, 0, 0]],
+  [
+    "empty_window",
+    "DELETE FROM accounting_cash_rake_sources;DELETE FROM accounting_cash_accrual_batches;DELETE FROM rake_attributions;DELETE FROM rake_records",
+    [0, 0, 0]
+  ],
+  [
+    "null_source_key",
+    "INSERT INTO accounting_cash_rake_sources SELECT md5('null-extra')::uuid,NULL,player_id,club_id,earned_at,1,contract,union_id,coordinator_union_id FROM accounting_cash_rake_sources WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 0, 1]
+  ],
+  [
+    "missing_source",
+    "DELETE FROM accounting_cash_rake_sources WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 1, 0]
+  ],
+  [
+    "missing_batch",
+    "DELETE FROM accounting_cash_accrual_batches WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 1, 1]
+  ],
+  [
+    "missing_attribution",
+    "DELETE FROM rake_attributions WHERE rake_record_id=md5('record-1')::uuid",
+    [1, 0, 1]
+  ],
+  [
+    "wrong_hand",
+    "UPDATE rake_attributions SET hand_id=md5('wrong')::uuid WHERE rake_record_id=md5('record-1')::uuid",
+    [1, 0, 1]
+  ],
+  [
+    "wrong_contract",
+    "UPDATE accounting_cash_rake_sources SET contract=jsonb_set(contract,'{club_id}',to_jsonb('wrong'::text)) WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 1, 0]
+  ],
+  [
+    "wrong_total",
+    "UPDATE rake_records SET rake_amount=2 WHERE id=md5('record-1')::uuid",
+    [1, 0, 0]
+  ],
+  [
+    "wrong_batch",
+    "UPDATE accounting_cash_accrual_batches SET status='blocked' WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 1, 1]
+  ],
+  [
+    "wrong_scope",
+    "UPDATE accounting_cash_rake_sources SET contract=jsonb_set(contract,'{union_id}',to_jsonb(md5('wrong')::uuid)) WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 0, 1]
+  ],
+  [
+    "tournament",
+    "UPDATE rake_records SET is_tournament=true WHERE id=md5('record-1')::uuid",
+    [0, 0, 1]
+  ],
+  [
+    "extra_source",
+    "INSERT INTO accounting_cash_rake_sources SELECT md5('extra')::uuid,md5('missing')::uuid,player_id,club_id,earned_at,1,contract,union_id,coordinator_union_id FROM accounting_cash_rake_sources WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 0, 1]
+  ],
+  [
+    "outside_window",
+    "UPDATE rake_records SET created_at='2026-10-12 10:00Z' WHERE id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET earned_at='2026-10-12 10:00Z' WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 0, 0]
+  ],
+  [
+    "left_boundary",
+    "UPDATE rake_records SET created_at='2026-10-12 07:00Z' WHERE id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET earned_at='2026-10-12 07:00Z' WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 0, 0]
+  ],
+  [
+    "right_boundary",
+    "UPDATE rake_records SET created_at='2026-10-12 09:00Z' WHERE id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET earned_at='2026-10-12 09:00Z' WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 0, 0]
+  ],
+  [
+    "duplicate_attribution",
+    "INSERT INTO rake_attributions SELECT md5('duplicate-attribution')::uuid,rake_record_id,hand_id,player_id,club_id,weighted_rake_credit FROM rake_attributions WHERE rake_record_id=md5('record-1')::uuid",
+    [1, 1, 0]
+  ],
+  [
+    "null_player",
+    "UPDATE rake_attributions SET player_id=NULL WHERE rake_record_id=md5('record-1')::uuid",
+    [1, 1, 1]
+  ],
+  [
+    "wrong_source_club",
+    "UPDATE accounting_cash_rake_sources SET club_id='10000000-0000-0000-0000-000000000002' WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 1, 0]
+  ],
+  [
+    "source_before_full_week",
+    "UPDATE accounting_cash_rake_sources SET earned_at='2026-10-11 08:00Z' WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 1, 0]
+  ],
+  [
+    "source_elsewhere_in_full_week",
+    "UPDATE accounting_cash_rake_sources SET earned_at='2026-10-12 10:00Z' WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 1, 0]
+  ],
+  [
+    "relaxed_duplicate_bad_source",
+    "DROP INDEX source_record;INSERT INTO accounting_cash_rake_sources SELECT md5('duplicate-source')::uuid,rake_record_id,player_id,club_id,earned_at,rake_credit,jsonb_set(contract,'{club_id}',to_jsonb('wrong'::text)),union_id,coordinator_union_id FROM accounting_cash_rake_sources WHERE rake_record_id=md5('record-1')::uuid",
+    [0, 1, 0]
+  ],
+  ["different_current_unions", "UPDATE clubs SET union_id=md5(id::text)::uuid", null],
+  [
+    "per_club_launch_cutoff",
+    "INSERT INTO launch_cutoffs VALUES('10000000-0000-0000-0000-000000000001','2026-10-12 08:30Z')",
+    null
+  ],
+  [
+    "scope_house",
+    "UPDATE clubs SET is_union=true,union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000002';UPDATE clubs SET union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000001';UPDATE rake_records SET club_id='10000000-0000-0000-0000-000000000002' WHERE id=md5('record-1')::uuid",
+    null
+  ],
+  [
+    "valid_house_source",
+    "UPDATE clubs SET is_union=true,union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000002';UPDATE clubs SET union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000001';UPDATE rake_records SET club_id='10000000-0000-0000-0000-000000000002' WHERE id=md5('record-1')::uuid;UPDATE rake_attributions SET club_id='10000000-0000-0000-0000-000000000002'WHERE rake_record_id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET club_id='10000000-0000-0000-0000-000000000002',union_id=md5('union')::uuid,coordinator_union_id=md5('union')::uuid,contract=contract||jsonb_build_object('club_id','10000000-0000-0000-0000-000000000002','union_id',md5('union')::uuid,'coordinator_union_id',md5('union')::uuid,'is_union_house','true')WHERE rake_record_id=md5('record-1')::uuid",
+    null
+  ],
+  [
+    "missing_house_source",
+    "UPDATE clubs SET is_union=true,union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000002';UPDATE clubs SET union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000001';UPDATE rake_records SET club_id='10000000-0000-0000-0000-000000000002' WHERE id=md5('record-1')::uuid;UPDATE rake_attributions SET club_id='10000000-0000-0000-0000-000000000002'WHERE rake_record_id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET club_id='10000000-0000-0000-0000-000000000002',union_id=md5('union')::uuid,coordinator_union_id=md5('union')::uuid,contract=contract||jsonb_build_object('club_id','10000000-0000-0000-0000-000000000002','union_id',md5('union')::uuid,'coordinator_union_id',md5('union')::uuid,'is_union_house','true')WHERE rake_record_id=md5('record-1')::uuid;DELETE FROM accounting_cash_rake_sources WHERE rake_record_id=md5('record-1')::uuid",
+    null
+  ],
+  [
+    "bad_house_source_flag",
+    "UPDATE clubs SET is_union=true,union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000002';UPDATE clubs SET union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000001';UPDATE rake_records SET club_id='10000000-0000-0000-0000-000000000002' WHERE id=md5('record-1')::uuid;UPDATE rake_attributions SET club_id='10000000-0000-0000-0000-000000000002'WHERE rake_record_id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET club_id='10000000-0000-0000-0000-000000000002',union_id=md5('union')::uuid,coordinator_union_id=md5('union')::uuid,contract=contract||jsonb_build_object('club_id','10000000-0000-0000-0000-000000000002','union_id',md5('union')::uuid,'coordinator_union_id',md5('union')::uuid,'is_union_house','true')WHERE rake_record_id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET contract=jsonb_set(contract,'{is_union_house}','false')WHERE rake_record_id=md5('record-1')::uuid",
+    null
+  ],
+  [
+    "bad_house_source_other_union",
+    "UPDATE clubs SET is_union=true,union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000002';UPDATE clubs SET union_id=md5('union')::uuid WHERE id='10000000-0000-0000-0000-000000000001';UPDATE rake_records SET club_id='10000000-0000-0000-0000-000000000002' WHERE id=md5('record-1')::uuid;UPDATE rake_attributions SET club_id='10000000-0000-0000-0000-000000000002'WHERE rake_record_id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET club_id='10000000-0000-0000-0000-000000000002',union_id=md5('union')::uuid,coordinator_union_id=md5('union')::uuid,contract=contract||jsonb_build_object('club_id','10000000-0000-0000-0000-000000000002','union_id',md5('union')::uuid,'coordinator_union_id',md5('union')::uuid,'is_union_house','true')WHERE rake_record_id=md5('record-1')::uuid;UPDATE accounting_cash_rake_sources SET union_id=md5('foreign')::uuid WHERE rake_record_id=md5('record-1')::uuid",
+    null
+  ],
+  [
+    "late_launch_inside_later_window",
+    "INSERT INTO launch_cutoffs VALUES('10000000-0000-0000-0000-000000000001','2026-10-15 08:30Z')",
+    null
+  ],
+  [
+    "launch_after_week",
+    "INSERT INTO launch_cutoffs VALUES('10000000-0000-0000-0000-000000000001','2026-10-20 08:30Z')",
+    null
+  ],
+  [
+    "source_earned_different_window_than_record_created",
+    "UPDATE accounting_cash_rake_sources SET earned_at='2026-10-12 10:30Z' WHERE rake_record_id=md5('record-1')::uuid",
+    null
+  ],
+  [
+    "empty_requested_club",
+    "DELETE FROM rake_attributions WHERE club_id='10000000-0000-0000-0000-000000000001';DELETE FROM accounting_cash_rake_sources WHERE club_id='10000000-0000-0000-0000-000000000001'",
+    null
+  ],
+  [
+    "duplicate_accrual_batch_bag",
+    "ALTER TABLE accounting_cash_accrual_batches DROP CONSTRAINT accounting_cash_accrual_batches_pkey;INSERT INTO accounting_cash_accrual_batches SELECT * FROM accounting_cash_accrual_batches WHERE rake_record_id=md5('record-1')::uuid",
+    null
+  ],
+  [
+    "null_batch_status",
+    "UPDATE accounting_cash_accrual_batches SET status=NULL WHERE rake_record_id=md5('record-1')::uuid",
+    null
+  ]
+]

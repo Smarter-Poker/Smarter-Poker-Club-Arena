@@ -35,6 +35,9 @@ function contestedLine(hand: CapturedPhase8Hand): CapturedPhase8Hand {
 }
 const contested = hands.map(contestedLine);
 
+// V61 (2026-10-29) shades hold'em one-pair river calls by default; these
+// captured replays keep the explicit off arm so the recorded receipts and
+// admissions still mean what they meant when they were captured.
 describe('Phase 8 captured public-line reconstruction', () => {
   it.each(hands)('review $reviewId remains legal and private', (hand) => {
     const { hero, gs, recorded } = reconstructPhase8Hand(hand);
@@ -44,7 +47,7 @@ describe('Phase 8 captured public-line reconstruction', () => {
       gs,
       'balanced',
       {},
-      { phase8Postflop: 'off', mind: false, decisionTimeMs: 0 }
+      { phase8Postflop: 'off', mind: false, v61RiverOnePairShade: false, decisionTimeMs: 0 }
     );
     seedFastRandom(hand.reviewId);
     // Semantic replay is clock-independent. The league separately measures
@@ -57,7 +60,7 @@ describe('Phase 8 captured public-line reconstruction', () => {
         gs,
         'balanced',
         {},
-        { phase8Postflop: 'candidate', mind: false, decisionTimeMs: 0 }
+        { phase8Postflop: 'candidate', mind: false, v61RiverOnePairShade: false, decisionTimeMs: 0 }
       );
     } finally {
       clock.mockRestore();
@@ -85,6 +88,7 @@ describe('Phase 8 captured public-line reconstruction', () => {
         {
           phase8Postflop: 'off',
           mind: false,
+          v61RiverOnePairShade: false,
           decisionTimeMs: 0,
           committedRaiseDiscipline: false,
         }
@@ -129,7 +133,7 @@ describe('Phase 8 captured public-line reconstruction', () => {
       gs,
       'balanced',
       {},
-      { phase8Postflop: 'off', mind: false, decisionTimeMs: 0 }
+      { phase8Postflop: 'off', mind: false, v61RiverOnePairShade: false, decisionTimeMs: 0 }
     );
     seedFastRandom(hand.reviewId);
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
@@ -140,7 +144,7 @@ describe('Phase 8 captured public-line reconstruction', () => {
         gs,
         'balanced',
         {},
-        { phase8Postflop: 'candidate', mind: false, decisionTimeMs: 0 }
+        { phase8Postflop: 'candidate', mind: false, v61RiverOnePairShade: false, decisionTimeMs: 0 }
       );
     } finally {
       clock.mockRestore();
@@ -166,7 +170,7 @@ describe('Phase 8.3 qualified authority on the actual candidate receipt', () => 
         gs,
         'balanced',
         {},
-        { phase8Postflop: mode, mind: false, decisionTimeMs: 0 }
+        { phase8Postflop: mode, mind: false, v61RiverOnePairShade: false, decisionTimeMs: 0 }
       );
     } finally {
       clock.mockRestore();

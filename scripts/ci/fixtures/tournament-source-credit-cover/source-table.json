@@ -1,0 +1,141 @@
+{
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "not_null": true,
+      "default": "gen_random_uuid()"
+    },
+    {
+      "name": "rake_record_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "not_null": false,
+      "default": null
+    },
+    {
+      "name": "coordinator_union_id",
+      "type": "uuid",
+      "not_null": false,
+      "default": null
+    },
+    {
+      "name": "game_type",
+      "type": "text",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "registration_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "source_charge_ledger_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "source_entitlement_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "charged_at",
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "rake_credit",
+      "type": "numeric",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "contract",
+      "type": "jsonb",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "recorded_at",
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "default": "transaction_timestamp()"
+    }
+  ],
+  "constraints": [
+    {
+      "name": "accounting_tournament_fee_sources_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_credit_check",
+      "definition": "CHECK (rake_credit >= 0::numeric AND rake_credit = round(rake_credit, 2) AND (rake_credit::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])))"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_record_id_fkey",
+      "definition": "FOREIGN KEY (rake_record_id) REFERENCES accounting_tournament_fee_batches(rake_record_id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_record_id_player_id_key",
+      "definition": "UNIQUE (rake_record_id, player_id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_source_entitlement_id_key",
+      "definition": "UNIQUE (source_entitlement_id)"
+    }
+  ],
+  "indexes": [
+    "CREATE INDEX accounting_tournament_fee_scope_union_cover ON public.accounting_tournament_fee_sources USING btree (tournament_id) INCLUDE (union_id)",
+    "CREATE INDEX accounting_tournament_fee_sources_club_event ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id)",
+    "CREATE INDEX accounting_tournament_fee_sources_club_recorded ON public.accounting_tournament_fee_sources USING btree (club_id, recorded_at) INCLUDE (charged_at)",
+    "CREATE INDEX accounting_tournament_fee_sources_coordinator_club ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, club_id) WHERE (coordinator_union_id IS NOT NULL)",
+    "CREATE INDEX accounting_tournament_fee_sources_coordinator_event ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, tournament_id) WHERE (coordinator_union_id IS NOT NULL)",
+    "CREATE INDEX accounting_tournament_fee_sources_event ON public.accounting_tournament_fee_sources USING btree (tournament_id, rake_record_id)",
+    "CREATE INDEX accounting_tournament_fee_sources_standalone_club ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id) WHERE (coordinator_union_id IS NULL)",
+    "CREATE INDEX accounting_tournament_rakeback_player ON public.accounting_tournament_fee_sources USING btree (club_id, player_id)",
+    "CREATE INDEX accounting_tournament_standalone_club_event_cover ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id) INCLUDE (id, charged_at, rake_credit, union_id) WHERE (coordinator_union_id IS NULL)",
+    "CREATE INDEX accounting_tournament_week_club_event_cover ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, club_id, tournament_id) INCLUDE (id, charged_at, rake_credit, union_id) WHERE (coordinator_union_id IS NOT NULL)",
+    "CREATE UNIQUE INDEX accounting_tournament_fee_sources_pkey ON public.accounting_tournament_fee_sources USING btree (id)",
+    "CREATE UNIQUE INDEX accounting_tournament_fee_sources_rake_record_id_player_id_key ON public.accounting_tournament_fee_sources USING btree (rake_record_id, player_id)",
+    "CREATE UNIQUE INDEX accounting_tournament_fee_sources_source_entitlement_id_key ON public.accounting_tournament_fee_sources USING btree (source_entitlement_id)"
+  ],
+  "table": {
+    "owner": "postgres",
+    "kind": "r",
+    "persistence": "p",
+    "acl": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+    "rls": true,
+    "force_rls": false,
+    "policies": null
+  },
+  "limits": "Actual15columns/defaults/NOTNULL/5constraints/13existing indexes/RLS/ACL. Original producer/immutability/FK triggers are retained as production catalog authority and untouched, local accessed-column native does not reproduce all financial producers."
+}

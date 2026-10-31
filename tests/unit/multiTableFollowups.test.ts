@@ -105,7 +105,7 @@ describe('Browse Full Lobby lands on its list once per request', () => {
 
   it('every request stamps the list AND a fresh nonce, the same list included', () => {
     expect(open).toContain('lobbyLandingNonceRef.current += 1;');
-    expect(open).toContain('lobbyGameType: list, lobbyLandingNonce: nonce');
+    expect(open).toMatch(/lobbyGameType: list,\s*lobbyLandingNonce: nonce/);
     // The old guard made a repeat request for the same list a no-op.
     expect(open).not.toContain('t.lobbyGameType !== list');
     expect(open).toContain('cur.some(isLobbyTab)');
@@ -274,9 +274,10 @@ describe('quickJoinTournamentRows when the list cannot be read', () => {
     expect(guard.indexOf('return [];')).toBeGreaterThan(thrown);
   });
 
-  it('null takes the stalled exit, which lands on the tournament list', () => {
+  it('null takes the stalled exit without overriding the saved lobby view', () => {
     const exit = sliceBetween(HANDLER, 'if (tournamentRows === null) {', 'setQuickJoin((q) =>');
-    expect(exit).toContain('openLobbyTabOn(lobbyList);');
+    expect(exit).toContain("masterBus.emit('OPEN_LOBBY_TAB', {});");
+    expect(exit).not.toContain('openLobbyTabOn(');
     expect(exit).toContain('return;');
   });
 });
@@ -409,10 +410,10 @@ describe('the seat-row move and the failure exit', () => {
     expect(literal).toContain('tournamentBuyIn: t.tournamentBuyIn,');
   });
 
-  it('an exception under a tournament sheet opens the tournament list', () => {
+  it('an exception under either sheet restores the last lobby view', () => {
     const tail = HANDLER.slice(HANDLER.lastIndexOf('} catch {'));
-    expect(tail).toContain('if (sheetTournamentList) openLobbyTabOn(sheetTournamentList);');
-    expect(tail).toContain("else masterBus.emit('OPEN_LOBBY_TAB', {});");
+    expect(tail).toContain("masterBus.emit('OPEN_LOBBY_TAB', {});");
+    expect(tail).not.toContain('openLobbyTabOn(');
   });
 
   it('the list follows the sheet: set by the tab, corrected by the row, dropped for cash', () => {

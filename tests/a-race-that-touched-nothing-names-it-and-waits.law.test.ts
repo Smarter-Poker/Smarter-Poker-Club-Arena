@@ -286,7 +286,9 @@ describe('LAW: a race that touched nothing names it and waits', () => {
       // `legacy_checkpoint_countdown` admitted on.
       const guardSource = read('server/scripts/legacy-engine-checkpoint-guard.mjs');
       expect(guardSource).toContain('const reserveMs = 245000;');
-      expect(read('server/scripts/legacy-engine-checkpoint.sh')).toContain('reserve=245000+40000');
+      expect(read('server/scripts/legacy-engine-checkpoint.sh')).toContain(
+        'reserve=245000+remaining_entry'
+      );
       expect(
         deferrableCheckpointRefusal(
           withReceipt((d) => {
@@ -312,7 +314,22 @@ describe('LAW: a race that touched nothing names it and waits', () => {
       expect(checkpointModule).toContain(
         'process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);'
       );
-      expect(checkpointModule.match(/process\.exit\(/g)).toHaveLength(1);
+      const publication = checkpointModule.indexOf(
+        'const receiptPublished = await publishLegacyCheckpointReceipt('
+      );
+      const publicationFailure = checkpointModule.indexOf(
+        'if (!receiptPublished) process.exit(1);'
+      );
+      const nativeExit = checkpointModule.indexOf(
+        'process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);'
+      );
+      expect(publication).toBeGreaterThan(0);
+      expect(publicationFailure).toBeGreaterThan(publication);
+      expect(nativeExit).toBeGreaterThan(publicationFailure);
+      expect(checkpointModule.match(/process\.exit\(/g)).toHaveLength(2);
+      expect(checkpointModule.match(/process\.exit\([^;]*75[^;]*\);/g)).toEqual([
+        'process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);',
+      ]);
     });
   });
 
@@ -338,6 +355,7 @@ describe('LAW: a race that touched nothing names it and waits', () => {
             `set -euo pipefail
 die() { echo "$*" >&2; exit 1; }
 defer_proved_not_started() { echo "$*" >&2; exit 75; }
+checkpoint_final_read() { "$@"; }
 timeout() { shift; "$@"; }
 REQUEST_ROOT="$PROBE_ROOT"
 RUN_ID=35623804237-1

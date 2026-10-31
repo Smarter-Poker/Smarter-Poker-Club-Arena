@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { reportError } from '../../../utils/errorReporter';
 import { titleCase } from '../../../utils/titleCase';
+import { isRecordedSatelliteTournament } from '../../../utils/tournamentFilters';
 import { mttPhaseText, type LobbyTournamentRow } from '../lobbyEntries';
 import { useSharedSecondTick } from '../useSharedSecondTick';
 import type { ArenaGameCardData } from './arenaGameCardTypes';
@@ -36,9 +37,15 @@ export function useTournamentCardText(data: ArenaGameCardData) {
   const now = useSharedSecondTick(
     Boolean(source && !['closed', 'completed'].includes(source.status))
   );
-  const row = source?.raw as LobbyTournamentRow | undefined;
+  const row =
+    data.source?.kind !== 'cash' ? (data.source?.raw as LobbyTournamentRow | undefined) : undefined;
   const target = row?.satellite_target_id || row?.satellite_target || '';
-  const destination = useSatelliteDestination(target);
+  const resolvedDestination = useSatelliteDestination(target);
+  const destination =
+    resolvedDestination ||
+    (row && isRecordedSatelliteTournament({ ...row })
+      ? 'Satellite Destination Unavailable'
+      : undefined);
   const phase = source ? mttPhaseText(source, now) : data.startsIn;
   return { phase: phase || data.statusLabel, destination };
 }
@@ -65,7 +72,7 @@ export function useSatelliteDestination(target: string | null | undefined) {
     ? undefined
     : resolved?.id === target
       ? resolved.name
-        ? `Satellite To ${resolved.name}`
+        ? `Wins A Seat Into ${resolved.name}`
         : 'Satellite Destination Unavailable'
       : 'Loading Satellite Destination...';
 }

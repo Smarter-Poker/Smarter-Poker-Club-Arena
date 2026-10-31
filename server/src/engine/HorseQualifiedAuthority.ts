@@ -73,7 +73,10 @@ export interface HorseQualifiedAuthoritySelection {
  * adding the inactive catalog digest and holdout digest; nothing selects it. */
 export interface HorseQualifiedAuthority {
   readonly schema: 'horse-qualified-authority-v1';
-  readonly phase: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13' | 'phase14';
+  readonly phase: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13' | 'phase14' | 'features';
+  readonly featureFlags?: import('./HorseFeatureAuthority.js').HorseFeatureFlags;
+  readonly featureDomain?: import('./HorseFeatureAuthority.js').HorseFeatureDomain;
+  readonly featureCompositionDigest?: string;
   readonly sourceSha: string;
   readonly continuationVersion: string;
   readonly policyDigest: string;
@@ -159,7 +162,11 @@ export type HorseAuthorityAdmission =
     };
 
 export type HorseAuthorityState =
-  'unselected' | 'usable' | 'refused' | 'refresh_failed' | 'withdrawn';
+  | 'unselected'
+  | 'usable'
+  | 'refused'
+  | 'refresh_failed'
+  | 'withdrawn';
 
 /** Copied into the decision ledger, execution witness and journal record. */
 export interface HorseAuthorityReceipt {

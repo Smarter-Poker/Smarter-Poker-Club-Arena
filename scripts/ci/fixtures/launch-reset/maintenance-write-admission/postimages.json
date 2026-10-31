@@ -1,0 +1,34 @@
+{
+  "helper_full_md5": "ba625775863dfd24847449c2bdeddf1b",
+  "helper_body_md5": "59e8668c492df45347b5216d3fbb9e89",
+  "changes": [
+    {
+      "signature": "fn_claim_engine_maintenance_break(uuid,uuid,text)",
+      "full_md5": "f131c5e7fcddd19a584d043b0994d47a",
+      "body_md5": "cbe93f09bb0a5c5e815ca8faaa0cbb44",
+      "post_full_md5": "35a32eb22120e98228881f67b082e69d",
+      "post_body_md5": "18a92af7270cabc2ffd04a43b388915c"
+    },
+    {
+      "signature": "fn_clear_engine_maintenance_break(text,timestamp with time zone,timestamp with time zone,timestamp with time zone,text,uuid)",
+      "full_md5": "24fc97591f5eb361d39f540857791e10",
+      "body_md5": "88d87f45e2adfc1e2c7ca5dfb71b9f77",
+      "post_full_md5": "0f49106f4dbae94f43140ef7a060152d",
+      "post_body_md5": "461a68fa4f3825aa776c7b51914b51bf"
+    },
+    {
+      "signature": "fn_save_engine_maintenance_break(text,timestamp with time zone,timestamp with time zone,timestamp with time zone,text,text,uuid)",
+      "full_md5": "68c3aed2a9601f3d7e05d8331bc8b25e",
+      "body_md5": "6356f53526aef40fc31c406da63ea4e1",
+      "post_full_md5": "994dbe0efbfab11afb6f9d642370d66f",
+      "post_body_md5": "8d43314a7649b051bad453796acd44d6"
+    },
+    {
+      "signature": "fn_serialize_engine_maintenance_break_write()",
+      "full_md5": "6d62a5f9ad5e8fa615e3eac9396266a3",
+      "body_md5": "084ed24f99e9d08765bd86ff8b920284",
+      "post_full_md5": "6a78481295a690559af0b758472f059a",
+      "post_body_md5": "05f40674d6528d4c1e3b28cadf3fdeee"
+    }
+  ]
+}

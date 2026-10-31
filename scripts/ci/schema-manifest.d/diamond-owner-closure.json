@@ -1,0 +1,5 @@
+{
+  "_owner": "cpu-freeze-01a18fed",
+  "_comment": "Explicit owner closure of Diamond Arena at existing hand boundaries; no refunds or automatic reopening.",
+  "tables": ["ca_diamond_arena_owner_closure"]
+}

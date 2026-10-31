@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  AGENT DASHBOARD PAGE — Agent Operations Center
@@ -194,7 +195,10 @@ function AgentDashboardContent() {
   const [recentTx, setRecentTx] = useState<ChipTransaction[]>([]);
 
   // Search / Filter
-  const [playerSearch, setPlayerSearch] = useState('');
+  const [playerSearch, setPlayerSearch] = usePlayerPreference(
+    'AgentDashboardPage:playerSearch',
+    ''
+  );
   /* Both lists page from the SERVER. They used to fetch 100 transactions
      and 50 commissions once and page the 100 in the browser, so "Load More"
      could never reach row 101 and the commission list simply stopped at 50
@@ -1865,7 +1869,7 @@ function AgentDashboardContent() {
                 className="admin-text-secondary"
                 style={{ marginBottom: '16px', lineHeight: 1.5 }}
               >
-                Every Agent Is Prepaid. Send Chips Into An Agent Wallet From Here.
+                Send Funded Chips Into An Agent Wallet. Credit Lines Track Advances Separately.
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
@@ -1925,9 +1929,8 @@ function AgentDashboardContent() {
                     try {
                       const amt = Number(creditAmount);
                       assertChipAmount(amt);
-                      /* Every agent is prepaid with no credit line (Dan,
-                           October 2026). Funding an agent means sending chips
-                           into their agent wallet through fn_agent_wallet_send. */
+                      /* Funding moves existing chips into the Agent Wallet.
+                         A tracking line never supplies chips to this send. */
                       const resolvedCreditClub = await resolveClubUUID(clubId || '');
                       const note = creditNotes.trim() || undefined;
                       await runAgentWalletOperation(

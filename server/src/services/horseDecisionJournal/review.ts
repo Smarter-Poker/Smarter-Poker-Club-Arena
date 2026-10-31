@@ -1,4 +1,7 @@
-import { horseObserverReadsWereIndependent } from '../../engine/HorseObserverReadEvidence.js';
+import {
+  horseObserverReadsWereIndependent,
+  horseObserverReadsUsedPublicPool,
+} from '../../engine/HorseObserverReadEvidence.js';
 export { horseObserverReadsWereIndependent } from '../../engine/HorseObserverReadEvidence.js';
 import { qualifyHorseRetainedDecisionEffects, horseRetainedPlanContext } from './effects.js';
 import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
@@ -95,6 +98,8 @@ export interface HorseJournalHandReview {
   acceptedHorseActions: number;
   matchedActions: number;
   independentReadActions: number;
+  pooledPublicReadActions: number;
+  publicReadProvenanceVerified: boolean;
   independentReadsVerified: boolean;
   retiredDecisions: number;
   discardDecisions: number;
@@ -123,6 +128,8 @@ const empty = (): HorseJournalHandReview => ({
   acceptedHorseActions: 0,
   matchedActions: 0,
   independentReadActions: 0,
+  pooledPublicReadActions: 0,
+  publicReadProvenanceVerified: false,
   independentReadsVerified: false,
   retiredDecisions: 0,
   discardDecisions: 0,
@@ -565,6 +572,7 @@ export function reconcileHorseJournalHand(
     out.acceptedHorseActions = expected.size;
     const matches = new Map<number, number>();
     const independentMatches = new Map<number, number>();
+    const pooledMatches = new Map<number, number>();
     for (const turn of turns.values()) {
       if (turn.decisions.length > 1 || turn.executions.length > 1) {
         gap('turn_conflict');
@@ -763,6 +771,11 @@ export function reconcileHorseJournalHand(
             binding.actionOrdinal,
             (independentMatches.get(binding.actionOrdinal) ?? 0) + 1
           );
+        if (horseObserverReadsUsedPublicPool(d.observerReads, s))
+          pooledMatches.set(
+            binding.actionOrdinal,
+            (pooledMatches.get(binding.actionOrdinal) ?? 0) + 1
+          );
       } catch {
         gap('input_mismatch');
       }
@@ -772,6 +785,7 @@ export function reconcileHorseJournalHand(
       if (count === 1) {
         out.matchedActions++;
         if (independentMatches.get(ordinal) === 1) out.independentReadActions++;
+        if (pooledMatches.get(ordinal) === 1) out.pooledPublicReadActions++;
       } else gap(count > 1 ? 'multiple_decisions_for_action' : 'unmatched_horse_action');
     }
     out.status = out.gaps.length ? 'incomplete' : 'reconciled';
@@ -779,6 +793,10 @@ export function reconcileHorseJournalHand(
       out.status === 'reconciled' &&
       out.acceptedHorseActions > 0 &&
       out.independentReadActions === out.acceptedHorseActions;
+    out.publicReadProvenanceVerified =
+      out.status === 'reconciled' &&
+      out.acceptedHorseActions > 0 &&
+      out.independentReadActions + out.pooledPublicReadActions === out.acceptedHorseActions;
     return out;
   } catch {
     gap('invalid_records');
@@ -1008,6 +1026,48 @@ export function reviewHorsePlanEffects(
     return out;
   } catch {
     return { ...emptyPlanEffects(), gaps: ['invalid_records'] };
+  }
+}
+
+/** Attribute durable effects only to this exact original producer/turn.
+ * Callers separately bind the controller action to the committed hand. This
+ * proves a retained application receipt, never restart reconstruction or EV. */
+export function reviewHorseOwnTurnEffects(
+  records: readonly HorseJournalRecord[],
+  handKey: string,
+  decisionRecord: HorseJournalRecord
+): 'not_applicable' | 'applied' | 'failed' | 'unknown' {
+  try {
+    validateHorseJournalRecord(decisionRecord);
+    if (decisionRecord.kind !== 'decision' || decisionRecord.handKey !== handKey) return 'unknown';
+    const own = records.filter(
+      (r) =>
+        r.kind === 'accepted_hand' ||
+        (r.producerId === decisionRecord.producerId && r.turnKey === decisionRecord.turnKey)
+    );
+    const decisions = own.filter((r) => r.kind === 'decision');
+    if (decisions.length !== 1 || !same(decisions[0], decisionRecord)) return 'unknown';
+    const capture = JSON.parse(decisionRecord.body);
+    const effects = qualifyHorseRetainedDecisionEffects(capture, capture.snapshot);
+    if (effects.status !== 'qualified') return 'unknown';
+    const reviewed = reviewHorsePlanEffects(own, handKey);
+    if (effects.batchSize === 0)
+      return reviewed.acceptedHandRetained && reviewed.gaps.length === 0
+        ? 'not_applicable'
+        : 'unknown';
+    if (reviewed.applicationVerified && reviewed.accepted === 1 && reviewed.applied === 1)
+      return 'applied';
+    if (
+      reviewed.accepted === 1 &&
+      reviewed.durable === 1 &&
+      reviewed.failed === 1 &&
+      reviewed.unknown === 0 &&
+      reviewed.gaps.length === 0
+    )
+      return 'failed';
+    return 'unknown';
+  } catch {
+    return 'unknown';
   }
 }
 

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DRIFT INCIDENTS PAGE - Ops Dashboard for Financial Drift Incidents
@@ -134,7 +135,10 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
   const [incidentsError, setIncidentsError] = useState<string | null>(null);
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<IncidentStatus>('open');
+  const [filter, setFilter] = usePlayerPreference<IncidentStatus>(
+    'DriftIncidentsPage:filter',
+    'open'
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   /* Push notifications link here as /financial-incidents?id=<incident id>.
      Capture the id once; when the incident arrives in a load, jump to it.

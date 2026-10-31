@@ -155,6 +155,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
     minRaise: state.minRaise,
     stage: state.stage,
     gameVariant: turn.variant,
+    smallBlind: turn.smallBlind,
     bigBlind: turn.bigBlind,
     dealerSeat: state.dealerSeat,
     lastRaise: state.lastRaise,
@@ -295,14 +296,14 @@ export function shapeLightningHorseAction(
   const fixed = auth?.structure === 'fixed_limit';
   if (me && action === 'bet' && amount !== undefined) {
     amount = fixed ? (auth?.minRaiseTo ?? amount) : Math.max(state.minRaise, amount);
-    if (amount >= me.stack) {
+    if (amount >= me.stack && auth?.legalActions.includes('all_in')) {
       action = 'all_in';
       amount = undefined;
     }
   } else if (me && action === 'raise' && amount !== undefined) {
     const minRaiseTo = state.currentBet + state.minRaise;
     amount = fixed ? (auth?.minRaiseTo ?? amount) : Math.max(minRaiseTo, amount);
-    if (amount >= me.stack + me.bet) {
+    if (amount >= me.stack + me.bet && auth?.legalActions.includes('all_in')) {
       action = 'all_in';
       amount = undefined;
     }

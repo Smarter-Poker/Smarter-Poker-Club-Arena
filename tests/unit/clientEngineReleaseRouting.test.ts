@@ -24,6 +24,7 @@ const workflow = (name: string) =>
   parse(readFileSync(join(root, '.github/workflows', name), 'utf8'));
 const stage = workflow('stage-engine-release.yml');
 const publisher = workflow('publish-club-arena.yml');
+const transaction = workflow('publish-club-arena-transaction.yml');
 
 describe('client delivery never inherits the engine activation window', () => {
   it.each([
@@ -98,23 +99,30 @@ describe('client delivery never inherits the engine activation window', () => {
     expect(classifyChangedPaths(['src/services/DiamondGamesService.ts']).server).toBe(true);
   });
 
-  it('keeps client publication gated only by its own build and tests', () => {
+  it('keeps client publication independent of engine cutover with exact-target scheduling', () => {
     expect(publisher.on.push.branches).toEqual(['main']);
     expect(publisher.on).not.toHaveProperty('schedule');
     expect(publisher.on).not.toHaveProperty('workflow_run');
-    expect(publisher.jobs['publish-to-origin'].needs).toEqual([
-      'publish-needed',
-      'build-and-store',
+    const preparation = workflow('publish-club-arena-client.yml');
+    expect(publisher.jobs['client-publication'].needs).toBe('publish-needed');
+    expect(preparation.jobs.production.needs).toEqual([
+      'admit',
       'client-tests',
+      'build-and-store',
+      'publication-floor',
     ]);
-    const executable = Object.values(publisher.jobs)
+    const executable = [
+      ...Object.values(publisher.jobs),
+      ...Object.values(preparation.jobs),
+      ...Object.values(transaction.jobs),
+    ]
       .flatMap((job: any) => job.steps ?? [])
       .map((step: any) => step.run ?? '')
       .join('\n');
     expect(executable).not.toMatch(
       /maintenance_certificate|readyForRestart|engine-release-transaction|deploy-club-arena-engine|\bdate\s+(?:-[a-zA-Z]+\s+)*['"]?\+%M(?:['"\s;)]|$)/
     );
-    expect(publisher.concurrency.group).not.toBe(
+    expect(preparation.jobs.production.concurrency.group).not.toBe(
       workflow('auto-deploy-hetzner.yml').concurrency.group
     );
   });

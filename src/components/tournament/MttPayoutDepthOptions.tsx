@@ -3,12 +3,7 @@ import {
   mttPayoutDepthForChoice,
 } from '../../../server/src/tournament/mttPayoutDepth';
 
-/**
- * Dan, 2026-10-21: every MTT pays the top 12.5% of the field by default, and a
- * standalone club may set any depth. Every supported depth is offered; the
- * database forces 12.5 for union and Diamond Arena events whatever is chosen.
- * (This supersedes the 2026-09-20 10-15% ceiling for new events.)
- */
+/** Owner October 29: every new MTT pays the top 15% of its final field. */
 function mttPayoutDepthChoicesFor() {
   return MTT_PAYOUT_DEPTH_CHOICES;
 }

@@ -1,0 +1,14 @@
+{
+  "_owner": "fix/durable-controller-recovery-20261028",
+  "_comment": "Private unfinished original-hand controller/deck retention and current-lease claim. Qualification: scripts/ci/test-hand-continuation.py, existing required native accounting shard 3. Installation and engine activation are separate evidence.",
+  "tables": [
+    "smarter_private.hand_continuations",
+    "smarter_private.hand_continuation_dispositions"
+  ],
+  "functions": [
+    "fn_f06_retain_hand_continuation",
+    "fn_f06_claim_hand_continuation",
+    "fn_f06_claim_legacy_river_continuation",
+    "smarter_private.assert_hand_continuation_disposition"
+  ]
+}

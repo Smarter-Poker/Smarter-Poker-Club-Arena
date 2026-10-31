@@ -19,7 +19,7 @@ function fixture() {
     head_branch: 'main',
     head_sha: sha,
     path: '.github/workflows/publish-club-arena.yml',
-    repository: { id: 42, full_name: repository },
+    repository: { id: 1132369872, full_name: repository },
   };
   const job = {
     id: 456,
@@ -37,8 +37,8 @@ function fixture() {
     name: receiptName(job.name, 1),
     workflow_run: {
       id: 123,
-      repository_id: 42,
-      head_repository_id: 42,
+      repository_id: 1132369872,
+      head_repository_id: 1132369872,
       head_sha: sha,
       head_branch: 'main',
     },
@@ -46,7 +46,7 @@ function fixture() {
   const receipt = createReceipt({
     GITHUB_JOB: job.name,
     GITHUB_REPOSITORY: repository,
-    GITHUB_REPOSITORY_ID: '42',
+    GITHUB_REPOSITORY_ID: '1132369872',
     GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main`,
     GITHUB_WORKFLOW_SHA: sha,
     GITHUB_SHA: sha,
@@ -64,7 +64,7 @@ function fixture() {
   );
   const download = vi.fn(async () => receipt);
   const invoke = () =>
-    hydratePublisherProofs({ total_count: 1, jobs: [job] }, repository, '123', '42', sha, {
+    hydratePublisherProofs({ total_count: 1, jobs: [job] }, repository, '123', '1132369872', sha, {
       request,
       download,
       now: () => 0,
@@ -134,12 +134,19 @@ it('does not reset the original admission deadline before downloading proof', as
     return f.run;
   });
   await expect(
-    hydratePublisherProofs({ total_count: 1, jobs: [f.job] }, repository, '123', '42', sha, {
-      request: f.request,
-      download: f.download,
-      now: () => clock,
-      deadline: 29000,
-    })
+    hydratePublisherProofs(
+      { total_count: 1, jobs: [f.job] },
+      repository,
+      '123',
+      '1132369872',
+      sha,
+      {
+        request: f.request,
+        download: f.download,
+        now: () => clock,
+        deadline: 29000,
+      }
+    )
   ).rejects.toThrow(/budget/);
   expect(f.download).not.toHaveBeenCalled();
 });

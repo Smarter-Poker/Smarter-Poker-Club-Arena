@@ -29,7 +29,8 @@ async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@e
   } else if(u.pathname==='/rest/v1/player_stats' || u.pathname==='/rest/v1/audit_trail') data=[];
   else if(u.pathname==='/rest/v1/clubs') {status=failure==='private-column'?200:403;data=[];}
   else if(u.pathname==='/rest/v1/rpc/fn_ca_club_data_scope') data='downline';
-  else if(u.pathname==='/rest/v1/rpc/ca_club_data_screen') data={scope:'downline',rows:failure==='data-leak'?[{id:'unrelated'}]:[],summary:{games:0,fee:0,total_winnings:0,mtt_winnings:0,on_felt:0}};
+  else if(u.pathname==='/rest/v1/rpc/ca_club_data_player_search') data={items:failure==='player-search-leak'?[{user_id:'unrelated',alias:'KingFish'}]:[]};
+  else if(u.pathname==='/rest/v1/rpc/ca_club_data_screen') data={scope:'downline',member_fees:{day_basis:'UTC',cash_fees:0,tournament_fees:0,total_fees:failure==='member-fee-leak'?100:0},rows:failure==='data-leak'?[{id:'unrelated'}]:[],summary:{games:0,fee:0,total_winnings:0,mtt_winnings:0,on_felt:0}};
   else if(u.pathname==='/rest/v1/rpc/fn_agent_downline_rake' || u.pathname==='/rest/v1/rpc/fn_agent_downline_rake_summary') {
    if(body.p_club_id==='fade0000-0000-0000-0000-000000000001') {status=403;data={code:'42501'};}
    else if(u.pathname.endsWith('_summary')) data={members:0,hands:0,rake_generated:failure==='legacy-leak'?100:0,commission_rate:0,estimated_commission:0};
@@ -58,7 +59,7 @@ test('all three ranks are exercised and zero-balance fixture restores before com
  assert.deepEqual(state.results.results.map(r=>r.role),['super_agent','agent','sub_agent']);
  assert.equal(state.role,'admin');assert.equal(state.agent,null);
 });
-for(const failure of ['private-column','unknown-create','data-leak','legacy-leak','export-leak']) test('cleanup reads durable state after '+failure,async()=>{
+for(const failure of ['private-column','unknown-create','data-leak','member-fee-leak','player-search-leak','legacy-leak','export-leak']) test('cleanup reads durable state after '+failure,async()=>{
  const {state,pending}=await fixture(failure);await assert.rejects(pending);
  assert.equal(state.role,'admin');assert.equal(state.agent,null);
  if(failure==='export-leak') assert.equal(state.exportCancelled,true);

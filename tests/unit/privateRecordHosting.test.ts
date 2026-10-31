@@ -1,0 +1,418 @@
+import { execFileSync, spawnSync } from 'node:child_process';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  chmodSync,
+  lstatSync,
+  readdirSync,
+} from 'node:fs';
+import { join } from 'node:path';
+import {
+  sealGatewayArtifact,
+  GATEWAY_PUBLISHER_WORKFLOW,
+  verifyGatewayArtifact,
+  assessClientCoverage,
+} from '../../scripts/ci/private-record-gateway-artifact.mjs';
+const roots: string[] = [];
+function makeWritable(path: string) {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) return;
+  if (stat.isDirectory()) {
+    chmodSync(path, 0o700);
+    for (const name of readdirSync(path)) makeWritable(join(path, name));
+  } else chmodSync(path, 0o600);
+}
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    makeWritable(root);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+function fixture() {
+  const root = mkdtempSync(
+    join(process.env.RUNNER_TEMP ?? '/Volumes/SmarterWork/agent-work', 'private-record-hosting-')
+  );
+  roots.push(root);
+  mkdirSync(join(root, 'dist'));
+  mkdirSync(join(root, 'node_modules'));
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module' }));
+  writeFileSync(join(root, 'dist/privateRecordGateway.js'), 'export const entry = true;');
+  return root;
+}
+const revision = 'a'.repeat(40);
+describe('private record artifact and client coverage admission', () => {
+  it('seals exact bytes and rejects tampering, extra files and wrong revisions', () => {
+    const root = fixture();
+    sealGatewayArtifact(root, revision);
+    expect(verifyGatewayArtifact(root, revision).revision).toBe(revision);
+    expect(() => verifyGatewayArtifact(root, 'b'.repeat(40))).toThrow();
+    writeFileSync(join(root, 'dist/privateRecordGateway.js'), 'tampered');
+    expect(() => verifyGatewayArtifact(root, revision)).toThrow();
+  });
+  it('refuses credentials and symlinks before creating a release seal', () => {
+    const root = fixture();
+    writeFileSync(join(root, '.env'), 'not-a-real-secret');
+    expect(() => sealGatewayArtifact(root, revision)).toThrow();
+    rmSync(join(root, '.env'));
+    symlinkSync('/etc/passwd', join(root, 'node_modules/escape'));
+    expect(() => sealGatewayArtifact(root, revision)).toThrow();
+  });
+  it('does not mistake an empty or sampled inventory for complete legacy coverage', () => {
+    expect(assessClientCoverage({ observations: [], errorReporterSample: true }).eligible).toBe(
+      false
+    );
+    expect(assessClientCoverage({}).eligible).toBe(false);
+  });
+  it('refuses even a complete current census when returning old clients are not protected', () => {
+    const result = assessClientCoverage({
+      census: { complete: true, unqualified: 0 },
+      returningLegacy: { verified: false },
+    });
+    expect(result.eligible).toBe(false);
+    expect(result.reasons.join(' ')).toMatch(/returning|resume/i);
+  });
+});
+
+describe('gateway immutable activation', () => {
+  it('keeps the old route when startup fails and refuses stale compare-and-swap', async () => {
+    const { activateGateway } =
+      await import('../../scripts/ci/private-record-gateway-activate.mjs');
+    const root = fixture();
+    const runtime = join(root, 'runtime');
+    mkdirSync(runtime);
+    const old = 'b'.repeat(40);
+    symlinkSync(`${old}/listener.sock`, join(runtime, 'active.sock'));
+    const artifact = join(root, 'candidate');
+    mkdirSync(artifact);
+    mkdirSync(join(artifact, 'dist'));
+    writeFileSync(join(artifact, 'dist/privateRecordGateway.js'), 'entry');
+    writeFileSync(join(artifact, 'package.json'), '{"type":"module"}');
+    sealGatewayArtifact(artifact, revision, {
+      validationOnly: false,
+      builtBy: 'github-actions',
+      runId: '17',
+      workflowRef:
+        'Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main',
+      workflowSha: 'c'.repeat(40),
+    });
+    const controller = {
+      start: async () => {},
+      stop: async () => {},
+      probe: async () => {
+        throw new Error('candidate unavailable');
+      },
+    };
+    await expect(
+      activateGateway({ root, runtime, artifact, revision, expected: old, runId: '17', controller })
+    ).rejects.toThrow('candidate unavailable');
+    const { readlinkSync } = await import('node:fs');
+    expect(readlinkSync(join(runtime, 'active.sock'))).toBe(`${old}/listener.sock`);
+    await expect(
+      activateGateway({
+        root,
+        runtime,
+        artifact,
+        revision,
+        expected: 'd'.repeat(40),
+        runId: '18',
+        controller,
+      })
+    ).rejects.toThrow();
+  });
+});
+
+describe('gateway activation commit and recovery', () => {
+  async function setup(repository = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena') {
+    const { activateGateway } =
+      await import('../../scripts/ci/private-record-gateway-activate.mjs');
+    const { readlinkSync, existsSync } = await import('node:fs');
+    const root = fixture(),
+      runtime = join(root, 'runtime'),
+      artifact = join(root, 'candidate');
+    mkdirSync(runtime);
+    mkdirSync(artifact);
+    mkdirSync(join(artifact, 'dist'));
+    const old = 'b'.repeat(40);
+    symlinkSync(`${old}/listener.sock`, join(runtime, 'active.sock'));
+    writeFileSync(join(artifact, 'dist/privateRecordGateway.js'), 'entry');
+    writeFileSync(join(artifact, 'package.json'), '{"type":"module"}');
+    sealGatewayArtifact(artifact, revision, {
+      validationOnly: false,
+      builtBy: 'github-actions',
+      runId: '27',
+      workflowRef: `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main`,
+      workflowSha: 'c'.repeat(40),
+    });
+    const calls: string[] = [];
+    const controller = {
+      start: async () => {
+        calls.push('start');
+      },
+      stop: async () => {
+        calls.push('stop');
+      },
+      probe: async () => {},
+      publicProbe: async () => {},
+      retire: async () => {
+        calls.push('retire');
+      },
+    };
+    return {
+      root,
+      runtime,
+      artifact,
+      old,
+      controller,
+      calls,
+      readlinkSync,
+      existsSync,
+      run: () =>
+        activateGateway({
+          root,
+          runtime,
+          artifact,
+          revision,
+          expected: old,
+          runId: '27',
+          controller,
+        }),
+    };
+  }
+  it('refuses a foreign or former workflow signer before starting a gateway', async () => {
+    for (const repository of [
+      'foreign/Smarter-Poker-Club-Arena',
+      'Smarter-Poker/Smarter-Poker-Club-Arena',
+    ]) {
+      const f = await setup(repository);
+      await expect(f.run()).rejects.toThrow('hosted protected-main artifact provenance required');
+      expect(f.calls).toEqual([]);
+      expect(f.readlinkSync(join(f.runtime, 'active.sock'))).toBe(`${f.old}/listener.sock`);
+    }
+  });
+  it('commits only after public proof and retires the predecessor', async () => {
+    const f = await setup();
+    await expect(f.run()).resolves.toMatchObject({
+      phase: 'verified',
+      retirement: 'draining-existing-peers',
+    });
+    expect(JSON.parse(readFileSync(join(f.root, 'active-release.json'), 'utf8')).revision).toBe(
+      revision
+    );
+    expect(f.readlinkSync(join(f.runtime, 'active.sock'))).toBe(`${revision}/listener.sock`);
+    expect(f.calls).toEqual(['start', 'retire']);
+    expect(f.existsSync(join(f.root, 'activation.lock'))).toBe(false);
+  });
+  it('restores the predecessor when public verification fails', async () => {
+    const f = await setup();
+    f.controller.publicProbe = async () => {
+      throw new Error('public unavailable');
+    };
+    await expect(f.run()).rejects.toThrow('public unavailable');
+    expect(f.readlinkSync(join(f.runtime, 'active.sock'))).toBe(`${f.old}/listener.sock`);
+    expect(f.existsSync(join(f.root, 'active-release.json'))).toBe(false);
+    expect(f.calls).toEqual(['start', 'stop']);
+  });
+  it('reports failed predecessor retirement without rolling back the committed route', async () => {
+    const f = await setup();
+    f.controller.retire = async () => {
+      throw new Error('signal refused');
+    };
+    await expect(f.run()).rejects.toThrow('gateway is committed');
+    expect(f.readlinkSync(join(f.runtime, 'active.sock'))).toBe(`${revision}/listener.sock`);
+    expect(JSON.parse(readFileSync(join(f.root, 'active-release.json'), 'utf8')).revision).toBe(
+      revision
+    );
+    expect(JSON.parse(readFileSync(join(f.root, 'activation-27.json'), 'utf8')).retirement).toBe(
+      'requires-explicit-recovery'
+    );
+    expect(f.calls).toEqual(['start']);
+  });
+});
+
+describe('hosting qualification remains enforced', () => {
+  it('keeps gateway preparation outside the single locked transaction and binds its exact result', async () => {
+    const { parse } = await import('yaml');
+    const caller = parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
+    const child = parse(
+      readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
+    );
+    expect(caller.jobs['build-record-gateway'].if).toBe(
+      "needs.publish-needed.outputs.component == 'private-record-gateway'"
+    );
+    expect(caller.jobs.production.with.gateway_build_result).toBe(
+      '${{ needs.build-record-gateway.result }}'
+    );
+    expect(child.jobs['publish-record-gateway'].if).toContain(
+      "inputs.gateway_build_result == 'success'"
+    );
+    expect(child.jobs['publish-record-gateway'].if).toContain(
+      "inputs.component == 'private-record-gateway'"
+    );
+    expect(
+      child.jobs['publish-record-gateway'].steps.find(
+        (step: any) => step.uses === 'actions/download-artifact@v4'
+      ).with.name
+    ).toBe('private-record-gateway-${{ inputs.target_sha }}');
+  });
+  it('requires real hosting inputs to execute native accounting qualification', async () => {
+    const { classifyChangedPaths } = await import('../../scripts/ci/classify-ci-changes.mjs');
+    for (const path of [
+      'infra/ca-origin/Caddyfile',
+      'infra/ca-origin/ca-private-record-gateway@.service',
+      'infra/ca-origin/ca-private-record-gateway-activate',
+      'scripts/ci/build-private-record-gateway.sh',
+      'scripts/ci/private-record-gateway-artifact.mjs',
+      'server/scripts/privateRecordGatewayCaddy.mts',
+      'server/tsconfig.private-record-gateway.json',
+    ])
+      expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+    const { parse } = await import('yaml');
+    const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
+    const owners = workflow.jobs.accounting_postgres.steps.filter(
+      (step: any) => step.run === 'npm run test:data:postgres'
+    );
+    expect(owners).toHaveLength(1);
+    expect(owners[0].if).toBe('matrix.shard == 2');
+    expect(owners[0]['continue-on-error']).toBeUndefined();
+    expect(JSON.parse(readFileSync('package.json', 'utf8')).scripts['test:data:postgres']).toBe(
+      'bash scripts/ci/test-data-console-postgres-contracts.sh'
+    );
+    const parent = readFileSync('scripts/ci/test-data-console-postgres-contracts.sh', 'utf8');
+    expect(
+      parent.match(/bash "\$repo\/scripts\/ci\/test-private-record-hosting\.sh"/g)
+    ).toHaveLength(1);
+    expect(parent).not.toContain('bash "$repo/scripts/dev/test-member-record-live-postgres.sh"');
+    const wrapper = readFileSync('scripts/ci/test-private-record-hosting.sh', 'utf8');
+    expect(wrapper).toContain('set -euo pipefail');
+    expect(
+      wrapper.match(/bash "\$repo\/scripts\/dev\/test-member-record-live-postgres\.sh"/g)
+    ).toHaveLength(1);
+    for (const child of [
+      'test-private-record-credentials-postgres.sh',
+      'test-private-record-bootstrap-linux.sh',
+    ])
+      expect(wrapper).toContain(`bash "$repo/scripts/ci/${child}"`);
+    expect(wrapper).not.toContain('test-data-console-postgres-contracts.sh');
+    expect(
+      workflow.jobs.accounting_postgres.steps.some(
+        (step: any) => step.run === 'bash scripts/ci/test-private-record-hosting.sh'
+      )
+    ).toBe(false);
+  });
+  it('propagates hosting failure through the actual Data Console Member Record block', () => {
+    const root = fixture();
+    mkdirSync(join(root, 'scripts/ci'), { recursive: true });
+    const parent = readFileSync('scripts/ci/test-data-console-postgres-contracts.sh', 'utf8');
+    const block = parent.slice(
+      parent.indexOf("echo 'DATA_CONSOLE_POSTGRES RUN Member Record'"),
+      parent.indexOf('# A redeemed fee total')
+    );
+    expect(block).toContain('bash "$repo/scripts/ci/test-private-record-hosting.sh"');
+    const script = join(root, 'scripts/ci/test-private-record-hosting.sh');
+    for (const status of [0, 23]) {
+      writeFileSync(script, `#!/usr/bin/env bash\nexit ${status}\n`);
+      const result = spawnSync(
+        'bash',
+        ['-c', `set -euo pipefail\nrepo="$1"\n${block}`, 'qualification', root],
+        { encoding: 'utf8' }
+      );
+      expect(result.status).toBe(status);
+      expect(result.stdout.includes('DATA_CONSOLE_POSTGRES PASS Member Record')).toBe(status === 0);
+    }
+  });
+  it('qualifies the ephemeral Linux runner node path before verifying unchanged production units', () => {
+    const script = readFileSync('scripts/ci/test-private-record-hosting.sh', 'utf8');
+    const provision = script.indexOf('sudo ln -s -- "$runner_node" /usr/bin/node');
+    expect(provision).toBeGreaterThan(-1);
+    expect(script.indexOf('systemd-analyze verify')).toBeGreaterThan(provision);
+    expect(script).toContain('[ "${GITHUB_ACTIONS:-}" = true ]');
+    expect(script).toContain('[ ! -e /usr/bin/node ] && [ ! -L /usr/bin/node ]');
+    expect(script).toContain('assert_node_version "$runner_node"');
+    expect(script).toContain('assert_node_version /usr/bin/node');
+    expect(script).toContain('major > 20 || (major === 20 && minor >= 19)');
+    expect(script).not.toMatch(/ln\s+-[^\n]*f[^\n]*\/usr\/bin\/node/);
+  });
+  it('pipes the exact Caddy preflight input through the maintained child-process helper', () => {
+    const source = readFileSync('scripts/ci/fixtures/private-record-bootstrap-linux.mjs', 'utf8');
+    const helper = source.slice(source.indexOf('const run ='), source.indexOf('const root ='));
+    const call = source.match(
+      /run\('\/usr\/bin\/caddy', \['adapt', '--config', '-', '--adapter', 'caddyfile'\], \{([\s\S]*?)\n {2}\}\);/
+    );
+    expect(call).not.toBeNull();
+    const script = `const { execFileSync } = require('node:child_process');
+${helper}
+const configuration = 'exact Caddy preflight bytes\\n';
+const observed = run(process.execPath, ['-e', "process.stdout.write(require('node:fs').readFileSync(0, 'utf8'))"], {${call![1]}});
+if (observed !== configuration) throw new Error('Caddy preflight stdin was discarded');`;
+    expect(() => execFileSync(process.execPath, ['-e', script], { stdio: 'pipe' })).not.toThrow();
+  });
+  it('pipes bootstrap JSON by default and preserves ignored stdin for commands without input', () => {
+    const source = readFileSync('scripts/ci/fixtures/private-record-bootstrap-linux.mjs', 'utf8');
+    const helper = source.slice(source.indexOf('const run ='), source.indexOf('const root ='));
+    const script = `const { execFileSync } = require('node:child_process');
+${helper}
+const payload = JSON.stringify({ revision: 'a'.repeat(40), runId: '9001' });
+const reader = [ '-e', "process.stdout.write(require('node:fs').readFileSync(0, 'utf8'))" ];
+if (run(process.execPath, reader, { input: payload }) !== payload) throw new Error('Bootstrap JSON stdin was discarded');
+if (run(process.execPath, reader) !== '') throw new Error('Noninput command must retain ignored stdin');
+if (run(process.execPath, reader, { input: payload, stdio: ['ignore', 'pipe', 'pipe'] }) !== '') throw new Error('Explicit stdio override was lost');`;
+    expect(() => execFileSync(process.execPath, ['-e', script], { stdio: 'pipe' })).not.toThrow();
+  });
+  it('does not accept a different repository identity in a verified signing result', async () => {
+    const { verifyAttestationIdentity } =
+      await import('../../scripts/ci/private-record-gateway-activate.mjs');
+    expect(() =>
+      verifyAttestationIdentity([
+        { verificationResult: { signature: { certificate: { sourceRepositoryIdentifier: '1' } } } },
+      ])
+    ).toThrow();
+    expect(() => verifyAttestationIdentity([])).toThrow();
+    expect(() =>
+      verifyAttestationIdentity([
+        {
+          verificationResult: {
+            signature: { certificate: { sourceRepositoryIdentifier: '1132369872' } },
+          },
+        },
+      ])
+    ).not.toThrow();
+  });
+});
+
+describe('unused pg_net removal stays in required native qualification', () => {
+  it('selects the existing native server check for the runner and invokes it once', async () => {
+    const { classifyChangedPaths } = await import('../../scripts/ci/classify-ci-changes.mjs');
+    for (const input of [
+      'scripts/ci/test-unused-pg-net-removal.py',
+      'scripts/ci/test-private-record-gateway-access-postgres.sh',
+      'scripts/ci/fixtures/private-record-gateway-access-setup.sql',
+      'scripts/ci/fixtures/private-record-gateway-access-proof.sql',
+    ]) {
+      const selected = classifyChangedPaths([input]);
+      expect(selected.server, input).toBe(true);
+      expect(selected.tests, input).toBe(true);
+    }
+    const runner = readFileSync('scripts/ci/test-private-record-hosting.sh', 'utf8');
+    expect(runner.split('test-unused-pg-net-removal.py').length - 1).toBe(1);
+    const source = readFileSync('scripts/ci/test-unused-pg-net-removal.py', 'utf8');
+    expect(source).toContain(
+      '20261029181526_remove_unused_pg_net_before_private_listener_credentials.sql'
+    );
+  });
+});
+
+it('gateway packager and activator share the canonical protected workflow identity', () => {
+  expect(GATEWAY_PUBLISHER_WORKFLOW).toBe(
+    'Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main'
+  );
+  const packager = readFileSync('scripts/ci/build-private-record-gateway.sh', 'utf8');
+  const activator = readFileSync('scripts/ci/private-record-gateway-activate.mjs', 'utf8');
+  expect(packager).toContain('const workflow=GATEWAY_PUBLISHER_WORKFLOW;');
+  expect(activator).toContain('const workflow = GATEWAY_PUBLISHER_WORKFLOW;');
+  expect(packager).not.toContain('Smarter-Poker/Smarter-Poker-Club-Arena');
+});

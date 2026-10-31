@@ -174,3 +174,114 @@ it.each([
     expect(result.hands[0]).not.toHaveProperty('riverCalls');
   } else expect(result.hands[0].riverCalls).toEqual([]);
 });
+
+it.each(['missing', 'stale', 'throw', 'captured'] as const)(
+  'uses one bound sidecar in the existing load deadline and preserves original history for %s',
+  async (mode) => {
+    const { hand } = withCalledHand();
+    const multi = { ...context, dealtCount: 3 };
+    hand.playersDealt = 3;
+    fixture.response.data.window.context = multi;
+    // A third participant is public and folded before the two-player river.
+    hand.actions.unshift({
+      userId: '44444444-4444-4444-8444-444444444444',
+      seat: 3,
+      action: 'fold',
+      amount: 0,
+      stage: 'preflop',
+      timestamp: 0,
+    });
+    fixture.categoryAbort.mockResolvedValue({ data: [], error: null });
+    const base = structuredClone(fixture.response.data.window);
+    const second = vi.fn(async (_signal: AbortSignal) => {
+      if (mode === 'throw') throw Error('missing RPC');
+      if (mode === 'missing') return { data: null, error: { message: 'missing RPC' } };
+      const { HORSE_RIVER_NODE_DEFINITION_MD5, riverNodeBindings } = await import(
+        '../engine/horseDecision/riverNodeSidecar.js'
+      );
+      return {
+        error: null,
+        data: {
+          version: 1,
+          status: 'captured',
+          definitionMd5: mode === 'stale' ? '0'.repeat(32) : HORSE_RIVER_NODE_DEFINITION_MD5,
+          hands: riverNodeBindings(base).map((b) => ({
+            handId: b.handId,
+            binding: b.binding,
+            status: 'unavailable',
+            reason: 'incomplete_or_bounded_nodes',
+          })),
+        },
+      };
+    });
+    fixture.rpc.mockImplementation((name) => ({
+      abortSignal: name === 'fn_horse_own_public_history_read_v3' ? fixture.abort : second,
+    }));
+    const result: any = await readHorseOwnPublicHistory(multi);
+    expect(fixture.rpc).toHaveBeenCalledTimes(2);
+    const original = fixture.rpc.mock.calls[0][1],
+      enriched = fixture.rpc.mock.calls[1][1];
+    expect(enriched).toMatchObject({
+      p_observer: original.p_observer,
+      p_variant: original.p_variant,
+      p_dealt_count: 3,
+      p_before: original.p_before,
+    });
+    expect(second.mock.calls[0][0]).toBe(fixture.abort.mock.calls[0][0]);
+    expect(result.hands[0].actions).toEqual(base.hands[0].actions);
+    expect(result.hands[0].riverNodeEvidence).toBe(mode === 'captured' ? 'unavailable' : undefined);
+    expect(fixture.response.data.window).toEqual(base);
+  }
+);
+
+it.each([
+  ['error', 'provider_error'],
+  ['empty', 'provider_empty_response'],
+  ['source', 'provider_source_mismatch'],
+  ['invalid', 'provider_invalid_window'],
+  ['throw', 'provider_thrown'],
+  ['deadline', 'provider_deadline'],
+] as const)(
+  'carries original %s cause through the actual service and cache',
+  async (fault, reason) => {
+    const { HorseOwnPublicHistoryCache } = await import(
+      '../engine/horseDecision/ownPublicHistory.js'
+    );
+    const now = Date.now();
+    if (fault === 'error') fixture.response.error = { message: 'never copied' };
+    if (fault === 'empty') fixture.response.data = null;
+    if (fault === 'source') fixture.response.data.definitionMd5 = '0'.repeat(32);
+    if (fault === 'invalid') fixture.response.data.window.hands = [{ private: 'never copied' }];
+    if (fault === 'throw') fixture.abort.mockRejectedValueOnce(Error('never copied'));
+    const timeout =
+      fault === 'deadline'
+        ? vi.spyOn(AbortSignal, 'timeout').mockReturnValue(AbortSignal.abort())
+        : null;
+    if (fault === 'deadline') fixture.response.error = { message: 'never copied' };
+    const cache = new HorseOwnPublicHistoryCache(readHorseOwnPublicHistory, () => now);
+    try {
+      expect(cache.forSnapshot(context, now)).toBeUndefined();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const provenance = cache.provenance(context, now);
+      expect(provenance).toEqual({
+        version: 1,
+        context,
+        decisionTimeMs: now,
+        state: 'unavailable',
+        reason,
+      });
+      expect(JSON.stringify(provenance)).not.toMatch(/never copied|private|message/);
+    } finally {
+      cache.dispose();
+      timeout?.mockRestore();
+    }
+  }
+);
+it('diagnostic callback failure cannot change an existing null read outcome', async () => {
+  fixture.response.error = { message: 'not transported' };
+  expect(
+    await readHorseOwnPublicHistory(context, () => {
+      throw Error('diagnostic');
+    })
+  ).toBeNull();
+});

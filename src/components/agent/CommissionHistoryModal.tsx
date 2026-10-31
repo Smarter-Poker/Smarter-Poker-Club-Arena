@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  COMMISSION HISTORY MODAL — Agent Earnings View
@@ -79,8 +80,16 @@ export default function CommissionHistoryModal({
     lastMonth: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'rake' | 'payout'>('all');
-  const [dateRange, setDateRange] = useState<'week' | 'month' | 'all'>('month');
+  const [filter, setFilter] = usePlayerPreference<'all' | 'rake' | 'payout'>(
+    'commissionHistory.filter',
+    'all',
+    agentId
+  );
+  const [dateRange, setDateRange] = usePlayerPreference<'week' | 'month' | 'all'>(
+    'commissionHistory.dateRange',
+    'month',
+    agentId
+  );
   const [visibleEntries, setVisibleEntries] = useState<Set<number>>(new Set());
 
   useEffect(() => {

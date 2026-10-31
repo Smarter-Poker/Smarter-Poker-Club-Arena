@@ -392,7 +392,11 @@ describe('who is offered a hunt, and for how many cards', () => {
     // vip_remaining is counted by the server on every reveal and was returned
     // all the way to TablePage, then dropped one line from the UI — so the
     // button said FREE on the 101st hunt and silently took five diamonds.
-    expect(TABLE_PAGE).toMatch(/vipRemaining: result\.vip_remaining/);
+    // Preserve the server count through the UTC-bucket guard and into the result.
+    expect(TABLE_PAGE).toMatch(
+      /requestedUsageMonth === rabbitVipUsageMonth\(\) \? \(result\.vip_remaining \?\? null\) : null/
+    );
+    expect(TABLE_PAGE).toMatch(/vipRemaining,/);
     expect(COMPONENT).toMatch(/vipRemaining/);
     // And the label must stop claiming FREE once the pool is spent.
     expect(COMPONENT).toMatch(/visibleVipRemaining === 0/);

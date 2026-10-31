@@ -2778,6 +2778,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // valid even if the response crossed our proof deadline. Everything
         // below is reflection or a new decision and belongs to the successor.
         if (!this.lifecycleCanMutate()) return;
+        // This summary comes from the accepted, committed facts. The earlier
+        // hand_complete presentation event is not proof that settlement paid.
+        if (result.publicStatsFrame) this.hub?.emitEvent(this.tableId, result.publicStatsFrame);
 
         // Reflect only the actual paid receipt. The transaction owns the money;
         // response-loss replay returns this same receipt without another credit.
@@ -3891,6 +3894,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             tableId: this.tableId,
             userId: horse.user_id,
             bigBlind: Number(this.tableInfo?.big_blind) || 0,
+            smallBlind: Number(this.tableInfo?.small_blind) || 0,
+            variant: this.tableInfo?.game_variant,
             minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,
             maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
             rebuysTaken: currentRebuys,

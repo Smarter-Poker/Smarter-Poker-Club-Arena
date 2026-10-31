@@ -18,6 +18,7 @@ const pageCss = read('src/pages/ClubHomePage.css');
 const identityCard = read('src/components/club-buttons/ClubIdentityCard.tsx');
 const identityCardCss = read('src/components/club-buttons/ClubIdentityCard.css');
 const wallet = read('src/components/wallet/DynamicWallet.tsx');
+const directory = read('src/components/wallet/CashierMyWallets.tsx');
 const walletCss = read('src/components/wallet/DynamicWallet.css');
 const walletArtwork = read('src/components/wallet/ClubWalletArtwork.tsx');
 const layout = read('src/components/layouts/AppLayout.tsx');
@@ -159,11 +160,12 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(page).toContain('className="lobby-bbj"');
     expect(page).toContain('>Bad Beat Jackpot</span>');
     expect(page).toContain('setShowBBJInfo(true)');
-    expect(page).toContain('showBBJ={false}');
+    expect(directory).toContain('showBBJ={false}');
   });
 
-  it('stacks the approved long wallet art beneath the BBJ with live values', () => {
-    expect(page).toContain('compactLobby');
+  it('preserves the approved wallet art and live values inside Cashier', () => {
+    expect(directory).toContain('compactLobby');
+    expect(page).not.toContain('<DynamicWallet');
     /* The lobby's rows still come from the visibility law, never inlined
        here. The call gained an arena option on 2026-09-11 (Diamond Arena
        holds no chip ledger, so it draws no club row at all), so this pins

@@ -30,7 +30,12 @@ vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
 import RabbitHunt from '../../src/components/table/RabbitHunt';
 import { vipService } from '../../src/services/VIPService';
-import { __resetRabbitEntitlementCache } from '../../src/components/table/rabbitEntitlement';
+import {
+  __resetRabbitEntitlementCache,
+  rememberRabbitEntitlement,
+  rememberRabbitVipRemaining,
+  initialRabbitEntitlement,
+} from '../../src/components/table/rabbitEntitlement';
 
 afterEach(() => {
   cleanup();
@@ -178,10 +183,45 @@ describe('Rabbit Hunt human decision safety', () => {
     fireEvent.click(button);
     expect(onReveal).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.querySelector('.rabbit-hunt__cost')?.textContent).toBe('5');
 
     release({ success: true, cards: [{ rank: 'A', suit: 'c' }], diamondsSpent: 5 });
     await waitFor(() => expect(queryByRole('button')).toBeNull());
     expect(toast.info).toHaveBeenCalledWith('5 Diamonds Charged');
+  });
+
+  it('keeps a refused offer usable for a deliberate retry', async () => {
+    const onReveal = vi
+      .fn()
+      .mockResolvedValueOnce({ success: false, error: 'Not Enough Diamonds' })
+      .mockResolvedValueOnce({ success: true, cards: [{ rank: 'A', suit: 'c' }] });
+    const { getByRole, queryByRole } = render(
+      <RabbitHunt isAvailable cardsAvailable={1} userId="retry-viewer" onReveal={onReveal} />
+    );
+    fireEvent.click(getByRole('button'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Not Enough Diamonds'));
+    await waitFor(() => expect((getByRole('button') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(getByRole('button'));
+    await waitFor(() => expect(queryByRole('button')).toBeNull());
+    expect(onReveal).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not toast a paid response from a closed surface', async () => {
+    let finish!: (value: any) => void;
+    const pending = new Promise<any>((resolve) => {
+      finish = resolve;
+    });
+    const { getByRole, unmount } = render(
+      <RabbitHunt isAvailable cardsAvailable={1} userId="closed-viewer" onReveal={() => pending} />
+    );
+    fireEvent.click(getByRole('button'));
+    unmount();
+    await act(async () => {
+      finish({ success: true, cards: [{ rank: 'A', suit: 'c' }], diamondsSpent: 5 });
+      await pending;
+    });
+    expect(toast.info).not.toHaveBeenCalled();
   });
 
   it('does not call the paid endpoint without an authenticated player', () => {
@@ -200,4 +240,48 @@ describe('Rabbit Hunt human decision safety', () => {
     expect(onReveal).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith('Please Log In To Use Rabbit Hunt');
   });
+});
+
+it('an older entitlement lookup cannot restore a VIP use consumed on another surface', async () => {
+  let finish!: (value: any) => void;
+  vi.mocked(vipService.checkVIPStatus).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  rememberRabbitEntitlement('account-a', { isVIP: true, isLifetime: false, vipRemaining: 1 });
+  const view = render(
+    <RabbitHunt isAvailable cardsAvailable={1} userId="account-a" onReveal={vi.fn()} />
+  );
+  expect(view.getByRole('button', { name: 'Rabbit Hunt, 1 Free This Month' })).toBeTruthy();
+  rememberRabbitVipRemaining('account-a', 0);
+  await act(async () => {
+    finish({
+      isVIP: true,
+      status: 'vip',
+      monthlyLimits: { rabbitHunts: { used: 99, limit: 100 } },
+    });
+  });
+  expect(view.getByRole('button', { name: 'Rabbit Hunt, 5 Diamonds' })).toBeTruthy();
+});
+
+it('does not rewind the monthly pool when two receipt responses arrive out of order', () => {
+  rememberRabbitEntitlement('account-a', { isVIP: true, isLifetime: false, vipRemaining: 2 });
+  rememberRabbitVipRemaining('account-a', 0);
+  rememberRabbitVipRemaining('account-a', 1);
+  expect(initialRabbitEntitlement('account-a', null).vipRemaining).toBe(0);
+});
+it('a new month can have a replenished pool without retaining the old zero', () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date('2026-10-31T23:59:00Z'));
+    rememberRabbitEntitlement('account-a', { isVIP: true, isLifetime: false, vipRemaining: 0 });
+    vi.setSystemTime(new Date('2026-11-01T00:01:00Z'));
+    expect(initialRabbitEntitlement('account-a', null).vipRemaining).toBeNull();
+    rememberRabbitVipRemaining('account-a', 99);
+    expect(initialRabbitEntitlement('account-a', null).vipRemaining).toBe(99);
+  } finally {
+    vi.useRealTimers();
+  }
 });

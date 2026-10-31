@@ -367,6 +367,9 @@
   display: flex;
   gap: 8px;
   max-width: 85%;
+  /* Mobile energy: skip off-screen message rendering in long chat logs */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 42px;
 }
 
 .chat-message--own {

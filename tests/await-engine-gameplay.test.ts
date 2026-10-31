@@ -1,6 +1,7 @@
 import { workflowJobBudget } from './productionJobBudget';
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import {
   awaitEngineGameplay,
   BREAK_START_MINUTE,
@@ -237,6 +238,14 @@ describe('the existing certification waits only for its engine maintenance bound
     (multirun) => {
       const workflow = readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8');
       const budget = workflowJobBudget(workflow, 'live-table-e2e');
+      expect(budget).toEqual({ ordinary: 126, optIn: 148 });
+      const noticeSteps = parse(workflow).jobs['live-table-e2e'].steps.filter(
+        (step: { id?: string }) => step.id === 'seat_move_notice'
+      );
+      expect(noticeSteps).toHaveLength(1);
+      const noticeMinutes = noticeSteps[0]['timeout-minutes'];
+      expect(noticeMinutes).toBe(5);
+      const noticeMs = noticeMinutes * 60_000;
       const jobMs = (multirun ? budget.optIn : budget.ordinary) * 60_000;
       const suite = readFileSync('tests/e2e/production-live-table-realtime.spec.ts', 'utf8');
       const caseMs = Number(suite.match(/test\.setTimeout\(([\d_]+)\)/)?.[1]?.replaceAll('_', ''));
@@ -269,6 +278,9 @@ describe('the existing certification waits only for its engine maintenance bound
       expect(
         jobMs -
           (multirun ? 22 * 60_000 : 0) -
+          // Include the separate served-client notice case's whole step,
+          // including authentication, browser setup and report generation.
+          noticeMs -
           // awaitEngineGameplay can first pause until the daily announcement
           // passes, before its separate GAMEPLAY_WAIT_MS deadline begins.
           (CERTIFICATE_LEAD_MS + 30_000) -

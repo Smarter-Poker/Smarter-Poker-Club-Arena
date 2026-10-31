@@ -110,8 +110,8 @@ describe('D-03 / D-04: nothing from the previous club or the previous claim surv
     );
     expect(src).toContain('const [holderNonce, setHolderNonce] = useState(0);');
     expect(src).toContain('setHolderNonce((n) => n + 1);');
-    expect(src).toContain(
-      '[tab, shownDestination, recipient, clubUuid, isMounted, holderNonce, walletType]'
+    expect(src).toMatch(
+      /\[\s*tab,\s*shownDestination,\s*recipient,\s*clubUuid,\s*isMounted,\s*holderNonce,\s*walletType,\s*personalClaim,?\s*\]/
     );
   });
 });
@@ -153,9 +153,11 @@ describe('D-07 / D-15: every amount is read from its spelling, not from Number()
     expect(src).toContain('{Number(amount) > 0 && target && !amountRefusal && (');
   });
 
-  it('whole-unit amounts are digits only on the cashier, the mint and the diamond transfer', () => {
-    expect(read(WCM)).toContain('const WHOLE_CHIPS = /^\\d+$/;');
-    expect(read(WCM)).toContain('WHOLE_CHIPS.test(amount.trim())');
+  it('cashier cents use the strict parser while mint and diamonds stay whole units', () => {
+    expect(read(WCM)).toContain('const parsedAmount = parseTradeAmount(amount);');
+    expect(read(WCM)).toContain('const amountIsValid = parsedAmount.ok && amt <= 1e9;');
+    expect(read(WCM)).toContain('const fmtMovement = exactChipFigure;');
+    expect(read(WCM)).not.toContain('Number.isInteger(amt)');
     expect(read(MINT)).toContain('const WHOLE_DIAMONDS = /^\\d+$/;');
     expect(read(MINT)).toContain('const spelledWhole = WHOLE_DIAMONDS.test(diamonds.trim());');
     expect(read(MINT)).toMatch(/const valid =\s*d > 0 && spelledWhole &&/);

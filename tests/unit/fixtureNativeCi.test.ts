@@ -147,7 +147,10 @@ it('runs the real Diamond playfields once with an isolated software-rendering wo
   const commands = [beat.run, playfieldStep.run]
     .join('\n')
     .split('\n')
-    .filter((line: string) => line.includes('playwright test'));
+    .filter(
+      (line: string) =>
+        line.includes('playwright test') || line.includes('ui-test-selection.mjs browser')
+    );
   const playfields = commands.filter((line: string) =>
     line.includes('tests/e2e/css/diamond-games-playfield.spec.ts')
   );
@@ -664,6 +667,12 @@ describe('required CI owns native fixture verification', () => {
 
   it.each([
     'scripts/ci/test-f06-shared-hand-lane.py',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted-postflop/qualify.py',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted-postflop/fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted-postflop/capsule-disposition-contract.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted-postflop/floor-prerequisite.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted-postflop/actual-disposition-guards.sql',
+    'supabase/migrations/20261029011340_legacy_postflop_void_preserves_original_principal.sql',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/successor_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/generation_qualification.py',
@@ -1514,7 +1523,9 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     expect(accounting.needs).toBe('changes');
     expect(accounting.if).toContain("needs.changes.outputs.server == 'true'");
     expect(accounting.if).toContain("needs.changes.result != 'success'");
-    expect(accounting['runs-on']).toBe('ubuntu-latest');
+    expect(accounting['runs-on']).toBe(
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+    );
     expect(accounting['continue-on-error']).toBeUndefined();
     const calls = accounting.steps.filter(
       (step: { id?: string }) => step.id === 'spin_expiry_postgres'
@@ -1536,7 +1547,7 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
-          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
       )
     ).toBe(true);
   });
@@ -1571,7 +1582,9 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
 
   it('runs all three real drivers with the installed PG17 tools and no failure bypass', () => {
     const accounting = ci.jobs.accounting_postgres;
-    expect(accounting['runs-on']).toBe('ubuntu-latest');
+    expect(accounting['runs-on']).toBe(
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+    );
     expect(accounting['continue-on-error']).toBeUndefined();
     const expected = [
       [
@@ -1603,7 +1616,7 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
-          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
       )
     ).toBe(true);
   });
@@ -1831,7 +1844,9 @@ describe('cash failure intake is exercised by the actual hosted scheduler fixtur
     const job = ci.jobs.accounting_postgres;
     const build = job.steps.filter((s: { id?: string }) => s.id === 'cash_pgcron_build');
     const execution = job.steps.filter((s: { id?: string }) => s.id === 'cash_native_failure');
-    expect(job['runs-on']).toBe('ubuntu-latest');
+    expect(job['runs-on']).toBe(
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+    );
     expect(job['continue-on-error']).toBeUndefined();
     expect(build).toHaveLength(1);
     expect(execution).toHaveLength(1);
@@ -1989,7 +2004,9 @@ describe('restored provider accounting qualification', () => {
       env?: Record<string, string>;
       'continue-on-error'?: boolean;
     }>;
-    expect(job['runs-on']).toBe('ubuntu-latest');
+    expect(job['runs-on']).toBe(
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+    );
     expect(job.if).toBe(ci.jobs.server_shards.if);
     expect(ci.jobs.server.needs).toContain('accounting_postgres');
     expect(job['continue-on-error']).not.toBe(true);
@@ -2039,7 +2056,7 @@ describe('restored provider accounting qualification', () => {
     expect(full.env?.ACCOUNTING_FIXTURE_PARENT).toBe('${{ runner.temp }}/union-accounting-scratch');
   });
 
-  it('keeps shard two runtime-only and requires the actual provider, Lightning and export build tools', () => {
+  it('requires the actual private pg_net, provider, Lightning and export build tools', () => {
     const install = ci.jobs.accounting_postgres.steps.find(
       (step: { name?: string }) =>
         step.name === 'Install PostgreSQL 17 tools without a default database service'
@@ -2077,7 +2094,10 @@ describe('restored provider accounting qualification', () => {
             env: { ...process.env, PATH: '', PG_CI_SHARD: String(shard) },
           }
         );
-        if (shard === 2) expect(output).toBe('');
+        if (shard === 2)
+          expect(output).toBe(
+            'INSTALL:build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev'
+          );
         else if (shard === 1)
           expect(output).toBe('INSTALL:postgresql-server-dev-17 build-essential');
         else
@@ -2092,6 +2112,29 @@ describe('restored provider accounting qualification', () => {
           stdio: 'pipe',
         })
       ).toThrow();
+      const toolBin = join(temp, 'build-tools');
+      mkdirSync(toolBin);
+      for (const name of [
+        'cc',
+        'make',
+        'bison',
+        'flex',
+        'perl',
+        'bzip2',
+        'pkg-config',
+        'curl-config',
+      ])
+        writeFileSync(join(toolBin, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      expect(
+        execFileSync(
+          '/bin/bash',
+          ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, PATH: toolBin, PG_CI_SHARD: '2' },
+          }
+        )
+      ).toBe('');
       for (const binary of ['createdb', 'pg_dump']) {
         const path = join(temp, 'lib/postgresql/17/bin', binary);
         rmSync(path);
@@ -2101,7 +2144,7 @@ describe('restored provider accounting qualification', () => {
             ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
             { encoding: 'utf8', env: { ...process.env, PATH: '', PG_CI_SHARD: '2' } }
           )
-        ).toBe('INSTALL:');
+        ).toBe('INSTALL:build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev');
         writeFileSync(path, '', { mode: 0o755 });
       }
       rmSync(join(temp, 'lib/postgresql/17/lib/pg_cron.so'));
@@ -2114,7 +2157,7 @@ describe('restored provider accounting qualification', () => {
             env: { ...process.env, PATH: '', PG_CI_SHARD: '2' },
           }
         )
-      ).toBe('INSTALL:');
+      ).toBe('INSTALL:build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev');
     } finally {
       rmSync(temp, { recursive: true, force: true });
     }
@@ -2180,7 +2223,9 @@ describe('instruction-only verification preserves source contracts without repla
     expect(ci).toContain('node --test docs/agent-policy/agent-policy.test.mjs');
     expect(ci).toContain("if: steps.compile_scope.outputs.instructions_only != 'true'");
     expect(ci).toContain('npx tsc --noEmit');
-    expect(ci).toContain('npx vitest run tests/ --shard=${{ matrix.shard }}/4');
+    expect(ci).toContain(
+      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8'
+    );
   });
 });
 
@@ -2191,14 +2236,20 @@ it('the actual replay condition executes for missing output and non-instruction 
   ).if;
   const evaluate = new Function('steps', `return (${condition});`);
   for (const value of ['true', 'false', undefined, '']) {
-    expect(evaluate({ compile_scope: { outputs: { instructions_only: value } } })).toBe(
-      value !== 'true'
-    );
+    for (const presentation of ['true', 'false', undefined, '']) {
+      expect(
+        evaluate({
+          compile_scope: { outputs: { instructions_only: value, presentation_only: presentation } },
+        })
+      ).toBe(value !== 'true' && presentation !== 'true');
+    }
   }
   const classifier = ci.jobs.typecheck_compile.steps.find(
     (step: { id: string }) => step.id === 'compile_scope'
   );
-  expect(classifier.run).toBe('node scripts/ci/classify-ci-changes.mjs');
+  expect(classifier.run).toBe(
+    'node scripts/ci/classify-ci-changes.mjs\nnode scripts/ci/ui-test-selection.mjs scope\n'
+  );
   expect(classifier.env.CI_HEAD_SHA).toBe('${{ github.sha }}');
   expect(classifier['continue-on-error']).toBeUndefined();
   expect(ci.jobs.typecheck_compile.needs).toBeUndefined();

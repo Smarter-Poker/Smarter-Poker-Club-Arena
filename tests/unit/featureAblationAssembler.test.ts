@@ -8,7 +8,11 @@ it('runs the native feature-ablation-assemble.mjs receipt and attempt boundary i
   try {
     const result = spawnSync(
       process.execPath,
-      ['--test', resolve(__dirname, '../operations/feature-ablation-assemble.test.mjs')],
+      [
+        '--test',
+        resolve(__dirname, '../operations/feature-ablation-assemble.test.mjs'),
+        resolve(__dirname, '../operations/feature-ablation-artifact-custody.test.mjs'),
+      ],
       {
         encoding: 'utf8',
         timeout: 20000,
@@ -32,7 +36,11 @@ it('keeps horse-feature-ablation-qualification.yml manual, bounded and unable to
   );
   const workflow = parse(text);
   expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch']);
-  expect(workflow.permissions).toEqual({ contents: 'read', actions: 'read' });
+  expect(workflow.permissions).toEqual({
+    contents: 'read',
+    actions: 'read',
+    'pull-requests': 'read',
+  });
   expect(workflow.jobs.cell.strategy).toMatchObject({ 'fail-fast': false, 'max-parallel': 64 });
   expect(workflow.jobs.cell['timeout-minutes']).toBe(240);
   expect(workflow.jobs.cell.steps.find((s: { id?: string }) => s.id === 'evaluate').env).toEqual({

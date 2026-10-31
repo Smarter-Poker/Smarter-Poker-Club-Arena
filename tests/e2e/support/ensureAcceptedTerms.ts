@@ -4,9 +4,9 @@ type TermsGateStatus = 'accepted' | 'not_accepted' | 'unknown';
 
 const DECIDED_TERMS_SELECTOR = '[data-tos-gate-status]:not([data-tos-gate-status="checking"])';
 
-async function waitForTermsDecision(page: Page): Promise<TermsGateStatus> {
+async function waitForTermsDecision(page: Page, timeout = 60_000): Promise<TermsGateStatus> {
   const decision = page.locator(DECIDED_TERMS_SELECTOR);
-  await decision.waitFor({ state: 'attached', timeout: 60_000 });
+  await decision.waitFor({ state: 'attached', timeout });
   const status = await decision.getAttribute('data-tos-gate-status');
   if (status === 'accepted' || status === 'not_accepted') return status;
   if (status === 'unknown') {
@@ -20,7 +20,7 @@ async function waitForTermsDecision(page: Page): Promise<TermsGateStatus> {
  * gate before global setup asks AppLayout about the inner profile gate.
  *
  * The write goes through the same public UI and idempotent endpoint a player
- * uses. A subsequent full reload must read `accepted` from the canonical
+ * uses. A fresh document must read `accepted` from the canonical
  * profile column again; neither a hidden DOM mutation nor a client-only state
  * flip can satisfy this preflight.
  */
@@ -54,10 +54,27 @@ export async function ensureAcceptedTerms(page: Page): Promise<boolean> {
   await page
     .locator('[data-tos-gate-status="accepted"]')
     .waitFor({ state: 'attached', timeout: 30_000 });
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
-  const persistedStatus = await waitForTermsDecision(page);
-  if (persistedStatus !== 'accepted') {
-    throw new Error('Terms Of Service acceptance appeared to succeed but did not persist.');
+  // The fresh document's server-backed gate is the readiness contract.
+  // Keep one fresh document and its accepted decision inside the original budget.
+  // The cold WebKit document can fail to commit a same-tab reload just after
+  // acceptance. A second page shares this owned auth context, but no React gate
+  // state: its marker requires a new canonical read. Keep the caller's page
+  // for the remaining profile flow and close the verification page always.
+  const deadline = Date.now() + 60_000;
+  const remaining = () => {
+    const budget = deadline - Date.now();
+    if (budget <= 0) throw new Error('Fresh Terms Of Service verification exhausted its deadline.');
+    return budget;
+  };
+  const verification = await page.context().newPage();
+  try {
+    await verification.goto(page.url(), { waitUntil: 'commit', timeout: remaining() });
+    const persistedStatus = await waitForTermsDecision(verification, remaining());
+    if (persistedStatus !== 'accepted') {
+      throw new Error('Terms Of Service acceptance appeared to succeed but did not persist.');
+    }
+  } finally {
+    await verification.close();
   }
 
   console.log('[global-setup] dedicated account Terms Of Service acceptance is persisted.');

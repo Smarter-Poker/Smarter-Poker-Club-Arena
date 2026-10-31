@@ -68,8 +68,19 @@ export const HAND_RANKINGS = {
 export class Deck {
   private cards: Card[] = [];
 
-  constructor() {
-    this.reset();
+  constructor(remainingCards?: readonly Card[]) {
+    if (remainingCards === undefined) this.reset();
+    else {
+      const seen = new Set<string>();
+      if (remainingCards.length > 52) throw new Error('Recovery Deck Is Invalid');
+      this.cards = remainingCards.map((card) => {
+        const key = `${card?.rank}:${card?.suit}`;
+        if (!RANKS.includes(card?.rank) || !SUITS.includes(card?.suit) || seen.has(key))
+          throw new Error('Recovery Deck Is Invalid');
+        seen.add(key);
+        return { rank: card.rank, suit: card.suit };
+      });
+    }
   }
 
   reset(): void {

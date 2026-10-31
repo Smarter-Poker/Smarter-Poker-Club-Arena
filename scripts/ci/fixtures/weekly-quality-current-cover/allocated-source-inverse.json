@@ -1,0 +1,43 @@
+{
+  "exact_one_version_and_header_inverse": true,
+  "original_prototype_sha256": "5b4951edcb64b00c900e0e6e2006dd6ac2b9a5a85c7ee2f192bfd38890f4486d",
+  "protected64511_sha256": "ca7016039faab68bce7314c13f8108eb1bf90f71d3ccaa20428819e89a375985",
+  "both_source_bodies_unchanged": true,
+  "explicit_per_owner_REVOKE_delta": {
+    "before_sha256": "5f1db87cfcf68ad940fac96267b341ce6a53635889f6173815288d633596321c",
+    "after_sha256": "e334b085b2b32bfea0323c794908c64b42ae157ce6363d9ac2d84f516b9904b6",
+    "added_statements": [
+      "REVOKE ALL ON FUNCTION public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;",
+      "REVOKE ALL ON FUNCTION public.fn_accounting_tournament_fee_net_plan(uuid) FROM PUBLIC,anon,authenticated,service_role;"
+    ],
+    "remove_exact_added_statements_restores_before": true,
+    "function_bodies_and_original_combined_REVOKE_unchanged": true
+  },
+  "forward54822_dependency_delta": {
+    "before_sql_sha256": "e334b085b2b32bfea0323c794908c64b42ae157ce6363d9ac2d84f516b9904b6",
+    "after_sql_sha256": "d07924602347721d9ea1d5adec7bc3387e7d6d440eadb8f54e2c240ddfc3a5e7",
+    "old54822": "d71475888fdd2b69cb857cc5623a5f2a1760e4558a567769054716892b472b80",
+    "new54822": "2cc84fd0955cca35ed399ca993bd3d1196d0d5dd1e7d3d4372353efe186fff5a",
+    "exact_single_required_history_hash_inverse": true,
+    "all_original_function_bodies_ACL_GEN_paid_guards_unchanged": true
+  },
+  "credit51934_qualified54822_dependency_delta": {
+    "before_sql_sha256": "d07924602347721d9ea1d5adec7bc3387e7d6d440eadb8f54e2c240ddfc3a5e7",
+    "after_sql_sha256": "ca7016039faab68bce7314c13f8108eb1bf90f71d3ccaa20428819e89a375985",
+    "old54822": "2cc84fd0955cca35ed399ca993bd3d1196d0d5dd1e7d3d4372353efe186fff5a",
+    "new54822": "16477275b149bb802791e31f0153db074b820565727e4a003368cf3ad756b656",
+    "exact_single_required_history_hash_inverse": true,
+    "same_function_bodies_ACL_GEN_paid_guards": true
+  },
+  "uninstalled_c9e_receipt_access_delta": {
+    "before_protected_sha256": "ca7016039faab68bce7314c13f8108eb1bf90f71d3ccaa20428819e89a375985",
+    "after_source_sha256": "fcad5568e849ad9f502c37bc0ec78c93313f584e0faa0c0ec0b3bf74a0f9cc22",
+    "old_TQ_md5": "07f4f7e9355ba9d33cfee5b156d5609a",
+    "new_TQ_md5": "c9e08ef6460bc1b9d27af7339f3c42cc",
+    "only_TQ_definition_and_targeted_after_definition_changed": true,
+    "whole_inverse_receipt_CTE_exact": true,
+    "history_NULL_required_before_dispatch": true,
+    "installed_54822_51108_62635_and_frozen_literals_unchanged": true,
+    "public_install_HOLD_until_changed_whole180_PASS": true
+  }
+}

@@ -33,7 +33,8 @@ CREATE TABLE club_rake_daily_user(day date,rake_amount numeric);
 CREATE FUNCTION fn_ca_horse_roster_digest(date) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;
 CREATE FUNCTION fn_sp_dispatch_attention(date,jsonb) RETURNS jsonb LANGUAGE sql AS $$ SELECT $2 $$;
 CREATE FUNCTION fn_sp_daily_metrics_snapshot(date) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;
-CREATE TABLE ca_drift_incidents(resolved_at timestamptz,deadline_at timestamptz);
+CREATE TABLE ca_drift_incidents(id uuid PRIMARY KEY,status text,created_at timestamptz,detected_at timestamptz,resolved_at timestamptz,deadline_at timestamptz,closure_basis text,root_cause text,correction_ref text,resolution text);
+CREATE TABLE ca_incident_events(incident_id uuid,at timestamptz,kind text,detail jsonb);
 CREATE TABLE tournaments(id uuid,name text,tournament_type text,status text,started_at timestamptz);
 CREATE TABLE cashout_requests(completed_at timestamptz,cancelled_at timestamptz,status text,created_at timestamptz);
 CREATE TABLE settlement_invoices(invoice_type text,created_at timestamptz,message_sent boolean);
@@ -131,5 +132,131 @@ INSERT INTO operational_alert_events(id,alertname,severity,received_at,investiga
         assert 'DIGEST_SPIN_PREIMAGE_DRIFT' in sql(candidate.read_text(),check=False).stderr
         print('PASS: exact attention predecessor and candidate agree on new/rising/unchanged/empty alert cases; single materialized history scan; access/config preserved; drift/replay refused')
         print('PASS: 12-to-6 baseline, unchanged ten-event threshold and actual prior-day count 3, all metric consumers, direct/optional metadata, informational/update-only exclusion, unchanged ACL/owner/settings, read-only and dispatch freshness, original snapshot/alert retained, real mismatch remains open, replay refusal')
+        # Grouped signals retain exact original provenance rather than an
+        # assignment badge that can never observe the originals resolving.
+        group_migration=root/'supabase/migrations/20261029182643_digest_grouped_critical_alerts_retain_original_identity.sql'
+        group_defs=json.loads((root/'tests/fixtures/digest-group-preimages.json').read_text())
+        sql("ALTER TABLE operational_alert_events ADD COLUMN source text,ADD COLUMN status text,ADD COLUMN last_received_at timestamptz; CREATE TABLE financial_alerts(id uuid PRIMARY KEY,source text,created_at timestamptz,resolved boolean,resolved_at timestamptz);")
+        for definition in group_defs:
+            sql(definition['definition'])
+        group_metadata=sql("SELECT jsonb_agg(jsonb_build_array(oid,proowner,proacl,prosecdef,proconfig) ORDER BY oid) FROM pg_proc WHERE proname IN ('fn_sp_digest_attention','fn_sp_daily_digest');").stdout
+        def literal(value):
+            return "'"+json.dumps(value).replace("'","''")+"'::jsonb"
+        labels={'alertname':'OpenClawFleetLongSilence','host':'engine-01'}
+        firing={'alert':{'fingerprint':'75619586bd3b2224','startsAt':'2026-10-28T17:01:00.848Z','labels':labels,'status':'firing'}}
+        financial_payload={'original_event':{'id':'10063685-5d51-4fd9-9d46-b4a8fcd28744','created_at':'2026-10-28T23:42:42.382429+00:00'}}
+        sql("INSERT INTO operational_alert_events(id,alertname,severity,received_at,investigation_status,payload,source,status) VALUES (289742,'OpenClawFleetLongSilence','critical','2026-10-28T17:01:11.415596Z','new',"+literal(firing)+",'alertmanager','firing'),(291196,'Tournament.atomic_satellite_finish_refused','critical','2026-10-28T23:42:42.454884Z','new',"+literal(financial_payload)+",'financial-alerts-backfill','firing');")
+        names={'OpenClawFleetLongSilence':1,'Tournament.atomic_satellite_finish_refused':1}
+        metrics={'health':{'alert_names':names},'money':{'ledger_rake_utc_day':0}}
+        text='OpenClawFleetLongSilence (1, 0 the day before); Tournament.atomic_satellite_finish_refused (1, 0 the day before)'
+        original={'rule':'critical_alert_rising','severity':'critical','dispatch':False,'title':'Original daily signal','detail':{'count':2,'alerts':text}}
+        drift_ids=['d8d6f0e1-4dd6-4aa4-9e67-d7ab9fe2a87d','86d034c6-a2a1-4b35-97d6-e9627cd513f9','b0cf9085-5a22-474d-8ca3-68e0064ba11e','def15085-a152-4e88-899a-2258443b737f','d8a2905c-58db-444e-b9f7-b5a291ee944d']
+        drift_original={'rule':'drift_past_deadline','severity':'warning','dispatch':False,'title':'5 drift incidents are open past their deadline','detail':{'count':5}}
+        for identity in drift_ids:
+            sql("INSERT INTO ca_drift_incidents(id,status,created_at,detected_at,deadline_at) VALUES('"+identity+"','open','2026-10-28T01:00Z','2026-10-28T01:00Z','2026-10-28T01:20Z'); INSERT INTO ca_incident_events VALUES('"+identity+"','2026-10-28T01:00Z','created','{}');")
+        sql("INSERT INTO sp_daily_metrics VALUES ('2026-10-28',"+literal(metrics)+","+literal([original,drift_original])+",'2026-10-29T05:21:21.075476Z',1);")
+        def grouped_report():
+            report=json.loads(sql("SELECT fn_sp_daily_digest('2026-10-28',false);").stdout)
+            return next(x for x in report['attention'] if x['rule']=='critical_alert_rising')
+        assert grouped_report()['status']=='tracked', 'old consumer has no original linkage'
+        sql(group_migration.read_text())
+        def drift_report():
+            report=json.loads(sql("SELECT fn_sp_daily_digest('2026-10-28',false);").stdout)
+            return next(x for x in report['attention'] if x['rule']=='drift_past_deadline')
+        historical_drift=json.loads(sql("SELECT attention->1 FROM sp_daily_metrics WHERE day='2026-10-28';").stdout)
+        assert historical_drift['detail']['count']==5 and historical_drift['title']==drift_original['title']
+        assert set(historical_drift['detail']['incident_ids'])==set(drift_ids)
+        assert drift_report()['status']=='not_picked_up'
+        cause='The original underlying condition was independently remeasured and verified clear.'
+        for identity in drift_ids[:4]:
+            sql("UPDATE ca_drift_incidents SET status='resolved',resolved_at='2026-10-29T15:00Z',closure_basis='verified_remeasured',root_cause='"+cause+"',correction_ref='verified: authoritative remeasurement',resolution='Verified clear' WHERE id='"+identity+"';")
+        partial=drift_report()
+        assert partial['status']=='in_progress' and '4 of 5' in partial['resolution'] and '1 remain open' in partial['resolution'],partial
+        sql("UPDATE ca_drift_incidents SET status='resolved',resolved_at='2026-10-29T15:00Z',closure_basis=NULL,root_cause='"+cause+"',correction_ref='verified: authoritative source outcome',resolution='Verified clear' WHERE id='"+drift_ids[4]+"';")
+        assert drift_report()['status']=='fixed',drift_report()
+        sql("UPDATE ca_drift_incidents SET closure_basis='aged_out_unverified',correction_ref='aged-out: no new observations' WHERE id='"+drift_ids[4]+"';")
+        assert drift_report()['status']=='tracked' and 'incomplete' in drift_report()['resolution']
+        sql("UPDATE ca_drift_incidents SET closure_basis=NULL,correction_ref='verified: authoritative source outcome' WHERE id='"+drift_ids[4]+"';")
+        sql("DELETE FROM ca_drift_incidents WHERE id='"+drift_ids[4]+"';")
+        assert drift_report()['status']=='tracked', 'missing original cannot become fixed'
+        # A fresh producer captures the exact live unresolved cohort, independent
+        # of the historical day-end health metric and the prior stored cohort.
+        sql("UPDATE ca_drift_incidents SET status='open',resolved_at=NULL WHERE id='"+drift_ids[0]+"';")
+        fresh_drift=json.loads(sql("SELECT fn_sp_digest_attention('2026-10-29','{}');").stdout)
+        fresh_drift=next(x for x in fresh_drift if x['rule']=='drift_past_deadline')
+        assert fresh_drift['detail']['count']==1 and fresh_drift['detail']['incident_ids']==[drift_ids[0]] and fresh_drift['detail']['as_of']
+        sql("UPDATE ca_drift_incidents SET status='resolved',resolved_at='2026-10-29T15:00Z' WHERE id='"+drift_ids[0]+"';")
+        print('PASS: exact witnessed original five drift identities; 4/5 stays in progress, 5/5 verified fixed, aged-out/missing member unknown, future producer captures actual live cohort and cutoff; historical count/title retained')
+        linked=json.loads(sql("SELECT attention FROM sp_daily_metrics WHERE day='2026-10-28';").stdout)[0]
+        assert {k:v for k,v in linked['detail'].items() if k!='source_events'}==original['detail']
+        assert linked['title']==original['title']
+        assert linked['detail']['source_events'][0]['event_ids']==[289742]
+        assert grouped_report()['status']=='not_picked_up'
+        sql("UPDATE operational_alert_events SET investigation_status='investigating' WHERE id=289742;")
+        assert grouped_report()['status']=='in_progress'
+        sql("UPDATE operational_alert_events SET investigation_status='historical' WHERE id IN(289742,291196);")
+        assert grouped_report()['status']=='fixed'
+        # Canonical source resolution needs no manual review on every future
+        # episode, but an identically named different episode is not proof.
+        sql("UPDATE operational_alert_events SET investigation_status='new' WHERE id IN(289742,291196);")
+        closed={'alert':{'fingerprint':'75619586bd3b2224','startsAt':'2026-10-28T17:01:00.848Z','endsAt':'2026-10-29T06:38:00.848Z','labels':labels,'status':'resolved'}}
+        sql("INSERT INTO operational_alert_events(id,alertname,severity,received_at,investigation_status,payload,source,status) VALUES(292824,'OpenClawFleetLongSilence','critical','2026-10-29T06:41:11.119124Z','new',"+literal(closed)+",'alertmanager','resolved'); INSERT INTO financial_alerts VALUES('10063685-5d51-4fd9-9d46-b4a8fcd28744','Tournament.atomic_satellite_finish_refused','2026-10-28T23:42:42.382429Z',true,'2026-10-29T00:18Z');")
+        assert grouped_report()['status']=='fixed', grouped_report()
+        for bad_id in ['not-a-uuid','9999999999999999999999999999999999999999']:
+            wrong={'original_event':financial_payload['original_event']|{'id':bad_id}}
+            sql("UPDATE operational_alert_events SET payload="+literal(wrong)+" WHERE id=291196;")
+            assert grouped_report()['status']!='fixed', 'invalid financial identity cannot borrow a source resolution'
+        sql("UPDATE operational_alert_events SET payload="+literal(financial_payload)+" WHERE id=291196;")
+        canonical=sql("SELECT attention FROM sp_daily_metrics WHERE day='2026-10-28';").stdout
+        for changes in [
+            {'startsAt':'2026-10-28T18:01:00.848Z'},
+            {'fingerprint':'other-fingerprint'},
+            {'labels':{'alertname':'OpenClawFleetLongSilence','host':'different-host'}},
+            {'endsAt':'not-a-timestamp'},
+        ]:
+            wrong={'alert':closed['alert']|changes}
+            sql("UPDATE operational_alert_events SET payload="+literal(wrong)+" WHERE id=292824;")
+            assert grouped_report()['status']!='fixed', changes
+        sql("UPDATE operational_alert_events SET payload="+literal(closed)+" WHERE id=292824;")
+        assert grouped_report()['status']=='fixed'
+        sql("UPDATE operational_alert_events SET last_received_at='2026-10-29T07:00Z' WHERE id=289742;")
+        assert grouped_report()['status']!='fixed', 'a later firing observation cannot borrow an older resolve'
+        sql("UPDATE operational_alert_events SET last_received_at=NULL WHERE id=289742;")
+        assert grouped_report()['status']=='fixed'
+        # Later recurrence cannot rewrite this daily signal's recorded member
+        # set. A new producer call captures its own exact members and counts.
+        sql("INSERT INTO operational_alert_events(id,alertname,severity,received_at,investigation_status,payload,source,status) VALUES(400000,'BrandNew','critical','2026-10-29T13:00Z','new','{}','other','firing');")
+        fresh=json.loads(sql("SELECT fn_sp_digest_attention('2026-10-29','{\"health\":{\"alert_names\":{\"BrandNew\":1}}}');").stdout)
+        fresh=next(x for x in fresh if x['rule']=='critical_alert_rising')
+        assert fresh['detail']['source_events']==[{'alertname':'BrandNew','expected_count':1,'event_ids':[400000]}]
+        assert grouped_report()['status']=='fixed'
+        assert sql("SELECT attention FROM sp_daily_metrics WHERE day='2026-10-28';").stdout==canonical
+        bad_cases=[None,{},[{'alertname':'OpenClawFleetLongSilence','expected_count':1,'event_ids':[999999999999999999999999999999]}],
+                   [{'alertname':'OpenClawFleetLongSilence','expected_count':1,'event_ids':[289742]}, {'alertname':'Tournament.atomic_satellite_finish_refused','expected_count':1,'event_ids':[289742]}]]
+        for bad in bad_cases:
+            altered=linked|{'detail':linked['detail']|{'source_events':bad}}
+            sql("UPDATE sp_daily_metrics SET attention="+literal([altered])+" WHERE day='2026-10-28';")
+            unknown=grouped_report()
+            assert unknown['status']=='tracked' and 'incomplete' in unknown['resolution'],unknown
+        sql("UPDATE sp_daily_metrics SET attention="+literal([linked])+" WHERE day='2026-10-28';")
+        assert grouped_report()['status']=='fixed'
+        assert group_metadata==sql("SELECT jsonb_agg(jsonb_build_array(oid,proowner,proacl,prosecdef,proconfig) ORDER BY oid) FROM pg_proc WHERE proname IN ('fn_sp_digest_attention','fn_sp_daily_digest');").stdout
+        body=sql("SELECT pg_get_functiondef('fn_sp_digest_attention(date,jsonb)'::regprocedure);").stdout
+        start=body.index('  WITH original_inbox AS MATERIALIZED')
+        query=body[start:body.index('  IF v > 0 THEN',start)].replace('    INTO v, t, v_source_events\n','')
+        query=query.replace('p_metrics',literal(metrics)).replace('>= s',">= '2026-10-28 05:00Z'::timestamptz").replace('< s',"< '2026-10-28 05:00Z'::timestamptz").replace('< e',"< '2026-10-29 05:00Z'::timestamptz")
+        plan=json.loads(sql('EXPLAIN (FORMAT JSON) '+query).stdout)[0]['Plan']
+        assert history_scans(plan)==1, 'Linkage must not restore repeated inbox scans'
+        consumer=sql("SELECT pg_get_functiondef('fn_sp_daily_digest(date,boolean)'::regprocedure);").stdout
+        financial_query='SELECT 1 FROM public.financial_alerts financial'+consumer.split('OR EXISTS(SELECT 1 FROM public.financial_alerts financial',1)[1].split('OR EXISTS(SELECT 1 FROM public.operational_alert_events closed',1)[0].rstrip()[:-1]
+        sql("INSERT INTO financial_alerts SELECT ('00000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,'Other',now(),false,NULL FROM generate_series(1,2000)n; ANALYZE financial_alerts; ANALYZE operational_alert_events;")
+        plan=json.loads(sql('EXPLAIN (FORMAT JSON) SELECT original.id FROM operational_alert_events original WHERE original.id=291196 AND EXISTS('+financial_query+');').stdout)[0]['Plan']
+        def uses_financial_pk(node):
+            return node.get('Index Name')=='financial_alerts_pkey' or any(uses_financial_pk(x) for x in node.get('Plans',[]))
+        assert uses_financial_pk(plan), 'Canonical lookup must use the UUID primary key'
+        proof=next(x.split(':',1)[1].strip() for x in group_migration.read_text().splitlines() if x.startswith('-- @live-proof:'))
+        assert sql('SELECT '+proof+';').stdout.strip()=='t', 'Installed byte proof must match both actual function bodies'
+        assert 'DIGEST_GROUP_PREIMAGE_DRIFT' in sql(group_migration.read_text(),check=False).stderr
+        print('PASS: exact grouped originals, native source transition, producer IDs, read-only status, historical count preservation, reviewed/investigating/new, canonical financial outcome and same-episode recovery, different episode/labels/fingerprint rejection, malformed/missing/duplicate/overflow IDs conservative unknown, source ACL/config preservation, replay refusal')
     finally:
         run('pg_ctl', '-D', str(scratch/'data'), '-m', 'immediate', 'stop')

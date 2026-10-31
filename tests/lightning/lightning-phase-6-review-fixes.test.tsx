@@ -357,7 +357,7 @@ describe('3. JOIN LIGHTNING keeps waiting, says so, and stops when told', () => 
       if (name !== 'fn_lightning_my_session') return { data: null, error: null };
       asks += 1;
       return asks > 60
-        ? { data: { pool_session_id: POOL, state: 'active' }, error: null }
+        ? { data: { pool_session_id: POOL, state: 'active', anchor_table_id: ANCHOR }, error: null }
         : noSession;
     });
     const follow = vi.fn();

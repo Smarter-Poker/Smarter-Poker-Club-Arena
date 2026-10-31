@@ -1,0 +1,25 @@
+{
+  "status": "passed",
+  "cases": [
+    "exact_public_TQ_original_and_candidate_compile_ABI_ACL_security_metadata_preserved",
+    "actual_cash12_and6_columns_7and5_constraints_6oldindexes_10rawtriggers_native_fullmetadata",
+    "exact_CCI_and_full_postguard_history_commit_preserve_all42owners_schema",
+    "missing_statistics_history_refuses_function_without_change",
+    "missing_real_collected_stats_with_history_refuses_function",
+    "exact_new_stats_migration_rollback_removes_object_and_data",
+    "stats_postfailure_atomic_no_orphan",
+    "exact_singleCASE_stats_and_narrow3column_ANALYZE_collect_real_data",
+    "statistics_history_replay_refuses",
+    "exact_function_migration_atomic_commit_preserves_ABI_ACL_and_all_other_sources",
+    "exact_four_catalog_readers_execute_all_guards_and_real_ROLLBACK_tags",
+    "strict_index_and_function_offline_verifiers_pass_native_catalog_adapter",
+    "actual_installed_replay_refuses_original_preimage_without_second_effect",
+    "nonowner_role_and_JWT_refusals_preserve_all_catalogs",
+    "new_schema_oldindex_and_exacthistory_drift_refuse_atomically",
+    "postguard_cost_fault_rolls_back_replacement_and_all42metadata"
+  ],
+  "index_sha256": "92f52f59c490143c36d9382ba66caad92165b560a3ec82196a4623c8f264101c",
+  "statistics_sha256": "55832dedcb904161c2d879fa05a6fcc0cb6b8c991c15298bf3bea43c47277606",
+  "function_sha256": "387cdaef1b96a5626e103327e6646b2dbd55343cbba308eb998c2a76fbc06bc4",
+  "limits": "Native OIDs/rawcatalog expected payload explicitly adapted using exactguardqueries; external source65/window collaborators controlled; zero business calls/bags rerun; no production installation/capacity claim."
+}

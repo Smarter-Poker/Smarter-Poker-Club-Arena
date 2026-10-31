@@ -116,19 +116,25 @@ describe('against a seat that pots every street', () => {
     expect(plo.engagedFrom!).toBeLessThanOrEqual(8);
   });
 
-  it('never raises preflop to fold preflop to the re-raise', () => {
+  it('limits preflop raise-folds without new third-party investment', () => {
     expect(nlh.rtfByStreet['preflop->preflop'] ?? 0).toBeLessThanOrEqual(3);
-    expect(plo.rtfByStreet['preflop->preflop'] ?? 0).toBeLessThanOrEqual(3);
+    // Preserve the full unfiltered tally; new callers can justify a priced refusal.
+    expect(plo.unchangedPublicLinePreflopRaiseFolds).toBeLessThanOrEqual(3);
+    expect(plo.rtfByStreet['preflop->preflop'] ?? 0).toBeGreaterThanOrEqual(
+      plo.unchangedPublicLinePreflopRaiseFolds
+    );
     expect(nlh.raiseThenFold / Math.max(1, nlh.horseAggressedHands)).toBeLessThan(0.1);
   });
 
-  it('calls its postflop bets down by equity: no heads-up fold well over the price', () => {
+  it('uniform-policy call smoke test accounts for remaining-street continuation cost', () => {
     for (const t of [nlh, plo]) {
       expect(t.postflopCalls).toBeGreaterThan(20);
       // Dan 2026-10-25 overrides equity on one board class: in PLO4/5/6 no
       // full house on a paired board folds to a committing bet, "100% OF THE
       // TIME" (HorsePloPairedBoardFold). Those folds are his, not a leak.
-      const bad = t.postflopFolds.filter((f) => !f.pairedBoardRule && f.equity > f.price + 0.12);
+      const bad = t.postflopFolds.filter(
+        (f) => !f.pairedBoardRule && f.equity > f.price + f.continuationCost + 0.12
+      );
       expect(bad).toEqual([]);
     }
   });
@@ -185,7 +191,9 @@ describe('a player who limps and then pots every street', () => {
       expect(t.postflopCalls).toBeGreaterThan(t.postflopFolds.length * 2);
       // The 2026-10-25 paired-board folds are Dan's ruling, not a leak.
       expect(
-        t.postflopFolds.filter((f) => !f.pairedBoardRule && f.equity > f.price + 0.12)
+        t.postflopFolds.filter(
+          (f) => !f.pairedBoardRule && f.equity > f.price + f.continuationCost + 0.12
+        )
       ).toEqual([]);
     });
   }

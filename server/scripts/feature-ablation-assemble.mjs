@@ -19,6 +19,62 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
 import { createGunzip } from 'node:zlib';
 
+/** Called only after the existing provider/locked-contract assembler. A result
+ * stays inactive until a separate protected release selection names its bytes. */
+export function featureAdmissionArtifacts({ plan, assembly, validatePlan, validateDomain }) {
+  const reasons = [...validatePlan(plan), ...validateDomain(plan)];
+  if (
+    assembly.schema !== 'horse-feature-ablation-assembly-v1' ||
+    assembly.qualified !== true ||
+    assembly.activationAllowed !== false ||
+    !Array.isArray(assembly.reasons) ||
+    assembly.reasons.length ||
+    assembly.planDigest !== sha256(canonical(plan)) ||
+    assembly.target !== plan.target ||
+    assembly.summary?.qualified !== true ||
+    assembly.summary?.activationAllowed !== false ||
+    assembly.summary?.planDigest !== assembly.planDigest ||
+    !assembly.provider?.rawArtifactsRetained ||
+    !hex(assembly.provider?.inventorySha256) ||
+    !/^([0-9a-f]{40})$/.test(assembly.sourceSha ?? '')
+  )
+    reasons.push('condition_a_not_qualified');
+  const stem = `${plan.target}-${assembly.sourceSha}-${assembly.planDigest}`;
+  const planName = `${stem}-plan.json`,
+    assemblyName = `${stem}-assembly.json`,
+    admissionName = `${stem}-admission.json`;
+  const bytes = (value) => JSON.stringify(value, null, 2) + '\n';
+  const bind = (name, value) => ({
+    path: `docs/evidence/feature-activation/${name}`,
+    sha256: sha256(bytes(value)),
+  });
+  const admission = {
+    schema: 'horse-feature-live-admission-v1',
+    version: 'horse-feature-promotion-v1',
+    qualificationKind: 'locked_paired_condition_a',
+    sourceSha: assembly.sourceSha,
+    qualified: reasons.length === 0,
+    activationAllowed: false,
+    reasons: [...new Set(reasons)],
+    assembly: bind(assemblyName, assembly),
+    plan: bind(planName, plan),
+    profileId: plan.liveAdmission?.profileId,
+    domain: plan.liveAdmission?.domain,
+    compositionDigest: sha256(canonical(plan.flags)),
+    conditionB: 'post_launch_monitoring_withdrawal_only',
+    scope:
+      'Only the exact declared locked profile and flag composition; not universal profitability',
+  };
+  return {
+    files: {
+      [planName]: bytes(plan),
+      [assemblyName]: bytes(assembly),
+      [admissionName]: bytes(admission),
+    },
+    admission,
+  };
+}
+
 export function featureAblationDealSeed(profileId, seed, pairIndex) {
   if (
     typeof profileId !== 'string' ||
@@ -750,13 +806,14 @@ function argumentsFor(argv) {
 const jsonFile = (file) => JSON.parse(readFileSync(file, 'utf8'));
 const writeJson = (file, value, flag = 'w') =>
   writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { flag });
-async function providerState() {
+export async function providerState() {
   const repo = process.env.GITHUB_REPOSITORY,
     runId = process.env.GITHUB_RUN_ID,
     attempt = Number(process.env.GITHUB_RUN_ATTEMPT),
     token = process.env.GITHUB_TOKEN;
   if (
-    repo !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    repo !== 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' ||
+    process.env.GITHUB_REPOSITORY_ID !== '1132369872' ||
     !/^\d+$/.test(runId ?? '') ||
     !Number.isSafeInteger(attempt) ||
     attempt < 1 ||
@@ -779,6 +836,8 @@ async function providerState() {
   const run = await get(`/actions/runs/${runId}`);
   if (
     String(run.id) !== runId ||
+    run.repository?.id !== 1132369872 ||
+    run.repository?.full_name !== repo ||
     run.event !== 'workflow_dispatch' ||
     run.head_branch !== 'main' ||
     run.path !== '.github/workflows/horse-feature-ablation-qualification.yml'
@@ -818,8 +877,22 @@ function sourceAuthority(sourceSha) {
   git('merge-base', '--is-ancestor', sourceSha, 'origin/main');
   return server;
 }
-async function lockedContract(target, sourceSha) {
-  if (!['plo6_v24', 'v53_pressure'].includes(target)) throw new Error('unknown_target');
+async function lockedContract(target, sourceSha, cell, assembling = false) {
+  if (
+    ![
+      'plo6_v24',
+      'v53_pressure',
+      'combo_draw_pressure',
+      'targeted_river_bluff',
+      'river_position_defense',
+      'river_bluff_checkraise',
+      'barrel_continuation_outlook',
+      'pressure_package',
+      'small_pot_near_nut_value_raise',
+      'multiway_river_bluff_checkraise',
+    ].includes(target)
+  )
+    throw new Error('unknown_target');
   const server = sourceAuthority(sourceSha),
     contract = await import(
       pathToFileURL(path.join(server, 'src/benchmark/FeatureAblationQualification.ts')).href
@@ -842,7 +915,14 @@ async function lockedContract(target, sourceSha) {
     Number(process.env.GITHUB_RUN_ATTEMPT) > plan.maxAttempts
   )
     throw new Error('contract_attempt_bound');
-  return { contract, plan, planDigest };
+  let familyCustody;
+  if (plan.schema === 'horse-incremental-ablation-plan-v2') {
+    const incremental = await import(
+      pathToFileURL(path.join(server, 'src/benchmark/IncrementalPressureQualification.ts')).href
+    );
+    familyCustody = await incremental.authenticateIncrementalPlan(plan, cell, assembling);
+  }
+  return { contract, plan, planDigest, familyCustody };
 }
 async function main(argv) {
   const args = argumentsFor(argv),
@@ -859,11 +939,19 @@ async function main(argv) {
     return;
   }
   const sourceSha = args['source-sha'],
-    { contract, plan, planDigest } = await lockedContract(args.target, sourceSha);
+    { contract, plan, planDigest, familyCustody } = await lockedContract(
+      args.target,
+      sourceSha,
+      args.cell,
+      args.assemble === true
+    );
   const provider = await providerState(),
     authorizedOperations = providerOperations(provider.jobs, provider.run, plan.matrix);
   mkdirSync(out, { recursive: true });
-  writeJson(path.join(out, 'jobs.json'), provider);
+  writeJson(path.join(out, 'jobs.json'), {
+    ...provider,
+    ...(familyCustody ? { familyCustody } : {}),
+  });
   if (args.prepare) {
     const cell = plan.matrix.find((c) => c.key === args.cell);
     if (!cell) throw new Error('unknown_contract_cell');
@@ -895,6 +983,11 @@ async function main(argv) {
   if (!args.runs) throw new Error('runs_required');
   const runs = path.resolve(String(args.runs)),
     attempts = [];
+  if (plan.schema === 'horse-incremental-ablation-plan-v2') {
+    const { authenticateFeatureArtifacts } =
+      await import('./feature-ablation-artifact-custody.mjs');
+    await authenticateFeatureArtifacts(runs, plan.target, provider.run.id);
+  }
   // Read metadata first, then incomplete prefixes, then complete runs. Each
   // raw file is streamed once; prior valid-row counts become hash checkpoints.
   const records = readdirSync(runs)
@@ -953,7 +1046,7 @@ async function main(argv) {
     summarize: contract.summarizeFeatureAblationQualification,
   });
   sourceAuthority(sourceSha);
-  writeJson(path.join(out, 'assembly.json'), {
+  const finalAssembly = {
     ...assembly,
     provider: {
       runId: String(provider.run.id),
@@ -961,8 +1054,27 @@ async function main(argv) {
       attemptsThrough: provider.currentAttempt,
       inventorySha256: sha256(canonical(provider)),
       rawArtifactsRetained: true,
+      ...(familyCustody ? { familyCustody } : {}),
     },
-  });
+  };
+  writeJson(path.join(out, 'assembly.json'), finalAssembly);
+  if (plan.liveAdmission !== undefined) {
+    const produced = featureAdmissionArtifacts({
+      plan,
+      assembly: finalAssembly,
+      validatePlan: contract.validateLockedFeatureAblationPlan,
+      validateDomain: contract.featureLiveDomainRefusals,
+    });
+    for (const [name, bytes] of Object.entries(produced.files))
+      writeFileSync(path.join(out, name), bytes);
+  } else
+    writeJson(path.join(out, 'admission-unavailable.json'), {
+      schema: 'horse-feature-live-admission-v1',
+      qualified: false,
+      activationAllowed: false,
+      reasons: ['live_domain_not_declared'],
+      conditionB: 'post_launch_monitoring_withdrawal_only',
+    });
   if (assembly.reasons.length) process.exitCode = 2;
   console.log(
     JSON.stringify({

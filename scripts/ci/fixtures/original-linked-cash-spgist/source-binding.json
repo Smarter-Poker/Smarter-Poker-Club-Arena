@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "source_sha256": {
+    "scripts/ci/fixtures/original-linked-cash-spgist/README.md": "e0e394b366488f0430e4060e8ea4e285affc7531b191f757cce14fd9c9e5d6c4",
+    "scripts/ci/fixtures/original-linked-cash-spgist/actual-connected-owners.json": "4498a1edb392a776775cc11d8d3ec3eac359539828de2881255eb26826d67a9c",
+    "scripts/ci/fixtures/original-linked-cash-spgist/actual-linked-owner.json": "ddfa605b0c6b4e3f5f1f5eb861b59b6b7730b2ac2c97025546366b45de6bbe3d",
+    "scripts/ci/fixtures/original-linked-cash-spgist/actual-table-authority.json": "d7603343cb573b89655fbd8e4292e28a2346e1a6382a4a8238ff7730a1effcad",
+    "scripts/ci/fixtures/original-linked-cash-spgist/meaningful-table-contract.json": "c9359ef5475f5dc6e973f7458ea1b23eaa74df83f3d858e999f28798a8463203",
+    "scripts/ci/fixtures/original-linked-cash-spgist/original-linked-cash.sql": "8216b2d2446f16d24816735d2886f17d125d1684871c465d267795c4462419a9",
+    "scripts/ci/fixtures/original-linked-cash-spgist/qualification-evidence.json": "5d031c2f13b1e594cdba9dce84a6d57650f28afd291575478fc19e9280b59a34",
+    "scripts/ci/fixtures/original-linked-cash-spgist/table-contract-projection.sql": "5393eb8d126350283f4df7c3ca599bb1d52e914b19c2c5521c0422e7506d4623",
+    "scripts/ci/test-original-linked-cash-spgist-postgres.py": "3d53afdf9bea9d7265c4e56c9d5a0701c4cd1ad69f7a965bbdb803681de08bfb",
+    "supabase/migrations/20261029172002_original_cash_links_use_a_lossless_partial_union_selector.sql": "ffb6048bbe418e9558fe8c78aa051d09bb6771ccd9e74ddaed32c668905494dd"
+  },
+  "qualification": "private-PG17; production capacity unqualified"
+}

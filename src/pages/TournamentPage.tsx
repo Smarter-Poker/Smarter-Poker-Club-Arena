@@ -1,3 +1,6 @@
+import type { FollowTournamentPlayer } from '../utils/followTournamentPlayer';
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
+import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 /**
  * ♠ CLUB ARENA — Tournament Lobby Page
  * Register and view upcoming tournaments
@@ -143,7 +146,7 @@ export default function TournamentPage() {
       big_blind: number | null;
     }>
   >([]);
-  const [filter, setFilter] = useState<TournFilter>('all');
+  const [filter, setFilter] = usePlayerPreference<TournFilter>('TournamentPage:filter', 'all');
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
@@ -296,7 +299,6 @@ export default function TournamentPage() {
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
-    setFilter('all');
     setSelectedTournament(null);
     setShowCreateModal(false);
     setIsRegistered(false);
@@ -573,6 +575,7 @@ export default function TournamentPage() {
         is_pko: !!(selectedTournament as any).is_pko,
         is_mystery_bounty: !!(selectedTournament as any).is_mystery_bounty,
         start_time: (selectedTournament as any).start_time ?? null,
+        startsWhenFull: satelliteStartsWhenFull(selectedTournament),
         club_id: (selectedTournament as any).club_id ?? null,
         status: selectedTournament.status,
       },
@@ -1229,8 +1232,8 @@ export default function TournamentPage() {
     /* `tableName` labels the new screen's tab until the engine reports its
        own. RankingTab used to pass it to `openTableAsObserver` itself; it now
        opens through this handler (2026-10-04), so the name rides along here. */
-    (tableId: string, tableName?: string) => {
-      openTableAsObserver(navigate, { tableId, tableName });
+    (tableId: string, tableName?: string, followPlayer?: FollowTournamentPlayer) => {
+      openTableAsObserver(navigate, { tableId, tableName, followPlayer });
     },
     [navigate]
   );

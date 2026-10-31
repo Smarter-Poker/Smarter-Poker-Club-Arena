@@ -109,6 +109,7 @@ describe('dedicated authenticated tournament observation route', () => {
       originals: movements.map((movement, index) => ({
         tableId: TABLE.slice(0, -1) + String(index + 2),
         movement,
+        physicalIdentityRefusal: ['lifecycle_missing', 'generation_mismatch', null][index],
       })),
     };
     const capture = vi.fn(() =>
@@ -323,6 +324,7 @@ describe('dedicated authenticated tournament observation route', () => {
       tournamentManagerLeaseReleaseOperations: new Map(),
       tournamentManagerPendingLeaseReleases: new Map(),
       drainedF06TournamentCustody: new Map([[TID, packet]]),
+      completedF06DiagnosticWindows: new Map(),
       completedF06TournamentCustody: new Map([
         [TID, new Set([{ original: packet, terminalProof: { privateMoney: 123 } }])],
       ]),
@@ -346,6 +348,81 @@ describe('dedicated authenticated tournament observation route', () => {
       originals: [
         { tableId: TABLE, availability: 'observed', engine: { instanceId: TABLE, terminal: true } },
       ],
+    });
+    expect(result.body).not.toContain('privateMoney');
+    expect(result.body).not.toContain('terminalProof');
+    scheduler.mockRestore();
+  });
+
+  it('serializes an authentic terminal seal as historical without exposing its financial proof', async () => {
+    const { GameServer } = await import('./GameServer.js');
+    const { TournamentManager } = await import('./tournament/TournamentManager.js');
+    const { ServerTableEngine } = await import('./engine/ServerTableEngine.js');
+    const { completeF06Custody } = await import('./tournament/completedF06Custody.js');
+    const { tournamentEliminationScheduler } =
+      await import('./tournament/TournamentEliminationScheduler.js');
+    const scheduler = vi
+      .spyOn(tournamentEliminationScheduler, 'diagnosticSnapshot')
+      .mockReturnValue({
+        entries: [],
+        activeEntriesCount: 0,
+        activeEntriesScanned: 0,
+        activeScanTruncated: false,
+        matchingEntriesCountLowerBound: 0,
+      } as never);
+    const game: any = Object.assign(Object.create(GameServer.prototype), {
+      tournamentEngines: new Map(),
+      tournamentDiagnosticRetirements: new Map(),
+      tournamentManagerLeaseReleaseOperations: new Map(),
+      tournamentManagerPendingLeaseReleases: new Map(),
+      drainedF06TournamentCustody: new Map(),
+      completedF06TournamentCustody: new Map(),
+      completedF06DiagnosticWindows: new Map(),
+      processStartedAt: 1,
+    });
+    const manager: any = new TournamentManager(TID, game, TID, performance.now() + 30000);
+    const engine: any = new ServerTableEngine(TABLE, {
+      scope: 'tournament',
+      verified: true,
+      tournamentId: TID,
+      generation: TID,
+      proofDeadlineMonotonicMs: performance.now() + 30000,
+    });
+    engine.installF06Allocator(
+      TID,
+      async () => 1,
+      () => true,
+      '1'
+    );
+    await engine.stop();
+    manager.tableEngines.set(TABLE, engine);
+    vi.spyOn(manager, 'resolveTournamentSeatMoveQuarantine').mockResolvedValue(false);
+    manager.fenceForTournamentLeaseLoss();
+    await expect(manager.stop()).rejects.toThrow('failed to stop');
+    const packet = {
+      manager,
+      tournamentId: TID,
+      originGeneration: TID,
+      engines: manager.captureDrainedF06Originals(),
+      sources: [],
+      proof: {},
+      current: () => true,
+    };
+    for (let n = 0; n < 34; n++) game.archiveCompletedF06Custody(packet, [{ privateMoney: 123 }]);
+    const result = await request(path, game);
+    expect(result.status).toBe(200);
+    const parsed = JSON.parse(result.body);
+    expect(parsed.custody).toMatchObject({
+      archivedCount: 32,
+      archivedHistoryOmittedCount: 2,
+      archivedHistoryTruncated: true,
+      archivedTruncated: true,
+    });
+    expect(parsed.custody.packets[0]).toMatchObject({
+      historical: true,
+      role: 'completed-custody-historical',
+      capturedAtMs: expect.any(Number),
+      originalsCount: 1,
     });
     expect(result.body).not.toContain('privateMoney');
     expect(result.body).not.toContain('terminalProof');

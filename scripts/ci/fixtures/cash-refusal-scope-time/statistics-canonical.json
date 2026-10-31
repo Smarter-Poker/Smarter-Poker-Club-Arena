@@ -1,0 +1,8 @@
+{
+  "definition": "CREATE STATISTICS public.accounting_cash_receipts_scope_distribution ON (CASE WHEN (scope ->> 'kind'::text) = 'unknown'::text THEN 'unknown'::text WHEN ((scope ->> 'kind'::text) = ANY (ARRAY['club'::text, 'union'::text])) AND octet_length(scope ->> 'id'::text) = 36 THEN ((scope ->> 'kind'::text) || ':'::text) || (scope ->> 'id'::text) ELSE NULL::text END) FROM accounting_cash_source_receipts",
+  "expression": "\nCASE\n    WHEN ((scope ->> 'kind'::text) = 'unknown'::text) THEN 'unknown'::text\n    WHEN (((scope ->> 'kind'::text) = ANY (ARRAY['club'::text, 'union'::text])) AND (octet_length((scope ->> 'id'::text)) = 36)) THEN (((scope ->> 'kind'::text) || ':'::text) || (scope ->> 'id'::text))\n    ELSE NULL::text\nEND",
+  "name": "accounting_cash_receipts_scope_distribution",
+  "kind": ["e"],
+  "keys": [],
+  "target": null
+}

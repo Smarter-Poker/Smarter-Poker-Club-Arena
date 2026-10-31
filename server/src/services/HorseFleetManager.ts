@@ -119,6 +119,7 @@ import {
 import {
   applyStakeBandSupply,
   horseMaximumBuyIn,
+  horseCashMinimum,
   gameLaneFor,
   horseHash,
   isActiveNow,
@@ -2691,7 +2692,7 @@ export class HorseFleetManager {
          are the cycle's live maps, so a seat bought this cycle is visible to
          the next verdict, exactly as before. See HorseSitVerdict. */
       const sitCtx: SitVerdictContext = {
-        bankrollOnlyCashHorse: (id) => cashRosterAllows(id) === true,
+        bankrollOnlyCashHorse: (id, table) => cashRosterAllows(id, table) === true,
         resolveSeatClub: (t, id) => this.resolveSeatClub(membership, t, id),
         sizeBuyIn: (t, id, club, floor) => {
           const telemetry: BankrollEvent[] = [];
@@ -3142,7 +3143,7 @@ export class HorseFleetManager {
             // Supersedes variant, stake and activity persona gates below.
             // The roster still bounds the pool; bankroll and normal player
             // admission rules still decide whether each seat is affordable.
-            const bankrollOnly = cashRosterAllows(h.id) === true;
+            const bankrollOnly = cashRosterAllows(h.id, table) === true;
             /* THE DATABASE ALREADY SAID THIS HORSE IS FULL (2026-09-11). It
                refused a buy-in for it at an earlier table in THIS cycle with
                the platform game limit, and nothing here lowers that count.
@@ -3209,9 +3210,10 @@ export class HorseFleetManager {
                club the tagger knows, so at an arena table `tag` is always
                undefined. The horse's own game - cash or events, and which
                variants - is the one its Deep Stack tag already says; reading
-               it here keeps a tournament-only horse off the arena's cash
-               tables and an NLH-only horse off another variant, exactly as at
-               home. The STAKE is not read from it: those are chip blinds, and
+               it here supplies historical variant preferences. The owner
+               now allows every registered horse at Diamond cash; its home
+               Club Arena cash bench must not deny that eligibility. The STAKE
+               is not read from it: those are chip blinds, and
                the arena's are Diamond blinds (see the stake gate below). */
             const laneTag = arenaTable
               ? DIAMOND_ARENA_HORSE_CLUBS.map((c) => book?.tags.get(tagKey(h.id, c))).find(
@@ -3258,10 +3260,11 @@ export class HorseFleetManager {
             }
 
             /* THE CASH ROSTER (Dan 2026-10-23: "THEY CAN PLAY TOURNAMENTS,
-               JUST NOT CASH GAMES"). Only the 45-horse active roster sits at
-               cash. Their tags already say so; this is the belt, and the
+               JUST NOT CASH GAMES"). Only the selected half sits at Club Arena
+               cash; Diamond cash has its own funded admission. Their tags
+               already say so; this is the belt, and the
                database seat door is the braces. */
-            if (!rosterExemptClub(table.club_id) && cashRosterAllows(h.id) === false) {
+            if (!rosterExemptClub(table.club_id) && cashRosterAllows(h.id, table) === false) {
               tagDropped++;
               return false;
             }
@@ -4955,7 +4958,7 @@ export class HorseFleetManager {
        emits nothing and the seat stage emits it once. */
     note: (e: BankrollEvent) => void = bankrollEvent
   ): number {
-    const minB = Number(table.min_buy_in) || table.big_blind * 40;
+    const minB = horseCashMinimum(table, Number(table.min_buy_in) || table.big_blind * 40);
     const maxB = Number(table.max_buy_in) || table.big_blind * 200;
     // Owner October 26: every entry chooses the table maximum. A bankroll
     // that cannot carry that amount declines this seat rather than buying short.

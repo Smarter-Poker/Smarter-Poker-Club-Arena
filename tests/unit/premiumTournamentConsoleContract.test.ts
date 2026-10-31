@@ -27,9 +27,10 @@ describe('tournament lobby shell contract', () => {
     expect(short).not.toContain("data-embedded='true'");
   });
 
-  it('publishes exactly the seven approved tab labels', () => {
+  it('publishes the approved tabs including satellite discovery', () => {
     for (const label of [
       'Details',
+      'Satellites',
       'Blinds',
       'Ranking',
       'Entries',
@@ -40,11 +41,13 @@ describe('tournament lobby shell contract', () => {
       expect(TYPES).toContain(`label: '${label}'`);
     }
     expect(TYPES).not.toContain("label: 'Detail'");
-    expect(TYPES).not.toContain("label: 'Satellites'");
+    expect(TYPES).toMatch(
+      /id: 'detail', label: 'Details'[\s\S]*?id: 'satellites', label: 'Satellites'/
+    );
   });
 
-  it('keeps all seven tabs on the shared live tab contract', () => {
-    for (const id of ['detail', 'blinds', 'ranking', 'entries', 'unions', 'tables']) {
+  it('keeps every tab on the shared live tab contract', () => {
+    for (const id of ['detail', 'satellites', 'blinds', 'ranking', 'entries', 'unions', 'tables']) {
       expect(PAGE).toContain(`activeTab === '${id}'`);
     }
     // Rewards and Bounties render off `shownTab` (2026-10-26): Bounties exists

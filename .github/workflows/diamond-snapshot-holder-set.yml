@@ -1,0 +1,53 @@
+name: Diamond snapshot classifies holders once
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261028151339_diamond_snapshot_classifies_its_holder_set_once.sql
+      - scripts/ci/test-diamond-snapshot-holder-set.py
+      - scripts/ci/fixtures/diamond-snapshot-holder-*
+      - .github/workflows/diamond-snapshot-holder-set.yml
+permissions:
+  contents: read
+concurrency:
+  group: diamond-snapshot-holder-set-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    name: Diamond snapshot holder-set native regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Run original and candidate snapshot writers
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-diamond-snapshot-holder-set.py
+      - name: Retain native accounting and query-plan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diamond-snapshot-holder-set-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/diamond-snapshot-holder-set/
+          retention-days: 7
+          if-no-files-found: error

@@ -57,7 +57,13 @@ describe('Poker Arena authoritative access', () => {
       resolve(process.cwd(), 'src/components/home/CarouselSection.tsx'),
       'utf8'
     );
-    expect(home).toContain('clubs.push(DIAMOND_ARENA_ENTRY)');
+    expect(home).not.toContain('clubs.push(DIAMOND_ARENA_ENTRY)');
+    expect(home.replace(/\s+/g, '')).toContain(
+      'userClubs.filter((club)=>club.id!==DIAMOND_ARENA_CLUB_ID'
+    );
+    expect(carousel.replace(/\s+/g, '')).toContain(
+      'displayClubs.filter((club)=>club.id!==DIAMOND_ARENA_CLUB_ID'
+    );
     expect(carousel).toContain('club.automatic_entry ? undefined');
   });
 

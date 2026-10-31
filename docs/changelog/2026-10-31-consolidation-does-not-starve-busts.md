@@ -1,0 +1,7 @@
+# Consolidation preserves fresh bust processing
+
+A slow or pending table-balance unit kept the elimination cursor at stage 5. Every later admission repeated balancing, so new busts could wait beyond the stalled-bust threshold even though scheduler operations kept completing. The existing successor drain then paused the event.
+
+After one bounded slow or pending balance unit, retain the consolidation lane and exact pending park/move ownership, but continue the remaining sweep stages. The following cycle can process fresh busts before revisiting that same physical operation. A completed cycle retains the existing causal balance wake while consolidation remains outstanding, because an immediate cursor continuation can consume the earlier delayed wake. Completed consolidation does not rearm. This changes neither financial authority nor pause/lease/custody safeguards, and does not clear the genuine stalled-bust clock.
+
+Regression coverage uses the real scheduler, sweep cursor and five-second work deadline. Both slow-unknown and park-continuation cases fail before the correction with repeated stage 5 admissions; afterward three real scheduler admissions reach the remaining stages and the fresh bust query while retaining the same pending operation. Existing consolidation lane tests remain enforced. The exact production slow operation is not identified by the bounded diagnostic payload; this is a reproduced starvation mechanism, not a claim that every observed freeze has one proven cause.

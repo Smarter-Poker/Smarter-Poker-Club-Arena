@@ -10,7 +10,7 @@
  * - TablePage wires `hand_history_saved` into the list.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, fireEvent, screen } from '@testing-library/react';
+import { render, cleanup, fireEvent, screen, act, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -18,6 +18,7 @@ import {
   HAND_HISTORY_STALE_MS,
   handDeepLink,
   prependHand,
+  mergeHandHistoryPages,
   shouldRefetchHandHistory,
 } from '@/lib/handHistoryLive';
 import HandHistoryPanel from '@/components/table/HandHistoryPanel';
@@ -49,6 +50,12 @@ describe('when the table list hits the network', () => {
         now: base.fetchedAt + HAND_HISTORY_STALE_MS - 1,
       })
     ).toBe(false);
+  });
+
+  it('re-reads an empty result on an explicit reopen without duplicating an in-flight read', () => {
+    expect(shouldRefetchHandHistory({ ...base, state: 'ready', handCount: 0 })).toBe(true);
+    expect(shouldRefetchHandHistory({ ...base, state: 'ready', handCount: 1 })).toBe(false);
+    expect(shouldRefetchHandHistory({ ...base, state: 'loading', handCount: 0 })).toBe(false);
   });
 
   it('a stale list refetches, in case an event was missed', () => {
@@ -84,6 +91,20 @@ describe('a saved hand lands in the list', () => {
     expect(next).toHaveLength(HAND_HISTORY_PAGE);
     expect(next[0].id).toBe('new');
     expect(next.some((x) => x.id === `h${HAND_HISTORY_PAGE - 1}`)).toBe(false);
+  });
+
+  it('retains older bomb pages through a new saved hand and a first-page refresh', () => {
+    const recent = Array.from({ length: 50 }, (_, i) => h(`recent-${i}`, 500 - i));
+    const older = Array.from({ length: 50 }, (_, i) => h(`older-${i}`, 450 - i));
+    const bomb = { ...h('bomb', 400), bombPot: { boardCount: 2 } };
+    const loaded = mergeHandHistoryPages(recent, [...older, bomb]);
+    const live = prependHand(loaded, h('live', 501), Number.POSITIVE_INFINITY);
+    const refreshed = mergeHandHistoryPages(live, [{ ...recent[0], corrected: true }]);
+    expect(refreshed).toHaveLength(102);
+    expect(refreshed.at(-1)).toEqual(bomb);
+    expect(refreshed[0].id).toBe('live');
+    expect(refreshed.find((hand) => hand.id === recent[0].id)).toHaveProperty('corrected', true);
+    expect(new Set(refreshed.map((hand) => hand.id)).size).toBe(refreshed.length);
   });
 });
 
@@ -123,7 +144,7 @@ describe('TablePage takes the saved hand as it lands', () => {
   it('listens to hand_history_saved and prepends by id', () => {
     expect(page).toContain('void takeSavedHandRef.current(savedId);');
     expect(page).toContain('const row = await handHistoryService.getHand(savedId);');
-    expect(page).toContain('setHandHistory((prev) => prependHand(prev, record));');
+    expect(page).toContain('const next = prependHand(prev, record, Number.POSITIVE_INFINITY);');
   });
 
   it('only into a list already fetched for THIS table', () => {
@@ -131,7 +152,45 @@ describe('TablePage takes the saved hand as it lands', () => {
     expect(page).toMatch(
       /if \(\s*handHistoryStateRef\.current !== 'ready' \|\|\s*handHistoryTableRef\.current !== tableId\s*\)\s*return;/
     );
-    expect(page).toContain('if (!row || row.table_id !== tableId) return;');
+    // Ordinary tables still require physical table equality. A Lightning room
+    // is a pool session, whose authenticated saved events name physical hands.
+    expect(page).toMatch(
+      /if \(!row \|\| \(!lightningRoom\?\.poolSessionId && row\.table_id !== tableId\)\) return;/
+    );
+  });
+
+  it('uses the pool session for both history hydration and the lazy replay lookup', () => {
+    const hydration = page.slice(page.indexOf('return startHandHistoryHydration({'));
+    expect(hydration).toMatch(
+      /getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,/
+    );
+    expect(page).toMatch(
+      /getPlayerHands\(userId, 1, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,/
+    );
+  });
+
+  it('rechecks the viewer and room after a saved-hand read before publishing its private record', () => {
+    const savedRead = page.slice(
+      page.indexOf('const takeSavedHand = useCallback('),
+      page.indexOf('const takeSavedHandRef = useRef(')
+    );
+    const continuation = savedRead.split(
+      'const row = await handHistoryService.getHand(savedId);'
+    )[1];
+    expect(continuation).toBeTruthy();
+    const beforeCommit = continuation.split(
+      'const record = adaptServiceHandToPanel(row, userId);'
+    )[0];
+    expect(beforeCommit).toContain('handHistoryScopeRef.current !== savedScope');
+    expect(beforeCommit).toContain('handHistoryViewerRef.current !== userId');
+    expect(beforeCommit).toContain('handHistoryTableRef.current !== tableId');
+    expect(beforeCommit).toContain(
+      'const readStateAfterAwait = () => handHistoryStateRef.current;'
+    );
+    expect(beforeCommit).toContain('const stateAfterAwait = readStateAfterAwait();');
+    expect(beforeCommit).toContain("if (stateAfterAwait === 'loading') {");
+    expect(beforeCommit).toContain("if (stateAfterAwait !== 'ready') return;");
+    expect(beforeCommit).toContain('pendingSavedIdsRef.current.push(savedId)');
   });
 
   it('a hand announced during the page fetch is applied after it, not dropped', () => {
@@ -141,9 +200,21 @@ describe('TablePage takes the saved hand as it lands', () => {
   });
 
   it("another table's list is cleared before this table's loads", () => {
-    expect(page).toContain(
-      'if (handHistoryTableRef.current !== (tableId ?? null)) setHandHistory([]);'
+    expect(page).toContain('if (loadedHandHistoryScopeRef.current !== readScope) {');
+    expect(page).toContain('handHistoryRowsRef.current = [];');
+    expect(page).toContain('olderHandRequestRef.current = null;');
+  });
+
+  it('wires canonical older pages and rejects late responses from another review scope', () => {
+    const older = page.slice(
+      page.indexOf('const loadOlderReviewHands = useCallback'),
+      page.indexOf('const takeSavedHand = useCallback')
     );
+    expect(older).toContain('beforeHandNumber: oldest.handNumber');
+    expect(older).toContain('handHistoryScopeRef.current !== readScope');
+    expect(older).toContain('olderHandRequestRef.current !== request');
+    expect(older).toContain('mergeHandHistoryPages(previous, page)');
+    expect(page).toContain('onLoadOlder={loadOlderReviewHands}');
   });
 
   it('opens without a fetch when the list is fresh', () => {
@@ -248,5 +319,83 @@ describe('the surfaces', () => {
     await Promise.resolve();
     expect(writeText).toHaveBeenCalledWith('#7');
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/hand-history?hand=h-1'));
+  });
+
+  it('reaches an older saved bomb through the loaded-page boundary', async () => {
+    const recent = Array.from({ length: 50 }, (_, i) => ({
+      ...record(),
+      id: `h-${100 - i}`,
+      handNumber: 100 - i,
+    }));
+    const bomb = { ...record(), id: 'old-bomb', handNumber: 50, bombPot: { boardCount: 2 } };
+    let finish!: (id: string | null) => void;
+    const load = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const props = {
+      isOpen: true,
+      onClose: () => {},
+      heroId: HERO,
+      onLoadOlder: load,
+      hasOlderHands: true,
+    };
+    const view = render(<HandDetailModal {...props} hands={recent} />);
+    fireEvent.change(screen.getByLabelText('Hand Position'), { target: { value: '1' } });
+    fireEvent.click(screen.getByLabelText('Load Older Hands'));
+    expect(load).toHaveBeenCalledTimes(1);
+    view.rerender(<HandDetailModal {...props} hands={[...recent, bomb]} olderHandsLoading />);
+    expect((screen.getByLabelText('Older Hand') as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      finish(bomb.id);
+    });
+    view.rerender(<HandDetailModal {...props} hands={[...recent, bomb]} hasOlderHands={false} />);
+    await waitFor(() => expect(document.querySelector('.hdm-sn')?.textContent).toContain('#50'));
+    expect((screen.getByLabelText('Older Hand') as HTMLButtonElement).disabled).toBe(true);
+    expect(document.querySelector('.hdm-nav__label')?.textContent).toBe('1/51');
+  });
+
+  it('keeps the current hand on a failed older read and permits an explicit retry', async () => {
+    const load = vi.fn().mockResolvedValue(null);
+    render(
+      <HandDetailModal
+        isOpen
+        onClose={() => {}}
+        heroId={HERO}
+        hands={[record()]}
+        hasOlderHands
+        onLoadOlder={load}
+      />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Load Older Hands'));
+    });
+    expect(document.querySelector('.hdm-sn')?.textContent).toContain('#7');
+    expect((screen.getByLabelText('Load Older Hands') as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Load Older Hands'));
+    });
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not navigate a reopened review when an old page finishes late', async () => {
+    let finish!: (id: string | null) => void;
+    const load = () =>
+      new Promise<string | null>((resolve) => {
+        finish = resolve;
+      });
+    const props = { onClose: () => {}, heroId: HERO, onLoadOlder: load, hasOlderHands: true };
+    const newest = record();
+    const older = { ...record(), id: 'older', handNumber: 6 };
+    const view = render(<HandDetailModal {...props} isOpen hands={[newest]} />);
+    fireEvent.click(screen.getByLabelText('Load Older Hands'));
+    view.rerender(<HandDetailModal {...props} isOpen={false} hands={[newest]} />);
+    view.rerender(<HandDetailModal {...props} isOpen hands={[newest, older]} />);
+    await act(async () => {
+      finish(older.id);
+    });
+    expect(document.querySelector('.hdm-sn')?.textContent).toContain('#7');
   });
 });

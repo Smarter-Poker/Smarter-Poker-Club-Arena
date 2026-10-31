@@ -1,0 +1,227 @@
+[
+  {
+    "relation": "hand_private_state",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres,anon=arwd/postgres,authenticated=arwd/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "player_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hole_cards",
+        "type": "text",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "hand_strength",
+        "type": "text",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "private_data",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "hand_number",
+        "type": "integer",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "saved_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "fk_hand_private_state_player_id_profiles",
+        "type": "f",
+        "validated": true,
+        "definition": "FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "hand_private_state_pkey",
+        "type": "p",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "hand_private_state_player_id_fkey",
+        "type": "f",
+        "validated": true,
+        "definition": "FOREIGN KEY (player_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+      }
+    ]
+  },
+  {
+    "relation": "table_hole_cards",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres,anon=arwd/postgres,authenticated=arwd/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "seat_number",
+        "type": "integer",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "cards",
+        "type": "jsonb",
+        "default": "'[]'::jsonb",
+        "notnull": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "table_hole_cards_pkey",
+        "type": "p",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "table_hole_cards_table_hand_user_unique",
+        "type": "u",
+        "validated": true,
+        "definition": "UNIQUE (table_id, hand_number, user_id)"
+      }
+    ]
+  },
+  {
+    "relation": "hand_discards",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres,authenticated=arwd/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "seat_number",
+        "type": "integer",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "discarded_card",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "hand_discards_pkey",
+        "type": "p",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "hand_discards_table_id_hand_number_user_id_key",
+        "type": "u",
+        "validated": true,
+        "definition": "UNIQUE (table_id, hand_number, user_id)"
+      }
+    ]
+  }
+]

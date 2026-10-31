@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { authoritativeMigrationSQL } from './helpers/migrations';
 
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
 const FILE = '20260928163959_a_terminal_close_marker_may_stamp_unregistration_rake_eviden.sql';
@@ -127,9 +128,10 @@ describe('a terminal close marker may stamp unregistration rake evidence', () =>
     const later = readdirSync(MIGRATIONS)
       .filter((f) => f.endsWith('.sql') && f > FILE)
       .filter((f) =>
-        readFileSync(join(MIGRATIONS, f), 'utf8').includes(
-          'FUNCTION public.fn_ca_unregistration_rake_evidence_is_immutable()'
-        )
+        authoritativeMigrationSQL(
+          readFileSync(join(MIGRATIONS, f), 'utf8'),
+          'fn_ca_unregistration_rake_evidence_is_immutable'
+        ).includes('FUNCTION public.fn_ca_unregistration_rake_evidence_is_immutable()')
       );
     expect(later).toEqual([]);
   });

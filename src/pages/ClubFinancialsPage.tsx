@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * CLUB FINANCIALS — what the club earned, and what it paid out
  * ============================================================================
@@ -135,7 +136,7 @@ export default function ClubFinancialsPage() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
 
-  const [period, setPeriod] = useState<Period>('week');
+  const [period, setPeriod] = usePlayerPreference<Period>('clubFinancials:period', 'week', clubId);
   const scopeKey = `${user?.id ?? 'signed-out'}:${clubId ?? ''}:${period}`;
   const [snapshot, setSnapshot] = useState<FinancialSnapshot | null>(null);
   const [requestState, setRequestState] = useState<FinancialRequestState>({

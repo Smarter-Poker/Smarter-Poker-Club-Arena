@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  SEAT-FIRST ENTRY — the first real-browser coverage of "I want to play"
@@ -132,6 +133,7 @@ async function openSpinTable(page: Page): Promise<boolean> {
      in, against a club holding 33 joinable spins. A suite that can only skip
      reports green and proves nothing, which is the failure mode this
      directory has already been caught by twice. */
+  await openLobbyGameSection(page, 'SPINS');
   const spinsTab = page.locator('.game-bar__type', { hasText: /^SPINS$/ });
   if (
     await spinsTab

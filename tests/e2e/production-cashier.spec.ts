@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type TestInfo } from '@playwright/test';
 import { isEngineHealthUnavailableDiagnostic } from './support/engineCutoverConsole';
+import { BUY_IN_LADDER } from '../../src/utils/buyIn';
 import {
-  BATCH_VERDICTS,
   batchVerdictFor,
   fundingCoverage,
   printedFundingFigure,
@@ -21,13 +21,12 @@ const CASHIER_ROLES = ['Owner', 'Co Owner', 'Admin', 'Super Agent', 'Agent', 'Su
 // Send Out spends the agent wallet, Send Ticket the caller's own chips. The
 // maintained read-only identity holds neither (it is never funded), so the
 // verdict is read from the figure the dialog prints, never assumed. Both
-// directions still fail: "Ready" over a short wallet, or "Insufficient" over a
-// covering one. See support/cashierFundingVerdict.ts.
+// directions still fail: an empty validation status over a short wallet, or
+// "Insufficient" over a covering one. See support/cashierFundingVerdict.ts.
 async function expectBatchVerdictFromFunding(
   dialog: Locator,
   fundingLabel: 'From Your Agent Wallet' | 'From Your Player Wallet',
   total: number,
-  recipients: number,
   testInfo: TestInfo,
   name: string
 ): Promise<void> {
@@ -41,7 +40,7 @@ async function expectBatchVerdictFromFunding(
   await expect(fundingRow).toBeVisible();
   const figure = printedFundingFigure(await fundingRow.locator('strong').allTextContents());
   const coverage = fundingCoverage(figure, total);
-  const verdict = batchVerdictFor(coverage, recipients);
+  const verdict = batchVerdictFor(coverage);
   await testInfo.attach(`${name}-funding-verdict.json`, {
     body: JSON.stringify(
       { fundingLabel, printedFigure: figure, total, coverage, verdict },
@@ -54,10 +53,14 @@ async function expectBatchVerdictFromFunding(
     verdict,
     `${name}: the printed ${fundingLabel} figure "${figure}" cannot decide whether it covers ${total}`
   ).not.toBeNull();
-  const status = dialog
-    .getByRole('status')
-    .filter({ hasText: new RegExp(BATCH_VERDICTS.join('|')) });
+  // The validation owner exists even when covered funds owe no error text.
+  const status = dialog.locator('#cashier-amount-validation');
+  await expect(status).toHaveCount(1);
+  await expect(status).toHaveAttribute('role', 'status');
   await expect(status).toHaveText(verdict as string);
+  if (coverage === 'covers') {
+    await expect(dialog.getByRole('button', { name: 'Confirm', exact: true })).toBeEnabled();
+  }
 }
 
 // `.all()` snapshots nth() locators over a LIVE `:checked` filter: unchecking
@@ -341,22 +344,65 @@ test.describe('Production Cashier Certification', () => {
       transferDialog,
       'From Your Agent Wallet',
       10.2,
-      2,
       testInfo,
       'cashier-batch-send-out'
     );
     await expectCashierAxeClean(page, testInfo, '[role="dialog"]', 'cashier-batch-preview');
     await attachCashierScreenshot(page, testInfo, 'cashier-batch-individual-preview');
+    const ticketWrites: string[] = [];
+    const observeTicketWrites = (request: import('@playwright/test').Request) => {
+      if (
+        request.method() !== 'GET' &&
+        /\/rest\/v1\/rpc\/(?:fn_issue_tournament_ticket|fn_cashier_batch_transfer)$/.test(
+          new URL(request.url()).pathname
+        )
+      ) {
+        ticketWrites.push(new URL(request.url()).pathname);
+      }
+    };
+    page.on('request', observeTicketWrites);
     await transferDialog.getByRole('button', { name: 'Send Ticket', exact: true }).click();
     const ticketDialog = page.getByRole('dialog', { name: 'Send Ticket', exact: true });
-    // Dan 2026-10-15: a ticket is bought into one future or running tournament,
-    // priced by the server and paid from the sender's player wallet.
-    await expect(ticketDialog.getByRole('combobox', { name: 'Tournament' })).toBeVisible();
+    // New tickets carry a reusable entry value. Existing event-bound requests
+    // keep their original identity only for exact retry; this fresh preview
+    // must offer the current buy-in ladder, including the supported 40 ticket.
+    const ticketValue = ticketDialog.getByRole('combobox', { name: 'Ticket Value' });
+    await expect(ticketValue).toBeVisible();
+    await expect(ticketValue).toBeEnabled();
+    const expectedTicketValues = [...new Set<number>([...BUY_IN_LADDER, 40])]
+      .sort((left, right) => left - right)
+      .map(String);
+    expect(
+      await ticketValue
+        .locator('option')
+        .evaluateAll((options) =>
+          options.map((option) => (option as HTMLOptionElement).value).filter(Boolean)
+        )
+    ).toEqual(expectedTicketValues);
+    await expect(
+      ticketValue.getByRole('option', { name: '40 Ticket', exact: true })
+    ).toHaveAttribute('value', '40');
+    await ticketValue.selectOption('40');
+    await expect(ticketValue).toHaveValue('40');
+    await expect(ticketDialog).toContainText('Total: 80');
     await expect(
       ticketDialog.getByRole('region', { name: 'From Your Player Wallet' })
     ).toBeVisible();
     await expect(ticketDialog).toContainText('2 Players ·');
+    await expectBatchVerdictFromFunding(
+      ticketDialog,
+      'From Your Player Wallet',
+      80,
+      testInfo,
+      'cashier-ticket-value-preview'
+    );
+    await attachCashierScreenshot(page, testInfo, 'cashier-ticket-value-preview');
     await ticketDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(ticketDialog).toBeHidden();
+    page.off('request', observeTicketWrites);
+    expect(ticketWrites, 'Selecting and cancelling a ticket value must never issue chips').toEqual(
+      []
+    );
     await uncheckEveryRecipient(surface);
     await page.setViewportSize({ width: 1440, height: 1000 });
     const directoryWidth = await surface
@@ -710,8 +756,35 @@ test.describe('Production Cashier Certification', () => {
       p_before_id: null,
     });
     expect(request).not.toHaveProperty('p_offset');
+    await expect(panel.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await expect(
+      panel.getByRole('button', { name: 'Chip Movements', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      panel.getByRole('button', { name: 'All Transactions', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel.getByRole('button', { name: 'Managed', exact: true })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Games', exact: true })).toHaveCount(0);
+    expect(request.p_from).toEqual(expect.any(String));
+    await attachCashierScreenshot(page, testInfo, 'transaction-history-today-default-393');
+
     const rows = await feed.json();
     expect(Array.isArray(rows)).toBe(true);
+    expect(
+      rows.some((row: { transaction_type: string }) =>
+        [
+          'buyin',
+          'cashout',
+          'tournament_buyin',
+          'tournament_rebuy',
+          'tournament_addon',
+          'tournament_ticket_redeem',
+        ].includes(row.transaction_type)
+      )
+    ).toBe(false);
     const summary = await firstSummary;
     expect(summary.status()).toBe(200);
     expect(summary.request().postDataJSON()).toMatchObject({
@@ -764,9 +837,11 @@ test.describe('Production Cashier Certification', () => {
       await page.keyboard.press('Escape');
       await expect(receipt).toBeHidden();
     } else {
-      await expect(panel.getByText('No Transactions Recorded Yet.', { exact: true })).toBeVisible();
+      await expect(
+        panel.getByText('No Transactions Match These Filters.', { exact: true })
+      ).toBeVisible();
     }
-    const allClub = panel.getByRole('button', { name: 'All Club Transactions', exact: true });
+    const allClub = panel.getByRole('button', { name: 'Club Transactions', exact: true });
     let approvedReceiptChecked = false;
     if (await allClub.count()) {
       expect(request.p_scope).toBe('club');
@@ -774,6 +849,9 @@ test.describe('Production Cashier Certification', () => {
       expect(totals.mode).toBe('club');
       await expect(panel.getByLabel('Club Totals For These Filters')).toBeVisible();
       await expect(panel.getByLabel('Club Totals For These Filters')).not.toContainText('--');
+      const historyRange = read('fn_cashier_history_feed', 'club');
+      await panel.getByRole('button', { name: '30 Days', exact: true }).click();
+      expect((await historyRange).status()).toBe(200);
       const cashouts = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
@@ -808,6 +886,40 @@ test.describe('Production Cashier Certification', () => {
       await page.keyboard.press('Escape');
       await expect(accepted).toBeHidden();
       approvedReceiptChecked = true;
+      // Use an existing ledger name: Enter must return its real entries, not
+      // just pass an empty-search fixture. This never creates a transaction.
+      const nameSearch = panel.getByRole('searchbox', { name: 'Search Transaction History' });
+      const byName = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+          response.request().postDataJSON()?.p_scope === 'club' &&
+          response.request().postDataJSON()?.p_search === approved.to_name &&
+          response.request().postDataJSON()?.p_from === null &&
+          response.request().postDataJSON()?.p_kind === 'all',
+        { timeout: 30_000 }
+      );
+      await nameSearch.fill(approved.to_name);
+      await nameSearch.press('Enter');
+      const matching = await byName;
+      expect(matching.status()).toBe(200);
+      const matchedRows = await matching.json();
+      expect(matchedRows.length).toBeGreaterThan(0);
+      expect(
+        matchedRows.some(
+          (row: { from_name: string; to_name: string }) =>
+            row.from_name === approved.to_name || row.to_name === approved.to_name
+        )
+      ).toBe(true);
+      await expect(panel.getByRole('button', { name: /^Open Receipt For/ }).first()).toBeVisible();
+      await attachCashierScreenshot(page, testInfo, 'transaction-history-enter-real-player');
+      const clearName = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+          response.request().postDataJSON()?.p_search === null,
+        { timeout: 30_000 }
+      );
+      await nameSearch.fill('');
+      expect((await clearName).status()).toBe(200);
       const ownFeed = read('fn_cashier_history_feed', 'mine');
       const ownSummary = read('fn_cashier_history_summary', 'mine');
       await panel.getByRole('button', { name: 'My Transactions', exact: true }).click();
@@ -826,11 +938,27 @@ test.describe('Production Cashier Certification', () => {
     const searched = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
-        response.request().postDataJSON()?.p_search === searchText,
+        response.request().postDataJSON()?.p_search === searchText &&
+        response.request().postDataJSON()?.p_from === null &&
+        response.request().postDataJSON()?.p_kind === 'all',
       { timeout: 30_000 }
     );
-    await panel.getByRole('searchbox', { name: 'Search Transaction History' }).fill(searchText);
+    const historySearch = panel.getByRole('searchbox', { name: 'Search Transaction History' });
+    await historySearch.fill(searchText);
+    await historySearch.press('Enter');
     const searchResponse = await searched;
+    await expect(panel.getByRole('button', { name: 'All Dates', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await expect(
+      panel.getByRole('button', { name: 'All Transactions', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(searchResponse.request().postDataJSON()).toMatchObject({
+      p_person: null,
+      p_kind: 'all',
+      p_from: null,
+    });
     expect(searchResponse.status()).toBe(200);
     expect(await searchResponse.json()).toEqual([]);
     await expect(
@@ -854,6 +982,11 @@ test.describe('Production Cashier Certification', () => {
       { timeout: 30_000 }
     );
     const downloaded = page.waitForEvent('download');
+    const statementTools = panel.locator('details').filter({ hasText: 'Statement Tools' });
+    await expect(
+      panel.getByRole('button', { name: 'Download These Transactions', exact: true })
+    ).toBeHidden();
+    await statementTools.locator('summary').click();
     await panel.getByRole('button', { name: 'Download These Transactions', exact: true }).click();
     const exportFeed = await exportResponse;
     expect(exportFeed.status()).toBe(200);
@@ -905,5 +1038,179 @@ test.describe('Production Cashier Certification', () => {
       ),
       contentType: 'application/json',
     });
+  });
+  test('prints the existing agent credit agreement beneath member wallets without moving chips', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    // The owner supplied this member's Wallets surface (Rooster). The verifier
+    // keeps its dedicated viewer identity and reads the existing agreement;
+    // it never assigns a line, draws credit, or impersonates this member.
+    const memberId = process.env.E2E_CREDIT_MEMBER_ID || 'e5abee6e-abe2-4400-9005-b5c81577155d';
+    const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+    const creditProjection = 'club_id,user_id,role,is_prepaid,credit_limit';
+    const creditRead = page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname.endsWith('/rest/v1/agents') &&
+          url.searchParams.get('club_id') === `eq.${clubId}` &&
+          url.searchParams.get('user_id') === `eq.${memberId}` &&
+          url.searchParams.get('status') === 'eq.active' &&
+          url.searchParams.get('select') === creditProjection
+        );
+      },
+      { timeout: 60_000 }
+    );
+    await page.goto(`clubs/${clubId}/members/${memberId}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    const response = await creditRead;
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    if (Array.isArray(body)) expect(body).toHaveLength(1);
+    const agreement = Array.isArray(body) ? body[0] : body;
+    expect(agreement).not.toBeNull();
+    expect(agreement.club_id).toBe(clubId);
+    expect(agreement.user_id).toBe(memberId);
+    expect(typeof agreement.is_prepaid).toBe('boolean');
+    expect(agreement.credit_limit).not.toBeNull();
+    expect(Number.isFinite(Number(agreement.credit_limit))).toBe(true);
+    expect(Number(agreement.credit_limit)).toBeGreaterThanOrEqual(0);
+    // The current read intentionally excludes borrowed/available capacity.
+    expect(agreement).not.toHaveProperty('credit_used');
+    const wallets = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Wallets', exact: true }) });
+    await expect(wallets).toBeVisible();
+    const tracking = page.getByRole('region', { name: 'Credit Tracking', exact: true });
+    const line = tracking
+      .locator('.mm-stat')
+      .filter({ has: page.getByText('Credit Line', { exact: true }) });
+    await expect(page.getByText('Loading Credit Line...', { exact: true })).toBeHidden();
+    if (agreement.is_prepaid) {
+      await expect(tracking).toHaveCount(0);
+    } else {
+      await expect(tracking).toBeVisible();
+      await expect(tracking).toContainText(
+        'Tracking Only. Weekly Invoices Use The Agent Wallet Before Rakeback.'
+      );
+      await expect(line).toHaveCount(1);
+      const exact = (amount: number) =>
+        amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      await expect(line.locator('.mm-stat__value')).toHaveText(
+        exact(Number(agreement.credit_limit))
+      );
+    }
+    await expect(wallets.getByText('Credit Line', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Credit Used', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Credit Available', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Credit Line Unavailable.', { exact: false })).toHaveCount(0);
+    await attachCashierScreenshot(page, testInfo, 'member-wallet-existing-credit-agreement');
+    await testInfo.attach('member-credit-readback.json', {
+      body: JSON.stringify({
+        memberId,
+        clubId,
+        status: response.status(),
+        projection: creditProjection,
+        isPrepaid: agreement.is_prepaid,
+        limit: agreement.credit_limit,
+        spendableCredit: false,
+        writes: 0,
+      }),
+      contentType: 'application/json',
+    });
+  });
+
+  test('offers reclaim return wallets and keeps promo in promo without moving chips', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 393, height: 852 });
+    const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+    await page.goto(`clubs/${clubId}/cashier`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    const recipient = page.getByRole('checkbox', { name: /^Include / }).first();
+    await expect(recipient).toBeVisible({ timeout: 60_000 });
+    await recipient.check();
+    await page.getByRole('button', { name: 'Claim Back', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Claim Back', exact: true });
+    const source = dialog.getByRole('combobox', { name: 'Claim From', exact: true });
+    const destination = dialog.getByRole('combobox', { name: 'Claim Back To', exact: true });
+    await expect(source).toBeVisible();
+    await source.selectOption('agent_wallet');
+    await expect(destination.locator('option[value="agent_wallet"]')).toHaveCount(1);
+    await expect(destination.locator('option[value="club_bank"]')).toHaveCount(1);
+    await destination.selectOption('agent_wallet');
+    await expect(destination).toHaveValue('agent_wallet');
+    await attachCashierScreenshot(page, testInfo, 'claim-selected-agent-return-wallet-393');
+    await source.selectOption('promo_wallet');
+    await expect(destination.locator('option')).toHaveText([
+      'My Promo Wallet',
+      'Club Promo Wallet',
+    ]);
+    await expect(destination).toHaveValue('promo_wallet');
+    await destination.selectOption('club_promo_wallet');
+    await expect(destination).toHaveValue('club_promo_wallet');
+    await attachCashierScreenshot(page, testInfo, 'claim-promo-return-wallets-393');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    // The Advanced Cashier entry opens cashier-classic, whose wallet strip
+    // exposes these cashier buttons. The club home's My Wallets is collapsed.
+    // Opening and switching accounts submits no chip movement.
+    await page.goto(`clubs/${clubId}/cashier-classic`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    const openPromo = page.getByRole('button', { name: 'Open Promo Wallet', exact: true });
+    await expect(openPromo).toBeVisible({ timeout: 60_000 });
+    const promoRead = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/rpc/fn_club_money_panel') &&
+        response.request().postDataJSON()?.p_club_id === clubId
+    );
+    await openPromo.click();
+    const promoResponse = await promoRead;
+    expect(promoResponse.status()).toBe(200);
+    const money = await promoResponse.json();
+    expect(money.authorized).toBe(true);
+    expect(money.club_promo_wallet).not.toBeNull();
+    const expectedPromo = Number(money.club_promo_wallet);
+    expect(Number.isFinite(expectedPromo)).toBe(true);
+    const promoDialog = page.getByRole('dialog', { name: 'PROMO WALLET Cashier', exact: true });
+    const promoFigure = promoDialog.locator('.cbc-bank strong');
+    const printedPromo = expectedPromo.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    await expect(promoFigure).toHaveText(printedPromo, { timeout: 30_000 });
+    const ownPromo = promoDialog.getByRole('radio').filter({ hasText: 'My Promo Float' });
+    if (await ownPromo.count()) {
+      const ownFigure = await ownPromo.locator('strong').innerText();
+      await ownPromo.click();
+      await expect(promoFigure).toHaveText(ownFigure);
+      await promoDialog.getByRole('radio').filter({ hasText: 'Club Promo Wallet' }).click();
+      await expect(promoFigure).toHaveText(printedPromo);
+    }
+    await attachCashierScreenshot(page, testInfo, 'live-promo-account-balances-393');
+    await page.keyboard.press('Escape');
+    await expect(promoDialog).toBeHidden();
+    await page.getByRole('button', { name: 'Open Agent Wallet', exact: true }).click();
+    const agentDialog = page.getByRole('dialog', { name: 'AGENT WALLET Cashier', exact: true });
+    await agentDialog.getByRole('tab', { name: 'Claim Back', exact: true }).click();
+    await agentDialog.getByRole('button', { name: 'Claim From My Wallets', exact: true }).click();
+    const personal = agentDialog.getByRole('region', { name: 'Selected Player' });
+    await expect(personal).toContainText('My Account');
+    // The maintained zero-balance admin has an agent wallet, not a player wallet.
+    // All three agent tiers are qualified separately against PostgreSQL 17.
+    await personal.getByRole('combobox', { name: 'Claim From' }).selectOption('agent_wallet');
+    await expect(personal.locator('strong').last()).toHaveText(/^\d[\d,]*\.\d{2}$/, {
+      timeout: 30_000,
+    });
+    await expect(agentDialog.getByRole('textbox', { name: 'Chips To Claim Back' })).toBeVisible();
+    await attachCashierScreenshot(page, testInfo, 'personal-wallet-claim-any-time-393');
+    await page.keyboard.press('Escape');
+    await expect(agentDialog).toBeHidden();
   });
 });

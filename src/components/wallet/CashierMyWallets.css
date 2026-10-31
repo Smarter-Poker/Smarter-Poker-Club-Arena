@@ -1,0 +1,150 @@
+/* Relocated My Wallets uses the same approved 2172 x 724 master. */
+.cashier-my-wallets {
+  width: 100%;
+  max-width: 460px;
+  min-width: 0;
+  margin: 0 auto;
+}
+.cashier-my-wallets .lobby-wallets-trigger {
+  position: relative;
+  isolation: isolate;
+  container-type: inline-size;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 2172 / 724;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: url('/assets/club-buttons/wallets/my-wallets-v1/chassis.png') center / 100% 100%
+    no-repeat;
+  box-shadow: none;
+  color: #edf2f6;
+}
+
+.cashier-my-wallets .lobby-wallets-trigger__icon,
+.cashier-my-wallets .lobby-wallets-trigger__icon::before,
+.cashier-my-wallets .lobby-wallets-trigger__icon::after {
+  /* Painted into the master. */
+  display: none;
+  content: none;
+}
+
+.cashier-my-wallets .lobby-wallets-trigger__copy {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  pointer-events: none;
+}
+
+/* MY WALLETS is painted; the words stay in the DOM for the accessible name. */
+.cashier-my-wallets .lobby-wallets-trigger__copy strong {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The count line, printed into the title bay under MY WALLETS and centred
+   on the painted title (Dan 2026-09-09: it "should just have 5 BALANCES ...
+   and it centered inside that frame").
+
+   WHAT WAS WRONG, MEASURED (corrected 2026-09-09, same day). The first fix
+   for this line said the zone was wrong twice over: too narrow, and left-
+   aligned because `place-items: center` does not centre a bare text node.
+   The second half was not true and this comment carried it for a few hours.
+   Rendered with the old zone and no `text-align`, "5 Balances" sits at
+   54.65% of the plate, dead on the title: a grid item that FITS its cell is
+   centred by `place-items`, text node or not. What Dan photographed was the
+   OVERFLOW case. "Loading Balances" measured 109.7px in a 96.7px zone on a
+   393px phone; an item that overflows an `overflow: hidden` cell is given
+   safe alignment, which snaps it to the start edge, and the rest was cut off
+   the right. So: clipped, and left-aligned BECAUSE clipped. `text-align`
+   changes nothing in either case - a fitting string was already centred,
+   and an overflowing one stays start-aligned with it set - so it is not
+   declared here, and a future reader should not reach for it.
+
+   Two things fixed the picture. ClubHomePage no longer prints a placeholder
+   into this bay at all (the count comes from the viewer's role, before any
+   balance loads), and the zone is now symmetric about the painted title's
+   own optical centre (54.65% of the plate, measured off the master art) and
+   spans the bay between the octagon and the chevron divider, so a two-digit
+   count has room to spare and nothing this bay can be asked to hold reaches
+   the overflow fallback again. */
+.cashier-my-wallets .lobby-wallets-trigger__copy small {
+  position: absolute;
+  left: 32.65%;
+  top: 57.2%;
+  width: 44%;
+  height: 9.1%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #5b83e8;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 2.35cqw;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow:
+    0 0 0.6cqw rgb(49 168 255 / 45%),
+    0 0.15cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+/* The chevron: centre 1888, 350 on the master. */
+.cashier-my-wallets .lobby-wallets-trigger__chevron {
+  position: absolute;
+  left: 86.9%;
+  top: 46%;
+  width: 2.6cqw;
+  height: 2.6cqw;
+  margin: 0;
+  border-width: 0 0.35cqw 0.35cqw 0;
+  border-color: #5b9dff;
+  filter: drop-shadow(0 0 0.5cqw rgb(49 168 255 / 65%));
+  transform: translate(-50%, -50%) rotate(45deg);
+  transition: transform 180ms ease;
+}
+
+.cashier-my-wallets .lobby-wallets-trigger__chevron.is-expanded {
+  transform: translate(-50%, -20%) rotate(225deg);
+}
+
+.cashier-my-wallets .lobby-wallets-trigger:active {
+  filter: brightness(1.12);
+}
+
+.cashier-my-wallets .lobby-wallets-trigger:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: -4px;
+}
+.cashier-my-wallets .lobby-wallets-trigger__chevron {
+  border-style: solid;
+}
+.cashier-my-wallets .lobby-wallets-content[hidden] {
+  display: none !important;
+}
+.cashier-my-wallets .lobby-wallets-content__inner {
+  min-width: 0;
+}
+.cashier-my-wallets .dw__rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.cashier-my-wallets__treasury {
+  min-width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cashier-my-wallets .lobby-wallets-trigger__chevron {
+    transition: none;
+  }
+}

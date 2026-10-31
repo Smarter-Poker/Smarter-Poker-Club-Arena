@@ -656,3 +656,22 @@
   font-size: 12px;
   text-shadow: none;
 }
+
+/* The entry being won is primary information, readable before registration. */
+.glp__satellite-target {
+  margin: 16px 18px 0;
+  color: #eaf5ff;
+  font:
+    800 clamp(22px, 5vw, 30px)/1.18 'Roboto Condensed',
+    sans-serif;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.glp__satellite-payouts p {
+  margin: 12px 0;
+  line-height: 1.5;
+}
+.glp__satellite-payouts strong {
+  color: #eaf5ff;
+  font-size: 20px;
+}

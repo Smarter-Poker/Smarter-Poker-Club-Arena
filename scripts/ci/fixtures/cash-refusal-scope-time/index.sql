@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY IF NOT EXISTS accounting_cash_receipts_scope_time_keys ON public.accounting_cash_source_receipts((CASE WHEN scope->>'kind'='unknown' THEN 'unknown' WHEN scope->>'kind' IN ('club','union') AND octet_length(scope->>'id')=36 THEN (scope->>'kind')||':'||(scope->>'id') END),earned_at,id);

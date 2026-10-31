@@ -310,7 +310,6 @@
 .community-cards__card--rabbit {
   /* The 3D turn needs depth; the base card clips it flat. */
   overflow: visible;
-  will-change: transform;
 }
 
 /* Resting state is FACE UP (rotateY(180)) so that if the animation never runs
@@ -899,6 +898,10 @@
    ================================================================================= */
 
 @media (prefers-reduced-motion: reduce) {
+  .community-cards__rabbit-flip {
+    will-change: auto;
+  }
+
   .community-cards__card--flop-deal,
   .community-cards__flip,
   .community-cards__rabbit-flip,
@@ -970,4 +973,23 @@
   margin-top: 2px;
   padding: 2px 0 6px;
   font-size: 1rem;
+}
+
+/* A private hypothetical runout stays distinct from live dealt cards. */
+.community-cards__rabbit-caption {
+  position: absolute;
+  top: calc(100% + 5px);
+  color: #9aa5b3;
+  font:
+    600 10px/1.4 Inter,
+    sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Fold wins already occupy the band under the board. Stack the private
+   caption in that same band instead of painting two labels on one line. */
+.community-cards__hand-name .community-cards__rabbit-caption {
+  position: static;
+  margin-bottom: 3px;
 }

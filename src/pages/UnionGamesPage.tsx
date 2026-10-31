@@ -1,3 +1,6 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
+import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
+import { fetchAllRows } from '../utils/fetchAllRows';
 import { getTournamentEntryCapacity } from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -30,6 +33,7 @@ import { ErrorState } from '../components/common/EmptyState';
 const formatDate = (ts: string | null) => {
   if (!ts) return '-';
   return new Date(ts).toLocaleDateString(undefined, {
+    timeZone: 'America/Chicago',
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
@@ -60,7 +64,16 @@ interface UnionTournament {
   id: string;
   name: string;
   status: string;
-  buy_in: number;
+  buy_in_amount: number;
+  buy_in_fee: number;
+  guaranteed_prize?: number;
+  starting_chips?: number;
+  is_bounty?: boolean;
+  bounty_amount?: number;
+  is_rebuy?: boolean;
+  is_reentry?: boolean;
+  add_on_available?: boolean;
+  current_players?: number;
   max_players: number | null;
   tournament_type?: string | null;
   variant?: string | null;
@@ -68,7 +81,7 @@ interface UnionTournament {
   start_time?: string;
   prize_pool?: number;
   club_id?: string;
-  clubs?: { name: string } | null;
+  clubs?: { name: string } | { name: string }[] | null;
   is_xmtt?: boolean;
 }
 
@@ -110,9 +123,9 @@ export default function UnionGamesPage() {
 
   // Tournaments
   const [tournaments, setTournaments] = useState<UnionTournament[]>([]);
-  const [tournFilter, setTournFilter] = useState<'all' | 'registering' | 'running' | 'completed'>(
-    'all'
-  );
+  const [tournFilter, setTournFilter] = usePlayerPreference<
+    'all' | 'registering' | 'running' | 'completed'
+  >('UnionGamesPage:tournFilter', 'all');
 
   // Tables
   const [tables, setTables] = useState<UnionTable[]>([]);
@@ -127,7 +140,6 @@ export default function UnionGamesPage() {
   // ── CRITICAL: Reset per-union state when navigating between unions ──
   useEffect(() => {
     setTab('tournaments');
-    setTournFilter('all');
     setCanManageGames(false);
     setAuthorityError(null);
     setLoadError(null);
@@ -175,12 +187,35 @@ export default function UnionGamesPage() {
           // so every club's PRIVATE tournaments were exposed union-wide. The
           // union lobby shows union-OWNED games only; private club games carry
           // union_id = NULL and are visible solely inside their own club.
-          supabase
-            .from('tournaments')
-            .select('*, clubs(name)')
-            .eq('union_id', targetUnion)
-            .order('start_time', { ascending: false })
-            .limit(50),
+          Promise.all([
+            fetchAllRows<UnionTournament>(
+              (from, to) =>
+                supabase
+                  .from('tournaments')
+                  .select(
+                    'id, name, status, format_contract, tournament_type, variant, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, is_pko, is_mystery_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
+                  )
+                  .eq('union_id', targetUnion)
+                  .not('status', 'in', '(COMPLETED,CANCELLED,CANCELED,FAILED)')
+                  .order('start_time', { ascending: true })
+                  .order('id', { ascending: true })
+                  .range(from, to),
+              { label: 'Union Games Tournaments' }
+            ),
+            supabase
+              .from('tournaments')
+              .select(
+                'id, name, status, format_contract, tournament_type, variant, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, is_pko, is_mystery_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
+              )
+              .eq('union_id', targetUnion)
+              .in('status', ['COMPLETED', 'CANCELLED', 'CANCELED', 'FAILED'])
+              .order('start_time', { ascending: false })
+              .order('id', { ascending: false })
+              .limit(50),
+          ]).then(([active, history]) => {
+            if (history.error) throw history.error;
+            return [...active, ...(history.data || [])];
+          }),
           supabase
             .from('tables')
             .select(
@@ -195,10 +230,10 @@ export default function UnionGamesPage() {
             .limit(200),
           supabase.rpc('get_bbj_pool', { p_union_id: targetUnion }).maybeSingle(),
         ]);
-        if (tournamentResult.error) throw tournamentResult.error;
+
         if (tableResult.error) throw tableResult.error;
         if (bbjResult.error) throw bbjResult.error;
-        const tournData = tournamentResult.data;
+        const tournData = tournamentResult;
         const tableData = tableResult.data;
         const bbjData = bbjResult.data;
 
@@ -216,7 +251,10 @@ export default function UnionGamesPage() {
           const aOrd = statusOrder[a.status?.toLowerCase()] ?? 5;
           const bOrd = statusOrder[b.status?.toLowerCase()] ?? 5;
           if (aOrd !== bOrd) return aOrd - bOrd;
-          return new Date(b.start_time || 0).getTime() - new Date(a.start_time || 0).getTime();
+          return (
+            (aOrd < 3 ? 1 : -1) *
+            (new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime())
+          );
         });
 
         setTournaments(sorted);
@@ -370,6 +408,7 @@ export default function UnionGamesPage() {
         buy_in_amount: Number((t as any).buy_in_amount ?? (t as any).buy_in ?? 0),
         buy_in_fee: Number((t as any).buy_in_fee ?? 0),
         start_time: (t as any).start_time ?? null,
+        startsWhenFull: satelliteStartsWhenFull(t),
         /* Deliberately NOT `t.club_id`. A union-owned tournament carries the
            UNION container in that column, and a union id handed to
            `fn_player_spendable_balance` resolves to no wallet at all. Null lets
@@ -548,19 +587,32 @@ export default function UnionGamesPage() {
                     <div>
                       <div className={styles.tournName}>{t.name || 'Tournament'}</div>
                       <div className={styles.tournClub}>
-                        {(t.clubs as any)?.name || ''}{' '}
+                        {(Array.isArray(t.clubs) ? t.clubs[0]?.name : t.clubs?.name) || ''}{' '}
                         {t.is_xmtt && <span className={styles.xmttBadge}>XMTT</span>}
                       </div>
                     </div>
                     <StatusBadge status={t.status} />
                   </div>
                   <div className={styles.tournMeta}>
-                    <span> {fmtChips(t.buy_in)}</span>
                     <span>
-                      {t.registered_count || 0}
+                      {' '}
+                      {fmtChips(Number(t.buy_in_amount || 0) + Number(t.buy_in_fee || 0))}
+                    </span>
+                    <span>
+                      {t.current_players || 0}
                       {getTournamentEntryCapacity(t) !== null ? `/${t.max_players}` : ''}
                     </span>
-                    <span> {formatDate(t.start_time || null)}</span>
+                    <span> {formatDate(t.start_time || null)} CT</span>
+                    {t.guaranteed_prize ? <span>{fmtChips(t.guaranteed_prize)} GTD</span> : null}
+                    {t.starting_chips ? (
+                      <span>{fmtChips(t.starting_chips)} Starting Stack</span>
+                    ) : null}
+                    {t.is_bounty && t.bounty_amount ? (
+                      <span>{fmtChips(t.bounty_amount)} Bounty</span>
+                    ) : null}
+                    {!t.is_rebuy && !t.is_reentry && !t.add_on_available ? (
+                      <span>Freezeout</span>
+                    ) : null}
                     {t.prize_pool ? <span> {fmtChips(t.prize_pool)}</span> : null}
                   </div>
                   <div className={styles.tournActions}>

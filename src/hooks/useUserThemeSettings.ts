@@ -1,3 +1,5 @@
+import { pendingAppearancePatch, pendingAppearanceIntents } from '../lib/appearanceIntentJournal';
+import { resumePendingAppearance } from '../lib/applyTableAppearance';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * useUserThemeSettings — Bible V8 §11.2 Theme Persistence Hook
@@ -831,7 +833,10 @@ export function useUserThemeSettings(
     // FIRST PAINT (2026-08-28): resolve synchronously from the cache so the
     // opening frame already wears the saved theme instead of flashing the
     // defaults for the length of a network round trip.
-    return resolveCachedTheme(userId, gameType) ?? { ...DEFAULT_THEME };
+    return {
+      ...(resolveCachedTheme(userId, gameType) ?? DEFAULT_THEME),
+      ...(userId && gameType ? pendingAppearancePatch(userId, gameType) : {}),
+    };
   });
   const [loading, setLoading] = useState(true);
   /**
@@ -864,7 +869,10 @@ export function useUserThemeSettings(
     pendingMutationsRef.current.clear();
     setError(null);
     setLoading(Boolean(userId));
-    const scopedTheme = resolveCachedTheme(userId, gameType) ?? { ...DEFAULT_THEME };
+    const scopedTheme = {
+      ...(resolveCachedTheme(userId, gameType) ?? DEFAULT_THEME),
+      ...(userId && gameType ? pendingAppearancePatch(userId, gameType) : {}),
+    };
     setTheme((current) => (sameSelection(current, scopedTheme) ? current : scopedTheme));
   }, [gameType, themeScope, userId]);
 
@@ -889,7 +897,10 @@ export function useUserThemeSettings(
     // the swap — if the buckets differ at all — happens this frame, not after
     // the round trip below.
     const cached = resolveCachedTheme(userId, gameType);
-    if (cached) setTheme((prev) => (sameSelection(prev, cached) ? prev : cached));
+    if (cached) {
+      const held = { ...cached, ...pendingAppearancePatch(userId, gameType) };
+      setTheme((prev) => (sameSelection(prev, held) ? prev : held));
+    }
 
     let mounted = true;
 
@@ -900,6 +911,7 @@ export function useUserThemeSettings(
         // game_type) over seven buckets, so this is a handful of rows at most,
         // and resolving in memory is both cheaper than the old two round trips
         // and the only way to see a row stored under a raw variant key.
+        if (pendingAppearanceIntents(userId).length) await resumePendingAppearance(userId);
         const read = fetchUserThemeRows(userId);
         const accountRevisionAtRead = themeReadRevisions.get(read) ?? 0;
         const { data, error: queryError } = await read;
@@ -932,13 +944,18 @@ export function useUserThemeSettings(
         // (Only a real array is cached — some test doubles resolve to nothing.)
         if (Array.isArray(data)) cacheAuthoritativeThemeRows(userId, data as ThemeRow[]);
         const row = pickThemeRow((data as ThemeRow[]) || [], gameType);
+        const pendingPatch = pendingAppearancePatch(userId, gameType);
         if (row) {
-          const selection = toSelection(row);
+          const selection = { ...toSelection(row), ...pendingPatch };
           setTheme((prev) => (sameSelection(prev, selection) ? prev : selection));
         } else if (Array.isArray(data)) {
           // No row at all for this user: the seeded cache (possibly stale, a
           // row deleted from another device) must not outlive the truth.
-          setTheme((prev) => (sameSelection(prev, DEFAULT_THEME) ? prev : { ...DEFAULT_THEME }));
+          setTheme((prev) =>
+            sameSelection(prev, { ...DEFAULT_THEME, ...pendingPatch })
+              ? prev
+              : { ...DEFAULT_THEME, ...pendingPatch }
+          );
         }
       } catch (err) {
         if (!mounted) return;
@@ -1050,6 +1067,12 @@ export function useUserThemeSettings(
       if (!Object.keys(clean).length) return;
 
       const authoritative = !mutationId && Boolean(updatedAt);
+      if (
+        authoritative &&
+        userId &&
+        pendingAppearanceIntents(userId).some((entry) => entry.gameType === savedBucket)
+      )
+        return;
       if (savedBucket && !mutationId && pendingMutationsRef.current.get(savedBucket)?.size) {
         // Remember a committed server version even while a newer local tap owns
         // the paint. Otherwise its delayed predecessor can win after confirmation.

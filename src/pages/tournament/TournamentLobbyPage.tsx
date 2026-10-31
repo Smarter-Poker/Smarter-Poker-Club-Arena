@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import type { TournamentEntryWindowRow } from '../../utils/tournamentEntryWindow';
 import {
   isUnlimitedTournamentFormat,
@@ -113,7 +114,10 @@ export default function TournamentLobbyPage() {
   const toast = useToast();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<TournamentStatus>('upcoming');
+  const [statusFilter, setStatusFilter] = usePlayerPreference<TournamentStatus>(
+    'TournamentLobbyPage:status',
+    'upcoming'
+  );
   const [searchParams] = useSearchParams();
   /* The global `/tournaments` route used to mount with no club at all, so
      the hamburger's Tournaments link from inside a club showed the arena-wide
@@ -123,13 +127,16 @@ export default function TournamentLobbyPage() {
      to the club the player is actually in. */
   const clubId = routeClubId || readClubContextParam(searchParams) || undefined;
   const initialType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
-  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>(initialType);
+  const [typeFilter, setTypeFilter] = usePlayerPreference<TournamentTypeFilter>(
+    'TournamentLobbyPage:type',
+    initialType
+  );
 
   useEffect(() => {
-    const currentType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
-    setTypeFilter(currentType);
+    const currentType = searchParams.get('type') as TournamentTypeFilter | null;
+    if (currentType) setTypeFilter(currentType);
   }, [searchParams]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePlayerPreference('TournamentLobbyPage:search', '');
   const [isInUnion, setIsInUnion] = useState(false);
 
   const isMounted = useIsMounted();

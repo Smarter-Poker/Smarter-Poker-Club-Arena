@@ -28,6 +28,8 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
       lte: () => query,
       in: () => query,
       order: () => query,
+      limit: () => query,
+      gt: () => query,
       not: () => query,
       is: () => query,
       then: (resolve: (value: unknown) => unknown) =>
@@ -49,7 +51,9 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
               ? { count: users.length + 4, data: null, error: null }
               : {
                   data:
-                    columns === 'position' ? [] : users.map((user_id) => ({ user_id, chips: 0 })),
+                    columns === 'id, position'
+                      ? []
+                      : users.map((user_id) => ({ user_id, chips: 0 })),
                   error: null,
                 }
         ).then(resolve),
@@ -64,6 +68,7 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
         { data: [], error: null }
   );
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
+    recoveredOriginalAdmissions: new Map(),
     tournamentId: EVENT,
     running: true,
     pendingManagerWakes: new Map(),
@@ -318,7 +323,11 @@ describe('resolved rebuys do not manufacture a stalled tournament manager', () =
     const query: any = {
       select: () => query,
       eq: () => query,
-      lte: () => Promise.resolve({ data: null, error: null }),
+      lte: () => query,
+      order: () => query,
+      limit: () => query,
+      gt: () => query,
+      then: (resolve: any) => Promise.resolve({ data: null, error: null }).then(resolve),
     };
     fixture.from.mockReturnValueOnce(emptyManagerWakeInbox()).mockReturnValueOnce(query);
     await manager.runEliminationSweep(new AbortController().signal);
@@ -328,7 +337,7 @@ describe('resolved rebuys do not manufacture a stalled tournament manager', () =
       msBustWaiting: 129000,
     });
     expect(fixture.reportError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringContaining('authoritative rows missing') }),
+      expect.objectContaining({ message: expect.stringContaining('incomplete bust roster') }),
       'Tournament.busted_list_unavailable'
     );
     expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledWith(5000);

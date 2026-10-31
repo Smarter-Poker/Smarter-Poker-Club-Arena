@@ -1,0 +1,7 @@
+# Original tournament source credit cover
+
+This is physical source qualification for the unchanged original5c8 src_sum: rake_record_id and SUM(rake_credit), including every original source matching the raw-record key array. The independent oracle uses integer cents; foreign club, union, coordinator, time and NULL scope rows remain included. Empty/NULL/duplicate/mixed arrays retain their original membership behavior.
+
+The bounded6024-row fixture reproduces the actual15 columns/defaults/NOTNULL,5 typed constraints,13 indexes and table RLS/ACL. Native tests preserve complete raw-row fingerprints and existing index/catalog metadata before/after, prove natural heap-to-index-only access without planner forcing, and retain the existing maintained concurrent-index parser/refusal/replay and real two-backend snapshot case.
+
+The original8 financial producer/immutability/FK trigger catalog is retained in actual-source-contract30330.json. Full original financial producers are not reproduced: native FK endpoints are ID-only and source65/GEN/window functions are explicit controlled collaborators for installer branches. No production timing or full-week closure certificate is claimed. Root must verify actual full11 owners/metadata, source65, unchanged observed generation, all13 old indexes and complete source contracts after installation, then measure original whole quality without the held RR rewrite.

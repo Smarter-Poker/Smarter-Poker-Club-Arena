@@ -24,7 +24,7 @@ describe('cashier Phase 1 critical integrity contracts', () => {
   });
 
   it('asks the server for all safe cents and reports the returned amount', () => {
-    const start = page.indexOf("supabase.rpc('fn_agent_wallet_claim_back'");
+    const start = page.indexOf("supabase.rpc('fn_club_wallet_claim_back'");
     const end = page.indexOf('});', start);
     const call = page.slice(start, end + 3);
     expect(call).toContain('p_amount: null');
@@ -164,8 +164,9 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(canary).toContain("'hash', '424fc2b2ee2ec319ecbbb7f267515f27'");
     expect(canary).not.toContain("'hash', '3ec6fc367b3dae5c4bf3978d0175ef22'");
     expect(canary).not.toContain("'hash', '910f8859d4c683aafd4403c4f386772b'");
-    // fn_club_promo_send_core_20261004 after 20261020210238 (agent banks restricted).
-    expect(canary).toContain("'hash', 'e2fa848a65ab3615117385fc0614c229'");
+    // Installed restricted-bank core after the 20261029065153 journal-source label.
+    expect(canary).toContain("'hash', 'aa695a9cec9ffb9516cf329fcd04fcf9'");
+    expect(canary).not.toContain("'hash', 'e2fa848a65ab3615117385fc0614c229'");
     expect(canary).not.toContain("'hash', '5990c675526e842d0671f47890c1ff27'");
     expect(canary).toContain("'hash', '7a357ba95a8ca4eb13f00f798233d8d4'");
     expect(canary).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");

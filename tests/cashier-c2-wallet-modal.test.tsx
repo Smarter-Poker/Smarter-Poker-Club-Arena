@@ -172,8 +172,8 @@ afterEach(() => {
   cleanup();
 });
 
-describe('C2-1: the Agent Wallet sends against the float plus the credit line', () => {
-  it('sends 50 from an empty float when 100 of credit is still drawable', async () => {
+describe('C2-1: the Agent Wallet spends funded chips only', () => {
+  it('refuses 50 from an empty wallet even with a 100 chip tracking line', async () => {
     fx.agentRow = {
       agent_wallet_balance: 0,
       promo_wallet_balance: 0,
@@ -184,16 +184,14 @@ describe('C2-1: the Agent Wallet sends against the float plus the credit line', 
     openCashier({ role: 'agent', walletType: 'agent_wallet' });
     await pick(/Kingfish/);
     typeAmount('50');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
+    expect(await screen.findByText(/The Wallet Only Holds 0.00 Chips/)).toBeTruthy();
+    expect(plate('Send Chips')).toBeDisabled();
     fireEvent.click(plate('Send Chips'));
-    // Borrowing on the line always asks first, and says how much is borrowed.
-    expect(await screen.findByText(/50 Of Them Are Drawn From Your Credit Line/)).toBeTruthy();
-    fireEvent.click(plate('Yes, Send It'));
-    await waitFor(() => expect(sends('fn_agent_wallet_send')).toHaveLength(1));
-    expect(sends('fn_agent_wallet_send')[0].args.p_amount).toBe(50);
+    expect(sends('fn_agent_wallet_send')).toHaveLength(0);
+    expect(screen.queryByText(/Drawn From Your Credit Line/)).toBeNull();
   });
 
-  it('still stops at float plus line', async () => {
+  it('refuses an amount beyond the wallet regardless of the tracking line', async () => {
     fx.agentRow = {
       agent_wallet_balance: 0,
       promo_wallet_balance: 0,
@@ -204,7 +202,7 @@ describe('C2-1: the Agent Wallet sends against the float plus the credit line', 
     openCashier({ role: 'agent', walletType: 'agent_wallet' });
     await pick(/Kingfish/);
     typeAmount('101');
-    expect(await screen.findByText(/Cover 100\.00 Chips/)).toBeTruthy();
+    expect(await screen.findByText(/The Wallet Only Holds 0\.00 Chips/)).toBeTruthy();
     expect(plate('Send Chips')).toBeDisabled();
   });
 });
@@ -579,4 +577,31 @@ describe('Agent Own Player Funding With Full Browser Storage', () => {
       write.mockRestore();
     }
   });
+});
+
+it.each(
+  ['super_agent', 'agent', 'sub_agent'].flatMap((role) =>
+    ['0.01', '1.13'].map((amount) => [role, amount])
+  )
+)('%s moves %s own agent chips to their player wallet without rounding', async (role, amount) => {
+  fx.agentRow = { agent_wallet_balance: 1000, is_prepaid: true, credit_used: 0 };
+  fx.members = [
+    { data: [{ ...kingfish, user_id: '11111111-1111-4111-8111-111111111111', role }], error: null },
+  ];
+  openCashier({ role, walletType: 'agent_wallet' });
+  const ownEntry = await screen.findByRole('button', { name: 'To My Player Wallet' });
+  await waitFor(() => expect(ownEntry).toBeEnabled());
+  fireEvent.click(ownEntry);
+  typeAmount(amount);
+  await waitFor(() => expect(plate('Send Chips')).toBeEnabled());
+  fireEvent.click(plate('Send Chips'));
+  await waitFor(() => expect(sends('fn_agent_wallet_send')).toHaveLength(1));
+  expect(sends('fn_agent_wallet_send')[0].args).toMatchObject({
+    p_amount: Number(amount),
+    p_destination: 'player_wallet',
+    p_to_user_id: '11111111-1111-4111-8111-111111111111',
+  });
+  await waitFor(() =>
+    expect(fx.toast.success.mock.calls.at(-1)?.[0]).toContain(`Sent ${amount} Chips`)
+  );
 });

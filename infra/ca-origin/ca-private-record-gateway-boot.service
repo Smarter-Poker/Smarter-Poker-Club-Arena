@@ -1,0 +1,13 @@
+[Unit]
+Description=Restore only the committed Club Arena private record gateway after boot
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/srv/ca-private-record-gateway/active-release.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /usr/local/lib/ca-private-record-gateway/private-record-gateway-boot.mjs
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target

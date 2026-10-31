@@ -36,6 +36,16 @@ describe('awaitEngineState', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('distinguishes a fresh snapshot from a timed-out unknown outcome', async () => {
+    const waiters = new Set<() => void>();
+    const missing = awaitEngineState(waiters, () => {});
+    await vi.advanceTimersByTimeAsync(ACTION_OUTCOME_STATE_BUDGET_MS);
+    expect(await missing).toBe(false);
+    const observed = awaitEngineState(waiters, () => {});
+    for (const release of [...waiters]) release();
+    expect(await observed).toBe(true);
+  });
+
   it('never waits past its budget when no snapshot comes', async () => {
     const waiters = new Set<() => void>();
     let done = false;
@@ -62,15 +72,15 @@ describe('TablePage wiring', () => {
     expect(i).toBeGreaterThan(-1);
     const fn = TABLE_PAGE.slice(i, TABLE_PAGE.indexOf('\n  );', i));
     const wait = fn.indexOf(
-      'await awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot)'
+      'refresh: () => awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot)'
     );
-    expect(wait).toBeGreaterThan(fn.indexOf("res.code === 'ACTION_NOT_DELIVERED'"));
+    expect(wait).toBeGreaterThan(fn.indexOf('await submitTableDecision({'));
     expect(wait).toBeLessThan(fn.indexOf('showActionError({'));
-    // The public-observer gate precedes submission. This contract owns the
-    // failure path after a real action was sent.
-    expect(wait).toBeLessThan(
-      fn.indexOf('return false;', fn.indexOf('const res = await submitAction'))
-    );
+    const decision = readFileSync(resolve(__dirname, '../src/lib/tableActionDecision.ts'), 'utf8');
+    expect(decision).toContain("result.code === 'ACTION_NOT_DELIVERED'");
+    expect(
+      decision.indexOf('await input.refresh();', decision.indexOf('const result ='))
+    ).toBeLessThan(decision.indexOf('return result;'));
   });
 
   it('the snapshot releases the wait after the merge effect is queued', () => {
@@ -78,7 +88,7 @@ describe('TablePage wiring', () => {
     // effect's dependencies (it re-applies the latest snapshot when a Lightning
     // exit hold ends); the order this contract pins is unchanged.
     const merge = TABLE_PAGE.indexOf(
-      '}, [engineSnapshot, USE_ENGINE_WS, userId, lightningExitTick]);'
+      '}, [engineSnapshot, USE_ENGINE_WS, userId, tableId, lightningExitTick]);'
     );
     const release = TABLE_PAGE.indexOf('const snapshotWaitersRef = useRef<Set<() => void>>');
     expect(merge).toBeGreaterThan(-1);

@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { expect, it } from 'vitest';
 import { LiveHorseDecisionWorkerClient, type WorkerLike } from './client.js';
+import { HORSE_HISTORY_RETRY_COOLDOWN_MS } from './ownPublicHistory.js';
+import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 import type {
   HorseDecisionWorkerRequest,
   HorseDecisionWorkerResponse,
@@ -75,7 +77,9 @@ it.each([
       a.timestamp = t + i;
     });
     first.handJournalContext = captureHorseHandJournalContext(first.gameState.actionHistory!);
-    first.decisionTimeMs = Date.now() + 100;
+    // A load can settle after its original decision snapshot under CPU load.
+    // Keep failed cases behind the real clock to exercise that ordering.
+    first.decisionTimeMs = Date.now() + (failed ? -200 : 100);
     first.decisionKey = buildHorseDecisionKey(first);
     const context = horseObserverReadContextFromRequest(first)!;
     const completed: CompletedHandObservation = {
@@ -158,13 +162,33 @@ it.each([
       await worker.h.runtime.start();
       await client.ready();
       await client.decideFast(first);
+      const firstCapture = JSON.parse(horseJournalJson(worker.h.captures.at(-1)!));
+      expect(firstCapture.snapshot.ownPublicHistoryProvenance).toMatchObject({
+        version: 1,
+        context,
+        decisionTimeMs: first.decisionTimeMs,
+        state: 'pending',
+        reason: 'loading',
+      });
       expect(reads[0]).toMatchObject({ hands: 1, folds: 0, wins: 0 });
+      let latestDecisionTimeMs = first.decisionTimeMs;
       if (failed) {
         await new Promise<void>((r) => setImmediate(r));
         const unavailable = { ...first, requestId: 10, decisionTimeMs: first.decisionTimeMs + 1 };
         unavailable.decisionKey = buildHorseDecisionKey(unavailable);
         await client.decideFast(unavailable);
-        const retry = { ...first, requestId: 11, decisionTimeMs: first.decisionTimeMs + 60_001 };
+        expect(loads).toBe(1);
+        expect(worker.sent.filter((m) => m.type === 'DECIDE_FAST').at(-1)).toMatchObject({
+          ownPublicHistoryState: 'unavailable',
+        });
+        // The cache's cooldown starts when the failed load settles, not at
+        // the earlier snapshot. This request observes that settled state.
+        const retry = {
+          ...first,
+          requestId: 11,
+          decisionTimeMs: Date.now() + HORSE_HISTORY_RETRY_COOLDOWN_MS,
+        };
+        latestDecisionTimeMs = retry.decisionTimeMs;
         retry.decisionKey = buildHorseDecisionKey(retry);
         await client.decideFast(retry);
         expect(loads).toBe(2);
@@ -199,16 +223,22 @@ it.each([
         a.timestamp = t + 100 + i;
       });
       next.handJournalContext = captureHorseHandJournalContext(next.gameState.actionHistory!);
-      next.decisionTimeMs = Math.max(
-        first.decisionTimeMs + (failed ? 60_002 : 1),
-        Date.now() + 100
-      );
+      next.decisionTimeMs = Math.max(latestDecisionTimeMs + 1, Date.now() + 100);
       next.decisionKey = buildHorseDecisionKey(next);
       const result = await client.decideFast(next);
       expect(reads[failed ? 3 : 1]).toMatchObject({ hands: 34, folds: 17, recentFolds: 9 });
       expect(reads[failed ? 3 : 1].wins).toBeGreaterThan(32);
       expect(reads[failed ? 3 : 1].wins).toBeLessThanOrEqual(33);
       const capture = worker.h.captures.at(-1)!;
+      const retainedCapture = JSON.parse(horseJournalJson(capture));
+      expect(retainedCapture.snapshot.ownPublicHistoryProvenance).toMatchObject({
+        version: 1,
+        context,
+        decisionTimeMs: next.decisionTimeMs,
+        state: 'available',
+        reason: 'packet_ready',
+      });
+      expect(firstCapture.snapshot.ownPublicHistoryProvenance.reason).toBe('loading');
       expect(capture.observerReads).toMatchObject({
         version: 2,
         history: 'own_public_window',

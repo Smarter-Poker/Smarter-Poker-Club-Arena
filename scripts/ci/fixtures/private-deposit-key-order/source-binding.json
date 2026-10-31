@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "scope": "Current public61 to2f ONE keyORDERBY only; native28 retained and official97 with full6field sourcegroup parity, no stablecapacity/fullScope/liveclaim",
+  "sourceFiles": {
+    "scripts/ci/fixtures/private-deposit-key-order/qualification-evidence.json": "d533c8dcecefd0047726477407a5df591cbf3cba179c473d569d694d3c755b9c",
+    "scripts/ci/fixtures/private-deposit-key-order/summary-before.sql": "6f7e67e6739d73430f5fd261a66002083526f922e2723e02bacc167d7060192a",
+    "scripts/ci/fixtures/private-deposit-key-order/current-view-dependencies.sql": "77ac87b7abb028e7fe8c78d1e4e9fc56379d8998c5fc81c74025c0d4f2431758",
+    "scripts/ci/fixtures/private-deposit-key-order/root-readonly-probe-syntax.sql": "361f62afba9e503d97ad0cc816c97e57e3fb0e3b9c08e086b7bf1b555c58c2e3",
+    "scripts/ci/fixtures/private-deposit-key-order/summary-after.sql": "ce9a429fd27a90da4d893bf479d93ac66f83a946a602dc7334d784fb957184ec",
+    "scripts/ci/fixtures/private-deposit-key-order/source-receipt.json": "e076e22b78ff820dadecd5745cc9a81844926a73fa1b624cb3d78156788cfe81",
+    "scripts/ci/test-private-deposit-key-order-postgres.py": "d17f4099fee427c1ff0d0acf61503c1073b2b50f177a9d04dea3929eb85f66cf",
+    "tests/private-deposit-key-order-retains-source-facts.law.test.ts": "3930979aa56d154d1f8eb1fe9c1054cc3b6fef05cd8a34862ddb5deb6db249e0",
+    "docs/laws.d/private-deposit-key-order-retains-source-facts.md": "0ec51ab89edf1de355eb1193923a7492f8891a3fa30ffe9ad3ca0e09ee0d27bc",
+    "docs/changelog/2026-10-28-private-deposit-keys-follow-source-order.md": "4d27f7742d36d50d55a9f9851a54602a9f2c964722074b5a0704d02df6817c4c",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639",
+    "supabase/migrations/20261028063816_weekly_private_deposits_traverse_their_original_source_keys.sql": "de27743617d3fec1a44b36c79124867e5ceb94e00cf6e60a28c8e8868039e8b6",
+    "scripts/ci/fixtures/standalone-weekly-statement-funding/actual-connected-preimages.json": "a3e7bd6dda38d87415913ba53c0db8207383afb8db024dcc6c4df69a69ebc644",
+    "scripts/ci/fixtures/standalone-weekly-statement-funding/setup.sql": "7d9519ad6b46c4a2d981b5f5fa0423533d1ebaab09d6ca8c321d995af465ba9e",
+    "tests/fixtures/weekly-close-scale/prelude.sql": "d5f1952bb82f3d9970b70b73d5b78ee65861c70c093118968d4836fc269f9481",
+    "tests/fixtures/weekly-close-scale/schema-tables.sql": "1357e005cc1c71045fc7dcbe17f777ac6ecb38c6b2f7dccaa286a68e702ed4fb",
+    "tests/fixtures/weekly-close-scale/preimage/fn_union_week_start.sql": "185e48e40d03997a5dc7e13aee8161983156e0e47aaa4be3dcb5bee7305acb1c"
+  },
+  "cashLinkPhysicalProofWorkflowComposition20261028": {
+    "review": "Preserves current63816 ordered-key and every prior native command plus the independently qualified65332 physical partial-index lane. Only active combined workflow identity renewed; no financial assertion or historical receipt restamp.",
+    "execution_performed": false
+  },
+  "cashLinkUnionHashWorkflowComposition20261028": {
+    "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
+    "execution_performed": false
+  }
+}

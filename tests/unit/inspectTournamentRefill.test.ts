@@ -188,6 +188,7 @@ print(json.dumps(m['reference_diagnostic'](d['input'])))`;
     expect(JSON.parse(ran.stdout)).toEqual({
       status: 'unknown',
       reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'sanitizer', code: 'result_refused' },
     });
     expect(ran.stdout + ran.stderr).not.toMatch(/private-secret|cards|As|Kd/);
   }
@@ -927,7 +928,7 @@ it('accepts explicit positive-calloff metadata without pretending it was an erro
     expect(encodeCases(JSON.stringify({ ...positiveInput, cases: [bad] })).status).toBe(1);
 });
 
-function acceptedCalloffFixture(mode: string) {
+function acceptedCalloffFixture(mode: string, postflop = false) {
   const extract = spawnSync(
     'python3',
     [
@@ -957,39 +958,58 @@ const records=await import('data:text/javascript;base64,${Buffer.from(recordJs).
 const binding=await import('data:text/javascript;base64,${Buffer.from(bindingJs).toString('base64')}');
 const mode=${JSON.stringify(mode)}, input=${JSON.stringify(positiveInput)},c=input.cases[0];
 const coordinate=${JSON.stringify(originalCoordinate)};
+const postflop=${postflop};
 const actor='52345678-abcd-4321-abcd-123456789abc';
 const snapshot={type:'DECIDE_FAST',generation:7,requestId:9,decisionTimeMs:1000,
  fence:c.tableId+':123:1:'+c.leaseGeneration+':7',handJournalContext:binding.captureHorseHandJournalContext([]),
  decisionKey:'private-decision-id',player:{seat:1,user_id:actor,stack:100,bet:20},gameState:{currentBet:120,gameVariant:'nlh'}};
+if(postflop) {input.version=3;c.stage='flop';c.actorId=actor;c.seat=1;snapshot.gameState.stage='flop';snapshot.gameState.gameVariant='plo5';snapshot.gameState.pot=250;snapshot.gameState.contestablePot=225;snapshot.player.cards=['As','Kd','Qc','Jh','Ts'];}
+if(postflop && ['turn','river'].includes(mode)) {c.stage=mode;snapshot.gameState.stage=mode;}
+if(mode==='made-category') {snapshot.player.cards=['A','K','Q','J','T'].map(rank=>({rank,suit:'spades'}));snapshot.gameState.communityCards=['2','3','4'].map(rank=>({rank,suit:'hearts'}));}
+if(mode==='wrong-stage') snapshot.gameState.stage='turn';
+if(mode==='wrong-actor') c.actorId='62345678-abcd-4321-abcd-123456789abc';
+if(mode==='wrong-seat') c.seat=2;
+if(mode==='missing-contestable') delete snapshot.gameState.contestablePot;
 if(mode==='zero-stack') snapshot.player.stack=0;
-if(mode==='chips-behind') snapshot.player.stack=101;
+if(mode==='chips-behind'||mode==='diagnostic-call-price') snapshot.player.stack=101;
+if(mode==='diagnostic-stack') snapshot.player.stack=0;
+if(mode==='diagnostic-bet') snapshot.player.bet='20';
+if(mode==='diagnostic-overflow') {snapshot.player.bet=-Number.MAX_VALUE;snapshot.gameState.currentBet=Number.MAX_VALUE;}
+if(mode==='diagnostic-anchor') snapshot.fence=snapshot.fence.replace(':123:',':124:');
 const decision={action:'all_in',tournamentPreflopAttribution:{route:'variant_price',referenceProposal:{action:'all_in',amount:null}}};
-if(mode==='wrong-route') decision.tournamentPreflopAttribution.route='chart_open_jam';
-if(mode==='sized-reference') decision.tournamentPreflopAttribution.referenceProposal.amount=100;
-const acceptedAction={seat:1,userId:actor,action:'all_in',amount:100,timestamp:1001,stage:'preflop'};
-const witness={handAnchor:binding.anchorHorseDecisionHand(snapshot),identity:{stage:'preflop'},
+if(postflop) delete decision.tournamentPreflopAttribution;
+if(mode==='wrong-route'||mode==='diagnostic-route') decision.tournamentPreflopAttribution.route='chart_open_jam';
+if(mode==='diagnostic-final-action') decision.action='call';
+if(mode==='diagnostic-reference-action') decision.tournamentPreflopAttribution.referenceProposal.action='call';
+if(mode==='sized-reference'||mode==='diagnostic-amount') decision.tournamentPreflopAttribution.referenceProposal.amount=100;
+const acceptedAction={seat:1,userId:actor,action:'all_in',amount:100,timestamp:1001,stage:postflop?c.stage:'preflop'};
+const witness={handAnchor:binding.anchorHorseDecisionHand(snapshot),identity:{stage:postflop?c.stage:'preflop'},
  executionStatus:'intended',retirementReason:null,selected:{action:'all_in'},executedAction:'all_in',
  acceptedActions:[{intended:true,record:acceptedAction}]};
+if(mode==='wrong-execution-stage') witness.identity.stage='turn';
+if(mode==='wrong-execution-actor') acceptedAction.userId='62345678-abcd-4321-abcd-123456789abc';
 if(mode==='coerced') witness.executionStatus='coerced';
 if(mode==='fold-executed') witness.executedAction='fold';
 let sequence=0;
 const make=(kind,body,turnKey='b'.repeat(64))=>records.makeHorseJournalRecord({producerId:'42345678-abcd-4321-abcd-123456789abc',
  sequence:++sequence,atMs:1000,sourceRelease:input.sourceRelease,kind,handKey:c.handKey,turnKey},body);
 const d=make('decision',{snapshot,decision,private:'private-secret'});
-c.decisionRecordSha256=['discover','discovery-ambiguous'].includes(mode)?null:d.sha256;
+c.decisionRecordSha256=(['discover','discovery-ambiguous'].includes(mode)||mode.startsWith('diagnostic-'))?null:d.sha256;
 const e=make('execution',witness,mode==='wrong-turn'?'c'.repeat(64):d.turnKey);
 const hand={generation:123,fence:c.tableId+':123:'+c.leaseGeneration+':observe',handKey:c.tableId+':123',
  committedHandId:c.handId,actions:[{...acceptedAction,origin:'horse_policy',
- publicNode:{version:1,status:'captured',actorSeat:1,street:'preflop'},
+ publicNode:{version:1,status:'captured',actorSeat:1,street:postflop?c.stage:'preflop'},
  observationIdentity:{version:1,status:'bound',handId:c.handId,actionOrdinal:0,observationId:c.handId+':0',sessionKey:'a'.repeat(64)}}]};
 if(mode==='unbound') hand.actions[0].observationIdentity.actionOrdinal=1;
+if(mode==='diagnostic-accepted') hand.committedHandId=actor;
 const a=make('accepted_hand',hand,c.handKey);
-let rows=[d,e,a];
+let rows=mode==='diagnostic-empty'?[e,a]:[d,e,a];
 if(mode==='duplicate-execution') rows.push(make('execution',witness));
 if(mode==='discovery-ambiguous') rows.push(make('decision',{snapshot,decision}));
 if(mode==='tampered-record') rows[0]={...d,body:d.body+' '};
 if(mode==='wrong-decision') c.decisionRecordSha256='f'.repeat(64);
 const api={...records,...binding,
+ omahaNutStatus:mode==='made-category'?()=>({category:2}):undefined,
  horsePhase6AttributionMismatch:()=>mode==='phase6-refused'?'reference_shape':null,
  horseDecisionReceiptIsValid:()=>mode!=='invalid-receipt',
  reconcileHorseJournalHand:()=>({status:mode==='unreconciled'?'incomplete':'reconciled',gaps:mode==='unreconciled'?['input_mismatch']:[],
@@ -1003,7 +1023,7 @@ console.log(JSON.stringify({input,result:inspectAcceptedCalloffRecords(input,bat
   });
   expect(run.status, run.stderr).toBe(0);
   expect(run.stdout + run.stderr).not.toMatch(
-    /private-secret|private-decision-id|"player"|"stack"|currentBet/
+    /private-secret|private-decision-id|"player"|currentBet|As|Kd|Qc|Jh|Ts/
   );
   return JSON.parse(run.stdout);
 }
@@ -1084,6 +1104,7 @@ print(json.dumps(m['reference_diagnostic'](d['input'])))`,
     expect(JSON.parse(checked.stdout)).toEqual({
       status: 'unknown',
       reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'sanitizer', code: 'result_refused' },
     });
     expect(checked.stdout + checked.stderr).not.toContain('private-secret');
   }
@@ -1171,4 +1192,330 @@ print(json.dumps({'parsed':parsed,'history':history,'bounded':parse('\\n'.join([
   expect(result.bounded.events).toHaveLength(128);
   expect(result.history.bookingCapRefusals).toEqual(result.parsed);
   expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|111111111111|222222222222|Traceback/);
+});
+
+const emptySelectionCounts = {
+  decisionRecords: 1,
+  selectedRecords: 1,
+  finalActionMismatch: 0,
+  referenceRouteMismatch: 0,
+  referenceActionMismatch: 0,
+  referenceAmountMismatch: 0,
+  stackShapeMismatch: 0,
+  callPriceShapeMismatch: 0,
+  notWholeStackCall: 0,
+  matchingShape: 0,
+};
+it.each([
+  ['diagnostic-empty', { ...emptySelectionCounts, decisionRecords: 0, selectedRecords: 0 }],
+  ['wrong-decision', { ...emptySelectionCounts, selectedRecords: 0 }],
+  ['diagnostic-final-action', { ...emptySelectionCounts, finalActionMismatch: 1 }],
+  ['diagnostic-route', { ...emptySelectionCounts, referenceRouteMismatch: 1 }],
+  ['diagnostic-reference-action', { ...emptySelectionCounts, referenceActionMismatch: 1 }],
+  ['diagnostic-amount', { ...emptySelectionCounts, referenceAmountMismatch: 1 }],
+  ['diagnostic-stack', { ...emptySelectionCounts, stackShapeMismatch: 1 }],
+  ['diagnostic-bet', { ...emptySelectionCounts, callPriceShapeMismatch: 1 }],
+  ['diagnostic-overflow', { ...emptySelectionCounts, callPriceShapeMismatch: 1 }],
+  ['diagnostic-call-price', { ...emptySelectionCounts, notWholeStackCall: 1 }],
+] as const)(
+  'explains %s only with bounded validated selection counts, preserving unknown',
+  (mode, counts) => {
+    const { input, result } = acceptedCalloffFixture(mode);
+    expect(result.status).toBe('unknown');
+    expect(result.cases[0]).toEqual({
+      handKey: input.cases[0].handKey,
+      status: 'unknown',
+      reason: 'matching_decision_missing',
+      selectionCounts: counts,
+    });
+    const checked = spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        'import json,runpy,sys; m=runpy.run_path(sys.argv[1]); d=json.loads(sys.stdin.read()); print(json.dumps(m["sanitize_reference_result"](d["result"],d["input"])))',
+        script,
+      ],
+      { input: JSON.stringify({ input, result }), encoding: 'utf8', timeout: 5000 }
+    );
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(JSON.parse(checked.stdout)).toEqual(result);
+  }
+);
+it.each(['diagnostic-anchor', 'diagnostic-accepted', 'tampered-record', 'wrong-source'])(
+  'does not emit selection counts before %s validation',
+  (mode) => {
+    const { result } = acceptedCalloffFixture(mode);
+    expect(result.status).toBe('unknown');
+    expect(result.cases?.[0]?.selectionCounts).toBeUndefined();
+  }
+);
+
+it('refuses private or inconsistent diagnostic counts without emitting child output', () => {
+  const { input, result } = acceptedCalloffFixture('diagnostic-final-action');
+  const row = result.cases[0];
+  const counts = row.selectionCounts;
+  for (const bad of [
+    { ...row, selectionCounts: { ...counts, private: 'private-secret' } },
+    { ...row, selectionCounts: { ...counts, decisionRecords: true } },
+    { ...row, selectionCounts: { ...counts, decisionRecords: 257 } },
+    { ...row, selectionCounts: { ...counts, finalActionMismatch: -1 } },
+    { ...row, selectionCounts: { ...counts, referenceRouteMismatch: 1 } },
+    { ...row, selectionCounts: { ...counts, matchingShape: 1, finalActionMismatch: 0 } },
+    { ...row, selectionCounts: { ...counts, selectedRecords: 0, finalActionMismatch: 0 } },
+    { ...row, reason: 'original_snapshot_binding_mismatch' },
+    { ...row, reason: 'calloff_shape_not_observed' },
+    { ...row, status: 'observed' },
+  ]) {
+    const checked = spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); d=json.loads(sys.stdin.read());m['reference_diagnostic'].__globals__['bounded_command']=lambda *a,**k:json.dumps(d['result'])
+print(json.dumps(m['reference_diagnostic'](d['input'])))`,
+        script,
+      ],
+      {
+        input: JSON.stringify({ input, result: { ...result, cases: [bad] } }),
+        encoding: 'utf8',
+        timeout: 5000,
+      }
+    );
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(JSON.parse(checked.stdout)).toEqual({
+      status: 'unknown',
+      reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'sanitizer', code: 'result_refused' },
+    });
+    expect(checked.stdout + checked.stderr).not.toContain('private-secret');
+  }
+});
+
+it('v3 admits only exact actor, seat and postflop stage metadata', () => {
+  const c = {
+    ...positiveCase,
+    actorId: '52345678-abcd-4321-abcd-123456789abc',
+    seat: 1,
+    stage: 'flop',
+  };
+  const input = { ...positiveInput, version: 3, cases: [c] };
+  expect(encodeCases(JSON.stringify(input)).status).toBe(0);
+  for (const change of [
+    { stage: 'preflop' },
+    { stage: undefined },
+    { actorId: 'unknown' },
+    { seat: 0 },
+    { seat: true },
+    { seat: 11 },
+    { cards: ['As'] },
+  ])
+    expect(encodeCases(JSON.stringify({ ...input, cases: [{ ...c, ...change }] })).status).toBe(1);
+  expect(encodeCases(JSON.stringify({ ...input, version: 2 })).status).toBe(1);
+});
+it('v3 observes original postflop scalars without requiring a preflop reference', () => {
+  const { input, result } = acceptedCalloffFixture('ok', true);
+  expect(result.status).toBe('observed');
+  expect(result.version).toBe(3);
+  expect(result.cases[0].snapshotSummary).toEqual({
+    stage: 'flop',
+    variant: 'plo5',
+    call: 100,
+    stack: 100,
+    pot: 250,
+    contestablePot: 225,
+    contestablePotPresent: true,
+    ownCardCount: 5,
+    readFramePresent: false,
+    ownMadeCategory: null,
+    finalAction: 'all_in',
+  });
+  const checked = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());print(json.dumps(m['sanitize_reference_result'](d['result'],d['input'])))`,
+      script,
+    ],
+    { input: JSON.stringify({ input, result }), encoding: 'utf8' }
+  );
+  expect(checked.status, checked.stderr).toBe(0);
+});
+it.each([
+  'wrong-execution-stage',
+  'wrong-execution-actor',
+  'wrong-stage',
+  'wrong-actor',
+  'wrong-seat',
+  'wrong-turn',
+  'tampered-record',
+  'wrong-source',
+  'unbound',
+  'unreconciled',
+  'coerced',
+  'chips-behind',
+  'duplicate-execution',
+  'wrong-decision',
+  'invalid-receipt',
+])('v3 preserves %s as unknown', (mode) => {
+  const { input, result } = acceptedCalloffFixture(mode, true);
+  expect(result.status).toBe('unknown');
+  const checked = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());print(json.dumps(m['sanitize_reference_result'](d['result'],d['input'])))`,
+      script,
+    ],
+    { input: JSON.stringify({ input, result }), encoding: 'utf8' }
+  );
+  expect(checked.status, checked.stderr).toBe(0);
+});
+it('v3 never substitutes public pot for absent contestable pot', () => {
+  expect(
+    acceptedCalloffFixture('missing-contestable', true).result.cases[0].snapshotSummary
+  ).toMatchObject({ pot: 250, contestablePot: null, contestablePotPresent: false });
+});
+
+it('v3 refuses private fields, invalid scalar types and false witnesses at the output boundary', () => {
+  const { input, result } = acceptedCalloffFixture('ok', true);
+  for (const mutation of [
+    { cards: ['As'] },
+    { stage: 'turn' },
+    { variant: 'private-secret' },
+    { stack: true },
+    { call: 99 },
+    { contestablePotPresent: false },
+    { ownCardCount: 7 },
+    { ownMadeCategory: 10 },
+    { readFramePresent: 'private-secret' },
+  ]) {
+    const bad = {
+      ...result,
+      cases: [
+        {
+          ...result.cases[0],
+          snapshotSummary: { ...result.cases[0].snapshotSummary, ...mutation },
+        },
+      ],
+    };
+    const checked = spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());m['reference_diagnostic'].__globals__['bounded_command']=lambda *a,**k:json.dumps(d['result']);print(json.dumps(m['reference_diagnostic'](d['input'])))`,
+        script,
+      ],
+      { input: JSON.stringify({ input, result: bad }), encoding: 'utf8' }
+    );
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(JSON.parse(checked.stdout)).toEqual({
+      status: 'unknown',
+      reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'sanitizer', code: 'result_refused' },
+    });
+    expect(checked.stdout + checked.stderr).not.toMatch(/private-secret|As/);
+  }
+});
+
+it.each(['turn', 'river'])('v3 binds a valid %s calloff using its original stage', (mode) => {
+  const { result } = acceptedCalloffFixture(mode, true);
+  expect(result.status).toBe('observed');
+  expect(result.cases[0].snapshotSummary.stage).toBe(mode);
+});
+
+it('v3 derives only a bounded category when the installed deterministic API and original physical cards are available', () => {
+  expect(
+    acceptedCalloffFixture('made-category', true).result.cases[0].snapshotSummary.ownMadeCategory
+  ).toBe(2);
+});
+
+it('flushes the actual diagnostic writer through a backpressured child pipe before exit', () => {
+  const fixture = `
+import json,runpy,subprocess,sys,time
+program=runpy.run_path(sys.argv[1])['REFERENCE_DIAGNOSTIC_JS']
+start=program.index('  await new Promise(resolve=>{')
+end=program.index('  process.exit(0);',start)+len('  process.exit(0);')
+report={'status':'unknown','reason':'x'*200000}
+writer='const report='+json.dumps(report)+';'+program[start:end]
+child=subprocess.Popen([sys.argv[2],'--input-type=module'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+child.stdin.write(writer.encode());child.stdin.close()
+time.sleep(.05)
+raw=child.stdout.read();error=child.stderr.read();code=child.wait(timeout=5)
+assert code==0 and not error and json.loads(raw)==report and raw.endswith(b'\\n')
+print(json.dumps({'complete':True,'bytes':len(raw)}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script, process.execPath], {
+    encoding: 'utf8',
+    timeout: 8000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  expect(JSON.parse(ran.stdout)).toMatchObject({ complete: true });
+});
+
+it('separates bounded child stderr from JSON and classifies host failures without leaking bytes', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); g=m['reference_diagnostic'].__globals__
+read=m['bounded_command']; failure=m['DiagnosticCommandFailure']
+raw=read([sys.argv[2],'-e',"process.stderr.write('private-secret');process.stdout.write('{}')"],separate_stderr=True)
+assert json.loads(raw)=={}
+for code in ('nonzero_exit','timeout','output_bound'):
+ def fail(*a,**k): raise failure(code)
+ g['bounded_command']=fail
+ assert m['reference_diagnostic']({})['diagnostic']=={'stage':'child_transport','code':code}
+for raw,stage in [('private-secret\\n{}','stdout_parse'),('{}','sanitizer'),(json.dumps({'status':'unknown','reason':'journal_or_runtime_unavailable','diagnostic':{'stage':'private-secret','code':'exception'}}),'sanitizer')]:
+ g['bounded_command']=lambda *a,**k:raw
+ assert m['reference_diagnostic']({'version':3})['diagnostic']['stage']==stage
+try: read([sys.argv[2],'-e',"process.stderr.write('private-secret');process.exit(7)"],separate_stderr=True)
+except failure as error: assert error.code=='nonzero_exit'
+else: raise AssertionError()
+try: read([sys.argv[2],'-e',"process.stderr.write('x'.repeat(4*1024*1024+1))"],separate_stderr=True)
+except failure as error: assert error.code=='output_bound'
+else: raise AssertionError()
+print(json.dumps({'bounded':True}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script, process.execPath], {
+    encoding: 'utf8',
+    timeout: 8000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  expect(JSON.parse(ran.stdout)).toEqual({ bounded: true });
+  expect(ran.stdout + ran.stderr).not.toContain('private-secret');
+});
+
+it('runs the actual child entry point with noisy modules and closed import failure stages', () => {
+  const fixture = `
+import json,re,runpy,subprocess,sys,urllib.parse
+m=runpy.run_path(sys.argv[1]); program=m['REFERENCE_DIAGNOSTIC_JS']
+for mode in ('noise','throw','missing'):
+ def module(match):
+  path=match.group(1)
+  body="console.log('private-secret'); console.warn('private-secret');"
+  if path.endswith('/journalTransport.js'):
+   body += "throw Error('private-secret');" if mode=='throw' else ("export const exportCanonicalHorseJournalBatch=()=>null;" if mode=='noise' else '')
+  if path.endswith('/ChannelHub.js'): body+='export const channelHub={close(){}};'
+  return "import('data:text/javascript,"+urllib.parse.quote(body,safe='')+"')"
+ child=re.sub(r"import\\('(/app/[^']+)'\\)",module,program)
+ ran=subprocess.run([sys.argv[2],'--input-type=module','-e',child,'--','--reference-shape-diagnostic'],input=json.dumps({'version':3,'sourceRelease':'a'*40,'cases':[]}),text=True,capture_output=True,timeout=5)
+ assert ran.returncode==0 and not ran.stderr
+ report=json.loads(ran.stdout)
+ assert 'private-secret' not in ran.stdout
+ if mode=='noise': assert report['reason']=='journal_source_or_shape_mismatch'
+ else: assert report['diagnostic']=={'stage':'module_load_journal' if mode=='throw' else 'export_contract','code':'exception'}
+print(json.dumps({'childVerified':True}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script, process.execPath], {
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  expect(JSON.parse(ran.stdout)).toEqual({ childVerified: true });
 });

@@ -1,3 +1,4 @@
+import { riverPublicNode } from '../HorseMultiwayRiverRead.js';
 import type { ActionRecord } from '../../types.js';
 import type { ReadScope } from '../HorseMind.js';
 
@@ -33,6 +34,7 @@ export function completedHandActionsForMind(
     return null;
 
   const projected: ActionRecord[] = [];
+  let riverCount = 0;
   for (const raw of actions) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const a = raw as Record<string, unknown>;
@@ -57,6 +59,8 @@ export function completedHandActionsForMind(
       (a.isFullRaise !== undefined && typeof a.isFullRaise !== 'boolean')
     )
       return null;
+    const publicNode =
+      a.stage === 'river' && riverCount++ < 4 ? riverPublicNode(a.publicNode, true) : null;
     projected.push({
       seat: a.seat as number,
       userId: a.userId,
@@ -65,6 +69,7 @@ export function completedHandActionsForMind(
       timestamp: a.timestamp as number,
       stage: a.stage as ActionRecord['stage'],
       ...(a.isFullRaise === undefined ? {} : { isFullRaise: a.isFullRaise }),
+      ...(publicNode ? { publicNode } : {}),
     });
   }
   return projected.length

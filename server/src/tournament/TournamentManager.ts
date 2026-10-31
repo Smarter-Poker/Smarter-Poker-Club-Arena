@@ -39,6 +39,7 @@ import { type BalancerTable, type MoveInstruction } from '../engine/TableBalance
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
@@ -2363,9 +2364,10 @@ export class TournamentManager extends TournamentManagerEliminations {
       const destination = destinations.find(
         (table) => table.tableId === member.destination_table_id
       );
-      const occupied = destination?.players.some(
-        (player) => player.seat === member.destination_seat_number
-      );
+      const occupied =
+        destination?.players.some((player) => player.seat === member.destination_seat_number) ||
+        (member.destination_seat_number !== null &&
+          destination?.reservedSeats?.includes(member.destination_seat_number));
       if (
         destination &&
         !occupied &&
@@ -2802,6 +2804,85 @@ export class TournamentManager extends TournamentManagerEliminations {
     return null;
   }
 
+  /** Capture every engine-holding child registry only after the base proves
+   * exact physical original release. No future fresh-state claim is implied. */
+  captureCompletedF06CustodyIdentity(expected: readonly (readonly [string, ServerTableEngine])[]) {
+    const base = this.captureCompletedF06CustodyBaseIdentity(expected);
+    if (!base) return null;
+    const byId = new Map(expected);
+    const source = (id: string, engine: ServerTableEngine): boolean => byId.get(id) === engine;
+    // These registries use break/request IDs, not table IDs. The base has
+    // already proved every expected engine's exact table and physical release.
+    const originals = new Set(byId.values());
+    for (const engine of this.stoppedOriginalBreaks.values())
+      if (!originals.has(engine)) return null;
+    for (const [id, value] of this.retainedTournamentBreakSources)
+      if (!source(id, value.engine)) return null;
+    for (const value of this.pendingNoStartContinuations.values())
+      if (!source(value.binding.tableId, value.engine)) return null;
+    for (const wakes of this.tournamentBreakArrivalWakes.values())
+      for (const engine of wakes.values()) if (!originals.has(engine)) return null;
+    if (
+      this.pendingTableBreakRetirement &&
+      !source(this.pendingTableBreakRetirement.tableId, this.pendingTableBreakRetirement.engine)
+    )
+      return null;
+    return base;
+  }
+
+  protected override tournamentAbortSourcesMatch(
+    expected: readonly (readonly [string, ServerTableEngine])[]
+  ): boolean {
+    if (!super.tournamentAbortSourcesMatch(expected)) return false;
+    const byId = new Map(expected);
+    const originals = new Set(byId.values());
+    for (const engine of this.stoppedOriginalBreaks.values())
+      if (!originals.has(engine)) return false;
+    for (const [id, value] of this.retainedTournamentBreakSources)
+      if (byId.get(id) !== value.engine) return false;
+    for (const value of this.pendingNoStartContinuations.values())
+      if (byId.get(value.binding.tableId) !== value.engine) return false;
+    for (const wakes of this.tournamentBreakArrivalWakes.values())
+      for (const engine of wakes.values()) if (!originals.has(engine)) return false;
+    if (
+      this.pendingTableBreakRetirement &&
+      byId.get(this.pendingTableBreakRetirement.tableId) !== this.pendingTableBreakRetirement.engine
+    )
+      return false;
+    return (
+      this.pendingTournamentSeatMoveOutcomes.size === 0 &&
+      this.pendingTournamentParkRequests.size === 0 &&
+      this.pendingTournamentBreakBegins.size === 0 &&
+      this.pendingTournamentBreakAmendments.size === 0 &&
+      this.rejectedTournamentBreakBegins.size === 0 &&
+      this.resolvedTournamentBreakProposals.size === 0 &&
+      this.pendingTournamentBreakCustodyIds.size === 0 &&
+      this.pendingTournamentCleanupKinds.size === 0 &&
+      this.pendingNoStartContinuations.size === 0 &&
+      this.activeStoppedOriginalCustody.size === 0 &&
+      this.stoppedOriginalBreaks.size === 0 &&
+      this.tournamentBreakArrivalWakes.size === 0 &&
+      this.pendingTableBreakRetirement === null
+    );
+  }
+
+  protected override tournamentAbortBusinessTailsDrained(): boolean {
+    return this.mixedRecoveryOperation === null && super.tournamentAbortBusinessTailsDrained();
+  }
+
+  protected override tournamentAbortOwnedTailIdentity(): unknown {
+    return this.tournamentSeatMoveSerialTail;
+  }
+
+  protected override async joinTournamentAbortOwnedTails(): Promise<void> {
+    await super.joinTournamentAbortOwnedTails();
+    for (;;) {
+      const original = this.tournamentSeatMoveSerialTail;
+      await original;
+      if (original === this.tournamentSeatMoveSerialTail) return;
+    }
+  }
+
   /** Transfer only a positively drained pre-manifest park, never an unknown move. */
   async captureDrainedF06Custody(): Promise<DrainedF06Custody | null> {
     return this.runWithTournamentSeatMoveAuthority(async () => {
@@ -2943,7 +3024,22 @@ export class TournamentManager extends TournamentManagerEliminations {
             engine.captureDrainedF06Identity?.(id, this.tournamentId, originGeneration) ?? null
         );
       const initial = physical();
-      if (initial.some((value) => value === null)) return refuse('physical_identity_unreadable');
+      const physicalRefusal = (values: ReturnType<typeof physical>) => {
+        const index = values.findIndex((value) => value === null);
+        if (index < 0) return null;
+        const [tableId, engine] = engines[index];
+        let reason = 'unavailable';
+        try {
+          reason =
+            engine.drainedF06IdentityRefusal?.(tableId, this.tournamentId, originGeneration) ??
+            'capture_unavailable';
+        } catch {
+          // Never expose arbitrary exception text or substitute identity data.
+        }
+        return `${tableId}:${reason}`;
+      };
+      const initialRefusal = physicalRefusal(initial);
+      if (initialRefusal) return refuse('physical_identity_unreadable', initialRefusal);
       // At the process root: see readMixedF06PresenceEvidence.
       const { data: presence, error: presenceError } = await readMixedF06PresenceEvidence(
         engines.map(([id]) => id)
@@ -3064,7 +3160,8 @@ export class TournamentManager extends TournamentManagerEliminations {
           )
         )
           return 'original_not_owned';
-        if (!physical().every((value) => value !== null)) return 'physical_identity_unreadable';
+        const physicalFailure = physicalRefusal(physical());
+        if (physicalFailure) return `physical_identity_unreadable:${physicalFailure}`;
         if (custodyJSON(vector()) !== custodyJSON(local)) return 'local_vector_changed';
         if (
           ![...this.retainedTournamentBreakSources].every(([id, value]) =>
@@ -4602,20 +4699,43 @@ export class TournamentManager extends TournamentManagerEliminations {
    * stranded" and never "everybody is".
    */
   public async absorbOrphanedSeats(): Promise<number> {
-    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return 0;
-    const { data: tableRows, error: tableErr } = await supabase
-      .from('tables')
-      .select('id, status, is_deleted, max_players')
-      .eq('tournament_id', this.tournamentId);
-    if (tableErr || !tableRows || tableRows.length === 0) return 0;
+    const lifecycle = this.captureLifecycleToken();
+    const current = () => this.lifecycleIsCurrent(lifecycle);
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomes()) || !current()) return 0;
+    const { rows: tableRows, complete: tablesComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tables')
+          .select('id, status, is_deleted, max_players')
+          .eq('tournament_id', this.tournamentId)
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.orphan_tables', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!tablesComplete || tableRows.length === 0) return 0;
 
-    const tableIds = tableRows.map((r) => String((r as { id: string }).id));
-    const { data: seatRows, error: seatErr } = await supabase
-      .from('table_seats')
-      .select('table_id, user_id, seat_number, stack')
-      .in('table_id', tableIds)
-      .is('left_at', null);
-    if (seatErr || !seatRows) return 0;
+    // The tournament relationship bounds the filter without a giant IN URL.
+    // Every live chair is needed before deciding occupancy or source ambiguity.
+    const { rows: seatRows, complete: seatsComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('table_seats')
+          .select(
+            'id, table_id, user_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(tournament_id)'
+          )
+          .eq('tables.tournament_id', this.tournamentId)
+          .is('left_at', null)
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.orphan_seats', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!seatsComplete) return 0;
 
     const moves = planOrphanReseats(tableRows as OrphanTableRow[], seatRows as OrphanSeatRow[]);
 

@@ -53,7 +53,15 @@ import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
 import type { PlatformCapabilityId } from '../../config/platformCapabilities';
 import { killModeOf } from '../../utils/killPot';
 
-export type FilterGameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MTT' | 'SPIN' | 'SNG';
+export type FilterGameType =
+  | 'ALL'
+  | 'HOLDEM'
+  | 'OMAHA'
+  | 'LIMIT'
+  | 'MTT'
+  | 'SPIN'
+  | 'SNG'
+  | 'SATELLITE';
 
 export interface FeatureOption {
   /** Stable key persisted in saved preferences. Never rename. */
@@ -482,6 +490,20 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     seats: { min: 2, max: 9 },
     seatsLabel: 'Table Size',
     features: MTT_FEATURES,
+  },
+  SATELLITE: {
+    // A browse scope across tournament formats, with the same price/status controls.
+    games: chipsFor([...TOURNAMENT_VARIANT_KEYS, 'pineapple'], MTT_CHIP_LABELS),
+    range: BUYIN_RANGE,
+    statuses: [
+      { key: 'running', label: 'Running' },
+      { key: 'open_reg', label: 'Open Registration' },
+      { key: 'late_reg', label: 'Late Reg' },
+      { key: 'starting_soon', label: 'Starting Soon' },
+    ],
+    seats: { min: 2, max: 9 },
+    seatsLabel: 'Table Size',
+    features: MTT_FEATURES.filter((feature) => feature.key !== 'satellite'),
   },
   SPIN: {
     /* The spin CATALOGUE, not the tournament catalogue: Spin & Go sells four

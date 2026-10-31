@@ -1,0 +1,7 @@
+# Approved agent adjustments execute once
+
+The existing manual-adjustment table recorded approvals without an agent-wallet execution owner. The new PostgreSQL-only function binds an approved positive chip adjustment and its exact payload to one conserved club-bank transfer, synchronized agent balance, immutable keyed journal receipt and settled status. A retry returns that original receipt. Changed intent or receipt attribution, missing approval, insufficient funds, inactive agent, freeze, failed journal and deferred imbalance refuse atomically.
+
+Journal attribution follows the original weekly commission stage's real platform fallback. Metadata separately records actual PostgreSQL execution, the proposal and standing approval. No authenticated human action or auth.users audit identity is fabricated. The audit reader recognizes settled approvals while retaining its original independence predicate. A platform-attributed execution whose journal actor equals its standing approver remains truthfully single_actor.
+
+The finite pull-request workflow executes a focused isolated PostgreSQL fixture with synthetic identities and cents. It checks the real actor foreign key and triggers, original wallet synchronization, declaration, enrichment, receipt key, deferred invariant, rollback, malformed receipt refusals and two-backend concurrency. This execution owner does not alter earning contracts, paid periods, commissions or their original settlement receipts. Production installation and an actual rollback proof remain separate acceptance requirements.

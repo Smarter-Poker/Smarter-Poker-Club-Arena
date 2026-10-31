@@ -557,6 +557,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorsePreflop.decidePreflopV7'
   ),
   flag('v7Barrels', 'multi-street barrel plans', 'V7'),
+  flag(
+    'barrelContinuationOutlook',
+    'default-off planned turn barrel records its private river outlook without re-rolling intent; requires incremental qualification',
+    'Continuation outlook'
+  ),
   flag('v7SizeReads', 'bet-size-aware range narrowing', 'V7'),
   flag('v7CounterAdapt', 'recency blending against adapting opponents', 'V7'),
   flag('v7AdaptiveMC', 'Monte Carlo early exit when far from every threshold', 'V7'),
@@ -702,6 +707,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V51'
   ),
   flag(
+    'smallPotNearNutRiverValue',
+    'default-off PLO4/5/6 single-board small-pot near-nut river value candidate, qualification pending; only removes random call after existing value and safety gates',
+    'Small-pot near-nut value'
+  ),
+  flag(
     'v55OmahaRiverTripsFlat',
     'river Omaha weak sets/trips retain call pricing without re-shoving; default off pending deep-cash league qualification',
     'V55'
@@ -717,9 +727,64 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V57'
   ),
   flag(
+    'v61RiverOnePairShade',
+    'Hold em one-pair (or board-paired two pair) river calls are shaded 6-12 equity points against the price unless the bettor reads as an over-bluffer; measured 14-day review stack-offs won 14-22% at prices demanding 20-40%; explicit off arm retained',
+    'V61'
+  ),
+  flag(
+    'v63LargeRiverBetShade',
+    '2026-10-31 the V61 one-pair river shade steepens past a half-pot wager and caps at 20 points from a pot-sized wager (0.7-pot: 12, V61 8); measured over the latest 19,933 NLH review hands large-wager one-pair calls won 13.3% (119/897) against a 41%+ price and medium 20.7% against 29-41%; league cards positive at 100-200bb, noise at 25-40bb; explicit off arm retained',
+    'V63'
+  ),
+  flag(
+    'v63RiverShadeShapeOverride',
+    'league calibration arm (2026-10-31): overrides the V63 shade shape (slope, cap, knee) for a league card; inert unless set; production never sets it',
+    'V63-league'
+  ),
+  flag(
+    'v62RiverBettorPolarity',
+    '2026-10-30 Hold\'em river bettor polarity: a river wager\'s sampled hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum by bet size; OPT-IN since 18:50 UTC after the mirror league resolved it negative against horses (-3.67 +/- 1.02 bb/100 at 200bb) while V61 alone resolved +1.30 +/- 0.41; re-enable only after a recalibrated stratum resolves positive',
+    'V62'
+  ),
+  flag(
+    'tournamentFlatBump',
+    'league calibration arm (2026-10-30): tournament call bar facing a single open raised by 0 < x <= 0.2; inert unless set; +0.06 measured -1.11 +/- 0.51 bb/100 at 100bb and +0.41 +/- 0.31 at 40bb in the MTT mirror',
+    'V62-league'
+  ),
+  flag(
+    'v60CashPressure',
+    'Dan 2026-10-24 NLH cash pressure: blinds and late position value 3-bet a single open from their measured hand shares, re-steal volume matches the tournament layer, and the opener defends a 3-bet from the top 10% in position and top 8% out of it up to 100bb; explicit off arm retained for the neutrality corpus',
+    'V60'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
+  ),
+  flag(
+    'comboDrawPressure',
+    'candidate-only legal heads-up cash flop/turn combo-draw pressure, priced against calling with the continuing-range/rake model; default off pending independent incremental qualification',
+    'Combo draw pressure'
+  ),
+  flag(
+    'multiwayRiverBluffCheckRaise',
+    'separately unqualified default-off extension using exact original-dealt cash context and fully conserved public check/bet/raise/response snapshots; no guessed fold priors',
+    'Multiway river check-raise'
+  ),
+  flag(
+    'riverBluffCheckRaise',
+    'candidate-only zero-showdown-equity priced 3x river check-raise using own-observer same-line fold responses; default off pending qualification',
+    'River check-raise'
+  ),
+  flag(
+    'riverPositionDefense',
+    'candidate-only priced HU cash river defense against a credible wide entrant whose own public conditional last-to-act betting rate is excessive; default off pending independent qualification',
+    'River position defense'
+  ),
+  flag(
+    'v53PloTourneyIcm',
+    'default-off candidate: PLO4/5/6 standard tournament preflop action-risk ICM shifts, requires independently qualified whole-tournament comparison',
+    'V53'
   ),
   flag(
     'v53Pressure',
@@ -750,6 +815,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'callDeductionPricing',
     'canonical cash calls price actual capped rake and BBJ on matched awards after uncalled returns; false retains the historical marginal-rate approximation for offline comparisons',
     'Net call deductions'
+  ),
+  flag(
+    'v54RiverBluff',
+    'targeted heads-up river big bet / shove bluff with air, blockers, a value story, a capped non-station opponent; DEFAULT OFF until league v54_river_bluff and plo4/plo5/plo6_v54_river_bluff resolve positive',
+    'V54'
   ),
   flag(
     'phase7Utility',
@@ -955,6 +1025,31 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     '... shown as one pair or worse (a light river call)',
     'HorseMind.riverCallLightTendency -> HorseLogic river bluff/thin-value read'
   ),
+  mind(
+    'riverLastToActOpps',
+    'own public observer-window last-to-act river opportunities, reconstructed from original accepted history; no pooled persistence claim',
+    'HorseMind.riverLastToActRead / candidate riverPositionDefense'
+  ),
+  mind(
+    'riverLastToActBets',
+    'bets among those same last-to-act river opportunities, not a bluff count',
+    'HorseMind.riverLastToActRead / candidate riverPositionDefense'
+  ),
+  mind(
+    'riverTripleCheckRaiseOpps',
+    'completed responses to exact 3x heads-up river check-raises in own public history',
+    'HorseMind.riverTripleCheckRaiseRead / candidate riverBluffCheckRaise'
+  ),
+  mind(
+    'riverTripleCheckRaiseFolds',
+    'folds among the same exact 3x river check-raise responses',
+    'HorseMind.riverTripleCheckRaiseRead / candidate riverBluffCheckRaise'
+  ),
+  mind(
+    'riverHu',
+    'at most 64 exact variant/asset/stakes/ante/original-census contexts with independent bet/check opportunity denominators and completed public raise responses, explicit overflow, no pooled persistence',
+    'HorseMind.multiwayRiverRead / separate multiwayRiverBluffCheckRaise candidate'
+  ),
   mind('riverBetOpps', 'river bet opportunities', 'HorseMind.tableExploit (river reads)'),
   mind('riverBetFolds', 'river bets folded to', 'HorseMind.tableExploit (river reads)'),
   mind('rHands', 'recency window: hands', 'HorseMind counter-adaptation blend (V7)'),
@@ -1019,6 +1114,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state('lastRaise', 'last raise size (legalize)'),
   state('stage', 'street'),
   state('gameVariant', 'nlh / plo4 / plo5 / plo6 / plo8 / short_deck / pineapple / fixed limit'),
+  state('smallBlind', 'actual hand small blind for exact qualified feature economics'),
   state('bigBlind', 'stake'),
   state('dealerSeat', 'button (position reads)'),
   state(
@@ -1410,6 +1506,24 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // ─────────────────────────────────────────────────────────────────────────
   receipt('decide', 'HorseLogic.decide', 'every live decision', 'V15'),
   receipt(
+    'horse_feature_authority_withdrawn_before_acceptance',
+    'ServerTableEngineTurns qualified feature acceptance gate',
+    'Rejects a prepared feature decision whose exact qualification authority was withdrawn before controller acceptance',
+    'Feature authority'
+  ),
+  receipt(
+    'horse_observer_history_*',
+    'HorseOwnPublicHistory original observer load',
+    'Unavailable original history and source/deadline/provider failures remain distinct from an empty learned read',
+    'Individual public history'
+  ),
+  receipt(
+    'horse_river_nodes_unavailable',
+    'HorseOwnPublicHistory public node sidecar loader',
+    'Original public history retained unchanged when source, binding, bounds or structural evidence is unavailable',
+    'Multiway river reads'
+  ),
+  receipt(
     'horse_decision_refused_isolated',
     'LiveHorseDecisionWorkerClient.refuseDecision',
     'a worker decision whose receipt or effects the client refused; isolated to its own seat (check or fold), never engine-fatal',
@@ -1640,6 +1754,30 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
+    'river_bluff_checkraise_evaluated',
+    'HorseLogic.riverBluffCheckRaise',
+    'priced candidate, not qualification or accepted action',
+    'River check-raise'
+  ),
+  receipt(
+    'river_bluff_checkraise_selected',
+    'HorseLogic.riverBluffCheckRaise',
+    'positive lower-bound bluff proposal; authoritative acceptance remains separate',
+    'River check-raise'
+  ),
+  receipt(
+    'river_position_defense_evaluated',
+    'HorseLogic.maniacCallDown',
+    'conditional public river rate admitted the existing range/price recovery; evaluation, not a bluff verdict or accepted-use proof',
+    'River position defense'
+  ),
+  receipt(
+    'river_position_defense_call',
+    'HorseLogic.maniacCallDown',
+    'the original fold became a priced call under the conditional river candidate; proposal only until authoritative action acceptance',
+    'River position defense'
+  ),
+  receipt(
     'maniac_call_down_checked',
     'HorseLogic (maniac pressure)',
     "a fold facing a maniac's bet was re-checked against equity versus its preflop range",
@@ -1754,14 +1892,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
-    'plo_human_presumed_aggressive',
+    'plo_opponent_presumed_aggressive',
     'HorseMind (PLO presumption)',
-    "a person at an Omaha table read as an aggressive raiser before their own hands proved it (Dan: 'TAG THEM ALL FROM THE START')",
+    'an Omaha opponent received the shared aggressive raise prior before their own public hands proved otherwise (owner update 2026-10-27)',
     'OPPX'
   ),
   receipt(
-    'plo_human_presumption_disproved',
+    'plo_opponent_presumption_disproved',
     'HorseMind (PLO presumption)',
+    "an opponent's own public hands disproved the shared Omaha raise presumption, identically for people and horses",
+    'OPPX'
+  ),
+  retiredReceipt(
+    'plo_human_presumed_aggressive',
+    'source',
+    "a person at an Omaha table read as an aggressive raiser before their own hands proved it (Dan: 'TAG THEM ALL FROM THE START')",
+    'OPPX'
+  ),
+  retiredReceipt(
+    'plo_human_presumption_disproved',
+    'source',
     "a person's own hands showed raising no higher than the average horse, so the PLO presumption came off",
     'OPPX'
   ),
@@ -1990,6 +2140,22 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V38',
     'decide',
     0.002
+  ),
+  receipt(
+    'v61_river_one_pair_shade',
+    'HorseLogic (V61)',
+    'Hold em one-pair river call shaded against the price',
+    'V61',
+    'decide',
+    0.001
+  ),
+  receipt(
+    'v63_large_river_bet_shade',
+    'HorseLogic (V63)',
+    'Hold em one-pair river call shaded more than the V61 shape would have (steeper past a half-pot wager, cap 0.20)',
+    'V63',
+    'decide',
+    0.0005
   ),
   receipt(
     'v38_river_fold',
@@ -3154,6 +3320,15 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',
     'V50'
   ),
+  {
+    ...receipt(
+      'horse_pooled_public_bootstrap_*',
+      'HorseDecisionWorkerRuntime startup public-profile hydration',
+      'boot-only observation: loaded means a finite saved public-profile batch was read, unavailable means the read failed or exceeded its bounds, and refused means cache admission rejected the batch; none proves decision consumption, independent history, complete fleet coverage or activation',
+      'V50'
+    ),
+    cadence: 'boot',
+  },
   receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',
@@ -3175,10 +3350,30 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // No floor: the spot (committed, river, one pair, clearing the call bar)
   // is rare by construction; silence on a quiet day is not a dead layer.
   receipt(
+    'small_pot_near_nut_value_flat_exception',
+    'HorseLogic PLO6 final paired-board flat branch',
+    'private original value-branch legal raise retained without intervening action changes below the unchanged fold threshold; accepted execution remains separate',
+    'Small-pot near-nut value'
+  ),
+  receipt(
+    'small_pot_near_nut_value_raise',
+    'HorseLogic existing value raise band after original safety gates',
+    'default-off structural candidate selected a raise instead of random call; selection only, controller acceptance and economic qualification remain separate',
+    'Small-pot near-nut value'
+  ),
+  receipt(
     'v55_omaha_river_trips_flat',
     'HorseLogic committed and ordinary raise branches',
     'opt-in river Omaha weak set/trips flatted after clearing the unchanged call bar',
     'V55'
+  ),
+  receipt(
+    'v62_river_bettor_polarity',
+    'HorseLogic to HorseEval river-polar Hold\'em sampler',
+    'a river bettor\'s sampled hand was kept by the V62 size-class likelihood that a human bets it',
+    'V62',
+    'decide',
+    0.001
   ),
   receipt(
     'v56_omaha_pressure_range',
@@ -3199,6 +3394,34 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic / HorseOpponentExploit pressure on an aggressive human (V53)',
     "a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold'em solver spot handed to the exploit layer",
     'V53'
+  ),
+  // No floor: v54RiverBluff is default OFF (2026-10-24), so silence is
+  // expected until explicit qualified adoption. Once activated, v54_river_bluff
+  // counts the bluffs fired and the skip family says why every other
+  // heads-up river spot with air did not bluff.
+  receipt(
+    'v54_river_bluff',
+    'HorseLogic not-facing-a-bet river (V54)',
+    'a heads-up river big bet or shove bluff fired with air, blockers and a value story; opt-in (v54RiverBluff)',
+    'V54'
+  ),
+  receipt(
+    'v54_river_bluff_skip_*',
+    'HorseLogic not-facing-a-bet river (V54)',
+    'why a V54 river bluff did not fire: domain, tournament_context, multiway, multiboard, all_in, showdown_value, station, no_story, uncapped, no_blocker, short_stack, icm, illegal, frequency; opt-in (v54RiverBluff)',
+    'V54'
+  ),
+  receipt(
+    'combo_draw_pressure_evaluated',
+    'HorseLogic facing flop/turn EV menu',
+    'a physically strong draw against a public wide-bettor read evaluated permitted pressure raises as well as its call; proposal, not accepted-use proof',
+    'Combo draw pressure'
+  ),
+  receipt(
+    'combo_draw_pressure_raise',
+    'HorseLogic facing flop/turn EV menu',
+    'the chosen legal raise has positive modeled EV above calling at the same executed size; returned proposal, not accepted-use proof',
+    'Combo draw pressure'
   ),
   receipt(
     'v46_class_read',

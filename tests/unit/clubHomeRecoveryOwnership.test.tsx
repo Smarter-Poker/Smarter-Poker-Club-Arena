@@ -335,6 +335,8 @@ async function mountCachedTable(patch: Record<string, unknown> = {}) {
   const view = mount();
   await flush();
   await act(async () => h.clubReads[0].resolve({ data: null, error: null }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
+  await flush();
   return { view, table };
 }
 
@@ -468,6 +470,8 @@ async function mountWarmTournaments({
   await act(async () => h.clubReads[0].resolve({ data: club, error: null }));
   expect(h.tournamentReads).toHaveLength(1);
   await act(async () => h.tournamentReads[0].resolve({ data: [row], error: null }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tournaments', exact: true }));
+  await flush();
   expect(
     document.querySelectorAll('[data-testid="lobby-game-row"][data-id="known-tournament"]').length
   ).toBeGreaterThan(0);
@@ -605,7 +609,7 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
     }
   });
 
-  it('preserves a realtime insert against an older empty query and queues one authoritative read', async () => {
+  it('preserves a realtime insert while applying an older empty query without another read', async () => {
     const { club } = await mountWarmTournaments();
     const read = await startTournamentReload(club);
     const onTournamentChange = h.channels[0].on.mock.calls.find(
@@ -618,23 +622,36 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
     });
     expect(
       document.querySelectorAll('[data-testid="lobby-game-row"][data-id="known-tournament"]').length
-    ).toBeGreaterThan(0);
+    ).toBe(0);
     expect(
       document.querySelectorAll('[data-testid="lobby-game-row"][data-id="new-tournament"]').length
     ).toBeGreaterThan(0);
-    expect(h.clubReads).toHaveLength(3);
+    expect(h.clubReads).toHaveLength(2);
     expect(h.tournamentReads).toHaveLength(2);
-    await act(async () => h.clubReads[2].resolve({ data: club, error: null }));
-    expect(h.tournamentReads).toHaveLength(3);
-    await act(async () => h.tournamentReads[2].resolve({ data: [inserted], error: null }));
-    expect(
-      document.querySelectorAll('[data-testid="lobby-game-row"][data-id="known-tournament"]')
-    ).toHaveLength(0);
-    expect(
-      document.querySelectorAll('[data-testid="lobby-game-row"][data-id="new-tournament"]').length
-    ).toBeGreaterThan(0);
-    expect(h.clubReads).toHaveLength(3);
   });
+
+  it.each(['CANCELLED', 'COMPLETED'])(
+    'keeps a mounted %s row removed after an older nonempty response',
+    async (status) => {
+      const { club, row } = await mountWarmTournaments();
+      const read = await startTournamentReload(club);
+      const onTournamentChange = h.channels[0].on.mock.calls.find(
+        ([_event, config]: any[]) => config.table === 'tournaments'
+      )[2];
+      await act(async () => {
+        onTournamentChange({ eventType: 'UPDATE', new: { ...row, status } });
+      });
+      expect(
+        document.querySelectorAll('[data-testid="lobby-game-row"][data-id="known-tournament"]')
+      ).toHaveLength(0);
+      await act(async () => read.resolve({ data: [row], error: null }));
+      expect(
+        document.querySelectorAll('[data-testid="lobby-game-row"][data-id="known-tournament"]')
+      ).toHaveLength(0);
+      expect(h.clubReads).toHaveLength(2);
+      expect(h.tournamentReads).toHaveLength(2);
+    }
+  );
 
   it('clears stale cards without a queued read when only an unknown completed tournament updates', async () => {
     const { club } = await mountWarmTournaments();

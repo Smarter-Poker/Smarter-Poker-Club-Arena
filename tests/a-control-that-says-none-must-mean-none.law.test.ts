@@ -159,7 +159,7 @@ describe('a failed create tells the host why', () => {
     // as the server said it.
     const body = sliceMethod(FLOW, 'const create = useCallback');
     expect(body).toContain('cashGameCreateRefusalText(err)');
-    expect(body).toMatch(/err instanceof Error && err\.message/);
+    expect(body).toMatch(/cashGameCreateServerMessage\(err\)/);
     expect(body).toMatch(/toast\.error\(refusal \?\? serverMessage \?\?/);
   });
 

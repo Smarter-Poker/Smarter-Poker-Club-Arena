@@ -21,7 +21,7 @@ export function useGlobalBalanceSync() {
   const user = useUserStore((state) => state.user);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || user.id === 'guest') return;
 
     let active = true;
     let latestRead = 0;

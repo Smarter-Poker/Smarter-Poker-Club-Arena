@@ -14,6 +14,21 @@
  */
 
 import type { Card } from '../types.js';
+import { isMainThread } from 'node:worker_threads';
+import { setImmediate as yieldToEvents } from 'node:timers/promises';
+import { validatePublic215BuildReceipt } from './GtoPublicHist215BuildReceipt.js';
+import {
+  compilePublicHist215,
+  compilePublic215Provenance,
+  type CompiledPublicHist215,
+} from './GtoPublicHist215Model.js';
+import {
+  compilePublic215Template,
+  encodePublic215Features,
+  public215TemplateMatchesContext,
+  PUBLIC_HIST215_FEATURE_SCHEMA_SHA256,
+  type CompiledPublic215Template,
+} from './GtoPublicHist215Features.js';
 import { deepFreezeSolverPolicy } from '../gto/SolverPolicyContract.js';
 import { depthCandidates, textureClass } from './GtoPostflop.js';
 import {
@@ -41,7 +56,16 @@ export interface GtoV31ActionSpec {
 }
 
 export interface GtoV31SourceSeal {
-  feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
+  policy_representation?: 'matrix_v2' | 'public_hist215_v1' | null;
+  model_checksum?: string;
+  template_checksum?: string;
+  feature_schema_checksum?: string;
+  training_provenance_checksum?: string;
+  model_build_receipt_checksum?: string;
+  feature_contract_version?:
+    | 'rank-suit-count-v1'
+    | 'holdem-board-relative-v2'
+    | 'holdem-public-hist215-v1';
   policy_export_schema?: 'smarter-poker.pio-policy.v4';
   dataset_id: string;
   dataset_key: string;
@@ -71,6 +95,7 @@ export interface GtoV31SourceSeal {
 }
 
 export interface GtoPostflopV31Row extends GtoV31SourceSeal {
+  policy_representation?: 'matrix_v2' | null;
   street: 'flop' | 'turn' | 'river';
   game_family: GtoV31GameFamily;
   objective: GtoV31Objective;
@@ -90,7 +115,35 @@ export interface GtoPostflopV31Row extends GtoV31SourceSeal {
   action_ev_matrix?: Record<string, Record<string, number | null>> | null;
 }
 
-export type GtoV31Miss = 'no_hand' | 'no_texture' | 'no_cell' | 'hand_not_in_cell' | 'empty_store';
+/** Parametric cells carry their real model, never a fabricated hand matrix. */
+export interface GtoPostflopV31ModelRow extends Omit<
+  GtoPostflopV31Row,
+  'policy_representation' | 'hand_matrix' | 'policy_ev_matrix' | 'action_ev_matrix'
+> {
+  policy_representation: 'public_hist215_v1';
+  hand_matrix?: null;
+  policy_ev_matrix?: null;
+  action_ev_matrix?: null;
+  public_model: unknown;
+  public_template: unknown;
+  public_training_provenance: unknown;
+  model_checksum: string;
+  template_checksum: string;
+  feature_schema_checksum: string;
+  training_provenance_checksum: string;
+  public_model_build_receipt: unknown;
+  model_build_receipt_checksum: string;
+}
+export type GtoV31RuntimeRow = GtoPostflopV31Row | GtoPostflopV31ModelRow;
+
+export type GtoV31Miss =
+  | 'no_hand'
+  | 'no_texture'
+  | 'no_cell'
+  | 'hand_not_in_cell'
+  | 'empty_store'
+  | 'worker_required'
+  | 'model_input_invalid';
 
 export type GtoV31Lookup =
   | {
@@ -108,14 +161,25 @@ export type GtoV31Lookup =
     }
   | { hit: false; miss: GtoV31Miss };
 
-interface StoredCell {
-  matrix: Record<string, Record<string, number>>;
+interface StoredCellBase {
   actions: Record<string, GtoV31ActionSpec>;
-  policyEvs: Record<string, number | null>;
-  actionEvs: Record<string, Record<string, number | null>>;
   seal: GtoV31SourceSeal;
   role: GtoV31NodeRole;
 }
+type StoredCell = StoredCellBase &
+  (
+    | {
+        kind: 'matrix';
+        matrix: Record<string, Record<string, number>>;
+        policyEvs: Record<string, number | null>;
+        actionEvs: Record<string, Record<string, number | null>>;
+      }
+    | {
+        kind: 'public_hist215_v1';
+        model: CompiledPublicHist215;
+        template: CompiledPublic215Template;
+      }
+  );
 
 interface Store {
   cells: Map<string, StoredCell>;
@@ -169,7 +233,8 @@ export function gtoV31FeatureContractVersion(value: {
   if (!Object.prototype.hasOwnProperty.call(value, 'feature_contract_version'))
     return 'rank-suit-count-v1';
   return value.feature_contract_version === 'rank-suit-count-v1' ||
-    value.feature_contract_version === 'holdem-board-relative-v2'
+    value.feature_contract_version === 'holdem-board-relative-v2' ||
+    value.feature_contract_version === 'holdem-public-hist215-v1'
     ? value.feature_contract_version
     : null;
 }
@@ -270,14 +335,14 @@ function objectiveMatchesFamily(family: GtoV31GameFamily, objective: GtoV31Objec
   return objective === 'chip_ev' || (family === 'spin' && objective === 'icm');
 }
 
-function utilityMatchesObjective(row: GtoPostflopV31Row): boolean {
+function utilityMatchesObjective(row: GtoV31RuntimeRow): boolean {
   if (row.objective === 'cash_ev') return row.utility_context === 'cash_ev';
   if (row.objective === 'chip_ev') return row.utility_context === 'chip_ev';
   if (row.game_family === 'spin') return row.utility_context === 'spin_ladder';
   return ['satellite', 'bubble', 'final_table', 'in_money', 'ladder'].includes(row.utility_context);
 }
 
-function contextIsCoherent(row: GtoPostflopV31Row): boolean {
+function contextIsCoherent(row: GtoV31RuntimeRow): boolean {
   if (OPEN_ROLES.has(row.node_role)) {
     return row.facing_kind === 'none' && row.facing_size_bucket === 'none';
   }
@@ -296,7 +361,7 @@ function contextIsCoherent(row: GtoPostflopV31Row): boolean {
 }
 
 function sealIsValid(
-  row: GtoPostflopV31Row,
+  row: GtoV31RuntimeRow,
   allowedStates: ReadonlySet<GtoV31SourceSeal['dataset_state']>
 ): boolean {
   const nonzero64 = (value: unknown): value is string =>
@@ -341,8 +406,14 @@ function sealIsValid(
   );
 }
 
-function datasetSealKey(row: GtoPostflopV31Row): string {
+function datasetSealKey(row: GtoV31RuntimeRow): string {
   return JSON.stringify({
+    ...(row.policy_representation === 'public_hist215_v1'
+      ? {
+          policy_representation: row.policy_representation,
+          feature_schema_checksum: row.feature_schema_checksum,
+        }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'policy_export_schema')
       ? { policy_export_schema: row.policy_export_schema }
       : {}),
@@ -409,7 +480,7 @@ function actionSpecIsValid(
 }
 
 function rowIsValid(
-  row: GtoPostflopV31Row,
+  row: GtoV31RuntimeRow,
   allowedStates: ReadonlySet<GtoV31SourceSeal['dataset_state']>
 ): boolean {
   const allowedPositions = TABLE_POSITIONS[row?.table_size];
@@ -434,9 +505,6 @@ function rowIsValid(
     !TEXTURE_CLASS.test(row.texture_class) ||
     !contextIsCoherent(row) ||
     !sealIsValid(row, allowedStates) ||
-    !row.hand_matrix ||
-    typeof row.hand_matrix !== 'object' ||
-    Array.isArray(row.hand_matrix) ||
     !row.action_specs ||
     typeof row.action_specs !== 'object' ||
     Array.isArray(row.action_specs)
@@ -467,6 +535,32 @@ function rowIsValid(
     ) {
       return false;
     }
+  }
+
+  if (row.policy_representation === 'public_hist215_v1') {
+    return (
+      row.feature_contract_version === 'holdem-public-hist215-v1' &&
+      row.hand_matrix == null &&
+      row.policy_ev_matrix == null &&
+      row.action_ev_matrix == null &&
+      [
+        row.model_checksum,
+        row.template_checksum,
+        row.feature_schema_checksum,
+        row.training_provenance_checksum,
+        row.model_build_receipt_checksum,
+      ].every((v) => typeof v === 'string' && HEX64.test(v) && v !== '0'.repeat(64)) &&
+      row.feature_schema_checksum === PUBLIC_HIST215_FEATURE_SCHEMA_SHA256
+    );
+  }
+  if (
+    (row.policy_representation != null && row.policy_representation !== 'matrix_v2') ||
+    row.feature_contract_version === 'holdem-public-hist215-v1' ||
+    !row.hand_matrix ||
+    typeof row.hand_matrix !== 'object' ||
+    Array.isArray(row.hand_matrix)
+  ) {
+    return false;
   }
 
   const hands = Object.entries(row.hand_matrix);
@@ -540,8 +634,18 @@ function rowIsValid(
   return true;
 }
 
-function sealOf(row: GtoPostflopV31Row): GtoV31SourceSeal {
+function sealOf(row: GtoV31RuntimeRow): GtoV31SourceSeal {
   return {
+    ...(row.policy_representation === 'public_hist215_v1'
+      ? {
+          policy_representation: row.policy_representation,
+          model_checksum: row.model_checksum,
+          template_checksum: row.template_checksum,
+          feature_schema_checksum: row.feature_schema_checksum,
+          training_provenance_checksum: row.training_provenance_checksum,
+          model_build_receipt_checksum: row.model_build_receipt_checksum,
+        }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'policy_export_schema')
       ? { policy_export_schema: row.policy_export_schema }
       : {}),
@@ -576,16 +680,17 @@ function sealOf(row: GtoPostflopV31Row): GtoV31SourceSeal {
   };
 }
 
-function validatedStore(
-  rows: GtoPostflopV31Row[],
+function* validatedStoreSteps(
+  rows: GtoV31RuntimeRow[],
   allowedStates: ReadonlySet<GtoV31SourceSeal['dataset_state']>
-): Store {
+): Generator<boolean, Store, void> {
   if (!Array.isArray(rows)) throw new Error('v31_certified_rows_not_array');
   const next = new Map<string, StoredCell>();
   let datasetId: string | null = null;
   let datasetChecksum: string | null = null;
   let datasetCells: number | null = null;
   let datasetSeal: string | null = null;
+  let datasetModelAuthority: string | null = null;
   for (const row of rows) {
     if (!rowIsValid(row, allowedStates)) throw new Error('v31_uncertified_or_malformed_cell');
     if (datasetId && datasetId !== row.dataset_id) throw new Error('v31_multiple_active_datasets');
@@ -622,17 +727,113 @@ function validatedStore(
     // Readers receive shared references on the action clock. Freeze the
     // detached snapshot once at admission so no consumer can change a sealed
     // mix, size, EV or provenance while retaining the original checksum.
-    next.set(
-      cellKey,
-      deepFreezeSolverPolicy({
-        matrix: structuredClone(row.hand_matrix),
-        actions: structuredClone(row.action_specs),
-        policyEvs: structuredClone(row.policy_ev_matrix ?? {}),
-        actionEvs: structuredClone(row.action_ev_matrix ?? {}),
-        seal: sealOf(row),
-        role: row.node_role,
-      })
-    );
+    if (row.policy_representation === 'public_hist215_v1') {
+      const template = compilePublic215Template(row.public_template, row.template_checksum);
+      if (!public215TemplateMatchesContext(template, row))
+        throw new Error('v31_public215_template_context_mismatch');
+      const provenance = compilePublic215Provenance(
+        row.public_training_provenance,
+        row.training_provenance_checksum
+      );
+      const source = row.public_training_provenance as Record<string, unknown>;
+      const expectedSource = {
+        input_bundle_checksum: row.input_bundle_checksum,
+        manifest_checksum: row.manifest_checksum,
+        producer_commit: row.pipeline_commit,
+        producer_bundle_checksum: row.pipeline_bundle_checksum,
+        solver_binary_checksum: row.solver_binary_checksum,
+        range_bundle_checksum: row.range_bundle_checksum,
+        icm_model_checksum: row.icm_model_checksum,
+        feature_schema_checksum: row.feature_schema_checksum,
+      };
+      if (Object.entries(expectedSource).some(([key, value]) => source[key] !== value)) {
+        throw new Error('v31_public215_training_source_seal_mismatch');
+      }
+      const authorityKeys = [
+        'whole_variant',
+        'approved_input_bundle_id',
+        'capture_receipt_checksum',
+        'training_recipe_checksum',
+        'source_partition_checksum',
+        'feature_schema_checksum',
+        'encoder_checksum',
+        'physics_checksum',
+        'dependency_lock_checksum',
+        'runtime_parity_protocol_checksum',
+      ];
+      const authority = JSON.stringify(authorityKeys.map((key) => source[key]));
+      if (datasetModelAuthority !== null && authority !== datasetModelAuthority) {
+        throw new Error('v31_public215_dataset_training_authority_mismatch');
+      }
+      datasetModelAuthority = authority;
+      const actionIds =
+        row.public_model && typeof row.public_model === 'object'
+          ? (row.public_model as Record<string, unknown>).action_ids
+          : null;
+      // jsonb object key order is not the solver's ordered children. The model
+      // owns the sealed head order; action_specs must have exactly its keyset.
+      if (
+        !Array.isArray(actionIds) ||
+        actionIds.length !== Object.keys(row.action_specs).length ||
+        actionIds.some((id) => typeof id !== 'string' || !Object.hasOwn(row.action_specs, id))
+      ) {
+        throw new Error('v31_public215_action_keyset_mismatch');
+      }
+      const model = compilePublicHist215(row.public_model, {
+        model_sha256: row.model_checksum,
+        template_sha256: row.template_checksum,
+        feature_schema_sha256: row.feature_schema_checksum,
+        provenance_sha256: row.training_provenance_checksum,
+        action_ids: actionIds,
+      });
+      if (
+        provenance.wholeVariant !== model.variant ||
+        provenance.featureSchemaChecksum !== row.feature_schema_checksum
+      ) {
+        throw new Error('v31_public215_training_model_mismatch');
+      }
+      validatePublic215BuildReceipt(row.public_model_build_receipt, {
+        receipt_checksum: row.model_build_receipt_checksum,
+        dataset_id: row.dataset_id,
+        input_bundle_checksum: row.input_bundle_checksum,
+        model_checksum: row.model_checksum,
+        training_provenance_checksum: row.training_provenance_checksum,
+        template_checksum: row.template_checksum,
+        feature_schema_checksum: row.feature_schema_checksum,
+        encoder_checksum: source.encoder_checksum as string,
+        physics_checksum: source.physics_checksum as string,
+        dependency_lock_checksum: source.dependency_lock_checksum as string,
+        producer_commit: row.pipeline_commit,
+        producer_bundle_checksum: row.pipeline_bundle_checksum,
+        street: row.street,
+        model_payload: row.public_model,
+        model,
+      });
+      next.set(
+        cellKey,
+        Object.freeze({
+          kind: 'public_hist215_v1',
+          model,
+          template,
+          actions: deepFreezeSolverPolicy(structuredClone(row.action_specs)),
+          seal: deepFreezeSolverPolicy(sealOf(row)),
+          role: row.node_role,
+        })
+      );
+    } else
+      next.set(
+        cellKey,
+        deepFreezeSolverPolicy({
+          kind: 'matrix' as const,
+          matrix: structuredClone(row.hand_matrix),
+          actions: structuredClone(row.action_specs),
+          policyEvs: structuredClone(row.policy_ev_matrix ?? {}),
+          actionEvs: structuredClone(row.action_ev_matrix ?? {}),
+          seal: sealOf(row),
+          role: row.node_role,
+        })
+      );
+    yield row.policy_representation === 'public_hist215_v1';
   }
   if (datasetCells !== null && next.size !== datasetCells) {
     throw new Error(`v31_incomplete_dataset:expected=${datasetCells}:actual=${next.size}`);
@@ -640,8 +841,37 @@ function validatedStore(
   return { cells: next, datasetId, datasetChecksum };
 }
 
+function validatedStore(
+  rows: GtoV31RuntimeRow[],
+  allowedStates: ReadonlySet<GtoV31SourceSeal['dataset_state']>
+): Store {
+  const steps = validatedStoreSteps(rows, allowedStates);
+  let next = steps.next();
+  while (!next.done) next = steps.next();
+  return next.value;
+}
+
+/** The same full validator, yielding between complete detached model cells.
+ * Existing decisions keep the old snapshot while asynchronous loading runs. */
+export async function replaceGtoPostflopV31Async(
+  rows: GtoV31RuntimeRow[],
+  canCommit: () => boolean = () => true
+): Promise<number> {
+  const steps = validatedStoreSteps(rows, new Set(['active']));
+  let next = steps.next();
+  while (!next.done) {
+    if (next.value) await yieldToEvents();
+    next = steps.next();
+  }
+  if (!canCommit()) throw new Error('v31_active_load_superseded');
+  activeStore.cells = next.value.cells;
+  activeStore.datasetId = next.value.datasetId;
+  activeStore.datasetChecksum = next.value.datasetChecksum;
+  return activeStore.cells.size;
+}
+
 /** Validate every row, then atomically replace the active in-memory snapshot. */
-export function replaceGtoPostflopV31(rows: GtoPostflopV31Row[]): number {
+export function replaceGtoPostflopV31(rows: GtoV31RuntimeRow[]): number {
   const next = validatedStore(rows, new Set(['active']));
   activeStore.cells = next.cells;
   activeStore.datasetId = next.datasetId;
@@ -656,7 +886,7 @@ export function replaceGtoPostflopV31(rows: GtoPostflopV31Row[]): number {
  * exact immutable dataset checksum on every lookup, so a benchmark cannot
  * accidentally exercise whatever candidate happened to load last.
  */
-export function replaceGtoPostflopV31Evaluation(rows: GtoPostflopV31Row[]): number {
+export function replaceGtoPostflopV31Evaluation(rows: GtoV31RuntimeRow[]): number {
   const next = validatedStore(rows, new Set(['evaluating', 'candidate']));
   if (!next.datasetChecksum || !next.datasetId || next.cells.size === 0) {
     throw new Error('v31_evaluation_dataset_empty');
@@ -666,7 +896,7 @@ export function replaceGtoPostflopV31Evaluation(rows: GtoPostflopV31Row[]): numb
 }
 
 /** Backward-compatible test seam; production uses replaceGtoPostflopV31. */
-export function setGtoPostflopV31(rows: GtoPostflopV31Row[]): number {
+export function setGtoPostflopV31(rows: GtoV31RuntimeRow[]): number {
   return replaceGtoPostflopV31(rows);
 }
 
@@ -766,6 +996,39 @@ export function gtoStreetAdviceV31(input: {
     const cellKey = key({ ...input, depth, texture });
     const cell = selected.get(cellKey);
     if (!cell) continue;
+    if (cell.kind === 'public_hist215_v1') {
+      if (isMainThread) return { hit: false, miss: 'worker_required' };
+      const wire = (card: Card): string => `${card.rank}${'cdhs'[SUIT_INDEX[card.suit]]}`;
+      // Malformed public state and zero compatible ROOT mass are misses; no
+      // uniform strategy or legacy matrix is substituted for a model failure.
+      let prediction;
+      try {
+        prediction = cell.model.predict(
+          encodePublic215Features(input.holeCards.map(wire), input.board.map(wire), cell.template)
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          /^PUBLIC_HIST215_(ZERO_COMPATIBLE_OPPONENT_MASS|EMPTY_FREQUENCY_MASS|PREDICTION_OVERFLOW|COHERENT_OVERFLOW)$/.test(
+            error.message
+          )
+        ) {
+          return { hit: false, miss: 'model_input_invalid' };
+        }
+        throw error;
+      }
+      return {
+        hit: true,
+        ...prediction,
+        actions: cell.actions,
+        cell: cellKey,
+        handKey: boardRelativeFeatureKeyV2(input.holeCards.map(wire), input.board.map(wire)),
+        textureClass: texture,
+        sourceSeal: cell.seal,
+        nodeRole: cell.role,
+        depthBucket: depth,
+      };
+    }
     let handKey = legacyHandKey;
     if (gtoV31FeatureContractVersion(cell.seal) === 'holdem-board-relative-v2') {
       const wire = (card: Card): string => `${card.rank}${'cdhs'[SUIT_INDEX[card.suit]]}`;
@@ -821,7 +1084,7 @@ export function gtoV31CellMatrix(args: {
         facingSizeBucket: 'none',
       })
     );
-    if (cell) return cell.matrix;
+    if (cell) return cell.kind === 'matrix' ? cell.matrix : null;
   }
   return null;
 }

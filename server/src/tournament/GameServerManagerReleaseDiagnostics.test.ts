@@ -30,6 +30,7 @@ function server(original: any): any {
     drainedF06TournamentCustody: new Map(),
     tournamentManagerAdmissionLeaseGenerations: new Map(),
     completedF06TournamentCustody: new Map(),
+    completedF06DiagnosticWindows: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
     tournamentDiagnosticRetirements: new Map(),
     tournamentManagerLeaseReleaseOperations: new Map(),

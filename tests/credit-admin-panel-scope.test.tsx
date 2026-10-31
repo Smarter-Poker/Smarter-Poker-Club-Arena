@@ -286,7 +286,7 @@ describe('Credit admin scoped view', () => {
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
 
-  it('exports recorded debt and labels its bounded shown-row scope', async () => {
+  it('exports the wallet shortfall and labels its bounded shown-row scope', async () => {
     mocks.rows.set(
       'operator-a:club-a',
       Array.from({ length: 101 }, (_, i) => row(`agent-${i}`))
@@ -300,7 +300,7 @@ describe('Credit admin scoped view', () => {
     expect(rows).toHaveLength(100);
     expect(rows[0]).toMatchObject({
       clubId: 'club-a',
-      debtOwed: '25.31',
+      debtOwed: '0.00',
       currentBalance: '500.00',
     });
     expect(filename).toBe('credit_admin_shown_rows.csv');
@@ -310,13 +310,12 @@ describe('Credit admin scoped view', () => {
     expect(screen.queryByText('Total Exposure')).not.toBeInTheDocument();
     expect(mocks.queries.find((q) => q.table === 'agents')).toMatchObject({
       limit: 100,
-      columns:
-        'id, user_id, club_id, agent_wallet_balance::text, credit_limit::text, credit_used::text, status',
+      columns: 'id, user_id, club_id, agent_wallet_balance::text, credit_limit::text, status',
     });
   });
 
-  it('keeps missing debt unavailable and disables edits without substituting a derived debt', async () => {
-    mocks.rows.set('operator-a:club-a', [row('agent-a', 'club-a', { credit_used: null })]);
+  it('keeps an unknown wallet unavailable and disables edits without inventing a shortfall', async () => {
+    mocks.rows.set('operator-a:club-a', [row('agent-a', 'club-a', { agent_wallet_balance: null })]);
     render(<View />);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Export Shown Rows' })).toBeEnabled()

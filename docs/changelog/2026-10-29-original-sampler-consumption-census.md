@@ -1,0 +1,11 @@
+# Original sampler consumption in the private horse census
+
+The existing census authenticated input consumption but did not read the original producer-time range receipt. Version4 packets and version3 ledgers now expose a closed sampler status plus nineteen bounded integers, only after original accepted execution, selection, hand reconciliation, canonical read-frame and variant context checks. The unchanged query supplies the same independent expected-turn denominator.
+
+The tuple is: calls; delivered mask; sampled calls; invalid-deck calls; actual iterations; reached, band, conditioner and bigBet-access masks; TRUE, FALSE and ABSENT bigBet masks; tier0, tier1, tier2 and tier3 masks; narrow large-all-in-call witness, its TRUE-bigBet intersection, and original-node-unavailable masks. Mask bit is board\*9 plus original opponent-slot index. Counts/masks expose no opponent cards, sampled deals, raw ranges or identities.
+
+The large-call witness requires an original captured pre-action price, original variant/mode/blind/actor agreement, coherent original remaining-stack and street-wager facts, and the last action from that opponent on the newest street. Prior check/call or sub-20bb bet/raise actions remain eligible; earlier genuine bet/raise of at least20bb excludes the witness, and unsupported or nonfinite prior actions remain unknown. Missing original nodes stay unknown; no policy or wager-history replay reconstructs them. Earlier genuine aggression cannot be erased by this narrow witness.
+
+The installed original receipt validator is loaded from one fixed optional module path. Old images, absent or forged receipts and unavailable validators remain unknown. Legacy packets and ledgers stay exact, and mixed schemas refuse. Explicit not-reached/outside-domain and observed invalid-deck calls do not imply consumed samples. Sampler access is not proof that its equity caused the final policy action or that the range is optimal; global strategy/durability/activation claims remain false.
+
+No engine policy, source producer, workflow, query, schema, bound, live capture or release changes in this control followup. The nineteen-integer summary stays within the existing256-turn/1.5MiB transport envelope. Production use requires the separately qualified producer image and a subsequent original private observation.

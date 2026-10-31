@@ -1,0 +1,5 @@
+Completed satellite results show delivered tickets as1Ticket(value), confirmed cash substitutions and bubble remainders asCash(value), and unavailable delivery evidence asValue(value) with an explicit explanation. Apply consistently to Rewards, Details podium/co-qualifiers, Ranking and archive prize/total columns. Qualification alone never proves ticket delivery.
+
+TournamentDetails owns one shared keyset-paged tournament_payouts read under unchanged RLS. Retire responses on event/viewer changes, reject partial pages, require matching event/player/amount/delivery metadata and keep ticket value separate from cash bounty totals. Preserve ordinary payouts, fixed-field two-ticket terms, financial writers and approved layout.
+
+57focused rendered/classifier/archive regressions and application TypeScript passed.375px actual component renders show a35ticket and cash remainder in each tab. Production baseline5281dcb3 has an actual35seat receipt and3cash remainder for final post-publication comparison. No production transaction was manufactured for this client proof.

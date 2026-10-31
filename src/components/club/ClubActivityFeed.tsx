@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ACTIVITY FEED — Recent Club Events
@@ -58,7 +59,11 @@ export default function ClubActivityFeed({
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [filter, setFilter] = useState<ActivityType | 'all'>('all');
+  const [filter, setFilter] = usePlayerPreference<ActivityType | 'all'>(
+    'clubActivityFeed.filter',
+    'all',
+    clubId
+  );
   // Keyed by activity id, NOT by list index: the rendered list is the FILTERED
   // array, so index-keyed visibility left rows stuck at opacity 0 whenever a
   // filter shifted their position — selecting a filter blanked the feed.
@@ -79,7 +84,6 @@ export default function ClubActivityFeed({
     setActivities([]);
     setLoadError(false);
     setVisibleIds(new Set());
-    setFilter('all');
     loadActivities(true);
 
     // Bus events that imply new activity

@@ -1,3 +1,4 @@
+import { horseFeatureAcceptanceUsable } from './HorseFeatureAuthority.js';
 import { recheckHorsePhase8GuardBeforeAcceptance } from './HorsePhase8GuardAcceptance.js';
 import { liveHorsePhase8GuardAuthority } from './HorseTournamentCatastropheGuardAuthority.js';
 /**
@@ -16,6 +17,7 @@ import {
 } from './HorsePhase14Acceptance.js';
 import { buildAllInGestureInput, gestureBeforeAllIn } from '../services/HorseTableGestures.js';
 import { HandController } from './HandController.js';
+import { playerActionContext } from './PlayerActionContext.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
 import {
   horsePlanAcceptanceFromController,
@@ -64,6 +66,7 @@ import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import type { ValidationContext } from './ServerActionValidator.js';
+import type { TimeBankEvent } from './TimeBankEngine.js';
 import { broadcastTimeBankActivation } from '../services/timeBankBroadcast.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
@@ -568,6 +571,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * still works when the normal turn-change path has thrown partway through.
    */
   protected forceArmTurnTimer(seat: number, seconds: number): void {
+    if (this.pendingOriginalContinuation) return;
     const p = this.seatedPlayers.find((sp) => sp.seat_number === seat);
     if (!p) return;
     this.startTurnTimer(p.user_id, seat, seconds);
@@ -863,6 +867,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * be reintroduced one call site at a time.
    */
   protected forceResolveSeat(seat: number, preferCheck: boolean): boolean {
+    if (this.pendingOriginalContinuation) return false;
     if (!this.lifecycleCanMutate() || !this.handController) return false;
     // Expiry/disconnect recovery is authoritative and supersedes any pending
     // horse computation or delayed horse action for this turn. This must be
@@ -877,6 +882,90 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
     }
     return false;
+  }
+
+  private bankArmRetentionHold: {
+    count: number;
+    startedAt: number;
+    weeklyAt: number;
+    controller: HandController;
+    decision: string;
+    clockStamp: number;
+    clockStartedAt: number;
+    clockWeeklyAt: number;
+    clockWeeklyAppliedAt: number;
+  } | null = null;
+  private bankArmRetainedClockShiftMs = 0;
+
+  private bankArmPauseMilliseconds(): number {
+    const hold = this.bankArmRetentionHold;
+    return (
+      this.bankArmRetainedClockShiftMs +
+      (hold
+        ? Math.max(
+            0,
+            Date.now() - hold.startedAt - (this.weeklyPayoutPausedMilliseconds() - hold.weeklyAt)
+          )
+        : 0)
+    );
+  }
+
+  private holdBankArmClock(): (retained: boolean) => boolean {
+    const owner = 'bank-arm-retention';
+    if (!this.bankArmRetentionHold) {
+      this.bankArmRetentionHold = {
+        count: 0,
+        startedAt: Date.now(),
+        weeklyAt: this.weeklyPayoutPausedMilliseconds(),
+        controller: this.handController!,
+        decision: playerActionContext(this.handController!)!,
+        clockStamp: this.playerTurnStartTime,
+        clockStartedAt: Date.now(),
+        clockWeeklyAt: this.weeklyPayoutPausedMilliseconds(),
+        clockWeeklyAppliedAt: this.weeklyPayoutAppliedPauseMilliseconds(),
+      };
+      this.preciseTimer.holdDecisionClocks(this.tableId, owner);
+      deadlineScheduler.holdDecisionClocks(this.tableId, owner, 'timer_countdown:');
+    }
+    const hold = this.bankArmRetentionHold;
+    hold.count++;
+    return (retained) => {
+      if (this.bankArmRetentionHold !== hold || --hold.count > 0) return false;
+      const elapsed = Math.max(
+        0,
+        Date.now() - hold.startedAt - (this.weeklyPayoutPausedMilliseconds() - hold.weeklyAt)
+      );
+      this.bankArmRetainedClockShiftMs += elapsed;
+      this.bankArmRetentionHold = null;
+      const current =
+        retained &&
+        !this.handContinuation?.isUnretained() &&
+        this.running &&
+        this.isCurrentEngine() &&
+        this.lifecycleCanMutate() &&
+        this.handController === hold.controller &&
+        playerActionContext(hold.controller) === hold.decision;
+      const expectedStamp =
+        hold.clockStamp + (this.weeklyPayoutAppliedPauseMilliseconds() - hold.clockWeeklyAppliedAt);
+      if (current && this.playerTurnStartTime === expectedStamp) {
+        this.playerTurnStartTime += Math.max(
+          0,
+          Date.now() -
+            hold.clockStartedAt -
+            (this.weeklyPayoutPausedMilliseconds() - hold.clockWeeklyAt)
+        );
+      }
+      if (
+        (!current && this.playerTurnStartTime === expectedStamp) ||
+        !this.running ||
+        !this.isCurrentEngine() ||
+        !this.lifecycleCanMutate()
+      )
+        this.clearTurnTimer();
+      this.preciseTimer.releaseDecisionClocks(this.tableId, owner);
+      deadlineScheduler.releaseDecisionClocks(this.tableId, owner, 'timer_countdown:');
+      return current;
+    };
   }
 
   protected startTurnTimer(
@@ -908,6 +997,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     this.playerTurnStartTime = Date.now();
     this.playerTurnDuration = Math.max(0, durationSeconds);
+    const retainedClock = this.bankArmRetentionHold;
+    if (
+      retainedClock &&
+      this.handController === retainedClock.controller &&
+      playerActionContext(retainedClock.controller) === retainedClock.decision
+    ) {
+      retainedClock.clockStamp = this.playerTurnStartTime;
+      retainedClock.clockStartedAt = Date.now();
+      retainedClock.clockWeeklyAt = this.weeklyPayoutPausedMilliseconds();
+      retainedClock.clockWeeklyAppliedAt = this.weeklyPayoutAppliedPauseMilliseconds();
+    }
 
     // Bible V8 §2.15: Log timer start
     this.currentHandTimerLog.push({
@@ -941,6 +1041,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // emitting, and a stale fire is a silent no-op.
     const displayDeadlineMs = this.playerTurnStartTime + safeDurationSeconds * 1000;
     const countdownStartStamp = this.playerTurnStartTime;
+    const countdownPauseStamp =
+      this.weeklyPayoutPausedMilliseconds() + this.bankArmPauseMilliseconds();
+    const countdownShift = () =>
+      this.weeklyPayoutPausedMilliseconds() + this.bankArmPauseMilliseconds() - countdownPauseStamp;
     const COUNTDOWN_THRESHOLDS_MS = [10_000, 5_000, 3_000, 2_000, 1_000];
     for (const thresholdMs of COUNTDOWN_THRESHOLDS_MS) {
       const eventId = `timer_countdown:${thresholdMs}`;
@@ -955,7 +1059,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         deadlineMs: fireAtMs,
         callback: () => {
           if (!this.running || !this.handController) return;
-          if (this.playerTurnStartTime !== countdownStartStamp) return; // newer turn owns the clock
+          if (this.playerTurnStartTime !== countdownStartStamp + countdownShift()) return; // newer turn owns the clock
           const cdState = this.handController.getState();
           if (cdState.currentPlayerSeat !== seat) return;
           try {
@@ -964,7 +1068,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               table_id: this.tableId,
               player_id: userId,
               seat,
-              remaining_ms: Math.max(0, displayDeadlineMs - Date.now()),
+              remaining_ms: Math.max(0, displayDeadlineMs + countdownShift() - Date.now()),
               timestamp: Date.now(),
             });
           } catch {
@@ -996,6 +1100,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         !this.timeBankSuppressedThisTurn &&
         this.turnFSM.state === 'timer_running'
       ) {
+        const activationIsDurable = !!this.handContinuation;
         const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
           this.tableId,
           userId,
@@ -1077,7 +1182,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             } catch {
               /* broadcast failure is non-fatal */
             }
-          }
+          },
+          activationIsDurable
         );
 
         if (autoActivated) {
@@ -1092,6 +1198,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           }
           this.turnFSM.transition('time_bank_active');
           this.timeBankActivatedThisTurn = true;
+          if (activationIsDurable) this.clearTurnTimer();
           // Bible V8 §2.15: Log time bank activation
           this.currentHandTimerLog.push({
             playerId: userId,
@@ -1117,36 +1224,38 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${grantedSeconds}s granted, ${usesAfterActivation} uses left)`
           );
           // Restart turn timer with the granted time bank duration
-          this.startTurnTimer(userId, seat, grantedSeconds, 'time_bank');
+          if (!activationIsDurable) this.startTurnTimer(userId, seat, grantedSeconds, 'time_bank');
 
-          // Preserve the opponent-timer message without retaining a channel.
-          void broadcastTimeBankActivation(this.tableId, {
-            player_id: userId,
-            table_id: this.tableId,
-            additional_seconds: grantedSeconds,
-            auto_activated: true,
-            uses_remaining: usesAfterActivation,
-            unlimited_activations: bank?.unlimitedActivations === true,
-          });
+          if (!activationIsDurable) {
+            // Preserve the opponent-timer message without retaining a channel.
+            void broadcastTimeBankActivation(this.tableId, {
+              player_id: userId,
+              table_id: this.tableId,
+              additional_seconds: grantedSeconds,
+              auto_activated: true,
+              uses_remaining: usesAfterActivation,
+              unlimited_activations: bank?.unlimitedActivations === true,
+            });
 
-          // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining
-          // and at 0 (the very last one was just used). Was firing at <=5
-          // which on a 4-max-uses table means every single use triggered the
-          // warning. Tester reported "after every card" spam.
-          if (
-            bank?.unlimitedActivations !== true &&
-            usesAfterActivation >= 0 &&
-            usesAfterActivation <= 1
-          ) {
-            try {
-              this.hub?.emitEvent(this.tableId, {
-                type: 'time_bank_low',
-                table_id: this.tableId,
-                player_id: userId,
-                uses_remaining: usesAfterActivation,
-              });
-            } catch {
-              /* broadcast failure is non-fatal */
+            // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining
+            // and at 0 (the very last one was just used). Was firing at <=5
+            // which on a 4-max-uses table means every single use triggered the
+            // warning. Tester reported "after every card" spam.
+            if (
+              bank?.unlimitedActivations !== true &&
+              usesAfterActivation >= 0 &&
+              usesAfterActivation <= 1
+            ) {
+              try {
+                this.hub?.emitEvent(this.tableId, {
+                  type: 'time_bank_low',
+                  table_id: this.tableId,
+                  player_id: userId,
+                  uses_remaining: usesAfterActivation,
+                });
+              } catch {
+                /* broadcast failure is non-fatal */
+              }
             }
           }
 
@@ -1231,7 +1340,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // the read is bounded and fails closed to the player's real finite pool.
       void this.revalidateUnlimitedTimeBank(userId)
         .then(() => {
-          if (this.playerTurnStartTime !== countdownStartStamp) return;
+          if (this.playerTurnStartTime !== countdownStartStamp + countdownShift()) return;
           try {
             resolveTurnExpiry();
           } catch (err) {
@@ -1244,7 +1353,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // keep the same expiry resolution moving.
           this.timeBankEngine.setUnlimitedActivations(this.tableId, userId, false);
           reportError(err, 'ServerTableEngine.' + this.tableId + '.timebank_revalidation_failed');
-          if (this.playerTurnStartTime !== countdownStartStamp) return;
+          if (this.playerTurnStartTime !== countdownStartStamp + countdownShift()) return;
           try {
             resolveTurnExpiry();
           } catch (resolveErr) {
@@ -1264,6 +1373,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   public async activateTimeBank(
     userId: string
   ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
+    if (this.isOriginalInputPending())
+      return {
+        success: false,
+        error: 'Original Hand Recovery Is Pending',
+      };
+    if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     this.noteOwnClientClaim(userId); // POST /timebank is the client's door
     // CLAUDE.md §5.7: every one of these strings reaches the player as a toast,
     // so they are Title Case with no em dashes.
@@ -1291,7 +1406,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // account entitlement. Revalidate a cached Lifetime flag here as well so
       // a downgrade cannot keep manufacturing banks through the early return.
       if (this.timeBankEngine.isUnlimited(this.tableId, userId)) {
-        await this.revalidateUnlimitedTimeBank(userId);
+        await this.weeklyPayoutContinuation(this.revalidateUnlimitedTimeBank(userId));
         if (this.handController?.getState().stage !== 'pineapple_discard') {
           return { success: false, error: 'Not In The Discard Round' };
         }
@@ -1310,7 +1425,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Lifetime is not sticky session state. A downgrade or revocation while
     // seated must take effect before another manual activation is granted.
     if (this.timeBankEngine.isUnlimited(this.tableId, userId)) {
-      await this.revalidateUnlimitedTimeBank(userId);
+      await this.weeklyPayoutContinuation(this.revalidateUnlimitedTimeBank(userId));
       const stateAfterRefresh = this.handController?.getState();
       if (!stateAfterRefresh || stateAfterRefresh.currentPlayerSeat !== player.seat) {
         return { success: false, error: 'Not Your Turn' };
@@ -1325,7 +1440,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // VIP time banks 2026-08-17: a diamond top-up purchased mid-session
       // lives only in the DB. Refresh once before rejecting, then re-validate
       // the turn - the await may have raced the action.
-      const refreshed = await this.refreshTimeBankFromDb(userId);
+      const refreshed = await this.weeklyPayoutContinuation(this.refreshTimeBankFromDb(userId));
       if (!refreshed || !this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
         return { success: false, error: 'No Time Bank Uses Remaining' };
       }
@@ -1349,14 +1464,62 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     //
     // Captured BEFORE the engine call so the check and the timer armed further
     // down are derived from the same instant.
+    const armHold = this.bankArmRetentionHold;
+    const heldPrimaryMs =
+      armHold &&
+      this.handController === armHold.controller &&
+      playerActionContext(armHold.controller) === armHold.decision
+        ? Math.max(
+            0,
+            Date.now() -
+              armHold.clockStartedAt -
+              (this.weeklyPayoutPausedMilliseconds() - armHold.clockWeeklyAt)
+          )
+        : 0;
     const remainingBeforeBank = Math.max(
       0,
-      this.playerTurnDuration - (Date.now() - this.playerTurnStartTime) / 1000
+      this.playerTurnDuration - (Date.now() - this.playerTurnStartTime - heldPrimaryMs) / 1000
     );
 
     if (remainingBeforeBank > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
       if (!this.timeBankEngine.arm(this.tableId, userId)) {
         return { success: false, error: 'No Time Bank Uses Remaining' };
+      }
+      const releaseClock = this.handContinuation ? this.holdBankArmClock() : null;
+      let retained = false;
+      let clockReleased = false;
+      try {
+        this.handContinuation?.checkpoint();
+        await this.awaitActionPersistence();
+        retained = true;
+      } finally {
+        clockReleased = releaseClock?.(retained) ?? false;
+      }
+      if (clockReleased) {
+        try {
+          if (!this.weeklyHandPause.held())
+            this.hub?.emitEvent(this.tableId, {
+              type: 'timer_countdown',
+              table_id: this.tableId,
+              player_id: userId,
+              seat: player.seat,
+              remaining_ms: Math.max(
+                0,
+                this.playerTurnStartTime + this.playerTurnDuration * 1000 - Date.now()
+              ),
+              timestamp: Date.now(),
+            });
+        } catch (error) {
+          reportError(
+            error,
+            `ServerTableEngine.${this.tableId}.bank_arm_countdown_publication_failed`
+          );
+        }
+        try {
+          await this.broadcastCurrentState();
+        } catch (error) {
+          reportError(error, `ServerTableEngine.${this.tableId}.bank_arm_clock_publication_failed`);
+        }
       }
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} armed a time bank with ${Math.round(remainingBeforeBank)}s still on the clock. Nothing spent yet.`
@@ -1370,6 +1533,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     // Activate via TimeBankEngine — it handles pool depletion, the per-street
     // limit, the exhaustion check and event emission.
+    const activationIsDurable = !!this.handContinuation;
     const activation = this.timeBankEngine.tryActivate(
       this.tableId,
       userId,
@@ -1445,7 +1609,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           /* broadcast failure is non-fatal */
         }
       },
-      remainingBeforeBank
+      remainingBeforeBank,
+      'manual',
+      activationIsDurable
     );
 
     if (activation !== 'activated') {
@@ -1464,6 +1630,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     this.timeBankActivatedThisTurn = true;
+    if (activationIsDurable) this.clearTurnTimer();
 
     // Get bank info for the broadcast
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
@@ -1479,56 +1646,59 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       `[ServerTableEngine:${this.tableId}] Player ${userId} spent a time bank. Clock reset to ${bankSeconds}s.`
     );
 
-    this.startTurnTimer(userId, player.seat, newDuration, 'time_bank');
+    if (!activationIsDurable) this.startTurnTimer(userId, player.seat, newDuration, 'time_bank');
+    await this.awaitActionPersistence();
 
-    // Preserve the opponent-timer message without retaining a channel.
-    void broadcastTimeBankActivation(this.tableId, {
-      player_id: userId,
-      table_id: this.tableId,
-      additional_seconds: bankSeconds,
-      uses_remaining: bank?.usesRemaining ?? 0,
-      total_remaining: bank?.remainingSeconds ?? 0,
-      unlimited_activations: bank?.unlimitedActivations === true,
-      auto_activated: false,
-    });
+    if (!activationIsDurable) {
+      // Preserve the opponent-timer message without retaining a channel.
+      void broadcastTimeBankActivation(this.tableId, {
+        player_id: userId,
+        table_id: this.tableId,
+        additional_seconds: bankSeconds,
+        uses_remaining: bank?.usesRemaining ?? 0,
+        total_remaining: bank?.remainingSeconds ?? 0,
+        unlimited_activations: bank?.unlimitedActivations === true,
+        auto_activated: false,
+      });
 
-    // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining (or 0
-    // = just used last one). Previous <=5 condition spammed on 4-max tables.
-    const manualUsesLeft = bank?.usesRemaining ?? 0;
-    if (bank?.unlimitedActivations !== true && manualUsesLeft >= 0 && manualUsesLeft <= 1) {
+      // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining (or 0
+      // = just used last one). Previous <=5 condition spammed on 4-max tables.
+      const manualUsesLeft = bank?.usesRemaining ?? 0;
+      if (bank?.unlimitedActivations !== true && manualUsesLeft >= 0 && manualUsesLeft <= 1) {
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'time_bank_low',
+            table_id: this.tableId,
+            player_id: userId,
+            uses_remaining: manualUsesLeft,
+          });
+        } catch {
+          /* broadcast failure is non-fatal */
+        }
+      }
+
+      // Phase X5 (2026-04-29) — Bible V8 §1.16 time_bank_activated public event
+      // distinct from time_bank_low/timeout. Broadcast lets opponents see the
+      // "TIMEBANK" indicator on the acting player's seat ring (not just the
+      // hero who triggered it).
       try {
         this.hub?.emitEvent(this.tableId, {
-          type: 'time_bank_low',
+          type: 'time_bank_activated',
           table_id: this.tableId,
           player_id: userId,
+          seat: player.seat,
           uses_remaining: manualUsesLeft,
+          // Dan 2026-08-21 (item 2): the client extends its countdown from this
+          // number. Without it the hub path fell back to a hard-coded default,
+          // so a bank of any other length was displayed wrong.
+          secondsGranted: bankSeconds,
+          usesRemaining: manualUsesLeft,
+          unlimitedActivations: bank?.unlimitedActivations === true,
+          timestamp: Date.now(),
         });
       } catch {
         /* broadcast failure is non-fatal */
       }
-    }
-
-    // Phase X5 (2026-04-29) — Bible V8 §1.16 time_bank_activated public event
-    // distinct from time_bank_low/timeout. Broadcast lets opponents see the
-    // "TIMEBANK" indicator on the acting player's seat ring (not just the
-    // hero who triggered it).
-    try {
-      this.hub?.emitEvent(this.tableId, {
-        type: 'time_bank_activated',
-        table_id: this.tableId,
-        player_id: userId,
-        seat: player.seat,
-        uses_remaining: manualUsesLeft,
-        // Dan 2026-08-21 (item 2): the client extends its countdown from this
-        // number. Without it the hub path fell back to a hard-coded default,
-        // so a bank of any other length was displayed wrong.
-        secondsGranted: bankSeconds,
-        usesRemaining: manualUsesLeft,
-        unlimitedActivations: bank?.unlimitedActivations === true,
-        timestamp: Date.now(),
-      });
-    } catch {
-      /* broadcast failure is non-fatal */
     }
 
     return { success: true };
@@ -1710,6 +1880,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     this.ownClientSockets?.delete(userId);
     this.ownClientClaims?.delete(userId);
     if (!was) return;
+    if (
+      this.deferWeeklyPayoutInput(`horse_control:${userId}`, this.handController, () => {
+        if (!this.isOwnClientControlling(userId)) this.resumeHorseControlAfterClientLeft(userId);
+      })
+    )
+      return;
+    this.resumeHorseControlAfterClientLeft(userId);
+  }
+
+  private resumeHorseControlAfterClientLeft(userId: string): void {
     try {
       if (!this.lifecycleCanMutate() || !this.handController) return;
       const seated = this.seatedPlayers.find((p) => p.user_id === userId);
@@ -1777,6 +1957,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     action: string,
     maxCallAmount?: number
   ): { success: boolean; error?: string; code?: string; armedToCall?: number } {
+    if (this.isOriginalInputPending())
+      return {
+        success: false,
+        error: 'Original Hand Recovery Is Pending',
+        code: 'ACTION_STATE_PENDING',
+      };
     this.noteOwnClientClaim(userId); // POST /preaction is the client's door
     /* A CLEAR IS FINISHED WHEN NOTHING IS ARMED (2026-10-04).
      *
@@ -1917,8 +2103,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     actionContext?: string | null,
     trustedOrigin?: 'pre_action'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    if (this.isOriginalInputPending())
+      return {
+        success: false,
+        error: 'Original Hand Recovery Is Pending',
+        code: 'ACTION_STATE_PENDING',
+      };
+    if (this.weeklyHandPause.held())
+      return { success: false, error: 'Weekly Accounting Pause', code: 'WEEKLY_ACCOUNTING_PAUSED' };
     // HTTP always supplies a context; trusted in-process callers omit it.
     if (actionContext !== undefined) this.noteOwnClientClaim(userId);
+    if (actionContext !== undefined && this.handContinuation?.isUnretained()) {
+      return {
+        success: false,
+        code: 'ACTION_STATE_PENDING',
+        error: 'The previous action is being retained. Review the table before acting.',
+      };
+    }
     if (!this.lifecycleCanMutate()) {
       return {
         success: false,
@@ -1968,6 +2169,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     amount?: number,
     origin: AcceptedActionOrigin = 'unknown'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    if (this.isOriginalInputPending())
+      return {
+        success: false,
+        error: 'Original Hand Recovery Is Pending',
+        code: 'ACTION_STATE_PENDING',
+      };
+    if (this.weeklyHandPause.held())
+      return { success: false, error: 'Weekly Accounting Pause', code: 'WEEKLY_ACCOUNTING_PAUSED' };
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
     }
@@ -2427,6 +2636,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       pot: 0,
     };
     if (!this.handController) return defaultResult;
+    if (this.isOriginalInputPending() || this.handContinuation?.isUnretained())
+      return defaultResult;
 
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);
@@ -2572,6 +2783,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * timer). No-op unless a hand is live and it's genuinely this player's turn.
    */
   protected rearmTurnTimerIfCurrent(userId: string): void {
+    if (
+      this.deferWeeklyPayoutInput(`reconnect:${userId}`, this.handController, () =>
+        this.rearmTurnTimerIfCurrent(userId)
+      )
+    )
+      return;
     if (!this.handController) return;
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);
@@ -2714,6 +2931,46 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * both self-contained — so the one call site voids the promise and keeps its
    * existing try/catch + forceArmTurnTimer fallback for a synchronous throw.
    */
+  protected ownsContinuationTimeBankClock(): boolean {
+    const state = this.handController?.getState();
+    const actor = state?.players.find((p) => p.seat === state.currentPlayerSeat);
+    const bank = actor && this.timeBankEngine.getPlayerBank(this.tableId, actor.user_id);
+    return !!(bank?.isActive && !bank.pendingPublication && this.timeBankActivatedThisTurn);
+  }
+
+  protected resumeContinuationTimeBankActivation(event: TimeBankEvent): void {
+    const state = this.handController?.getState();
+    const actor = state?.players.find(
+      (p) => p.user_id === event.playerId && p.seat === state.currentPlayerSeat
+    );
+    if (!state || !actor || !this.lifecycleCanMutate()) return;
+    const seconds = this.timeBankEngine.resumeDeferredPublication(
+      this.tableId,
+      actor.user_id,
+      () => {
+        if (
+          !this.lifecycleCanMutate() ||
+          this.handController?.getState().currentPlayerSeat !== actor.seat
+        )
+          return;
+        const current = this.handController.getState();
+        const player = current.players.find((p) => p.seat === actor.seat);
+        if (this.forceResolveSeat(actor.seat, !!player && current.currentBet <= player.bet)) {
+          this.disconnectEngine.recordConnectedTimeout(this.tableId, actor.user_id);
+          this.markProgress();
+        }
+      }
+    );
+    if (seconds === null) return;
+    this.timeBankActivatedThisTurn = true;
+    this.startTurnTimer(actor.user_id, actor.seat, seconds, 'time_bank');
+    const seated = this.seatedPlayers.find(
+      (p) => p.user_id === actor.user_id && p.seat_number === actor.seat
+    );
+    if (seated?.is_horse && !this.isOwnClientControlling(actor.user_id))
+      this.scheduleHorseAction(seated, actor.seat, actor, state);
+  }
+
   protected async handleTurnChange(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     if (event.type !== 'TURN_CHANGE' || !this.lifecycleCanMutate() || !this.handController) return;
 
@@ -2736,6 +2993,28 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // check in ServerTableEngineHandEvents: never arm a clock or run
     // disconnect/pre-action logic for a seat that is no longer on the clock.
     if (state.currentPlayerSeat !== seat) return;
+
+    const pendingBank = this.timeBankEngine.getPlayerBank(this.tableId, player.user_id);
+    if (pendingBank?.pendingPublication && this.handContinuation) {
+      // A later control-only capsule can retain the real allocated bank with
+      // no activation event in its batch. Do not turn that allocation into a
+      // fresh ordinary clock, or publish it while its own bytes are unproven.
+      if (this.handContinuation.isUnretained()) return;
+      if (!pendingBank.activationCause) throw new Error('Original Paid Clock Cause Is Unproven');
+      this.dispatchContinuationTimeBank({
+        type: 'TIME_BANK_ACTIVATED',
+        publicationDeferred: true,
+        tableId: this.tableId,
+        playerId: player.user_id,
+        seat,
+        activationCause: pendingBank.activationCause,
+        secondsGranted: pendingBank.currentUseSeconds,
+        usesRemaining: pendingBank.usesRemaining,
+        totalRemaining: pendingBank.remainingSeconds,
+        unlimitedActivations: pendingBank.unlimitedActivations,
+      });
+      return;
+    }
 
     // This accepted TURN_CHANGE is the ownership boundary for asynchronous
     // horse work. Retire the previous turn before any pre-action await or an
@@ -2798,7 +3077,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // race (#2318): a delayed continuation acting on whatever controller
       // the table holds when it wakes.
       const controllerAtBeat = this.handController;
-      await this.sleep(this.preActionVisibleMs);
+      await this.weeklyPayoutContinuation(this.sleepHand(this.preActionVisibleMs));
       // The hand can be replaced while we hold that beat.
       if (
         !this.lifecycleCanMutate() ||
@@ -2877,7 +3156,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Step 4: Start the authoritative turn timer — SAME for horses and real players
     // Bible V8 §3.3: Turn FSM — waiting → timer_running
     this.turnFSM.transition('timer_running');
-    this.startTurnTimer(player.user_id, seat, effectiveActionTime);
+    const recoveredSeconds = this.timeBankEngine.resumeRecoveredAllocation(
+      this.tableId,
+      player.user_id,
+      () => {
+        if (
+          !this.lifecycleCanMutate() ||
+          this.handController?.getState().currentPlayerSeat !== seat
+        )
+          return;
+        const current = this.handController.getState();
+        const actor = current.players.find((p) => p.seat === seat);
+        if (this.forceResolveSeat(seat, !!actor && current.currentBet <= actor.bet)) {
+          this.disconnectEngine.recordConnectedTimeout(this.tableId, player.user_id);
+          this.markProgress();
+        }
+      }
+    );
+    if (recoveredSeconds !== null) {
+      this.timeBankActivatedThisTurn = true;
+      this.startTurnTimer(player.user_id, seat, recoveredSeconds, 'time_bank');
+    } else this.startTurnTimer(player.user_id, seat, effectiveActionTime);
 
     // Step 5: If this is a horse, schedule their action after a realistic think time
     // The horse uses the SAME timer as a real player — the action fires within that timer window.
@@ -3345,7 +3644,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const turnToken = this.horseTurnToken;
     const abortController = new AbortController();
     this.horseDecisionAbortController = abortController;
-    const decisionTimeMs = Date.now();
+    const turnStartedAtMs = Date.now();
+    const decisionPauseStamp = this.weeklyPayoutPausedMilliseconds();
+    const decisionPauseShift = () => this.weeklyPayoutPausedMilliseconds() - decisionPauseStamp;
+    const protectedClockDeadline = () =>
+      protectedDeadlineMs === undefined ? undefined : protectedDeadlineMs + decisionPauseShift();
     const handNumber = this.handCount;
     const handControllerRef = this.handController;
     const leaseAtRequest = this.getEngineLeaseAuthority();
@@ -3444,7 +3747,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
        is. */
     const fenceRefusal = (): HorseTurnAbandonReason | null => {
       if (abortController.signal.aborted) return 'aborted';
-      if (protectedDeadlineMs !== undefined && Date.now() >= protectedDeadlineMs) {
+      if (protectedDeadlineMs !== undefined && Date.now() >= protectedClockDeadline()!) {
         return 'clock_expired';
       }
       if (
@@ -3639,6 +3942,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // VARIANT OVERRIDE 2026-08-28: horses evaluate the hand they were DEALT
       // — PLO equity on a PLO bomb hand, whatever the table's label says.
       gameVariant: activeVariant,
+      smallBlind: handBlinds.smallBlind,
       bigBlind: handBlinds.bigBlind,
       // AUDIT V2: position + action context for the V2 decision engine
       dealerSeat: state.dealerSeat ?? this.currentHandDealerSeat,
@@ -3689,7 +3993,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       generation: turnToken,
       fence,
       decisionKey: '',
-      decisionTimeMs,
+      decisionTimeMs: Date.now(),
       player: decisionPlayer,
       gameState,
       style: horseStyle,
@@ -3724,7 +4028,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     void fastDecision
-      .catch((error): LocalHorseWorkerFallback => {
+      .catch(async (error): Promise<LocalHorseWorkerFallback> => {
+        if (this.weeklyHandPause.held() && !(await this.weeklyHandPause.checkpoint()))
+          throw new HorseDecisionAbortedError();
         if (error instanceof HorseDecisionAbortedError || abortController.signal.aborted) {
           throw error;
         }
@@ -3769,7 +4075,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           effects: [],
         };
       })
-      .then((fastResult) => {
+      .then(async (fastResult) => {
         // Own the returned receipts before validating the response fence. A
         // rejected early result never acts, but its analysis must be retired
         // just like a result rejected later during the think-time window.
@@ -3782,6 +4088,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         pendingRemainingLedger = decision.remainingVariantPolicy;
         pendingJointLedger = decision.jointPolicy;
         pendingExecutionWitness = decision.executionWitness;
+        if (this.weeklyHandPause.held() && !(await this.weeklyHandPause.checkpoint())) {
+          markPendingUtilityNotExecuted();
+          return;
+        }
         if (
           fastResult.generation !== turnToken ||
           fastResult.fence !== fence ||
@@ -3909,10 +4219,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // A loaded process must never add compute delay on top of the selected
         // cadence or let a stale answer fire after the authoritative clock.
         const remainingThinkMs = Math.min(
-          Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs)),
+          Math.max(0, thinkTimeMs - (Date.now() - turnStartedAtMs - decisionPauseShift())),
           protectedDeadlineMs === undefined
             ? Infinity
-            : Math.max(0, protectedDeadlineMs - Date.now() - 100)
+            : Math.max(0, protectedClockDeadline()! - Date.now() - 100)
         );
 
         // ═══ V44 SECOND LOOK (2026-09-05) ═══════════════════════════════════════
@@ -3943,7 +4253,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               ),
               protectedDeadlineMs === undefined
                 ? Infinity
-                : Math.max(0, protectedDeadlineMs - Date.now() - 100)
+                : Math.max(0, protectedClockDeadline()! - Date.now() - 100)
             );
         const secondLook = ServerTableEngineTurns.secondLookPlan(
           decision,
@@ -3961,6 +4271,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         let decisionCommitted = false;
         let secondLookHoldTimer: ReturnType<typeof setTimeout> | null = null;
         const secondLookHoldUntil = Date.now() + Math.max(remainingThinkMs, turnBudgetMs);
+        const secondLookPauseStamp = this.weeklyPayoutPausedMilliseconds();
+        const secondLookClockDeadline = () =>
+          secondLookHoldUntil + this.weeklyPayoutPausedMilliseconds() - secondLookPauseStamp;
         // Declared below; the deep answer may commit the action once the
         // think time has already elapsed.
         let commitDecision: () => void = () => undefined;
@@ -3971,7 +4284,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // acted on from here; its owner already retired it.
           if (!thinkTimeElapsed || decisionCommitted || abortController.signal.aborted) return;
           if (secondLookHoldTimer) {
-            clearTimeout(secondLookHoldTimer);
+            this.clearHandTimeout(secondLookHoldTimer);
             if (this.horseActionTimer === secondLookHoldTimer) this.horseActionTimer = null;
             secondLookHoldTimer = null;
           }
@@ -3984,7 +4297,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }
         if (secondLook.ok) {
           secondLookPending = true;
-          this.horseSecondLookTimer = setTimeout(() => {
+          this.horseSecondLookTimer = this.setHandTimeout(() => {
             this.horseSecondLookTimer = null;
             if (!fenceIsCurrent('deep_start')) {
               settleSecondLook();
@@ -3999,9 +4312,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 },
                 abortController.signal,
                 // The deep job lives exactly as long as the action may wait.
-                { deadlineMs: Math.max(1, secondLookHoldUntil - Date.now()) }
+                { deadlineMs: Math.max(1, secondLookClockDeadline() - Date.now()) }
               )
-              .then((deepResult) => {
+              .then(async (deepResult) => {
+                if (this.weeklyHandPause.held() && !(await this.weeklyHandPause.checkpoint())) {
+                  retireDecision(deepResult.decision);
+                  return;
+                }
                 if (
                   deepResult.generation !== turnToken ||
                   deepResult.fence !== fence ||
@@ -4045,7 +4362,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   retireDecision(deepResult.decision, 'second_look_unchanged');
                 }
               })
-              .catch((error) => {
+              .catch(async (error) => {
+                if (this.weeklyHandPause.held() && !(await this.weeklyHandPause.checkpoint()))
+                  return;
                 if (
                   !(error instanceof HorseDecisionAbortedError) &&
                   !abortController.signal.aborted
@@ -4062,845 +4381,857 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // re-entry used to orphan the previous setTimeout (it still fired; only
         // the identity guards below kept it harmless).
         if (this.horseActionTimer) {
-          clearTimeout(this.horseActionTimer);
+          this.clearHandTimeout(this.horseActionTimer);
           this.horseActionTimer = null;
         }
         commitDecision = (): void => {
           if (decisionCommitted) return;
           decisionCommitted = true;
-          const utilityLedger = decision.tournamentUtility;
-          const postflopLedger = decision.tournamentPostflop;
-          const guardLedger = decision.tournamentCatastropheGuard;
-          const plo4Ledger = decision.plo4Policy;
-          const omahaLedger = decision.omahaVariantPolicy;
-          const remainingLedger = decision.remainingVariantPolicy;
-          const jointLedger = decision.jointPolicy;
-          pendingPlo4Ledger = plo4Ledger;
-          pendingOmahaLedger = omahaLedger;
-          pendingRemainingLedger = remainingLedger;
-          pendingJointLedger = jointLedger;
-          pendingPostflopLedger = postflopLedger;
-          pendingGuardLedger = guardLedger;
-          pendingUtilityLedger = utilityLedger;
-          if (!fenceIsCurrent('commit')) return;
-          if (!handControllerRef) {
-            markPendingUtilityNotExecuted();
-            return;
-          }
-          // Read before any withdrawal below can re-select a pack's baseline.
-          // A FOLD the brain itself returned has already been through the
-          // short all-in call floor with its own equity (drawing dead, or a
-          // real paired-board stack-off) and stands. A liveness fold (worker
-          // fallback, caught brain exception) is not a poker decision and gets
-          // the floor here.
-          const brainChoseFold =
-            decision.action === 'fold' &&
-            !safeWorkerFallback &&
-            decision.policyFallback !== 'brain_exception';
-          // The action is now authoritative. Cancel a queued/running deep read
-          // before it can race the mutation below; this also retires the local
-          // turn token so no later continuation can become current again.
-          abortController.signal.removeEventListener('abort', markPendingUtilityNotExecuted);
-          this.cancelHorseDecisionWork();
+          const acceptedActions: HorseAcceptedAction[] = [];
+          let applied = false;
+          try {
+            const utilityLedger = decision.tournamentUtility;
+            const postflopLedger = decision.tournamentPostflop;
+            const guardLedger = decision.tournamentCatastropheGuard;
+            const plo4Ledger = decision.plo4Policy;
+            const omahaLedger = decision.omahaVariantPolicy;
+            const remainingLedger = decision.remainingVariantPolicy;
+            const jointLedger = decision.jointPolicy;
+            pendingPlo4Ledger = plo4Ledger;
+            pendingOmahaLedger = omahaLedger;
+            pendingRemainingLedger = remainingLedger;
+            pendingJointLedger = jointLedger;
+            pendingPostflopLedger = postflopLedger;
+            pendingGuardLedger = guardLedger;
+            pendingUtilityLedger = utilityLedger;
+            if (!fenceIsCurrent('commit')) return;
+            if (!handControllerRef) {
+              markPendingUtilityNotExecuted();
+              return;
+            }
+            // Read before any withdrawal below can re-select a pack's baseline.
+            // A FOLD the brain itself returned has already been through the
+            // short all-in call floor with its own equity (drawing dead, or a
+            // real paired-board stack-off) and stands. A liveness fold (worker
+            // fallback, caught brain exception) is not a poker decision and gets
+            // the floor here.
+            const brainChoseFold =
+              decision.action === 'fold' &&
+              !safeWorkerFallback &&
+              decision.policyFallback !== 'brain_exception';
+            // The action is now authoritative. Cancel a queued/running deep read
+            // before it can race the mutation below; this also retires the local
+            // turn token so no later continuation can become current again.
+            abortController.signal.removeEventListener('abort', markPendingUtilityNotExecuted);
+            this.cancelHorseDecisionWork();
 
-          // Verify it's still this player's turn (timer might have expired)
-          const currentState = handControllerRef.getState();
-          if (currentState.currentPlayerSeat !== seat) {
-            markPendingUtilityNotExecuted();
-            return;
-          }
-          const commitActions = handControllerRef.getAuthoritativeActionState(player.user_id);
-          if (!commitActions?.canAct) {
-            markPendingUtilityNotExecuted();
-            return;
-          }
+            // Verify it's still this player's turn (timer might have expired)
+            const currentState = handControllerRef.getState();
+            if (currentState.currentPlayerSeat !== seat) {
+              markPendingUtilityNotExecuted();
+              return;
+            }
+            const commitActions = handControllerRef.getAuthoritativeActionState(player.user_id);
+            if (!commitActions?.canAct) {
+              markPendingUtilityNotExecuted();
+              return;
+            }
 
-          // Phase 8.3: a selected candidate is accepted only under authority
-          // that is usable NOW, in the same synchronous turn as performAction.
-          // A FAST answer that waited out think time, or a DEEP answer that
-          // replaced it, is checked here; missing, stale, withdrawn, refused,
-          // mismatched, expired or restarted authority executes the reference
-          // decision the shadow path would have executed.
-          decision = recheckHorsePhase8GuardBeforeAcceptance(decision, decisionSnapshot);
-          if (postflopLedger?.applied) {
-            const verdict = liveHorsePhase8Authority.check(postflopLedger.authority);
-            postflopLedger.authorityVerdict = verdict;
-            noteFire(`phase8_authority_verdict_${verdict}`);
-            if (verdict === 'usable') {
-              recordHorsePhase8Verdict(decision.executionWitness, verdict);
-            } else {
-              withdrawHorsePhase8Selection(decision.executionWitness, decisionSnapshot, verdict);
-              postflopLedger.applied = false;
-              postflopLedger.selection = 'withdrawn_before_acceptance';
-              decision = {
-                ...decision,
-                action: postflopLedger.baselineAction,
-                amount: postflopLedger.baselineAmount ?? undefined,
-              };
-              noteFire('phase8_selection_withdrawn_before_acceptance');
+            // Phase 8.3: a selected candidate is accepted only under authority
+            // that is usable NOW, in the same synchronous turn as performAction.
+            // A FAST answer that waited out think time, or a DEEP answer that
+            // replaced it, is checked here; missing, stale, withdrawn, refused,
+            // mismatched, expired or restarted authority executes the reference
+            // decision the shadow path would have executed.
+            decision = recheckHorsePhase8GuardBeforeAcceptance(decision, decisionSnapshot);
+            if (postflopLedger?.applied) {
+              const verdict = liveHorsePhase8Authority.check(postflopLedger.authority);
+              postflopLedger.authorityVerdict = verdict;
+              noteFire(`phase8_authority_verdict_${verdict}`);
+              if (verdict === 'usable') {
+                recordHorsePhase8Verdict(decision.executionWitness, verdict);
+              } else {
+                withdrawHorsePhase8Selection(decision.executionWitness, decisionSnapshot, verdict);
+                postflopLedger.applied = false;
+                postflopLedger.selection = 'withdrawn_before_acceptance';
+                decision = {
+                  ...decision,
+                  action: postflopLedger.baselineAction,
+                  amount: postflopLedger.baselineAmount ?? undefined,
+                };
+                noteFire('phase8_selection_withdrawn_before_acceptance');
+              }
             }
-          }
-          // P10.3: the same acceptance law for a selected PLO4 candidate. Only
-          // usable Phase 10 authority NOW lets it act; otherwise the shadow
-          // baseline (the reference the pack received) is executed.
-          if (plo4Ledger?.applied) {
-            const verdict = liveHorsePhase10Authority.check(plo4Ledger.authority);
-            plo4Ledger.authorityVerdict = verdict;
-            noteFire(`phase10_authority_verdict_${verdict}`);
-            if (verdict === 'usable') {
-              recordHorsePhase10Verdict(decision.executionWitness, verdict);
-            } else {
-              withdrawHorsePhase10Selection(decision.executionWitness, decisionSnapshot, verdict);
-              plo4Ledger.applied = false;
-              plo4Ledger.selection = 'withdrawn_before_acceptance';
-              plo4Ledger.finalAction = plo4Ledger.baselineAction;
-              plo4Ledger.finalAmount = plo4Ledger.baselineAmount;
-              decision = {
-                ...decision,
-                action: plo4Ledger.baselineAction,
-                amount: plo4Ledger.baselineAmount ?? undefined,
-              };
-              noteFire('phase10_selection_withdrawn_before_acceptance');
+            // P10.3: the same acceptance law for a selected PLO4 candidate. Only
+            // usable Phase 10 authority NOW lets it act; otherwise the shadow
+            // baseline (the reference the pack received) is executed.
+            if (plo4Ledger?.applied) {
+              const verdict = liveHorsePhase10Authority.check(plo4Ledger.authority);
+              plo4Ledger.authorityVerdict = verdict;
+              noteFire(`phase10_authority_verdict_${verdict}`);
+              if (verdict === 'usable') {
+                recordHorsePhase10Verdict(decision.executionWitness, verdict);
+              } else {
+                withdrawHorsePhase10Selection(decision.executionWitness, decisionSnapshot, verdict);
+                plo4Ledger.applied = false;
+                plo4Ledger.selection = 'withdrawn_before_acceptance';
+                plo4Ledger.finalAction = plo4Ledger.baselineAction;
+                plo4Ledger.finalAmount = plo4Ledger.baselineAmount;
+                decision = {
+                  ...decision,
+                  action: plo4Ledger.baselineAction,
+                  amount: plo4Ledger.baselineAmount ?? undefined,
+                };
+                noteFire('phase10_selection_withdrawn_before_acceptance');
+              }
             }
-          }
-          // P11.3: the same acceptance law for a selected PLO5/PLO6/PLO8
-          // candidate, at its own pack's gate. Only usable authority for that
-          // pack NOW lets it act; otherwise the shadow baseline is executed.
-          if (omahaLedger?.applied) {
-            const verdict = isOmahaPolicyVariant(omahaLedger.variant)
-              ? liveHorsePhase11Authorities[omahaLedger.variant].check(omahaLedger.authority)
-              : 'mismatched';
-            omahaLedger.authorityVerdict = verdict;
-            noteFire(`phase11_authority_verdict_${verdict}`);
-            if (verdict === 'usable') {
-              recordHorsePhase11Verdict(decision.executionWitness, verdict);
-            } else {
-              withdrawHorsePhase11Selection(decision.executionWitness, decisionSnapshot, verdict);
-              omahaLedger.applied = false;
-              omahaLedger.selection = 'withdrawn_before_acceptance';
-              omahaLedger.finalAction = omahaLedger.baselineAction;
-              omahaLedger.finalAmount = omahaLedger.baselineAmount;
-              decision = {
-                ...decision,
-                action: omahaLedger.baselineAction,
-                amount: omahaLedger.baselineAmount ?? undefined,
-              };
-              noteFire('phase11_selection_withdrawn_before_acceptance');
+            // P11.3: the same acceptance law for a selected PLO5/PLO6/PLO8
+            // candidate, at its own pack's gate. Only usable authority for that
+            // pack NOW lets it act; otherwise the shadow baseline is executed.
+            if (omahaLedger?.applied) {
+              const verdict = isOmahaPolicyVariant(omahaLedger.variant)
+                ? liveHorsePhase11Authorities[omahaLedger.variant].check(omahaLedger.authority)
+                : 'mismatched';
+              omahaLedger.authorityVerdict = verdict;
+              noteFire(`phase11_authority_verdict_${verdict}`);
+              if (verdict === 'usable') {
+                recordHorsePhase11Verdict(decision.executionWitness, verdict);
+              } else {
+                withdrawHorsePhase11Selection(decision.executionWitness, decisionSnapshot, verdict);
+                omahaLedger.applied = false;
+                omahaLedger.selection = 'withdrawn_before_acceptance';
+                omahaLedger.finalAction = omahaLedger.baselineAction;
+                omahaLedger.finalAmount = omahaLedger.baselineAmount;
+                decision = {
+                  ...decision,
+                  action: omahaLedger.baselineAction,
+                  amount: omahaLedger.baselineAmount ?? undefined,
+                };
+                noteFire('phase11_selection_withdrawn_before_acceptance');
+              }
             }
-          }
-          // P12.3: the same acceptance law for a selected Short Deck,
-          // Pineapple, FLH or FLO8 candidate, at its own pack's gate. Only
-          // usable authority for that pack NOW lets it act; otherwise the
-          // shadow baseline is executed.
-          if (remainingLedger?.applied) {
-            const verdict = isRemainingPolicyVariant(remainingLedger.variant)
-              ? liveHorsePhase12Authorities[remainingLedger.variant].check(
-                  remainingLedger.authority
-                )
-              : 'mismatched';
-            remainingLedger.authorityVerdict = verdict;
-            noteFire(`phase12_authority_verdict_${verdict}`);
-            if (verdict === 'usable') {
-              recordHorsePhase12Verdict(decision.executionWitness, verdict);
-            } else {
-              withdrawHorsePhase12Selection(decision.executionWitness, decisionSnapshot, verdict);
-              remainingLedger.applied = false;
-              remainingLedger.selection = 'withdrawn_before_acceptance';
-              remainingLedger.finalAction = remainingLedger.baselineAction;
-              remainingLedger.finalAmount = remainingLedger.baselineAmount;
-              decision = {
-                ...decision,
-                action: remainingLedger.baselineAction,
-                amount: remainingLedger.baselineAmount ?? undefined,
-              };
-              noteFire('phase12_selection_withdrawn_before_acceptance');
+            // P12.3: the same acceptance law for a selected Short Deck,
+            // Pineapple, FLH or FLO8 candidate, at its own pack's gate. Only
+            // usable authority for that pack NOW lets it act; otherwise the
+            // shadow baseline is executed.
+            if (remainingLedger?.applied) {
+              const verdict = isRemainingPolicyVariant(remainingLedger.variant)
+                ? liveHorsePhase12Authorities[remainingLedger.variant].check(
+                    remainingLedger.authority
+                  )
+                : 'mismatched';
+              remainingLedger.authorityVerdict = verdict;
+              noteFire(`phase12_authority_verdict_${verdict}`);
+              if (verdict === 'usable') {
+                recordHorsePhase12Verdict(decision.executionWitness, verdict);
+              } else {
+                withdrawHorsePhase12Selection(decision.executionWitness, decisionSnapshot, verdict);
+                remainingLedger.applied = false;
+                remainingLedger.selection = 'withdrawn_before_acceptance';
+                remainingLedger.finalAction = remainingLedger.baselineAction;
+                remainingLedger.finalAmount = remainingLedger.baselineAmount;
+                decision = {
+                  ...decision,
+                  action: remainingLedger.baselineAction,
+                  amount: remainingLedger.baselineAmount ?? undefined,
+                };
+                noteFire('phase12_selection_withdrawn_before_acceptance');
+              }
             }
-          }
-          // P13.3: a shadow joint receipt records the action leaving the
-          // joint node as its final action. An earlier-phase withdrawal above
-          // re-selected that phase's baseline, so the joint receipt follows it
-          // (otherwise its execution would read as coerced against an action
-          // the table never intended).
-          if (jointLedger && !jointLedger.applied) {
-            jointLedger.finalAction = decision.action;
-            jointLedger.finalAmount = decision.amount ?? null;
-          }
-          // P13.3: the same acceptance law for a selected joint candidate, at
-          // its own variant's gate. Only usable Phase 13 authority for that
-          // variant NOW lets it act; otherwise the joint shadow baseline (the
-          // decision the variant owners produced) is executed. The joint
-          // candidate is never applied on top of an applied earlier-phase
-          // candidate, so that baseline is never itself a withdrawn selection.
-          if (jointLedger?.applied) {
-            const gate = isJointVariant(jointLedger.variant)
-              ? liveHorsePhase13Authorities[jointLedger.variant]
-              : null;
-            const checked = gate ? gate.check(jointLedger.authority) : 'mismatched';
-            // The same board-count admission the worker applied: a candidate
-            // on a board count the authority did not admit never acts.
-            const verdict =
-              checked === 'usable' &&
-              !horsePhase13BoardCountAdmitted(gate?.mainAuthority(), jointLedger.boardCount)
-                ? 'mismatched'
-                : checked;
-            jointLedger.authorityVerdict = verdict;
-            noteFire(`phase13_authority_verdict_${verdict}`);
-            if (verdict === 'usable') {
-              recordHorsePhase13Verdict(decision.executionWitness, verdict);
-            } else {
-              withdrawHorsePhase13Selection(decision.executionWitness, decisionSnapshot, verdict);
-              jointLedger.applied = false;
-              jointLedger.selection = 'withdrawn_before_acceptance';
-              jointLedger.finalAction = jointLedger.baselineAction;
-              jointLedger.finalAmount = jointLedger.baselineAmount;
-              for (const prior of [plo4Ledger, omahaLedger, remainingLedger])
-                if (prior) {
-                  prior.finalAction = jointLedger.baselineAction;
-                  prior.finalAmount = jointLedger.baselineAmount;
-                }
-              decision = {
-                ...decision,
-                action: jointLedger.baselineAction,
-                amount: jointLedger.baselineAmount ?? undefined,
-              };
-              noteFire('phase13_selection_withdrawn_before_acceptance');
+            // P13.3: a shadow joint receipt records the action leaving the
+            // joint node as its final action. An earlier-phase withdrawal above
+            // re-selected that phase's baseline, so the joint receipt follows it
+            // (otherwise its execution would read as coerced against an action
+            // the table never intended).
+            if (jointLedger && !jointLedger.applied) {
+              jointLedger.finalAction = decision.action;
+              jointLedger.finalAmount = decision.amount ?? null;
             }
-          }
+            // P13.3: the same acceptance law for a selected joint candidate, at
+            // its own variant's gate. Only usable Phase 13 authority for that
+            // variant NOW lets it act; otherwise the joint shadow baseline (the
+            // decision the variant owners produced) is executed. The joint
+            // candidate is never applied on top of an applied earlier-phase
+            // candidate, so that baseline is never itself a withdrawn selection.
+            if (jointLedger?.applied) {
+              const gate = isJointVariant(jointLedger.variant)
+                ? liveHorsePhase13Authorities[jointLedger.variant]
+                : null;
+              const checked = gate ? gate.check(jointLedger.authority) : 'mismatched';
+              // The same board-count admission the worker applied: a candidate
+              // on a board count the authority did not admit never acts.
+              const verdict =
+                checked === 'usable' &&
+                !horsePhase13BoardCountAdmitted(gate?.mainAuthority(), jointLedger.boardCount)
+                  ? 'mismatched'
+                  : checked;
+              jointLedger.authorityVerdict = verdict;
+              noteFire(`phase13_authority_verdict_${verdict}`);
+              if (verdict === 'usable') {
+                recordHorsePhase13Verdict(decision.executionWitness, verdict);
+              } else {
+                withdrawHorsePhase13Selection(decision.executionWitness, decisionSnapshot, verdict);
+                jointLedger.applied = false;
+                jointLedger.selection = 'withdrawn_before_acceptance';
+                jointLedger.finalAction = jointLedger.baselineAction;
+                jointLedger.finalAmount = jointLedger.baselineAmount;
+                for (const prior of [plo4Ledger, omahaLedger, remainingLedger])
+                  if (prior) {
+                    prior.finalAction = jointLedger.baselineAction;
+                    prior.finalAmount = jointLedger.baselineAmount;
+                  }
+                decision = {
+                  ...decision,
+                  action: jointLedger.baselineAction,
+                  amount: jointLedger.baselineAmount ?? undefined,
+                };
+                noteFire('phase13_selection_withdrawn_before_acceptance');
+              }
+            }
 
-          decision = recheckHorsePhase14BeforeAcceptance(decision);
+            decision = recheckHorsePhase14BeforeAcceptance(decision);
 
-          // Authority can be withdrawn while a worker answer waits for its
-          // think time. Re-selecting that owner's baseline above must not
-          // restore the very river flat-call the final nuts rule forbids.
-          // Recheck the same rule with the controller's fresh legal menu.
-          const commitHero = currentState.players.find((p) => p.seat === seat);
-          if (commitHero) {
-            const nutsActions = applyTableCommitmentCap(
-              commitActions,
-              commitHero,
-              this.tableInfo?.cap_enabled === true,
-              Number(this.tableInfo?.cap_bb) || 0,
-              Number(this.tableInfo?.big_blind) || 0
-            );
-            const commitState = {
-              ...gameState,
-              players: currentState.players,
-              communityCards: currentState.communityCards,
-              communityCards2: currentState.communityCards2,
-              communityCards3: currentState.communityCards3,
-              stage: currentState.stage,
-              currentBet: currentState.currentBet,
-              pot: currentState.pot,
-              legalActions: [...nutsActions.legalActions],
-              toCall: nutsActions.toCall,
-              minRaiseTo: nutsActions.minRaiseTo,
-              maxRaiseTo: nutsActions.maxRaiseTo,
-              bettingStructure: nutsActions.structure,
-              fixedBetSize: nutsActions.fixedBetSize,
-              wagersCapped: nutsActions.wagersCapped,
-              commitmentCapRemaining: nutsActions.commitmentCapRemaining,
-            };
-            const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
-            const wagerGuarded = fullPotNearPotWager(
-              riverNutsRaise(
-                tournamentShoveDiscipline(
-                  holdemPremiumAggression(decision, privateHero, commitState, {
-                    holdemDominatedFold: false,
-                  }),
+            // Authority can be withdrawn while a worker answer waits for its
+            // think time. Re-selecting that owner's baseline above must not
+            // restore the very river flat-call the final nuts rule forbids.
+            // Recheck the same rule with the controller's fresh legal menu.
+            const commitHero = currentState.players.find((p) => p.seat === seat);
+            if (commitHero) {
+              const nutsActions = applyTableCommitmentCap(
+                commitActions,
+                commitHero,
+                this.tableInfo?.cap_enabled === true,
+                Number(this.tableInfo?.cap_bb) || 0,
+                Number(this.tableInfo?.big_blind) || 0
+              );
+              const commitState = {
+                ...gameState,
+                players: currentState.players,
+                communityCards: currentState.communityCards,
+                communityCards2: currentState.communityCards2,
+                communityCards3: currentState.communityCards3,
+                stage: currentState.stage,
+                currentBet: currentState.currentBet,
+                pot: currentState.pot,
+                legalActions: [...nutsActions.legalActions],
+                toCall: nutsActions.toCall,
+                minRaiseTo: nutsActions.minRaiseTo,
+                maxRaiseTo: nutsActions.maxRaiseTo,
+                bettingStructure: nutsActions.structure,
+                fixedBetSize: nutsActions.fixedBetSize,
+                wagersCapped: nutsActions.wagersCapped,
+                commitmentCapRemaining: nutsActions.commitmentCapRemaining,
+              };
+              const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
+              const wagerGuarded = fullPotNearPotWager(
+                riverNutsRaise(
+                  tournamentShoveDiscipline(
+                    holdemPremiumAggression(decision, privateHero, commitState, {
+                      holdemDominatedFold: false,
+                    }),
+                    privateHero,
+                    commitState
+                  ),
                   privateHero,
                   commitState
                 ),
                 privateHero,
                 commitState
-              ),
-              privateHero,
-              commitState
-            );
-            // Dan 2026-10-26: a short all in is called by a big stack in a
-            // tournament. Last at the door too, on the controller's fresh
-            // state, so no withdrawal above and no liveness fallback can fold
-            // that spot. No equity is measured here, so it calls.
-            const guarded = brainChoseFold
-              ? wagerGuarded
-              : shortAllInCallFloor(wagerGuarded, privateHero, commitState, null);
-            if (guarded !== wagerGuarded) noteFire('short_all_in_call_floor_commit');
-            if (guarded !== decision) {
-              decision = { ...decision, ...guarded };
-              if (guarded !== wagerGuarded && guarded.amount === undefined) delete decision.amount;
-              noteFire('wager_rules_commit_correction');
-            }
-          }
-
-          let action = decision.action as string;
-          let amount = decision.amount;
-
-          if (action === 'allin') action = 'all_in';
-
-          // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
-          // Phase 7 already received the AoF-filtered authoritative menu. This
-          // belt may only degrade an impossible stale answer; it must never
-          // synthesize an unpriced shove or resurrect one removed by the cap.
-          if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
-            const allInOrFoldActions = gameState.legalActions ?? [];
-            const allowed = new Set(allInOrFoldActions);
-            if (!allowed.has(action as ActionType)) {
-              if (action !== 'fold' && allowed.has('all_in')) {
-                // Preserve the host rule for a stale non-fold intent, but only
-                // while the authoritative capped menu still contains a shove.
-                action = 'all_in';
-              } else {
-                action =
-                  toCall > 0 && allowed.has('fold')
-                    ? 'fold'
-                    : allowed.has('check')
-                      ? 'check'
-                      : (allInOrFoldActions[0] ?? 'fold');
+              );
+              // Dan 2026-10-26: a short all in is called by a big stack in a
+              // tournament. Last at the door too, on the controller's fresh
+              // state, so no withdrawal above and no liveness fallback can fold
+              // that spot. No equity is measured here, so it calls.
+              const guarded = brainChoseFold
+                ? wagerGuarded
+                : shortAllInCallFloor(wagerGuarded, privateHero, commitState, null);
+              if (guarded !== wagerGuarded) noteFire('short_all_in_call_floor_commit');
+              if (guarded !== decision) {
+                decision = { ...decision, ...guarded };
+                if (guarded !== wagerGuarded && guarded.amount === undefined)
+                  delete decision.amount;
+                noteFire('wager_rules_commit_correction');
               }
-              amount = undefined;
             }
-          }
 
-          // Normalize actions
-          if (action === 'check' && toCall > 0) action = 'call';
-          if (action === 'call' && toCall === 0) action = 'check';
-          if (action === 'call') amount = toCall;
-          if (action === 'fold' && toCall === 0) action = 'check';
-          if (action === 'raise' && state.currentBet === 0) action = 'bet';
-          if (action === 'bet' && state.currentBet > 0) action = 'raise';
+            let action = decision.action as string;
+            let amount = decision.amount;
 
-          // Clamp amounts
-          //
-          // 2026-08-23: the original horse path sized every bet no-limit style. The
-          // Phase 5 canonical boundary now supplies and enforces the exact fixed-
-          // limit bound; this commit-side snap remains as a final legality belt.
-          // Read the controller's live completion amount, not currentBet plus
-          // a full street bet. A short opening 5 at a 20 limit completes to 20;
-          // rewriting it to 25 would be rejected and fall through to a fold.
-          const horseIsFixedLimit = commitActions.structure === 'fixed_limit';
-          /* CAP FIX 2026-08-27: this commit-side check predates the Phase 5 shared
+            if (action === 'allin') action = 'all_in';
+
+            // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
+            // Phase 7 already received the AoF-filtered authoritative menu. This
+            // belt may only degrade an impossible stale answer; it must never
+            // synthesize an unpriced shove or resurrect one removed by the cap.
+            if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
+              const allInOrFoldActions = gameState.legalActions ?? [];
+              const allowed = new Set(allInOrFoldActions);
+              if (!allowed.has(action as ActionType)) {
+                if (action !== 'fold' && allowed.has('all_in')) {
+                  // Preserve the host rule for a stale non-fold intent, but only
+                  // while the authoritative capped menu still contains a shove.
+                  action = 'all_in';
+                } else {
+                  action =
+                    toCall > 0 && allowed.has('fold')
+                      ? 'fold'
+                      : allowed.has('check')
+                        ? 'check'
+                        : (allInOrFoldActions[0] ?? 'fold');
+                }
+                amount = undefined;
+              }
+            }
+
+            // Normalize actions
+            if (action === 'check' && toCall > 0) action = 'call';
+            if (action === 'call' && toCall === 0) action = 'check';
+            if (action === 'call') amount = toCall;
+            if (action === 'fold' && toCall === 0) action = 'check';
+            if (action === 'raise' && state.currentBet === 0) action = 'bet';
+            if (action === 'bet' && state.currentBet > 0) action = 'raise';
+
+            // Clamp amounts
+            //
+            // 2026-08-23: the original horse path sized every bet no-limit style. The
+            // Phase 5 canonical boundary now supplies and enforces the exact fixed-
+            // limit bound; this commit-side snap remains as a final legality belt.
+            // Read the controller's live completion amount, not currentBet plus
+            // a full street bet. A short opening 5 at a 20 limit completes to 20;
+            // rewriting it to 25 would be rejected and fall through to a fold.
+            const horseIsFixedLimit = commitActions.structure === 'fixed_limit';
+            /* CAP FIX 2026-08-27: this commit-side check predates the Phase 5 shared
          canonical cap menu. Keep it as a final belt against a stale delayed
          decision; the worker has already received the same ceiling. */
-          const horseCapBB = Number(this.tableInfo?.cap_bb) || 0;
-          const horseCapChips =
-            this.tableInfo?.cap_enabled === true && horseCapBB > 0
-              ? horseCapBB * (Number(this.tableInfo?.big_blind) || 0)
-              : 0;
-          const horseCapRemaining =
-            horseCapChips > 0
-              ? Math.max(0, horseCapChips - (Number(enginePlayer.totalInvested) || 0))
-              : Infinity;
-          // Set only where a SIZED bet/raise of the whole stack is rewritten to
-          // all_in below - never when the horse itself chose all_in.
-          let promotedToAllIn = false;
-          if (action === 'bet' && amount !== undefined) {
-            amount = horseIsFixedLimit
-              ? (commitActions.minRaiseTo ?? amount)
-              : Math.max(state.minRaise, amount);
-            amount = Math.min(amount, horseCapRemaining);
-            // Only the STACK promotes to all_in; a cap-bounded wager stays sized.
-            if (amount >= enginePlayer.stack && enginePlayer.stack <= horseCapRemaining) {
-              action = 'all_in';
-              amount = undefined;
-              promotedToAllIn = true;
+            const horseCapBB = Number(this.tableInfo?.cap_bb) || 0;
+            const horseCapChips =
+              this.tableInfo?.cap_enabled === true && horseCapBB > 0
+                ? horseCapBB * (Number(this.tableInfo?.big_blind) || 0)
+                : 0;
+            const horseCapRemaining =
+              horseCapChips > 0
+                ? Math.max(0, horseCapChips - (Number(enginePlayer.totalInvested) || 0))
+                : Infinity;
+            // Set only where a SIZED bet/raise of the whole stack is rewritten to
+            // all_in below - never when the horse itself chose all_in.
+            let promotedToAllIn = false;
+            if (action === 'bet' && amount !== undefined) {
+              amount = horseIsFixedLimit
+                ? (commitActions.minRaiseTo ?? amount)
+                : Math.max(state.minRaise, amount);
+              amount = Math.min(amount, horseCapRemaining);
+              // Only the STACK promotes to all_in; a cap-bounded wager stays sized.
+              if (amount >= enginePlayer.stack && enginePlayer.stack <= horseCapRemaining) {
+                action = 'all_in';
+                amount = undefined;
+                promotedToAllIn = true;
+              }
+            } else if (action === 'raise' && amount !== undefined) {
+              const minRaiseTo = state.currentBet + state.minRaise;
+              amount = horseIsFixedLimit
+                ? (commitActions.minRaiseTo ?? amount)
+                : Math.max(minRaiseTo, amount);
+              const horseCapRaiseTo =
+                horseCapRemaining === Infinity ? Infinity : enginePlayer.bet + horseCapRemaining;
+              amount = Math.min(amount, horseCapRaiseTo);
+              const horseStackRaiseTo = enginePlayer.stack + enginePlayer.bet;
+              const maxRaiseTo = Math.min(horseStackRaiseTo, horseCapRaiseTo);
+              if (amount >= maxRaiseTo && horseStackRaiseTo <= horseCapRaiseTo) {
+                action = 'all_in';
+                amount = undefined;
+                promotedToAllIn = true;
+              }
             }
-          } else if (action === 'raise' && amount !== undefined) {
-            const minRaiseTo = state.currentBet + state.minRaise;
-            amount = horseIsFixedLimit
-              ? (commitActions.minRaiseTo ?? amount)
-              : Math.max(minRaiseTo, amount);
-            const horseCapRaiseTo =
-              horseCapRemaining === Infinity ? Infinity : enginePlayer.bet + horseCapRemaining;
-            amount = Math.min(amount, horseCapRaiseTo);
-            const horseStackRaiseTo = enginePlayer.stack + enginePlayer.bet;
-            const maxRaiseTo = Math.min(horseStackRaiseTo, horseCapRaiseTo);
-            if (amount >= maxRaiseTo && horseStackRaiseTo <= horseCapRaiseTo) {
-              action = 'all_in';
-              amount = undefined;
-              promotedToAllIn = true;
-            }
-          }
 
-          // 2026-08-24: a capped fixed-limit street takes no further wager, and
-          // validateAction refuses one whatever the amount. The degradation below is
-          // `check() || fold()`, and on a capped street facing a bet `check` is
-          // illegal too - so a horse that wanted to RAISE folded the hand it had
-          // just decided to raise with. Substitute the closest legal intent instead
-          // (call when money is owed, check when none is), which cannot be refused.
-          // The live controller menu uses the same counted-wager history as
-          // performAction, including short-wager completion and reopening.
-          if (horseIsFixedLimit && commitActions.wagersCapped) {
-            const substituted = substituteOnCappedStreet(action as ActionType, toCall);
-            if (substituted !== action) {
-              action = substituted as typeof action;
-              amount = substituted === 'call' ? toCall : undefined;
+            // 2026-08-24: a capped fixed-limit street takes no further wager, and
+            // validateAction refuses one whatever the amount. The degradation below is
+            // `check() || fold()`, and on a capped street facing a bet `check` is
+            // illegal too - so a horse that wanted to RAISE folded the hand it had
+            // just decided to raise with. Substitute the closest legal intent instead
+            // (call when money is owed, check when none is), which cannot be refused.
+            // The live controller menu uses the same counted-wager history as
+            // performAction, including short-wager completion and reopening.
+            if (horseIsFixedLimit && commitActions.wagersCapped) {
+              const substituted = substituteOnCappedStreet(action as ActionType, toCall);
+              if (substituted !== action) {
+                action = substituted as typeof action;
+                amount = substituted === 'call' ? toCall : undefined;
+              }
             }
-          }
 
-          // Owner ruling 2026-10-04, same rule as the human request path:
-          // HandController now executes an `all_in` that cannot be a legal
-          // raise as a call. That tolerance belongs to a chosen ALL IN only. A
-          // sized bet/raise of the whole stack was promoted to `all_in` above;
-          // when the engine does not offer a shove to this seat the sized wager
-          // was illegal, so it is not submitted and the seat takes the refused
-          // path below (check, else fold) exactly as before the ruling. It must
-          // never become a call the player did not choose.
-          const promotedShoveIsIllegal =
-            promotedToAllIn &&
-            action === 'all_in' &&
-            !commitActions.legalActions.includes('all_in');
+            // Owner ruling 2026-10-04, same rule as the human request path:
+            // HandController now executes an `all_in` that cannot be a legal
+            // raise as a call. That tolerance belongs to a chosen ALL IN only. A
+            // sized bet/raise of the whole stack was promoted to `all_in` above;
+            // when the engine does not offer a shove to this seat the sized wager
+            // was illegal, so it is not submitted and the seat takes the refused
+            // path below (check, else fold) exactly as before the ruling. It must
+            // never become a call the player did not choose.
+            const promotedShoveIsIllegal =
+              promotedToAllIn &&
+              action === 'all_in' &&
+              !commitActions.legalActions.includes('all_in');
 
-          const normalizedAmount =
-            typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
-          // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
-          // illegal action - it does not throw (HandController.ts:416/430/437). So
-          // this catch never fired, and a horse whose decision the engine rejected
-          // (stale raise amount, re-open rule, min-raise floor) simply never acted.
-          // The human path was already fixed for exactly this in July ("the table
-          // froze with no clock", Turns.ts SWEEP #4); the horse path was missed.
-          // Check the boolean and degrade the same way a rejected human action does:
-          // check if free, else fold. A seat must never be left unacted.
-          // Same clock rule as the human path (2026-09-05): armed BEFORE the
-          // action, because the broadcast happens inside performAction.
-          // Dan 2026-10-21: a horse moving all in sometimes says good luck,
-          // throws something at the player it faces, or taps a reaction, the
-          // way a person does as they shove. Never every time (the roll is in
-          // HorseTableGestures), never awaited, never in the action's way.
-          {
-            const horseStack = Number(
-              currentState.players.find((p: { seat: number }) => p.seat === seat)?.stack ?? 0
-            );
-            const movesAllIn =
-              action === 'all_in' ||
-              ((action === 'call' || action === 'raise' || action === 'bet') &&
-                horseStack > 0 &&
-                (typeof amount === 'number' ? amount : toCall) >= horseStack);
-            if (movesAllIn && !promotedShoveIsIllegal) {
-              void gestureBeforeAllIn(
-                buildAllInGestureInput(
-                  this.tableInfo,
-                  this.seatedPlayers,
-                  player.user_id,
-                  this.handCount,
-                  this.isTournamentTable(),
-                  currentState.players,
-                  currentState.lastAggressorSeat,
-                  toCall
-                )
+            const normalizedAmount =
+              typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
+            // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
+            // illegal action - it does not throw (HandController.ts:416/430/437). So
+            // this catch never fired, and a horse whose decision the engine rejected
+            // (stale raise amount, re-open rule, min-raise floor) simply never acted.
+            // The human path was already fixed for exactly this in July ("the table
+            // froze with no clock", Turns.ts SWEEP #4); the horse path was missed.
+            // Check the boolean and degrade the same way a rejected human action does:
+            // check if free, else fold. A seat must never be left unacted.
+            // Same clock rule as the human path (2026-09-05): armed BEFORE the
+            // action, because the broadcast happens inside performAction.
+            // Dan 2026-10-21: a horse moving all in sometimes says good luck,
+            // throws something at the player it faces, or taps a reaction, the
+            // way a person does as they shove. Never every time (the roll is in
+            // HorseTableGestures), never awaited, never in the action's way.
+            {
+              const horseStack = Number(
+                currentState.players.find((p: { seat: number }) => p.seat === seat)?.stack ?? 0
               );
-            }
-          }
-          let applied = false;
-          let intendedApplied = false;
-          let executedAction: ActionType | null = null;
-          let executedAmount: number | null = null;
-          const acceptedActions: HorseAcceptedAction[] = [];
-          let attemptingFallback = false;
-          // Always observed, witness or not: the controller may execute a
-          // different action from the one submitted (an all_in that is only a
-          // call), and every ledger below must record what was executed.
-          const acceptanceObserver = (record: Readonly<ActionRecord>): void => {
-            acceptedActions.push({ record, intended: !attemptingFallback });
-          };
-          const horseClockWasArmed = this.lastActionAcceptedAtMs;
-          this.lastActionAcceptedAtMs = Date.now();
-          const worker = getLiveHorseDecisionWorker();
-          const attemptAction = (
-            attemptedAction: ActionType,
-            attemptedAmount: number | undefined,
-            origin: 'horse_policy' | 'horse_fallback'
-          ): boolean => {
-            const receiptsBefore = acceptedActions.length;
-            let returned = false;
-            try {
-              returned = handControllerRef.performAction(
-                seat,
-                attemptedAction,
-                attemptedAmount,
-                origin,
-                acceptanceObserver
-              );
-            } catch (err) {
-              reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
-            }
-            // The controller records acceptance before advancing the game.
-            // A later exception or contradictory return cannot undo that
-            // action and must never authorize another action for this turn.
-            return returned || acceptedActions.length > receiptsBefore;
-          };
-          worker.runWithDispatchBarrier(() => {
-            if (!promotedShoveIsIllegal) {
-              applied = attemptAction(
-                action as ActionType,
-                amount,
-                safeWorkerFallback || decision.policyFallback === 'brain_exception'
-                  ? 'horse_fallback'
-                  : 'horse_policy'
-              );
-            }
-            intendedApplied = applied;
-            if (applied) {
-              executedAction = action as ActionType;
-              executedAmount = normalizedAmount;
-            }
-            const acceptedWager = acceptedActions.length === 1 ? acceptedActions[0] : null;
-            // The Phase 15 preserved boundary has one owner, shared with the
-            // Lightning hand host: the exact accepted action, or no commit.
-            const exactWagerAccepted = horsePlanWagerAcceptedExactly({
-              issued: fastResult.decision,
-              submitted: { action, amount: normalizedAmount },
-              acceptedActions,
-              witness: decision.executionWitness,
-            });
-            if (
-              intendedApplied &&
-              decision === fastResult.decision &&
-              exactWagerAccepted &&
-              fastResult.planBinding !== null &&
-              (action === 'bet' || action === 'raise')
-            ) {
-              // HorseMind intent is speculative until this exact wager lands.
-              // performAction emits TURN_CHANGE synchronously, so the client
-              // dispatch barrier holds every post until this commit is queued
-              // in the effect lane, ahead of any decision that event enqueued
-              // (and of the older unposted backlog). Rejected or degraded
-              // actions never alter future-street plans.
-              if (fastResult.effects.length === 0) {
-                noteFire('phase15_plan_accepted_no_effects');
-              } else if (fastResult.planIssueDisposition !== 'issued') {
-                noteFire(`phase15_plan_accepted_${fastResult.planIssueDisposition}`);
-              } else
-                void worker
-                  .commitDecisionEffects(
-                    fastResult,
-                    // Phase 15.1: the exact accepted wager joins the durable receipt.
-                    horsePlanAcceptanceFromController(
-                      acceptedWager?.record,
-                      { action, amount: normalizedAmount },
-                      decision.executionWitness?.identity
-                    )
+              const movesAllIn =
+                action === 'all_in' ||
+                ((action === 'call' || action === 'raise' || action === 'bet') &&
+                  horseStack > 0 &&
+                  (typeof amount === 'number' ? amount : toCall) >= horseStack);
+              if (movesAllIn && !promotedShoveIsIllegal) {
+                void gestureBeforeAllIn(
+                  buildAllInGestureInput(
+                    this.tableInfo,
+                    this.seatedPlayers,
+                    player.user_id,
+                    this.handCount,
+                    this.isTournamentTable(),
+                    currentState.players,
+                    currentState.lastAggressorSeat,
+                    toCall
                   )
-                  .catch((error) => {
-                    reportError(
-                      error,
-                      'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
-                    );
-                  });
+                );
+              }
             }
-            if (!applied) {
-              attemptingFallback = true;
-              console.warn(
-                '[ServerTableEngine:' +
-                  this.tableId +
-                  '] Horse action ' +
-                  action +
-                  ' rejected at seat ' +
-                  seat +
-                  ' - falling back to check/fold'
-              );
-              // Bible V8 §1.7.4 preferCheckOverFold. Re-arm: the rejected attempt
-              // above produced no broadcast, so the clock must start again for
-              // whichever of these two lands.
-              this.lastActionAcceptedAtMs = Date.now();
-              applied = attemptAction('check', undefined, 'horse_fallback');
+            let intendedApplied = false;
+            let executedAction: ActionType | null = null;
+            let executedAmount: number | null = null;
+            let attemptingFallback = false;
+            // Always observed, witness or not: the controller may execute a
+            // different action from the one submitted (an all_in that is only a
+            // call), and every ledger below must record what was executed.
+            const acceptanceObserver = (record: Readonly<ActionRecord>): void => {
+              acceptedActions.push({ record, intended: !attemptingFallback });
+            };
+            const horseClockWasArmed = this.lastActionAcceptedAtMs;
+            this.lastActionAcceptedAtMs = Date.now();
+            const worker = getLiveHorseDecisionWorker();
+            const attemptAction = (
+              attemptedAction: ActionType,
+              attemptedAmount: number | undefined,
+              origin: 'horse_policy' | 'horse_fallback'
+            ): boolean => {
+              if (origin === 'horse_policy' && !horseFeatureAcceptanceUsable(decision)) {
+                noteFire('horse_feature_authority_withdrawn_before_acceptance');
+                return false;
+              }
+              const receiptsBefore = acceptedActions.length;
+              let returned = false;
+              try {
+                returned = handControllerRef.performAction(
+                  seat,
+                  attemptedAction,
+                  attemptedAmount,
+                  origin,
+                  acceptanceObserver
+                );
+              } catch (err) {
+                reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
+              }
+              // The controller records acceptance before advancing the game.
+              // A later exception or contradictory return cannot undo that
+              // action and must never authorize another action for this turn.
+              return returned || acceptedActions.length > receiptsBefore;
+            };
+            worker.runWithDispatchBarrier(() => {
+              if (!promotedShoveIsIllegal) {
+                applied = attemptAction(
+                  action as ActionType,
+                  amount,
+                  safeWorkerFallback || decision.policyFallback === 'brain_exception'
+                    ? 'horse_fallback'
+                    : 'horse_policy'
+                );
+              }
+              intendedApplied = applied;
               if (applied) {
-                executedAction = 'check';
-                executedAmount = null;
-              } else {
-                applied = attemptAction('fold', undefined, 'horse_fallback');
-                if (applied) {
-                  executedAction = 'fold';
-                  executedAmount = null;
-                }
+                executedAction = action as ActionType;
+                executedAmount = normalizedAmount;
               }
-            }
-            settleHorseExecutionWitness(decision.executionWitness, {
-              applied,
-              acceptedActions,
-            });
-            observeHorsePhase14Execution(decision);
-            if (applied && acceptedActions.length === 1) {
-              const actual = acceptedActions[0].record;
-              executedAction = actual.action;
-              executedAmount = ['bet', 'raise', 'call'].includes(actual.action)
-                ? actual.amount
-                : null;
-            }
-            const matchesUtilitySelection =
-              !utilityLedger ||
-              (utilityLedger.selectedAction === executedAction &&
-                utilityLedger.selectedAmount === executedAmount);
-            if (utilityLedger) {
-              utilityLedger.executedAction = executedAction;
-              utilityLedger.executedAmount = executedAmount;
-              utilityLedger.executionStatus = !applied
-                ? 'not_executed'
-                : !intendedApplied
-                  ? 'fallback'
-                  : matchesUtilitySelection
-                    ? 'intended'
-                    : 'coerced';
-              if (utilityLedger.executionStatus === 'intended') {
-                noteFire('phase7_utility_committed');
-              } else if (utilityLedger.executionStatus === 'coerced') {
-                noteFire('phase7_utility_coerced');
-              } else if (utilityLedger.executionStatus === 'fallback') {
-                noteFire('phase7_utility_fallback');
-              } else {
-                noteFire('phase7_utility_not_executed');
-              }
-            }
-            if (plo4Ledger) {
-              plo4Ledger.executedAction = executedAction;
-              plo4Ledger.executedAmount = executedAmount;
-              const matched =
-                executedAction === plo4Ledger.finalAction &&
-                (!['bet', 'raise'].includes(plo4Ledger.finalAction) ||
-                  executedAmount === plo4Ledger.finalAmount);
-              plo4Ledger.executionStatus = !applied
-                ? 'not_executed'
-                : !intendedApplied
-                  ? 'fallback'
-                  : matched
-                    ? 'intended'
-                    : 'coerced';
-              noteFire(`phase10_execution_${plo4Ledger.executionStatus}`);
-              if (plo4Ledger.selection === 'selected') {
-                if (plo4Ledger.executionStatus === 'intended') {
-                  plo4Ledger.selection = 'controller_accepted';
-                  noteFire('phase10_selection_controller_accepted');
-                } else if (
-                  plo4Ledger.executionStatus === 'fallback' ||
-                  plo4Ledger.executionStatus === 'coerced'
-                ) {
-                  // The controller refused or rewrote an authorised candidate:
-                  // an illegal-action disable, local to this process (Phase 8 law).
-                  liveHorsePhase10Authority.withdraw(
-                    `controller_${plo4Ledger.executionStatus}_candidate`
-                  );
-                  noteFire('phase10_authority_controller_withdrawn');
-                }
-              }
-            }
-            if (omahaLedger) {
-              omahaLedger.executedAction = executedAction;
-              omahaLedger.executedAmount = executedAmount;
-              const matched =
-                executedAction === omahaLedger.finalAction &&
-                (!['bet', 'raise'].includes(omahaLedger.finalAction) ||
-                  executedAmount === omahaLedger.finalAmount);
-              omahaLedger.executionStatus = !applied
-                ? 'not_executed'
-                : !intendedApplied
-                  ? 'fallback'
-                  : matched
-                    ? 'intended'
-                    : 'coerced';
-              noteFire(`phase11_execution_${omahaLedger.executionStatus}`);
-              noteFire(`phase11_${omahaLedger.variant}_execution_${omahaLedger.executionStatus}`);
-              if (omahaLedger.selection === 'selected') {
-                if (omahaLedger.executionStatus === 'intended') {
-                  omahaLedger.selection = 'controller_accepted';
-                  noteFire('phase11_selection_controller_accepted');
-                } else if (
-                  (omahaLedger.executionStatus === 'fallback' ||
-                    omahaLedger.executionStatus === 'coerced') &&
-                  isOmahaPolicyVariant(omahaLedger.variant)
-                ) {
-                  // The controller refused or rewrote an authorised candidate:
-                  // an illegal-action disable of that pack, local to this
-                  // process (Phase 8 law).
-                  liveHorsePhase11Authorities[omahaLedger.variant].withdraw(
-                    `controller_${omahaLedger.executionStatus}_candidate`
-                  );
-                  noteFire('phase11_authority_controller_withdrawn');
-                }
-              }
-            }
-            if (remainingLedger) {
-              remainingLedger.executedAction = executedAction;
-              remainingLedger.executedAmount = executedAmount;
-              const matched =
-                executedAction === remainingLedger.finalAction &&
-                (!['bet', 'raise'].includes(remainingLedger.finalAction) ||
-                  executedAmount === remainingLedger.finalAmount);
-              remainingLedger.executionStatus = !applied
-                ? 'not_executed'
-                : !intendedApplied
-                  ? 'fallback'
-                  : matched
-                    ? 'intended'
-                    : 'coerced';
-              noteFire(`phase12_execution_${remainingLedger.executionStatus}`);
-              noteFire(
-                `phase12_${remainingLedger.variant}_execution_${remainingLedger.executionStatus}`
-              );
-              if (remainingLedger.selection === 'selected') {
-                if (remainingLedger.executionStatus === 'intended') {
-                  remainingLedger.selection = 'controller_accepted';
-                  noteFire('phase12_selection_controller_accepted');
-                } else if (
-                  (remainingLedger.executionStatus === 'fallback' ||
-                    remainingLedger.executionStatus === 'coerced') &&
-                  isRemainingPolicyVariant(remainingLedger.variant)
-                ) {
-                  // The controller refused or rewrote an authorised candidate:
-                  // an illegal-action disable of that pack, local to this
-                  // process (Phase 8 law).
-                  liveHorsePhase12Authorities[remainingLedger.variant].withdraw(
-                    `controller_${remainingLedger.executionStatus}_candidate`
-                  );
-                  noteFire('phase12_authority_controller_withdrawn');
-                }
-              }
-            }
-            if (jointLedger) {
-              jointLedger.executedAction = executedAction;
-              jointLedger.executedAmount = executedAmount;
-              const matched =
-                executedAction === jointLedger.finalAction &&
-                (!['bet', 'raise'].includes(jointLedger.finalAction) ||
-                  executedAmount === jointLedger.finalAmount);
-              jointLedger.executionStatus = !applied
-                ? 'not_executed'
-                : !intendedApplied
-                  ? 'fallback'
-                  : matched
-                    ? 'intended'
-                    : 'coerced';
-              noteFire(`phase13_execution_${jointLedger.executionStatus}`);
-              noteFire(`phase13_${jointLedger.variant}_execution_${jointLedger.executionStatus}`);
-              if (jointLedger.selection === 'selected') {
-                if (jointLedger.executionStatus === 'intended') {
-                  jointLedger.selection = 'controller_accepted';
-                  noteFire('phase13_selection_controller_accepted');
-                } else if (
-                  (jointLedger.executionStatus === 'fallback' ||
-                    jointLedger.executionStatus === 'coerced') &&
-                  isJointVariant(jointLedger.variant)
-                ) {
-                  // The controller refused or rewrote an authorised candidate:
-                  // an illegal-action disable of that variant's joint authority,
-                  // local to this process (Phase 8 law).
-                  liveHorsePhase13Authorities[jointLedger.variant].withdraw(
-                    `controller_${jointLedger.executionStatus}_candidate`
-                  );
-                  noteFire('phase13_authority_controller_withdrawn');
-                }
-              }
-            }
-            if (guardLedger) {
-              guardLedger.executedAction = executedAction;
-              guardLedger.executedAmount = executedAmount;
-              const action = guardLedger.applied
-                ? guardLedger.candidateAction
-                : guardLedger.baselineAction;
-              const amount = guardLedger.applied
-                ? guardLedger.candidateAmount
-                : guardLedger.baselineAmount;
-              const matched =
-                executedAction === action &&
-                (!(action === 'bet' || action === 'raise') || executedAmount === amount);
-              guardLedger.executionStatus = !applied
-                ? 'not_executed'
-                : !intendedApplied
-                  ? 'fallback'
-                  : matched
-                    ? 'intended'
-                    : 'coerced';
-              if (guardLedger.selection === 'selected') {
-                if (guardLedger.executionStatus === 'intended')
-                  guardLedger.selection = 'controller_accepted';
-                else if (
-                  guardLedger.executionStatus === 'fallback' ||
-                  guardLedger.executionStatus === 'coerced'
-                )
-                  liveHorsePhase8GuardAuthority.withdraw(
-                    `controller_${guardLedger.executionStatus}_candidate`
-                  );
-              }
-            }
-            if (postflopLedger) {
-              postflopLedger.executedAction = executedAction;
-              postflopLedger.executedAmount = executedAmount;
-              const plannedAction = postflopLedger.applied
-                ? postflopLedger.candidateAction
-                : postflopLedger.baselineAction;
-              const plannedAmount = postflopLedger.applied
-                ? postflopLedger.candidateAmount
-                : postflopLedger.baselineAmount;
-              const matched =
-                executedAction === plannedAction &&
-                (!(plannedAction === 'bet' || plannedAction === 'raise') ||
-                  executedAmount === plannedAmount);
-              postflopLedger.executionStatus = !applied
-                ? 'not_executed'
-                : !intendedApplied
-                  ? 'fallback'
-                  : matched
-                    ? 'intended'
-                    : 'coerced';
-              noteFire(`phase8_execution_${postflopLedger.executionStatus}`);
-              if (postflopLedger.selection === 'selected') {
-                if (postflopLedger.executionStatus === 'intended') {
-                  postflopLedger.selection = 'controller_accepted';
-                  noteFire('phase8_selection_controller_accepted');
-                } else if (
-                  postflopLedger.executionStatus === 'fallback' ||
-                  postflopLedger.executionStatus === 'coerced'
-                ) {
-                  // The controller refused or rewrote an authorised candidate:
-                  // an illegal-action disable, local to this process.
-                  liveHorsePhase8Authority.withdraw(
-                    `controller_${postflopLedger.executionStatus}_candidate`
-                  );
-                  noteFire('phase8_authority_controller_withdrawn');
-                }
-              }
-            }
-          });
-          // Unconditional markProgress() here reset watchdogTrips even when all
-          // three actions were rejected, hiding a genuine stall for a full window.
-          if (applied) {
-            this.settleHorseSeatActed(player.user_id);
-            // Realtime programme Phase 1 (2026-09-04): a horse's action is timed
-            // exactly like a human's. This path bypasses _handlePlayerActionInner,
-            // so before this the act-to-broadcast clock started only for HTTP
-            // actions and the horse series could never fill - which also meant the
-            // engine's own baseline latency was invisible whenever no human sat.
-            // Same instrument, same clock, same treatment (CLAUDE.md 10.5).
-            //
-            // AUDIT FIX (2026-09-05): this sat above the check/fold fallback, so a
-            // horse whose intended action was REJECTED still reached the felt via
-            // the degrade and was neither counted nor timed. It now keys on the
-            // same `applied` that markProgress() does - the one place that already
-            // means "this seat acted", whichever of the three attempts landed.
-            try {
-              EngineMetrics.actionsFleetTotal.inc(1, {
-                audience: this.humansSeated() > 0 ? 'human' : 'horse',
-                format: this.tableFormat(),
+              const acceptedWager = acceptedActions.length === 1 ? acceptedActions[0] : null;
+              // The Phase 15 preserved boundary has one owner, shared with the
+              // Lightning hand host: the exact accepted action, or no commit.
+              const exactWagerAccepted = horsePlanWagerAcceptedExactly({
+                issued: fastResult.decision,
+                submitted: { action, amount: normalizedAmount },
+                acceptedActions,
+                witness: decision.executionWitness,
               });
-            } catch {
-              /* metrics must never affect gameplay */
+              if (
+                intendedApplied &&
+                decision === fastResult.decision &&
+                exactWagerAccepted &&
+                fastResult.planBinding !== null &&
+                (action === 'bet' || action === 'raise')
+              ) {
+                // HorseMind intent is speculative until this exact wager lands.
+                // performAction emits TURN_CHANGE synchronously, so the client
+                // dispatch barrier holds every post until this commit is queued
+                // in the effect lane, ahead of any decision that event enqueued
+                // (and of the older unposted backlog). Rejected or degraded
+                // actions never alter future-street plans.
+                if (fastResult.effects.length === 0) {
+                  noteFire('phase15_plan_accepted_no_effects');
+                } else if (fastResult.planIssueDisposition !== 'issued') {
+                  noteFire(`phase15_plan_accepted_${fastResult.planIssueDisposition}`);
+                } else
+                  void worker
+                    .commitDecisionEffects(
+                      fastResult,
+                      // Phase 15.1: the exact accepted wager joins the durable receipt.
+                      horsePlanAcceptanceFromController(
+                        acceptedWager?.record,
+                        { action, amount: normalizedAmount },
+                        decision.executionWitness?.identity
+                      )
+                    )
+                    .catch((error) => {
+                      reportError(
+                        error,
+                        'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
+                      );
+                    });
+              }
+              if (!applied) {
+                attemptingFallback = true;
+                console.warn(
+                  '[ServerTableEngine:' +
+                    this.tableId +
+                    '] Horse action ' +
+                    action +
+                    ' rejected at seat ' +
+                    seat +
+                    ' - falling back to check/fold'
+                );
+                // Bible V8 §1.7.4 preferCheckOverFold. Re-arm: the rejected attempt
+                // above produced no broadcast, so the clock must start again for
+                // whichever of these two lands.
+                this.lastActionAcceptedAtMs = Date.now();
+                applied = attemptAction('check', undefined, 'horse_fallback');
+                if (applied) {
+                  executedAction = 'check';
+                  executedAmount = null;
+                } else {
+                  applied = attemptAction('fold', undefined, 'horse_fallback');
+                  if (applied) {
+                    executedAction = 'fold';
+                    executedAmount = null;
+                  }
+                }
+              }
+              settleHorseExecutionWitness(decision.executionWitness, {
+                applied,
+                acceptedActions,
+              });
+              observeHorsePhase14Execution(decision);
+              if (applied && acceptedActions.length === 1) {
+                const actual = acceptedActions[0].record;
+                executedAction = actual.action;
+                executedAmount = ['bet', 'raise', 'call'].includes(actual.action)
+                  ? actual.amount
+                  : null;
+              }
+              const matchesUtilitySelection =
+                !utilityLedger ||
+                (utilityLedger.selectedAction === executedAction &&
+                  utilityLedger.selectedAmount === executedAmount);
+              if (utilityLedger) {
+                utilityLedger.executedAction = executedAction;
+                utilityLedger.executedAmount = executedAmount;
+                utilityLedger.executionStatus = !applied
+                  ? 'not_executed'
+                  : !intendedApplied
+                    ? 'fallback'
+                    : matchesUtilitySelection
+                      ? 'intended'
+                      : 'coerced';
+                if (utilityLedger.executionStatus === 'intended') {
+                  noteFire('phase7_utility_committed');
+                } else if (utilityLedger.executionStatus === 'coerced') {
+                  noteFire('phase7_utility_coerced');
+                } else if (utilityLedger.executionStatus === 'fallback') {
+                  noteFire('phase7_utility_fallback');
+                } else {
+                  noteFire('phase7_utility_not_executed');
+                }
+              }
+              if (plo4Ledger) {
+                plo4Ledger.executedAction = executedAction;
+                plo4Ledger.executedAmount = executedAmount;
+                const matched =
+                  executedAction === plo4Ledger.finalAction &&
+                  (!['bet', 'raise'].includes(plo4Ledger.finalAction) ||
+                    executedAmount === plo4Ledger.finalAmount);
+                plo4Ledger.executionStatus = !applied
+                  ? 'not_executed'
+                  : !intendedApplied
+                    ? 'fallback'
+                    : matched
+                      ? 'intended'
+                      : 'coerced';
+                noteFire(`phase10_execution_${plo4Ledger.executionStatus}`);
+                if (plo4Ledger.selection === 'selected') {
+                  if (plo4Ledger.executionStatus === 'intended') {
+                    plo4Ledger.selection = 'controller_accepted';
+                    noteFire('phase10_selection_controller_accepted');
+                  } else if (
+                    plo4Ledger.executionStatus === 'fallback' ||
+                    plo4Ledger.executionStatus === 'coerced'
+                  ) {
+                    // The controller refused or rewrote an authorised candidate:
+                    // an illegal-action disable, local to this process (Phase 8 law).
+                    liveHorsePhase10Authority.withdraw(
+                      `controller_${plo4Ledger.executionStatus}_candidate`
+                    );
+                    noteFire('phase10_authority_controller_withdrawn');
+                  }
+                }
+              }
+              if (omahaLedger) {
+                omahaLedger.executedAction = executedAction;
+                omahaLedger.executedAmount = executedAmount;
+                const matched =
+                  executedAction === omahaLedger.finalAction &&
+                  (!['bet', 'raise'].includes(omahaLedger.finalAction) ||
+                    executedAmount === omahaLedger.finalAmount);
+                omahaLedger.executionStatus = !applied
+                  ? 'not_executed'
+                  : !intendedApplied
+                    ? 'fallback'
+                    : matched
+                      ? 'intended'
+                      : 'coerced';
+                noteFire(`phase11_execution_${omahaLedger.executionStatus}`);
+                noteFire(`phase11_${omahaLedger.variant}_execution_${omahaLedger.executionStatus}`);
+                if (omahaLedger.selection === 'selected') {
+                  if (omahaLedger.executionStatus === 'intended') {
+                    omahaLedger.selection = 'controller_accepted';
+                    noteFire('phase11_selection_controller_accepted');
+                  } else if (
+                    (omahaLedger.executionStatus === 'fallback' ||
+                      omahaLedger.executionStatus === 'coerced') &&
+                    isOmahaPolicyVariant(omahaLedger.variant)
+                  ) {
+                    // The controller refused or rewrote an authorised candidate:
+                    // an illegal-action disable of that pack, local to this
+                    // process (Phase 8 law).
+                    liveHorsePhase11Authorities[omahaLedger.variant].withdraw(
+                      `controller_${omahaLedger.executionStatus}_candidate`
+                    );
+                    noteFire('phase11_authority_controller_withdrawn');
+                  }
+                }
+              }
+              if (remainingLedger) {
+                remainingLedger.executedAction = executedAction;
+                remainingLedger.executedAmount = executedAmount;
+                const matched =
+                  executedAction === remainingLedger.finalAction &&
+                  (!['bet', 'raise'].includes(remainingLedger.finalAction) ||
+                    executedAmount === remainingLedger.finalAmount);
+                remainingLedger.executionStatus = !applied
+                  ? 'not_executed'
+                  : !intendedApplied
+                    ? 'fallback'
+                    : matched
+                      ? 'intended'
+                      : 'coerced';
+                noteFire(`phase12_execution_${remainingLedger.executionStatus}`);
+                noteFire(
+                  `phase12_${remainingLedger.variant}_execution_${remainingLedger.executionStatus}`
+                );
+                if (remainingLedger.selection === 'selected') {
+                  if (remainingLedger.executionStatus === 'intended') {
+                    remainingLedger.selection = 'controller_accepted';
+                    noteFire('phase12_selection_controller_accepted');
+                  } else if (
+                    (remainingLedger.executionStatus === 'fallback' ||
+                      remainingLedger.executionStatus === 'coerced') &&
+                    isRemainingPolicyVariant(remainingLedger.variant)
+                  ) {
+                    // The controller refused or rewrote an authorised candidate:
+                    // an illegal-action disable of that pack, local to this
+                    // process (Phase 8 law).
+                    liveHorsePhase12Authorities[remainingLedger.variant].withdraw(
+                      `controller_${remainingLedger.executionStatus}_candidate`
+                    );
+                    noteFire('phase12_authority_controller_withdrawn');
+                  }
+                }
+              }
+              if (jointLedger) {
+                jointLedger.executedAction = executedAction;
+                jointLedger.executedAmount = executedAmount;
+                const matched =
+                  executedAction === jointLedger.finalAction &&
+                  (!['bet', 'raise'].includes(jointLedger.finalAction) ||
+                    executedAmount === jointLedger.finalAmount);
+                jointLedger.executionStatus = !applied
+                  ? 'not_executed'
+                  : !intendedApplied
+                    ? 'fallback'
+                    : matched
+                      ? 'intended'
+                      : 'coerced';
+                noteFire(`phase13_execution_${jointLedger.executionStatus}`);
+                noteFire(`phase13_${jointLedger.variant}_execution_${jointLedger.executionStatus}`);
+                if (jointLedger.selection === 'selected') {
+                  if (jointLedger.executionStatus === 'intended') {
+                    jointLedger.selection = 'controller_accepted';
+                    noteFire('phase13_selection_controller_accepted');
+                  } else if (
+                    (jointLedger.executionStatus === 'fallback' ||
+                      jointLedger.executionStatus === 'coerced') &&
+                    isJointVariant(jointLedger.variant)
+                  ) {
+                    // The controller refused or rewrote an authorised candidate:
+                    // an illegal-action disable of that variant's joint authority,
+                    // local to this process (Phase 8 law).
+                    liveHorsePhase13Authorities[jointLedger.variant].withdraw(
+                      `controller_${jointLedger.executionStatus}_candidate`
+                    );
+                    noteFire('phase13_authority_controller_withdrawn');
+                  }
+                }
+              }
+              if (guardLedger) {
+                guardLedger.executedAction = executedAction;
+                guardLedger.executedAmount = executedAmount;
+                const action = guardLedger.applied
+                  ? guardLedger.candidateAction
+                  : guardLedger.baselineAction;
+                const amount = guardLedger.applied
+                  ? guardLedger.candidateAmount
+                  : guardLedger.baselineAmount;
+                const matched =
+                  executedAction === action &&
+                  (!(action === 'bet' || action === 'raise') || executedAmount === amount);
+                guardLedger.executionStatus = !applied
+                  ? 'not_executed'
+                  : !intendedApplied
+                    ? 'fallback'
+                    : matched
+                      ? 'intended'
+                      : 'coerced';
+                if (guardLedger.selection === 'selected') {
+                  if (guardLedger.executionStatus === 'intended')
+                    guardLedger.selection = 'controller_accepted';
+                  else if (
+                    guardLedger.executionStatus === 'fallback' ||
+                    guardLedger.executionStatus === 'coerced'
+                  )
+                    liveHorsePhase8GuardAuthority.withdraw(
+                      `controller_${guardLedger.executionStatus}_candidate`
+                    );
+                }
+              }
+              if (postflopLedger) {
+                postflopLedger.executedAction = executedAction;
+                postflopLedger.executedAmount = executedAmount;
+                const plannedAction = postflopLedger.applied
+                  ? postflopLedger.candidateAction
+                  : postflopLedger.baselineAction;
+                const plannedAmount = postflopLedger.applied
+                  ? postflopLedger.candidateAmount
+                  : postflopLedger.baselineAmount;
+                const matched =
+                  executedAction === plannedAction &&
+                  (!(plannedAction === 'bet' || plannedAction === 'raise') ||
+                    executedAmount === plannedAmount);
+                postflopLedger.executionStatus = !applied
+                  ? 'not_executed'
+                  : !intendedApplied
+                    ? 'fallback'
+                    : matched
+                      ? 'intended'
+                      : 'coerced';
+                noteFire(`phase8_execution_${postflopLedger.executionStatus}`);
+                if (postflopLedger.selection === 'selected') {
+                  if (postflopLedger.executionStatus === 'intended') {
+                    postflopLedger.selection = 'controller_accepted';
+                    noteFire('phase8_selection_controller_accepted');
+                  } else if (
+                    postflopLedger.executionStatus === 'fallback' ||
+                    postflopLedger.executionStatus === 'coerced'
+                  ) {
+                    // The controller refused or rewrote an authorised candidate:
+                    // an illegal-action disable, local to this process.
+                    liveHorsePhase8Authority.withdraw(
+                      `controller_${postflopLedger.executionStatus}_candidate`
+                    );
+                    noteFire('phase8_authority_controller_withdrawn');
+                  }
+                }
+              }
+            });
+            // Unconditional markProgress() here reset watchdogTrips even when all
+            // three actions were rejected, hiding a genuine stall for a full window.
+            if (applied) {
+              this.settleHorseSeatActed(player.user_id);
+              // Realtime programme Phase 1 (2026-09-04): a horse's action is timed
+              // exactly like a human's. This path bypasses _handlePlayerActionInner,
+              // so before this the act-to-broadcast clock started only for HTTP
+              // actions and the horse series could never fill - which also meant the
+              // engine's own baseline latency was invisible whenever no human sat.
+              // Same instrument, same clock, same treatment (CLAUDE.md 10.5).
+              //
+              // AUDIT FIX (2026-09-05): this sat above the check/fold fallback, so a
+              // horse whose intended action was REJECTED still reached the felt via
+              // the degrade and was neither counted nor timed. It now keys on the
+              // same `applied` that markProgress() does - the one place that already
+              // means "this seat acted", whichever of the three attempts landed.
+              try {
+                EngineMetrics.actionsFleetTotal.inc(1, {
+                  audience: this.humansSeated() > 0 ? 'human' : 'horse',
+                  format: this.tableFormat(),
+                });
+              } catch {
+                /* metrics must never affect gameplay */
+              }
+              this.markProgress();
+            } else {
+              // Nothing landed, so no broadcast carries this clock. Put back what
+              // was pending; a dead attempt must not become the next sample.
+              this.lastActionAcceptedAtMs = horseClockWasArmed;
+              try {
+                EngineMetrics.horseSeatUnactableTotal.inc(1);
+              } catch {
+                /* metrics must never affect gameplay */
+              }
+              reportError(
+                new Error(
+                  'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'
+                ),
+                'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
+              );
             }
-            this.markProgress();
-          } else {
-            // Nothing landed, so no broadcast carries this clock. Put back what
-            // was pending; a dead attempt must not become the next sample.
-            this.lastActionAcceptedAtMs = horseClockWasArmed;
-            try {
-              EngineMetrics.horseSeatUnactableTotal.inc(1);
-            } catch {
-              /* metrics must never affect gameplay */
-            }
-            reportError(
-              new Error(
-                'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'
-              ),
-              'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
-            );
+          } finally {
+            // The executor owns the witness after detaching cancellation. A
+            // synchronous failure must release that ownership too; preserve any
+            // controller acceptance even when later policy bookkeeping throws.
+            settleHorseExecutionWitness(decision.executionWitness, { applied, acceptedActions });
           }
         };
-        const thinkTimer = setTimeout(() => {
+        const thinkTimer = this.setHandTimeout(() => {
           if (this.horseActionTimer === thinkTimer) this.horseActionTimer = null;
           thinkTimeElapsed = true;
           if (!secondLookPending) {
@@ -4912,7 +5243,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // moment it lands; this timer acts on the fast answer if it never
           // does.
           noteFire('v44_second_look_awaited');
-          secondLookHoldTimer = setTimeout(
+          secondLookHoldTimer = this.setHandTimeout(
             () => {
               if (this.horseActionTimer === secondLookHoldTimer) this.horseActionTimer = null;
               secondLookHoldTimer = null;
@@ -4920,7 +5251,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               noteFire('v44_second_look_hold_expired');
               commitDecision();
             },
-            Math.max(0, secondLookHoldUntil - Date.now())
+            Math.max(0, secondLookClockDeadline() - Date.now())
           );
           this.horseActionTimer = secondLookHoldTimer;
         }, remainingThinkMs);

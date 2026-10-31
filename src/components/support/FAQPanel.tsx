@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * ❓ FAQ PANEL — Help & Rules
@@ -47,7 +48,7 @@ export const DEFAULT_FAQS: FAQItem[] = [
 ];
 
 export function FAQPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('faq.search', '', 'global');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (!isOpen) return null;

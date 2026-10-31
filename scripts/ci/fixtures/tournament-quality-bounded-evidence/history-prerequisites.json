@@ -1,0 +1,38 @@
+[
+  {
+    "version": "20261029180415",
+    "name": "rake_record_json_size_is_decompressed",
+    "sha256": "e50516de2336e1e8e789c93203118f5f9539301eb47cff9af7c5ab5b00a31ecd",
+    "metadata": {
+      "name": "rake_record_json_size_is_decompressed",
+      "version": "20261029180415",
+      "rollback": null,
+      "created_by": null,
+      "idempotency_key": null
+    }
+  },
+  {
+    "version": "20261029180420",
+    "name": "tournament_rake_small_rows_are_covered",
+    "sha256": "01e50ce67eed4d3806ed1e8bba51c0ca4142c78b08bcda782a4f6a68972dab28",
+    "metadata": {
+      "name": "tournament_rake_small_rows_are_covered",
+      "version": "20261029180420",
+      "rollback": null,
+      "created_by": null,
+      "idempotency_key": null
+    }
+  },
+  {
+    "version": "20261029180421",
+    "name": "tournament_rake_large_rows_keep_their_path",
+    "sha256": "1652b274d9d1861490d603645f4a2782266726b6200ebb8365d8e04e00abe172",
+    "metadata": {
+      "name": "tournament_rake_large_rows_keep_their_path",
+      "version": "20261029180421",
+      "rollback": null,
+      "created_by": null,
+      "idempotency_key": null
+    }
+  }
+]

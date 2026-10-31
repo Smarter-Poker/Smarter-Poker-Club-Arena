@@ -1,3 +1,4 @@
+import { creditWalletShortfall } from '../utils/creditAdminData';
 import { getIdentityDNAStatus } from '../core/IdentityDNA';
 import { runCreditReduction, type CreditReductionStart } from './CreditReductionOperation';
 import type { CreditReductionEnvelope } from '../lib/CreditReductionContract';
@@ -10,11 +11,11 @@ import type { CreditReductionEnvelope } from '../lib/CreditReductionContract';
  *
  * CREDIT TYPES:
  * - PREPAID: Agent pays upfront, no credit extended
- * - CREDIT LINE: Agent plays on credit, settles weekly
+ * - CREDIT LINE: Tracks chips advanced; the Agent Wallet is funded separately
  *
  * DEBT FORMULA:
- * Debt = agents.credit_used, the credit actually drawn.
- * Unused credit capacity and wallet balances are not debt.
+ * Debt = max(0, tracking credit line - agent wallet before rakeback).
+ * The line never funds a transfer; weekly invoices capture their own immutable basis.
  *
  * SETTLEMENT CYCLE:
  * - Sunday 11:59:59 PM PST → Generate invoices
@@ -51,17 +52,13 @@ const CREDIT_PAYMENT_REASON_TEXT: Record<string, string> = {
   agent_user_not_found: 'No wallet is linked to that agent',
   not_your_wallet: 'You can only pay an invoice from your own wallet',
   insufficient_balance: 'Not enough chips in your wallet for this payment',
+  insufficient_club_bank: 'The club bank needs enough funded chips to top up this agent wallet',
 };
 
-function drawnCredit(value: unknown): number {
-  const amount =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string' && value.trim()
-        ? Number(value)
-        : NaN;
-  if (!Number.isFinite(amount) || amount < 0) throw new Error('Drawn credit is unavailable');
-  return amount;
+function trackedWalletDebt(line: unknown, wallet: unknown): number {
+  const value = creditWalletShortfall(line, wallet);
+  if (value === null) throw new Error('Credit tracking balance is unavailable');
+  return value;
 }
 
 function creditPaymentReasonText(reason: string | undefined): string {
@@ -247,9 +244,7 @@ export const CreditService = {
       .from('agents')
       // club_id is selected because credit_requests.club_id is NOT NULL with no
       // default, and requestCreditIncrease had nowhere else to get it.
-      .select(
-        'id, user_id, club_id, credit_limit, credit_used, agent_wallet_balance, is_prepaid, status'
-      )
+      .select('id, user_id, club_id, credit_limit, agent_wallet_balance, is_prepaid, status')
       .eq('id', agentId)
       .maybeSingle();
 
@@ -272,7 +267,10 @@ export const CreditService = {
     }
 
     const utilization =
-      agent.credit_limit > 0 ? (drawnCredit(agent.credit_used) / agent.credit_limit) * 100 : 0;
+      agent.credit_limit > 0
+        ? (trackedWalletDebt(agent.credit_limit, agent.agent_wallet_balance) / agent.credit_limit) *
+          100
+        : 0;
 
     return {
       agentId: agent.id,
@@ -282,7 +280,7 @@ export const CreditService = {
       creditLimit: agent.credit_limit || 0,
       currentBalance: agent.agent_wallet_balance || 0,
       isPrepaid: agent.is_prepaid || false,
-      status: this.calculateStatus(utilization),
+      status: agent.status === 'suspended' ? 'suspended' : 'good_standing',
       utilizationPercent: Math.round(utilization),
       nextSettlementDate: this.getNextSettlementDate(),
     };
@@ -429,7 +427,7 @@ export const CreditService = {
   async calculateDebt(agentId: string): Promise<DebtCalculation> {
     const { data: agent, error } = await supabase
       .from('agents')
-      .select('credit_limit, credit_used, agent_wallet_balance, is_prepaid')
+      .select('credit_limit, agent_wallet_balance, is_prepaid')
       .eq('id', agentId)
       .maybeSingle();
 
@@ -446,7 +444,7 @@ export const CreditService = {
       };
     }
 
-    const debt = drawnCredit(agent.credit_used);
+    const debt = trackedWalletDebt(agent.credit_limit, agent.agent_wallet_balance);
 
     return {
       agentId,
@@ -465,7 +463,7 @@ export const CreditService = {
     const resolvedId = await resolveClubUUID(clubId);
     const { data: agents, error } = await supabase
       .from('agents')
-      .select('id, credit_limit, credit_used, agent_wallet_balance, is_prepaid')
+      .select('id, credit_limit, agent_wallet_balance, is_prepaid')
       .eq('club_id', resolvedId)
       .eq('is_prepaid', false);
 
@@ -475,7 +473,7 @@ export const CreditService = {
       agentId: agent.id,
       creditLimit: agent.credit_limit || 0,
       currentBalance: agent.agent_wallet_balance || 0,
-      debtOwed: drawnCredit(agent.credit_used),
+      debtOwed: trackedWalletDebt(agent.credit_limit, agent.agent_wallet_balance),
       isPrepaid: false,
       gracePeriodRemaining: this.getGracePeriodRemaining(),
     }));

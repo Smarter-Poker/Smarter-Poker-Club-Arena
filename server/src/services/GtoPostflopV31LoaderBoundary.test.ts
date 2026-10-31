@@ -5,6 +5,7 @@ vi.mock('./supabase/client.js', () => ({ supabase: { rpc: transport.rpc } }));
 vi.mock('./errorReporter.js', () => ({ reportError: transport.report }));
 import {
   loadGtoPostflopV31,
+  loadGtoPostflopV31Once,
   loadGtoPostflopV31Evaluation,
   stopGtoPostflopV31Loader,
 } from './GtoPostflopV31Loader.js';
@@ -18,6 +19,7 @@ import {
   replaceGtoPostflopV31Evaluation,
 } from '../engine/GtoPostflopV31.js';
 import { CELL, evaluationCell, pagedCells } from './V31LoaderFixture.js';
+import { fixture as public215Fixture } from '../engine/__tests__/public215Fixture.js';
 
 beforeEach(() => {
   transport.rpc.mockReset();
@@ -39,6 +41,57 @@ function liveUnchanged() {
 }
 
 describe('actual V31 loader transport boundaries', () => {
+  it('collects one-model pages through the complete sealed census before swapping', async () => {
+    const first = public215Fixture(),
+      second = public215Fixture(40);
+    first.dataset_cells = second.dataset_cells = 2;
+    transport.rpc
+      .mockResolvedValueOnce({ data: [first], error: null })
+      .mockImplementationOnce(async () => {
+        liveUnchanged();
+        return { data: [second], error: null };
+      });
+    await expect(loadGtoPostflopV31Once()).resolves.toEqual({ ok: true, count: 2 });
+    expect(transport.rpc).toHaveBeenNthCalledWith(2, 'fn_gto_v31_active_cells', {
+      p_offset: 1,
+      p_limit: 500,
+    });
+    expect(gtoPostflopV31Count()).toBe(2);
+  });
+  it('does not let an older authoritative-empty read overwrite a newer explicit snapshot', async () => {
+    let completeOld: (value: { data: never[]; error: null }) => void = () => {
+      throw Error('not initialized');
+    };
+    transport.rpc
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeOld = resolve;
+          })
+      )
+      .mockResolvedValueOnce({ data: [structuredClone(CELL)], error: null });
+    const older = loadGtoPostflopV31Once();
+    await expect(loadGtoPostflopV31Once()).resolves.toEqual({ ok: true, count: 1 });
+    completeOld({ data: [], error: null });
+    await expect(older).resolves.toEqual({ ok: false, count: 0 });
+    liveUnchanged();
+    expect(transport.report).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'v31_active_load_superseded' }),
+      'GtoPostflopV31Loader.load'
+    );
+  });
+  it('an explicit failed attempt does not arm a retry', async () => {
+    vi.useFakeTimers();
+    try {
+      transport.rpc.mockResolvedValueOnce({ data: null, error: { message: 'explicit_failure' } });
+      await expect(loadGtoPostflopV31Once()).resolves.toEqual({ ok: false, count: 0 });
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60_000);
+      expect(transport.rpc).toHaveBeenCalledTimes(1);
+      liveUnchanged();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('strips nullable legacy SQL metadata without changing the admitted legacy seal', async () => {
     transport.rpc.mockResolvedValueOnce({
       data: [

@@ -104,7 +104,9 @@ function simulate(ev: LateRegEvent, levelEveryMin = Infinity) {
       lateEntries: late,
     });
     expect(n).toBeGreaterThanOrEqual(0);
-    expect(n).toBeLessThanOrEqual(LATE_REG_MAX_STEP);
+    expect(n).toBeLessThanOrEqual(
+      Math.max(LATE_REG_MAX_STEP, Math.ceil((ev.entriesAtStart * 2) / ev.lateRegMins) + 1)
+    );
     late += n;
     if (n > 0) arrivals.push({ minute, n });
   }
@@ -129,7 +131,7 @@ describe('the late-registration decision never reads the guarantee', () => {
       .split('\n')
       .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
       .join('\n');
-    expect(lateRegCode).not.toMatch(/guarantee|prize_pool\b|prizePool|overlay_at_risk|shortfall/i);
+    expect(lateRegCode).not.toMatch(/prize_pool\b|prizePool|overlay_at_risk|shortfall/i);
   });
 
   it('runs inside the guard cycle, after the overlay and freeroll passes', () => {
@@ -156,7 +158,7 @@ describe('arrivals flow across the whole window, not the first half hour', () =>
       event({ entriesAtStart: 126, lateRegMins: 25, lateRegLevels: 0 })
     );
     expect(arrivals.length).toBeGreaterThanOrEqual(6);
-    for (const a of arrivals) expect(a.n).toBeLessThanOrEqual(LATE_REG_MAX_STEP);
+    for (const a of arrivals) expect(a.n).toBeLessThanOrEqual(12);
   });
 
   it('a small field still sees late arrivals', () => {

@@ -1,0 +1,9 @@
+# Original shaped cash expression statistics
+
+The installed 71236 index remains byte unchanged. It did not collect its Boolean expression statistics; the actual catalog had none, and the actual plans retained the recognition-window scan. New migration 84451 performs one full-table ANALYZE inside its owning guarded transaction. Selected-column ANALYZE does not collect index expression statistics.
+
+The standalone PG17 runner reuses the captured 8-column, 3-constraint, 7-original-index, 4-trigger fixture and original 26 owner bodies. It adds the exact installed index through its maintained migration, records exact installation bytes, and uses 200,000 synthetic rows with observed Union/gate correlation, approximately 1275-byte full rows and 0.98 recognition-clock correlation. Actual production cost settings are used; macOS cannot set effective_io_concurrency=200, so its required native value 0 is reported explicitly. Linux uses the observed 200.
+
+Native proof checks missing statistics, ineffective selected-column variants, genuine whole-table collection, auto/custom causal plan changes, all three modes' original function bags and settings, and the inverse with unchanged table statistics but recreated native index statistics absent. Generic plans may retain an ordinary costed date path; no plan is forced or universally promised. It also proves pg_statistic catalog rollback after post failure, rejection of noncritical owner definition/metadata drift, unchanged full fixture rows and authorities, and the 15-second statement / 1-second lock / 60-second transaction budgets.
+
+Required Accounting1 invokes the runner unconditionally. Source65, generation and maintenance admission are controlled native boundaries; their original production execution is not claimed. Production planner adoption and complete original-report capacity require separate live verification.

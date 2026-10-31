@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  LEADERBOARD PAGE: Club + Global Rankings with Real-Time Updates
@@ -208,16 +209,41 @@ export default function LeaderboardPage() {
   const location = useLocation();
   const { user } = useAuthUser();
   const toast = useToast();
-  const [scope, setScope] = useState<LeaderboardScope>('my-clubs');
-  const [period, setPeriod] = useState<LeaderboardPeriod>('weekly');
-  const [periodOffset, setPeriodOffset] = useState<number>(0);
-  const [metric, setMetric] = useState<LeaderboardMetric>('profit');
+  const [scope, setScope] = usePlayerPreference<LeaderboardScope>(
+    'leaderboard:scope',
+    'my-clubs',
+    'global'
+  );
+  const [period, setPeriod] = usePlayerPreference<LeaderboardPeriod>(
+    'leaderboard:period',
+    'weekly',
+    'global'
+  );
+  const [periodOffset, setPeriodOffset] = usePlayerPreference<number>(
+    'leaderboard:periodOffset',
+    0,
+    'global'
+  );
+  const [planMetric, setMetric] = useState<LeaderboardMetric>('profit');
+  const [chosenMetric, chooseMetric] = usePlayerPreference<string>(
+    'leaderboard:metric',
+    '',
+    'global'
+  );
+  const supportedMetric = METRIC_OPTIONS.find((option) => option.value === chosenMetric);
+  const requestedMetric = supportedMetric?.value ?? planMetric;
+  const metric: LeaderboardMetric =
+    scope === 'global' &&
+    !METRIC_OPTIONS.find((option) => option.value === requestedMetric)?.globalSupported
+      ? 'profit'
+      : requestedMetric;
   /* THE BOARD OPENS ON WHAT THE PRIZES ARE PAID ON (2026-10-17). A club with a
      published plan "Ranked By Hands Played" opened its board "Measured By
      Profit", so a player read the wrong ranking as the prize race. Until the
      player picks a metric themselves, a published plan's metric is the
      default; the player's own pick always wins. */
   const metricChosenRef = useRef(false);
+  metricChosenRef.current = Boolean(supportedMetric);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [totalRanked, setTotalRanked] = useState<number | null>(null);
   const [baselineDate, setBaselineDate] = useState<string | null>(null);
@@ -270,6 +296,11 @@ export default function LeaderboardPage() {
 
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
+  const [preferredClubId, savePreferredClub] = usePlayerPreference<string | null>(
+    'leaderboard:club',
+    null,
+    'global'
+  );
   const [clubsLoading, setClubsLoading] = useState(true);
   const [clubsError, setClubsError] = useState(false);
 
@@ -657,6 +688,7 @@ export default function LeaderboardPage() {
       setSelectedClubId((currentClubId) => {
         if (requestedClub) return requestedClub.id;
         if (clubs.some((club) => club.id === currentClubId)) return currentClubId;
+        if (clubs.some((club) => club.id === preferredClubId)) return preferredClubId;
         return clubs[0]?.id || null;
       });
     } catch (error) {
@@ -704,7 +736,17 @@ export default function LeaderboardPage() {
     if (requested && requested.id !== selectedClubId) setSelectedClubId(requested.id);
   }, [location.search, userClubs, selectedClubId]);
 
+  useEffect(() => {
+    if (
+      !readClubContextParam(location.search) &&
+      preferredClubId &&
+      userClubs.some((club) => club.id === preferredClubId)
+    )
+      setSelectedClubId(preferredClubId);
+  }, [preferredClubId, userClubs, location.search]);
+
   const selectClub = (clubId: string) => {
+    savePreferredClub(clubId);
     setSelectedClubId(clubId);
     const club = userClubs.find((candidate) => candidate.id === clubId);
     const params = new URLSearchParams(location.search);
@@ -1571,7 +1613,7 @@ export default function LeaderboardPage() {
                       title={opt.description}
                       onClick={() => {
                         metricChosenRef.current = true;
-                        setMetric(opt.value);
+                        chooseMetric(opt.value);
                       }}
                       aria-pressed={metric === opt.value}
                     >

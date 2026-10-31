@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB AND UNION DIAMOND COSTS - the operator's commerce console
@@ -1321,7 +1322,7 @@ function ReceiptsConsole({
   refundOpenFor: string | null;
   onRequestRefund: (r: Receipt, line: QuoteLine) => void;
 }) {
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = usePlayerPreference('clubDiamondCosts.showAllReceipts', false);
   const shown = showAll ? receipts : receipts.slice(0, RECEIPTS_SHOWN);
   return (
     <SpadeConsole

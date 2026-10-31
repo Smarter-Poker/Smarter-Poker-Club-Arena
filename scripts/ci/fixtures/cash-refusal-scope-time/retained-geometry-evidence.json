@@ -1,0 +1,22 @@
+{
+  "status": "PRIVATE_QUERY_GEOMETRY_FEASIBLE_NOT_PRODUCTION_QUALIFIED",
+  "original_validation_and_late_json_aggregation_byte_equal": true,
+  "old_cover_retained": true,
+  "bag_equal_counts": [207, 6, 5, 6805],
+  "finite_and_nonfinite_branches_disjoint": true,
+  "finite_range_index_conditions_present": true,
+  "minority": "selector/date Index Scan, then late PK fetch",
+  "dominant": "selector/date Bitmap Heap/Index Scan, then late SeqScan detail fetch",
+  "nonfinite": "selector/date IndexScan exact infinity array",
+  "index_only_scan": false,
+  "planner_flags_forced": false,
+  "limits": [
+    "20,017 receipt fixture,20,018 blocked work rows vs actualmillions/35994blocked",
+    "naturalplan evidence only, no actual production capacity",
+    "actualschema CHECK/PK/FK; triggers/RLS notqualified here",
+    "retained oldcover accepts compressible huge fixtures; no universal oldcover safety claim"
+  ],
+  "source_sha256": "25c0e7ef58934b1ff53169e9efd797967c21b87d043da42d537e80c6cc629e2e",
+  "plans": "geometry-plans.json",
+  "logs": "geometry.log"
+}

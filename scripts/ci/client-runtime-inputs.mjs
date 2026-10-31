@@ -1,3 +1,4 @@
+import { gitEnvironmentForCwd } from './classify-ci-changes.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, statSync, realpathSync } from 'node:fs';
 import { resolve, relative, isAbsolute } from 'node:path';
@@ -60,6 +61,8 @@ export function conservativeClientInput(path) {
   if (
     [
       '.github/workflows/publish-club-arena.yml',
+      '.github/workflows/publish-club-arena-client.yml',
+      '.github/workflows/publish-club-arena-transaction.yml',
       '.github/workflows/post-deploy-e2e.yml',
       'tests/protected-features.json',
     ].includes(path)
@@ -227,6 +230,7 @@ export function runtimeInputPlugin(label, root = process.cwd()) {
 }
 function treeEntries(sha, cwd) {
   const raw = execFileSync('git', ['-C', cwd, 'ls-tree', '-rz', sha], {
+    env: gitEnvironmentForCwd(),
     maxBuffer: 32 * 1024 * 1024,
   });
   if (!raw.equals(Buffer.from(raw.toString('utf8')))) throw new Error('Non-UTF-8 Git tree.');
@@ -279,6 +283,7 @@ export function makeRuntimeInputs(sourceSha, observations, cwd = process.cwd()) 
   for (const path of [...files]) {
     if (!tree.has(path) || !/\.(?:ts|tsx|mjs|js)$/.test(path)) continue;
     const text = execFileSync('git', ['-C', cwd, 'show', `${sourceSha}:${path}`], {
+      env: gitEnvironmentForCwd(),
       maxBuffer: 8 * 1024 * 1024,
     }).toString();
     const calls = [

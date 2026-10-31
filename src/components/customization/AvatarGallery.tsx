@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  AVATAR GALLERY — Choose Avatar
@@ -85,7 +86,11 @@ export function AvatarGallery({
   isVip = false,
   onAvatarChanged,
 }: AvatarGalleryProps) {
-  const [activeTab, setActiveTab] = useState<GalleryTab>('free');
+  const [activeTab, setActiveTab] = usePlayerPreference<GalleryTab>(
+    'avatarGallery.tab',
+    'free',
+    'global'
+  );
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [selectedAvatar, setSelectedAvatar] = useState<string>(currentAvatarUrl);
   const [loading, setLoading] = useState(false);
@@ -98,7 +103,7 @@ export function AvatarGallery({
   const [customFailed, setCustomFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [showQuickAvatar, setShowQuickAvatar] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('avatarGallery.search', '', 'global');
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // ── Style tab: frames + auras ───────────────────────────────────────────

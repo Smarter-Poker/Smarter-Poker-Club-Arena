@@ -2407,3 +2407,120 @@
     justify-self: start;
   }
 }
+
+/* The history is a directory: compact controls above the complete paged book. */
+.page .glass .historyPanel {
+  padding: 16px 12px;
+  gap: 16px;
+  border: 0;
+}
+.historySearchForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.page .historyPanel .ledgerSearch {
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 0 !important;
+  border-bottom: 1px solid var(--ink-muted) !important;
+  font-size: 16px;
+}
+.historySearchButton {
+  min-height: 48px;
+  padding: 0 16px;
+  color: var(--ink-blue);
+  font-weight: 700;
+}
+.historyControls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.page .historyPanel .ledgerFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+}
+.page .historyPanel .ledgerFilter {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 4px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+}
+.page .historyPanel .ledgerFilterActive {
+  color: var(--ink-blue);
+  border-bottom: 2px solid var(--ink-blue);
+  outline: none;
+}
+.page .historyPanel .ledgerSummary {
+  grid-auto-flow: column;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 16px 0;
+  border: 0;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
+.page .historyPanel .summaryCell {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.page .glass .historyPanel .receiptRow {
+  padding: 16px 8px;
+  border: 0;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+  margin: 0;
+}
+.historyTools {
+  margin-top: 16px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.historyTools summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+}
+@media (max-width: 560px) {
+  .historyControls {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}
+.historyCaption {
+  color: var(--ink-muted);
+  font-size: 12px;
+  margin: 0;
+  text-align: center;
+}
+.claimReturnChoice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  grid-column: 1 / -1;
+  color: var(--ink-blue);
+}
+.claimReturnChoice select {
+  min-height: 44px;
+  width: 100%;
+  color: var(--ink-white);
+  background: #000;
+  border: 1px solid var(--ink-muted);
+}
+.console .entryRow select.walletSelect {
+  font-size: 4cqw !important;
+  min-height: 44px;
+}

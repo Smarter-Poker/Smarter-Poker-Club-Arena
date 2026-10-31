@@ -89,7 +89,7 @@ export function cashTemplateBlurb(
  * Render the cadence stored in a game snapshot. Historical tokens remain
  * readable because settled and retired game snapshots are preserved.
  */
-export type CashBombTrigger = 'timed_10m' | 'timed_15m' | 'timed_20m' | 'every_orbit';
+export type CashBombTrigger = 'timed_10m' | 'timed_12m' | 'timed_15m' | 'timed_20m' | 'every_orbit';
 
 export function bombCadenceLabel(
   trigger: CashBombTrigger | string | null | undefined,
@@ -375,6 +375,18 @@ export function stakesRungTaken(
     }
   }
   return null;
+}
+
+/** PostgREST throws plain objects; instanceof Error drops their message. */
+export function cashGameCreateServerMessage(raw: unknown): string | null {
+  if (typeof raw === 'string') return raw.trim() || null;
+  if (!raw || typeof raw !== 'object') return null;
+  try {
+    const message = (raw as { message?: unknown }).message;
+    return typeof message === 'string' ? message.trim() || null : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

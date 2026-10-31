@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /** Admin review of player conduct reports. */
 
 import {
@@ -64,7 +65,10 @@ export default function ReportReviewPage() {
   const [reports, setReports] = useState<PlayerReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [filter, setFilter] = useState<ReportFilter>('pending');
+  const [filter, setFilter] = usePlayerPreference<ReportFilter>(
+    'ReportReviewPage:filter',
+    'pending'
+  );
   const [loadedViewKey, setLoadedViewKey] = useState<string | null>(null);
   const [listScope, setListScope] = useState<ReportScope | null>(null);
   const [selectedReport, setSelectedReport] = useState<SelectedReport | null>(null);

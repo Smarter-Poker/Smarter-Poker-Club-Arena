@@ -1,0 +1,37 @@
+[Unit]
+Description=Club Arena independent private record gateway %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ca-record-gateway
+Group=caddy
+WorkingDirectory=/srv/ca-private-record-gateway/releases/%i
+Environment=NODE_ENV=production
+Environment=PRIVATE_RECORD_GATEWAY_REVISION=%i
+Environment=PRIVATE_RECORD_GATEWAY_SOCKET=/run/ca-private-record-gateway/%i/listener.sock
+EnvironmentFile=/etc/club-arena/private-record-gateway.env
+ExecStart=/usr/bin/node dist/privateRecordGateway.js
+UMask=0007
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/run/ca-private-record-gateway/%i
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+LockPersonality=true
+TasksMax=64
+MemoryMax=256M
+CPUQuota=50%
+LimitNOFILE=1024
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

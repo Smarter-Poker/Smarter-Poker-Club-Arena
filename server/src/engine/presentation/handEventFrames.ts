@@ -21,7 +21,7 @@
  * hub frame at all (hole cards go to their owner alone, as `hole_cards`); the
  * showdown frames carry only hands that were tabled and not mucked.
  */
-import type { Card, HandStage } from '../../types.js';
+import type { Card, HandStage, PerPotAward } from '../../types.js';
 
 type AnyCard = Card | string | { rank?: string; suit?: string };
 
@@ -340,6 +340,56 @@ export function winningBoardIndices(
 }
 
 /** `pot_win`: the winners, their hands, the lit cards and the award groups. */
+/** Both dealers publish the grouped wire shape, never private hand objects. */
+function potAwardGroups(raw: unknown, showdowns: readonly ShowdownRecord[]): unknown {
+  if (!Array.isArray(raw) || !raw.length || !raw.every((a) => a && typeof a.userId === 'string'))
+    return raw;
+  const groups = new Map<
+    string,
+    {
+      pot_index: number;
+      board: number;
+      low: boolean;
+      winners: Array<{
+        user_id: string;
+        amount: number;
+        hand_name: string;
+        hand_description: string;
+        hole_card_indices: number[];
+      }>;
+    }
+  >();
+  for (const award of raw as PerPotAward[]) {
+    const board = typeof award.board === 'number' && award.board >= 1 ? award.board : 1;
+    const potIndex = award.potIndex ?? 0;
+    const low = award.low === true;
+    const key = `${board}:${potIndex}:${low}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { pot_index: potIndex, board, low, winners: [] };
+      groups.set(key, group);
+    }
+    const showdown = showdowns.find((s) => s.userId === award.userId);
+    const used = new Set((award.hand?.cards ?? []).map((c) => `${c?.rank}${c?.suit}`));
+    const indices: number[] = [];
+    showdown?.holeCards?.forEach((c, i) => {
+      if (used.has(`${c?.rank}${c?.suit}`)) indices.push(i);
+    });
+    group.winners.push({
+      user_id: award.userId,
+      amount: award.amount,
+      hand_name: award.hand?.name ?? '',
+      hand_description: low
+        ? (award.hand?.name ?? '')
+        : (award.handDescription ?? showdown?.handDescription ?? ''),
+      hole_card_indices: indices,
+    });
+  }
+  return [...groups.values()].sort(
+    (a, b) => a.board - b.board || a.pot_index - b.pot_index || Number(a.low) - Number(b.low)
+  );
+}
+
 export function potWinFrame(a: {
   tableId: string;
   emitHandNumber: number;
@@ -401,7 +451,7 @@ export function potWinFrame(a: {
       ...(w.low === undefined ? {} : { low: w.low }),
       ...(w.pots?.length ? { pots: w.pots.map((p) => ({ ...p })) } : {}),
     })),
-    pot_awards: a.capturedPotAwards,
+    pot_awards: potAwardGroups(a.capturedPotAwards, capturedShowdownResults),
   };
 }
 

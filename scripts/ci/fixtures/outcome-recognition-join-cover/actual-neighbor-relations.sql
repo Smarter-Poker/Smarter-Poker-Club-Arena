@@ -1,0 +1,17 @@
+CREATE TABLE smarter_private.posthand_escrow_certificates(table_id uuid NOT NULL,
+hand_number bigint NOT NULL,
+hand_id uuid NOT NULL,
+original jsonb NOT NULL,
+original_sha256 text NOT NULL,
+recorded_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(),
+CONSTRAINT posthand_escrow_certificates_check CHECK (jsonb_typeof(original) = 'object'::text AND original_sha256 ~ '^[a-f0-9]{64}$'::text AND isfinite(recorded_at)),
+CONSTRAINT posthand_escrow_certificates_hand_id_key UNIQUE (hand_id),
+CONSTRAINT posthand_escrow_certificates_pkey PRIMARY KEY (table_id, hand_number));
+CREATE TABLE public.union_pnl_cash_outcome_touches(table_id uuid NOT NULL,
+hand_number bigint NOT NULL,
+recognized_at timestamp with time zone,
+game_union_id text,
+shaped boolean NOT NULL,
+accepted_rake text,
+participants jsonb,
+CONSTRAINT union_pnl_cash_outcome_touches_pkey PRIMARY KEY (table_id, hand_number));

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "scope": "Fixed-width Boolean proof gate Btree and exact two-index recovery; native63 includes actual original non-inlined SQL-function cold95/100percent\u00d71/20percent weeks, complete bags/metadata and COST1 counters; source65/generation/table contracts unchanged; no production capacity claim",
+  "sourceFiles": {
+    "scripts/ci/fixtures/cash-link-union-proof-index/qualification-evidence.json": "6211a82f7b772faae51d7192b7a4a25e4867365a43de75bb5eef67b44cf2dd14",
+    "scripts/ci/fixtures/cash-link-union-proof-index/README.md": "489cf40fe24148bf995b8a36d601dd6c06d73f10519a58d1f4b99fb5e9409a1c",
+    "scripts/ci/fixtures/cash-link-union-proof-index/native-fixture.sql": "acd04c5318794f9c4898aab3b374bc7b8a8752f7bd5dbd9940a04c9f0193d5c6",
+    "scripts/ci/fixtures/cash-link-union-proof-index/actual-tables.json": "acf9794b9ac845d78a153fbc150b63aa134a5f669deedc66e83f56cfc8291180",
+    "scripts/ci/fixtures/cash-link-union-proof-index/original-linked.sql": "b85a3e318732bffd9543853a9ca31cdfd2967f8d37fd1383cd82798e0b7dfd66",
+    "supabase/migrations/20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql": "15b43293a4711f3c2ff745279929d36bb31e2dadd8d443218a08cf585d7f74d9",
+    "scripts/ci/test-cash-link-union-proof-index-postgres.py": "9b09a458d61a3a3e98ee7509651b6b815236fcf33e85f0db1280f96e615e066d",
+    "tests/cash-link-union-index-keeps-original-proof.law.test.ts": "35ec76b09d23ac523ed70c33f1f5dfb649c4b3be447c9db1f1cb9715a27f1f67",
+    "docs/laws.d/cash-link-union-index-keeps-original-proof.md": "e1034936d88a46c9d0e59a786f238183b933d25d1d8fb59d905f4d99d2e41dbb",
+    "docs/changelog/2026-10-28-cash-link-union-proof-index.md": "d85de7845b24f6dbecaa56a934001822336a5e2dc52cbd690f7fc1c2d008c6cf",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639",
+    "scripts/ci/contract-index-recovery.mjs": "f348be2a919456e08ec9293bfc0f36b6af0be254588d379bfd3cca297e55bd7c",
+    "scripts/ci/contract-index-recovery.test.mjs": "c8f09af1ecbcdfdd74594ea79276a5d1721fd8122a7db5ea22bc32481e3ba55e",
+    "scripts/ci/apply-recorded-migration.mjs": "9f8decd52f72c8894baf565f3aa150397cc10bca2489f3b1b0812d2f91caf307",
+    ".github/workflows/apply-merged-migration.yml": "32a882652058f3be483b2ca81a9624310f29178bd4b9579d62003e2e290fdbef",
+    "docs/changelog/2026-10-28-cash-selector-bounded-build-recovery.md": "30ec99aca57f738f841167aefca2c47c8c68cda088f7b6189b3e46e532137f1e",
+    "scripts/ci/fixtures/cash-link-union-proof-index/actual-function-cold-plans.py": "31974fb62fbb677047a80686903e6c96f8f11db1a64c8bc0daccb5242c17ac7d"
+  },
+  "formattingComposition20261028": {
+    "review": "Normal pre-commit formatted actual-tables JSON; parsed table metadata equals the exact SQL installer expected catalog. Native evidence JSON equals retained native03 result. Only formatted input byte pins renewed; no SQL, qualification assertion or financial proof changed."
+  },
+  "boundedRecovery20261028": {
+    "failedOriginalSHA256": "98649045001fdb8872159d0f311d8f8a4209fdb3f1a09cfd563cf4ec2a82be3a",
+    "failedSelectorOID": "275975891",
+    "retiredProofHandOID": "271236984",
+    "ordering": "Exact failed HASH275 removal; new Boolean proof_gate_hand Btree build/validation; old proof-hand271 retirement last, one shared600s. Real original non-inlined SQL function uses bounded week-to-Boolean-hand lookup with0 read-time proof evaluations; index build computes proof MD5 once per global row. Valid-selector continuation never rebuilds/drops it; completed physical state resumes only pure qualification/same-byte atomic history.",
+    "sourceOwners": "All functions including original 0c3 linked reader and all source65/generation owners unchanged.",
+    "capacityLimit": "Native counter and plans only; production duration not certified."
+  }
+}

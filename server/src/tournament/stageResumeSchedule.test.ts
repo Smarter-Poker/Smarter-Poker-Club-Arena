@@ -132,7 +132,11 @@ describe('readStageResumeBoard', () => {
     const tables: string[] = [];
     vi.spyOn(supabase, 'from').mockImplementation(((name: string) => {
       tables.push(name);
-      const result = name === 'tournaments' ? tournaments : stages;
+      const raw = name === 'tournaments' ? tournaments : stages;
+      const result =
+        raw && typeof raw === 'object'
+          ? { count: Array.isArray((raw as any).data) ? (raw as any).data.length : null, ...raw }
+          : raw;
       const chain: any = {
         select: () => chain,
         eq: () => chain,
@@ -207,6 +211,83 @@ describe('readStageResumeBoard', () => {
       { tournamentId: 'b', name: 'B', stageNo: 2, scheduleGeneration: 1, dueAtMs: 0 },
     ]);
   });
+
+  it('keeps every next-day wake when 200 fourteen-stage events exceed one REST page', async () => {
+    const events = Array.from({ length: 200 }, (_, i) => ({
+      id: `t${String(i).padStart(3, '0')}`,
+      name: `Event ${i}`,
+    }));
+    const allStages = events.flatMap(({ id }) =>
+      Array.from({ length: 14 }, (_, i) => ({
+        tournament_id: id,
+        stage_no: i + 1,
+        scheduled_start_utc: i === 0 ? null : '2026-11-01T17:00:00.000Z',
+        schedule_generation: 1,
+        state: i === 0 ? 'bagged' : 'scheduled',
+      }))
+    );
+    vi.spyOn(supabase, 'from').mockImplementation(((name: string) => {
+      let ids: string[] = [];
+      const chain: any = {
+        select: () => chain,
+        eq: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        gt: () => chain,
+        in: (column: string, values: string[]) => {
+          if (column === 'tournament_id') ids = values;
+          return chain;
+        },
+        then: (resolve: (value: unknown) => unknown) => {
+          const rows =
+            name === 'tournaments'
+              ? events
+              : allStages.filter((row) => ids.includes(row.tournament_id));
+          return Promise.resolve({
+            data: rows.slice(0, 1000), // window-ok: simulated PostgREST row cap, not a source pin
+            count: rows.length,
+            error: null,
+          }).then(resolve);
+        },
+      };
+      return chain;
+    }) as never);
+    const result = await readStageResumeBoard();
+    expect(result).toHaveLength(200);
+    expect(result?.map((row) => row.tournamentId)).toEqual(events.map((row) => row.id));
+    expect(result?.every((row) => row.stageNo === 2)).toBe(true);
+  });
+
+  it.each([null, 3])(
+    'keeps an uncounted or truncated stage response unknown (count %s)',
+    async (count) => {
+      fake(
+        { data: [{ id: 'a', name: 'A' }], error: null },
+        {
+          data: [
+            {
+              tournament_id: 'a',
+              stage_no: 1,
+              scheduled_start_utc: null,
+              schedule_generation: 1,
+              state: 'bagged',
+            },
+            {
+              tournament_id: 'a',
+              stage_no: 2,
+              scheduled_start_utc: '2026-11-01T17:00:00.000Z',
+              schedule_generation: 1,
+              state: 'scheduled',
+            },
+          ],
+          count,
+          error: null,
+        }
+      );
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(await readStageResumeBoard()).toBeNull();
+    }
+  );
 
   it('an unreadable board is UNKNOWN (null), never "nothing is due"', async () => {
     fake({ data: [{ id: 'a', name: 'A' }], error: null }, { data: null, error: { message: 'x' } });

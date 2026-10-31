@@ -14,7 +14,8 @@ explanations on resolved rows. Relevant operator consumer failures roll back the
 entire action; unrelated historical paths retain their existing behavior.
 
 The real PostgreSQL regression captures the three installed function preimages,
-reproduces the contradiction, and checks validation, authorization, historical
+reproduces the contradiction, records the watched action's postimage with the actual
+declaration helper and exact migration identity, and checks validation, authorization, historical
 event preservation, linked outcomes, rollback, duplicates and grants. It runs in
 the existing informational alert workflow. No money, hands, seats, detector
 schedule or engine changes are included. Production installation must use the

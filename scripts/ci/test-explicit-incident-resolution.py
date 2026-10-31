@@ -30,6 +30,8 @@ try:
     tree=ast.parse((ROOT/'scripts/ci/test-alert-ledger-roots.py').read_text())
     schema=next(ast.literal_eval(n.value) for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='schema' for t in n.targets))
     sql(schema)
+    sql("DROP FUNCTION fn_ca_declare_guard_redefinition(text,text); CREATE TABLE ca_guard_def_history(proname text,def_hash text,def_text text,UNIQUE(proname,def_hash)); CREATE TABLE ca_guard_defs(proname text PRIMARY KEY,def_hash text,declared_ref text,declared_at timestamptz,updated_at timestamptz); CREATE FUNCTION fn_ca_guard_watchlist() RETURNS text[] LANGUAGE sql AS $$SELECT ARRAY['fn_ca_incident_action']::text[]$$;")
+    sql((ROOT/'scripts/ci/fixtures/alert-ledger-roots/guard-declaration.sql').read_text())
     sql("""ALTER TABLE ca_drift_incidents ADD COLUMN closure_basis text CHECK(closure_basis IS NULL OR closure_basis IN ('verified_remeasured','aged_out_unverified','operator','repair')),ADD COLUMN metadata jsonb DEFAULT '{}';
     CREATE TABLE financial_alerts(id uuid PRIMARY KEY,context jsonb,resolved boolean DEFAULT false,resolved_at timestamptz,resolution text);
     CREATE TABLE ca_incident_file_failures(source text,dedupe_key text,classification text,severity text,discrepancy numeric,sqlstate text,message text);
@@ -59,6 +61,8 @@ try:
     UPDATE operational_alert_events SET investigation='{{}}',investigation_status='new';""")
     migration=next((ROOT/'supabase/migrations').glob('*_an_explicit_investigation_can_replace_an_unverified_age_out.sql'))
     sql(migration.read_text())
+    check('declared-baseline-is-postimage', "(SELECT def_hash=md5(pg_get_functiondef('fn_ca_incident_action(uuid,text,text,uuid,text,text)'::regprocedure)) FROM ca_guard_defs WHERE proname='fn_ca_incident_action')")
+    check('declaration-names-exact-migration', "(SELECT declared_ref='migration "+migration.stem+"' FROM ca_guard_defs WHERE proname='fn_ca_incident_action')")
     check('missing-new-evidence-refused',"(fn_ca_incident_action('%s','resolve')->>'reason')='explicit_resolution_evidence_required'"%I)
     refuses('short-cause-refused',resolve('short'), 'at least 40')
     refuses('invalid-reference-refused',resolve(ref='arbitrary text'),'correction_ref')

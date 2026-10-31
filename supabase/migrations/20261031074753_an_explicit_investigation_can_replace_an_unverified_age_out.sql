@@ -6,7 +6,6 @@
 BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '8s';
-SELECT public.fn_ca_declare_guard_redefinition('fn_ca_incident_action', 'migration explicit investigated operator resolution');
 DO $preimage$
 BEGIN
   IF md5(pg_get_functiondef('public.fn_ca_incident_action(uuid,text,text,uuid,text,text)'::regprocedure)) <> '3507dce688509aabeaff69a89e787ca0'
@@ -267,4 +266,5 @@ END $function$
 -- CREATE OR REPLACE preserves the existing grants and signature.
 REVOKE ALL ON FUNCTION public.fn_ca_incident_action(uuid,text,text,uuid,text,text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_ca_incident_action(uuid,text,text,uuid,text,text) TO authenticated, service_role;
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_incident_action', 'migration 20261031074753_an_explicit_investigation_can_replace_an_unverified_age_out');
 COMMIT;

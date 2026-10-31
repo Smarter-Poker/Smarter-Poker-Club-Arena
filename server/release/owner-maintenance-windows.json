@@ -569,6 +569,19 @@
         "path": "server/release/activation-floor.json",
         "sha256": "626eabb5a81a572158beef4982a82cf8d0e9a9815d48d587701cf250c53a9fab"
       }
+    },
+    {
+      "id": "2026-10-31-mtt-action-outage-next-safe-break",
+      "ownerOrder": "Dan directly in continuing MTT incident chat01a18860-8bf2-7172-ae63-34cf4946e1c7 ordered unfreeze first then finish all Call/Raise/Fold defects, stopped competing chats, authorized the next safe hand-drain break, and at21:44Central reported another blind-rise freeze and explicitly ordered FIX IT NOW. This NEW finite single-activation carrier continues that still-active incident under the latest direct instruction; it does not extend, retarget, replay or reuse the preceding03:10-expiry carrier or any prior release/checkpoint intent. Preserve all59 preceding window records byte-for-byte, their order/expiry/witnesses, and all databaseWindows. Deliver the exact reviewed prepared-original successor handoff and hand-number custody repair, retained turn readiness and bank-arm clock corrections, plus already assigned listener and Lightning hold ownership corrections. Require current-head checks and actual protected inclusion of the final reviewed fixes; local tests, ancestry and a natural temporary recovery do not certify service. Require guard SHA256b8e43e73864d46db088096474d0334f22076e83c1ce70b8a50c382a3a2cae312, helper SHA256401a15fa30f663b8614cf962ed4650c7f55927d29705ab9bdef9dac0638ee6e4, INSTALLED migration20261030235825 with operator MD58ee8d46e5e8045ca727ea7684a3474c3 and exact history/security/ACL/RLS/registry readback. Require composed real MAIN Docker Node22.23.2 qualification, exact EED33 cases and29 runtime pins, all native prerequisites and actual whole physical cohort custody. Fixed02:46-04:10UTC October31 only; Chicago minute53 notice and55 activation, one actual activation maximum, no arbitrary-minute restart or automatic extension. Use only existing stage/receiver, original exclusive locks, exact image/process/socket/endpoint identity and O_EXCL/fsynced claim before one ACK. Preserve20s MAIN/full5s close,40s checkpoint/5s cleanup,245s proof/135s rollback/full285s reserve,120s last-hand notice, real hand-boundary drain,300s durable freeze, rolling-hour seal, rollback and completed OWN healthy v3 thaw. Pending or unknown outcomes keep their original operation IDs. Never clear unrelated pauses, discard an original, fabricate winners, force actions, change chips/seats/blind schedules, replay payouts/migrations, close foreign Inspector, signal MAIN directly or add another publisher/watcher/timer/repair loop. Prove exact original hands and funded-seat custody including original15/128/110, both running10K cohorts, affected legal actions and fifteen ACTIVE minutes after adoption; no universal future-failure guarantee. Non-engine delivery remains immediate.",
+      "contains": "671f7741c4302f92c3487a8cccf32a9ef17c3140",
+      "notBefore": "2026-10-31T02:46:00Z",
+      "notAfter": "2026-10-31T04:10:00Z",
+      "announceAtChicagoMinutes": [53],
+      "migrations": [],
+      "releaseWitness": {
+        "path": "server/release/activation-floor.json",
+        "sha256": "a00a089a3cb49987e14db2c0d5fe4c230109c9f8852bfe59764040f323c74f73"
+      }
     }
   ],
   "databaseWindows": [

@@ -835,3 +835,62 @@ it('binds the new frozen-recovery hold-ownership carrier without rewriting prior
   ])
     expect(entry.ownerOrder).toContain(proof);
 });
+
+it('binds the renewed MTT outage delivery without extending or rewriting earlier authority', () => {
+  const raw = readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8');
+  const doc = JSON.parse(raw);
+  const id = '2026-10-31-mtt-action-outage-next-safe-break';
+  const matching = doc.windows.filter((w: { id: string }) => w.id === id);
+  expect(matching).toHaveLength(1);
+  const [entry] = matching;
+  // Pin the exact preceding 59 records, including formatting and order.
+  const marker = ',\n    {\n      "id": "' + id + '"';
+  expect(raw.split(marker)).toHaveLength(2);
+  expect(doc.windows.findIndex((w: { id: string }) => w.id === id)).toBe(59);
+  expect(
+    createHash('sha256')
+      .update(raw.slice(0, raw.indexOf(marker)))
+      .digest('hex')
+  ).toBe('c01e63f3c8b0262b93f33aef104eb64e79bd716a3ac04807692824630eea8c23');
+  expect(
+    createHash('sha256')
+      .update(JSON.stringify(doc.databaseWindows.slice(0, 3)))
+      .digest('hex')
+  ).toBe('c1aabc10442b0299731ea9d1fae5bd8e4c94b42cb21bde52fb03271ae5b81bb9');
+  expect(entry.contains).toBe('671f7741c4302f92c3487a8cccf32a9ef17c3140');
+  expect(entry.notBefore).toBe('2026-10-31T02:46:00Z');
+  expect(entry.notAfter).toBe('2026-10-31T04:10:00Z');
+  expect(entry.announceAtChicagoMinutes).toEqual([53]);
+  expect(entry.migrations).toEqual([]);
+  expect(entry.releaseWitness).toEqual({
+    path: 'server/release/activation-floor.json',
+    sha256: 'a00a089a3cb49987e14db2c0d5fe4c230109c9f8852bfe59764040f323c74f73',
+  });
+  const floorRaw = readFileSync(join(root, 'server/release/activation-floor.json'));
+  const floor = JSON.parse(floorRaw.toString());
+  if (floor.ownerWindowId === id) {
+    expect(floor).toEqual({
+      schema: 'engine-release-activation-floor/v2-owner-window',
+      preparationAt: entry.notBefore,
+      activationAt: entry.notBefore,
+      expiresAt: entry.notAfter,
+      timeZone: 'America/Chicago',
+      ownerWindowId: id,
+      clientPublicationAt: entry.notBefore,
+    });
+    expect(entry.releaseWitness).toEqual({
+      path: 'server/release/activation-floor.json',
+      sha256: createHash('sha256').update(floorRaw).digest('hex'),
+    });
+  }
+  for (const safeguard of [
+    'current-head checks',
+    'EED33',
+    '29 runtime pins',
+    'full285s reserve',
+    'OWN healthy v3 thaw',
+    'one actual activation maximum',
+    'automatic extension',
+  ])
+    expect(entry.ownerOrder).toContain(safeguard);
+});

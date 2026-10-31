@@ -42,3 +42,14 @@ actual marked collector restored prototypes and removed its holder. This proves
 result refusal/restoration after native return, not interruption of GC or a
 guarantee that an external absolute timeout can finish cleanup while V8 blocks.
 Unknown/deadline cleanup failures retain existing no-retry/restart refusal.
+
+The required image resource proof also composes this exact CPP binary with the
+actual pinned EED constructors and all29 deployed runtime hashes. It runs only
+the existing detached-drained positive and detached-job-during-await refusal
+cases, performs the physical marker census and projector over exact imported
+prototype identities, checks full original-object membership and invokes the
+unchanged original guard/serializer with isolated mocked durable readback.
+The default33historical cases stay unchanged. The native composition uses a
+network-disabled, read-only candidate container with separate task-owned
+scratch and mandatory verified cleanup. Mac2case composition passed locally;
+actual Linux image composition remains required hosted evidence.

@@ -15,6 +15,8 @@ on:
       - server/scripts/legacy-engine-checkpoint.mjs
       - tests/operations/legacy-census-native.mjs
       - tests/operations/legacy-census-source.test.mjs
+      - server/scripts/qualification/retained-original-checkpoint/**
+      - server/scripts/retained-original-checkpoint-guard.mjs
       - tests/operations/engine-image-archive.test.py
       - tests/operations/engine-build-resource-proof.py
       - tests/operations/engine-build-resource-proof.test.py
@@ -33,6 +35,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fetch the fixed predecessor qualification objects without lazy fetch
+        run: |
+          git fetch --no-tags --depth=1 origin eed06fe51dea622069c661a6213d5b031ff3a9e3
+          git cat-file -e eed06fe51dea622069c661a6213d5b031ff3a9e3^{commit}
       - uses: actions/setup-node@v4
         with:
           node-version: 22

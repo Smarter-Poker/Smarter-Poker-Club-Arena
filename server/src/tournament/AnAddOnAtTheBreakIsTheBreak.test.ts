@@ -1,14 +1,5 @@
-/**
- * Dan, 2026-10-25: "ADD ON BREAK SHOULD ONLY BE 60 SECONDS, UNLESS IT HAPPENS
- * TO BE AT THE SAME TIME AS THE :55 BREAK, THEN ITS 5 MINUTES, THEY ARE NOT
- * THE SAME BREAK".
- *
- * Before this, an add-on that came due while the field was away for the :55
- * break was deferred until that break ended, and then stopped every table a
- * second time for its own minute: measured over three days, :01 was the most
- * common minute for a paid add-on window to open. Now it opens inside the
- * break and lasts until the break ends, so play resumes once.
- */
+/** Owner 2026-10-31: the add-on offer is exactly 60 seconds even within a
+ * synchronized break. Closing it never releases that break's own pause. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import type { GameServer } from '../GameServer.js';
@@ -21,6 +12,7 @@ class Harness extends TournamentManagerBase {
     super('00000000-0000-4000-8000-000000000155', {} as GameServer);
     (this as any).lifecycleEpoch.begin();
     this.running = true;
+    this.tournamentEntryWindowClosed = true;
     this.tournamentCache = {
       addon_break_minutes: minutes,
       addon_from_start: false,
@@ -98,7 +90,7 @@ afterEach(() => {
 });
 
 describe('an add-on that comes due during the :55 break is that break', () => {
-  it('opens inside a running countdown and lasts until the break ends', async () => {
+  it('opens inside a running countdown and closes after 60 seconds while the regular break continues', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     const row = persistedRow();
@@ -106,10 +98,10 @@ describe('an add-on that comes due during the :55 break is that break', () => {
     const breakEnds = Date.parse('2026-10-26T04:00:00Z');
     m.onTheBreak(breakEnds);
     await m.open();
-    expect(row.endsAt()).toBe(new Date(breakEnds).toISOString());
-    expect(row.windowMs()).toBe(4 * 60_000);
+    expect(row.endsAt()).toBe(new Date(NOW + 60_000).toISOString());
+    expect(row.windowMs()).toBe(60_000);
     expect(m.notices.find((n) => n.event === 'ADDON_PERIOD_START')?.payload.durationSeconds).toBe(
-      240
+      60
     );
   });
 
@@ -137,7 +129,7 @@ describe('an add-on that comes due during the :55 break is that break', () => {
     await m.beginBreakCountdown(TournamentManagerBase.BREAK_DURATION_MS);
     expect((m as any).pendingAddOnPeriod).toBe(false);
     expect(row.windowWrites()).toHaveLength(1);
-    expect(row.windowMs()).toBe(TournamentManagerBase.BREAK_DURATION_MS);
+    expect(row.windowMs()).toBe(60_000);
   });
 
   it('is one minute when no break is running', async () => {

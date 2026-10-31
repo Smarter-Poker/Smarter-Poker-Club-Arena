@@ -1679,7 +1679,7 @@ export default function TableConfigPage({
                   min={1}
                   max={1}
                   suffix=" min"
-                  tooltip="On A Free Buy The Add-On Is Open From The Start Through Late Registration. Every Table Finishes Its Hand, Then Pauses For 60 Seconds Before The Add-On Closes."
+                  tooltip="After The Last Late-Entry Level, Every Table Finishes Its Hand, Then Pauses For 60 Seconds To Add On."
                 />
               </div>
             ) : (

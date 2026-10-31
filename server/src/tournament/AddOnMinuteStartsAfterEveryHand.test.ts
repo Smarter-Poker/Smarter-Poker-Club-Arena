@@ -10,6 +10,7 @@ class Harness extends TournamentManagerBase {
     super('00000000-0000-4000-8000-000000000077', {} as GameServer);
     (this as any).lifecycleEpoch.begin();
     this.running = true;
+    this.tournamentEntryWindowClosed = true;
     this.tournamentCache = {
       addon_break_minutes: 7,
       addon_from_start: fromStart,
@@ -108,7 +109,7 @@ describe('the paid add-on minute starts after every current hand', () => {
 });
 
 describe('FreeBuy final add-on minute', () => {
-  it('preserves early purchases then durably drains all hands before the full closing minute', async () => {
+  it('recovers an old early window by draining every hand before its closing minute', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-23T01:30:00Z'));
     let saved: any = {
@@ -139,10 +140,15 @@ describe('FreeBuy final add-on minute', () => {
     (b as any).running = true;
     m.add('a', a);
     m.add('b', b);
-    await m.open();
-    expect(saved.addon_period_ends_at).toBe('2026-10-23T01:32:00.000Z');
-    expect(m.pending()).toBe(false);
-    expect(a.requiresExplicitPauseResume()).toBe(false);
+    // This already-open legacy window may exist across deployment; new
+    // windows cannot be opened at seating anymore.
+    Object.assign(saved, {
+      addon_period_triggered: true,
+      addon_period_started_at: '2026-10-23T01:30:00.000Z',
+      addon_period_ends_at: '2026-10-23T01:32:00.000Z',
+    });
+    Object.assign((m as any).tournamentCache, saved);
+    (m as any).addOnPeriodTriggered = true;
     vi.setSystemTime(new Date('2026-10-23T01:31:00Z'));
     await m.close(saved.addon_period_ends_at);
     expect(saved.addon_period_started_at).toBeNull();
@@ -160,7 +166,7 @@ describe('FreeBuy final add-on minute', () => {
     expect(m.pending()).toBe(false);
     expect(a.isParkedBetweenHands()).toBe(true);
     expect(b.isParkedBetweenHands()).toBe(true);
-    expect(m.notices.filter((n) => n === 'ADDON_PERIOD_START')).toHaveLength(2);
+    expect(m.notices.filter((n) => n === 'ADDON_PERIOD_START')).toHaveLength(1);
     const count = writes.length;
     await m.close(saved.addon_period_ends_at);
     expect(writes).toHaveLength(count);

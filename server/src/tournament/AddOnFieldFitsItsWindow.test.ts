@@ -12,6 +12,8 @@ class Harness extends TournamentManagerBase {
     (this as any).lifecycleEpoch.begin();
     this.running = true;
     this.addOnPeriodTriggered = true;
+    (this as any).addOnBreakActive = true;
+    this.tournamentEntryWindowClosed = true;
     this.tournamentCache = {
       add_on_available: true,
       addon_from_start: false,
@@ -115,8 +117,7 @@ it('serves a 500-player field in bounded admissions inside sixty seconds', async
   expect([...f.receipts].sort()).toEqual(f.selected.sort());
   expect(f.calls.length).toBe(f.receipts.size);
   expect(Date.now() - began).toBeLessThan(40000);
-  expect(f.load.max).toBe(4);
-  expect(m.delays).toContain(0);
+  expect(f.load.max).toBe(TournamentManagerBase.ADD_ON_BREAK_CONCURRENCY);
 });
 it('an ambiguous early player does not starve later identities', async () => {
   vi.useFakeTimers();
@@ -139,11 +140,11 @@ it('maintenance stops the next group and waits for all requests already dispatch
     m = new Harness();
   const offered = m.offer();
   await vi.advanceTimersByTimeAsync(0);
-  expect(f.calls).toHaveLength(4);
+  expect(f.calls).toHaveLength(TournamentManagerBase.ADD_ON_BREAK_CONCURRENCY);
   setMaintenanceFrozen(true);
   await vi.runAllTimersAsync();
   await offered;
-  expect(f.calls).toHaveLength(4);
+  expect(f.calls).toHaveLength(TournamentManagerBase.ADD_ON_BREAK_CONCURRENCY);
   expect(f.load.inFlight).toBe(0);
   expect(m.delays).not.toContain(0);
 });

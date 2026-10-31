@@ -179,7 +179,7 @@ import {
   type StageFirstLevel,
   type StageRpcOutcome,
 } from './multiDayStages.js';
-import { horseAddsOnImmediately, horseTakesAddOn } from '../services/FreeBuy.js';
+import { horseTakesAddOn } from '../services/FreeBuy.js';
 import { refreshTournamentBrainContextAfterClockCommit } from '../services/TournamentBrainContext.js';
 import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
 import { registerTournamentManagerFenceHandler } from '../services/supabase/tournamentManagerFence.js';
@@ -7482,30 +7482,8 @@ export abstract class TournamentManagerBase {
       await this.createTablesAndSeatPlayers(tournament);
       this.assertLifecycleCurrent(lifecycle);
 
-      /* FREE BUY: open only AFTER the field has real live seats. The old call
-         ran near the top of start(), before registration migration, table
-         creation, or seating. Its automatic horse purchases therefore found
-         no eligible seats, and its broadcast offered humans an add-on the
-         database correctly refused. Opening here still satisfies "as soon as
-         they sit down" while making the seat the precondition it has always
-         been at the money boundary. */
-      if (tournament.addon_from_start && tournament.add_on_available) {
-        await this.triggerAddOnPeriod();
-        this.assertLifecycleCurrent(lifecycle);
-        if (!this.addOnPeriodTriggered) {
-          // This is the only edge that can give a Free Buy field its promised
-          // from-start window. Starting the dealers after an unproven CAS would
-          // silently collapse that hour to the later break-only fallback.
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Free Buy add-on window was not durably proven after seating - standing down before dealer admission`
-            ),
-            'Tournament.free_buy_addon_open_unproven'
-          );
-          this.running = false;
-          return;
-        }
-      }
+      // Owner 2026-10-31: seating never opens an add-on. The committed
+      // late-entry boundary opens the same fully parked minute for every event.
 
       /**
        * ═══════════════════════════════════════════════════════════════════════
@@ -11783,27 +11761,6 @@ export abstract class TournamentManagerBase {
     return 60_000;
   }
 
-  /**
-   * The end of the :55 break this add-on opens inside, or 0 (Dan 2026-10-25:
-   * "ADD ON BREAK SHOULD ONLY BE 60 SECONDS, UNLESS IT HAPPENS TO BE AT THE
-   * SAME TIME AS THE :55 BREAK, THEN ITS 5 MINUTES").
-   *
-   * Only a break whose countdown is running has a known end. The bound is the
-   * break itself plus its last-hand grace, so a stale instant can never stretch
-   * an offer past one real break. The persisted window then runs to the
-   * break's end and its final minute is still the add-on break
-   * (addOnBreakStartMs): the :55 break holds every table until then and the
-   * add-on break takes the hold over, so play resumes once, at the break end.
-   */
-  private coincidingSynchronizedBreakEndMs(openingMs: number): number {
-    if (!this.onBreak || !this.breakCountdownStarted) return 0;
-    const endMs = this.synchronizedBreakEndsAtMs;
-    if (!Number.isFinite(endMs) || endMs <= openingMs) return 0;
-    const ceilingMs =
-      TournamentManagerBase.BREAK_DURATION_MS + TournamentManagerBase.LAST_HAND_GRACE_MS;
-    return endMs - openingMs <= ceilingMs ? endMs : 0;
-  }
-
   /** The persisted window's final segment is its one add-on break. */
   private addOnBreakStartMs(endsAt: string | null | undefined): number {
     const endMs = Date.parse(String(endsAt ?? ''));
@@ -11830,6 +11787,8 @@ export abstract class TournamentManagerBase {
    * than granting a new one.
    */
   private scheduleAddOnBreak(endsAt: string | null | undefined): void {
+    if (this.tournamentCache?.addon_from_start === true && !this.tournamentEntryWindowClosed)
+      return;
     if (this.addOnBreakStartTimer) {
       this.clearLifecycleTimeout(this.addOnBreakStartTimer);
       this.addOnBreakStartTimer = null;
@@ -11922,6 +11881,8 @@ export abstract class TournamentManagerBase {
   }
 
   private async continueFreeBuyClosingDrain(admissionRestored = false): Promise<void> {
+    if (this.tournamentCache?.addon_from_start === true && !this.tournamentEntryWindowClosed)
+      return;
     if (this.addOnClosingDrainOpening || this.prizePoolFinalized) return;
     // A pause-ready edge from the first restored dealer is not the whole
     // field. resumeLifecycle explicitly continues after every admission and
@@ -12469,28 +12430,12 @@ export abstract class TournamentManagerBase {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
       }
-      let eligibleHorseRows = horseRead.rows.filter((horse) =>
+      const eligibleHorseRows = horseRead.rows.filter((horse) =>
         horseTakesAddOn(horse.id, this.tournamentId)
       );
-      if (this.tournamentCache.addon_from_start === true) {
-        const breakStartMs = this.addOnBreakStartMs(this.tournamentCache.addon_period_ends_at);
-        if (!Number.isFinite(breakStartMs)) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Free Buy horse add-ons have no durable break deadline`
-            ),
-            'Tournament.free_buy_addon_break_unreadable'
-          );
-          return;
-        }
-        // Dan's split is WHEN, not WHETHER: the deterministic 35% tranche may
-        // buy before the break; the selected remaining live horses buy at the break.
-        if (Date.now() < breakStartMs) {
-          eligibleHorseRows = eligibleHorseRows.filter((horse) =>
-            horseAddsOnImmediately(horse.id, this.tournamentId)
-          );
-        }
-      }
+      // The same final minute serves every player. A historical long Free Buy
+      // window is recoverable, but never authorizes an early purchase.
+      if (!this.addOnBreakHoldsTheField(Date.now())) return;
       const pendingHorseRows = eligibleHorseRows
         .filter((horse) => !this.addOnAttemptedHorseIds.has(horse.id))
         .sort((a, b) => a.id.localeCompare(b.id));
@@ -12526,62 +12471,8 @@ export abstract class TournamentManagerBase {
         }
         return;
       }
-      const horseRows = pendingHorseRows.slice(
-        start,
-        start + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE
-      );
-      if (horseRows.length === 0) return;
-
-      let taken = 0;
-      const declined = new Map<string, number>();
-      // Bound concurrent requests as well as total work per admission. The
-      // canonical RPC still owns the wallet, seat, price and receipt checks.
-      for (let offset = 0; offset < horseRows.length; offset += 4) {
-        if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
-        const group = horseRows.slice(offset, offset + 4);
-        const replies = await Promise.allSettled(
-          group.map(async (h) => {
-            if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return null;
-            return supabase.rpc('process_tournament_rebuy', {
-              p_tournament_id: this.tournamentId,
-              p_user_id: h.id,
-              p_rebuy_type: 'addon',
-              p_cost: null,
-              p_chips: null,
-              p_current_level: this.currentLevel,
-            });
-          })
-        );
-        if (!this.running || this.eliminationSweepSignal?.aborted) return;
-        for (let index = 0; index < group.length; index++) {
-          const h = group[index];
-          const reply = replies[index];
-          this.addOnBatchCursor = h.id;
-          if (reply.status === 'rejected' || reply.value?.error) {
-            const message =
-              reply.status === 'rejected' ? String(reply.reason) : reply.value!.error!.message;
-            declined.set(message, (declined.get(message) || 0) + 1);
-            // A lost response may follow a committed receipt. Retain this
-            // identity for the same idempotent RPC on its next admission.
-            continue;
-          }
-          if (!reply.value) continue;
-          this.addOnAttemptedHorseIds.add(h.id);
-          completedOffers++;
-          if ((reply.value.data as { success?: boolean } | null)?.success === true) taken++;
-        }
-      }
-
-      // Quiet when nothing happened: this is called repeatedly across the
-      // window, so an unconditional line would be pure noise.
-      if (taken > 0 || declined.size > 0) {
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ONS: ${taken} taken` +
-            (declined.size > 0
-              ? ` - declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
-              : '')
-        );
-      }
+      // If the pause ended between snapshot and admission, no purchase starts.
+      return;
     } catch (err) {
       reportError(err, 'Tournament.tournament_addon_threw');
     } finally {
@@ -12603,6 +12494,7 @@ export abstract class TournamentManagerBase {
 
   protected async triggerAddOnPeriod(): Promise<void> {
     if (
+      !this.tournamentEntryWindowClosed ||
       isMaintenanceFrozen() ||
       this.addOnPeriodTriggered ||
       this.addOnPeriodOpening ||
@@ -12619,74 +12511,23 @@ export abstract class TournamentManagerBase {
       // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
       // restores it (resume() reads addon_period_triggered) instead of
       // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
-      /* FREE BUY (Dan 2026-09-04): "PLAYERS CAN ADD ON AS SOON AS THEY SIT
-         DOWN, AND ALSO AT THE BREAK." Read with "ONE HOUR FOR LATE REG, THEN
-         THE ADD ON PERIOD", that is not two windows - it is ONE window that
-         opens when the event starts and shuts after the break. Two windows
-         would need a second add-on per player, and `tournament_players.add_on`
-         is a boolean: one add-on each, taken whenever the player likes inside
-         the window.
-
-         A paid event's offer lasts its configured break. The default remains
-         one minute; a five-minute break must not be truncated to 60 seconds. */
-      const fromStart = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
-        ?.addon_from_start;
-      if (!fromStart) {
-        this.addOnDrainPending = true;
-        for (const engine of this.tableEngines.values()) {
-          engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
-            beforeNextHand: true,
-            untilResumed: true,
-          });
-        }
-        // The offer does not exist until every current hand has settled.
-        // onPauseReady re-enters this exact operation when the last one parks.
-        if (!this.areAllTablesParked()) return;
-        // Parked for the :55 break's last hand, before its countdown has an
-        // end: the countdown's start opens this add-on inside the break.
-        if (this.onBreak && !this.breakCountdownStarted) {
-          this.pendingAddOnPeriod = true;
-          return;
-        }
+      // No early Free Buy exception: all offers follow the database-owned
+      // entry boundary, then every current dealer must park before the clock.
+      this.addOnDrainPending = true;
+      for (const engine of this.tableEngines.values()) {
+        engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
+          beforeNextHand: true,
+          untilResumed: true,
+        });
+      }
+      if (!this.areAllTablesParked()) return;
+      if (this.onBreak && !this.breakCountdownStarted) {
+        this.pendingAddOnPeriod = true;
+        return;
       }
       const requestedStart = new Date().toISOString();
       const requestedStartMs = Date.parse(requestedStart);
-      const lateRegMs =
-        (((this.tournamentCache as { late_reg_mins?: number } | null)?.late_reg_mins ??
-          60) as number) * 60_000;
-      const advertisedStartMs = Date.parse(String(this.tournamentCache?.start_time ?? ''));
-      if (fromStart && !Number.isFinite(advertisedStartMs)) {
-        throw new Error('Free Buy add-on window has no readable advertised tournament start');
-      }
-      /* A LATE LAUNCH STILL OWES THE WHOLE WINDOW (2026-09-09).
-
-         The window used to be anchored to the ADVERTISED start alone. That is
-         right for the ordinary case - this runs inside the pre-seat minute, so
-         the field sits down a minute early and the break still falls at the
-         advertised clock. It is wrong for a field that sits down LATE. On
-         2026-09-09 the engine could not seat anybody for most of a day (two
-         composite foreign keys made PostgREST refuse the seat-inventory embed),
-         and when it could again, every Free Buy on the board was more than
-         late-reg-plus-break past its advertised start: requestedEnd landed
-         before requestedStart, this threw, start() stood down "before dealer
-         admission", and the next discovery pass did exactly the same thing.
-         Ten events, 1,143 paid entrants, permanently unlaunchable
-         - not for any reason a player could see, but because the promise
-         "add on as soon as they sit down, and also at the break" had been
-         written as a wall-clock instant instead of as a window that starts
-         when they sit down.
-
-         So the anchor is the LATER of the advertised start and the moment the
-         field actually sits down. On time (the ordinary case) that is the
-         advertised start and nothing changes; late, the players get the same
-         late-reg-plus-break window they were promised, counted from the seat. */
-      const windowAnchorMs = fromStart ? Math.max(advertisedStartMs, requestedStartMs) : NaN;
-      const requestedEndMs = fromStart
-        ? windowAnchorMs + lateRegMs + this.addOnBreakDurationMs()
-        : Math.max(
-            requestedStartMs + this.addOnBreakDurationMs(),
-            this.coincidingSynchronizedBreakEndMs(requestedStartMs)
-          );
+      const requestedEndMs = requestedStartMs + this.addOnBreakDurationMs();
       if (!Number.isFinite(requestedEndMs) || requestedEndMs <= requestedStartMs) {
         throw new Error('the requested add-on window does not end after it starts');
       }
@@ -13002,6 +12843,8 @@ export abstract class TournamentManagerBase {
    * It is never authority to close the shifted offer.
    */
   private async drivePersistedAddOnDeadline(rebroadcastAfterThaw: boolean): Promise<void> {
+    if (this.tournamentCache?.addon_from_start === true && !this.tournamentEntryWindowClosed)
+      return;
     const lifecycle = this.captureLifecycleToken();
     if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
 

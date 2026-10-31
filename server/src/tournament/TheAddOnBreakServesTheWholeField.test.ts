@@ -225,7 +225,7 @@ it('caps a captured large-field operation at the existing sweep lifetime', async
   expect(f.load.calls).toBe(2400);
 });
 
-it('keeps the ordinary bounded batch while play is running', async () => {
+it('refuses every purchase while play is running', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-10-26T13:30:00Z'));
   const f = field(100);
@@ -233,8 +233,8 @@ it('keeps the ordinary bounded batch while play is running', async () => {
   const pass = m.offer();
   await vi.runAllTimersAsync();
   await pass;
-  expect(f.load.max).toBe(4);
-  expect(f.receipts.size).toBe(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+  expect(f.load.max).toBe(0);
+  expect(f.receipts.size).toBe(0);
 });
 
 it('the freeze stops the pool before its next request', async () => {

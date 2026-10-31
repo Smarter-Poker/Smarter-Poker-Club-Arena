@@ -1204,6 +1204,9 @@ it('keeps real wallet broadcasts in the wallet-only read lane', async () => {
 it('withdraws financial data when a lifecycle catchup denies access', async () => {
   render(<MemberManagementPage />);
   await screen.findByText('River Shark');
+  await screen.findByText('500.00');
+  await screen.findByText('Cyan Rail');
+  const readsBeforeCatchup = state.getMemberDetail.mock.calls.length;
   state.getMemberDetail.mockResolvedValue({
     ...memberDetail,
     wallets: null,
@@ -1212,8 +1215,11 @@ it('withdraws financial data when a lifecycle catchup denies access', async () =
     capabilities: { ...memberDetail.capabilities, can_view_financials: false },
   });
   await act(async () => state.walletChannel?.onSubscriptionStatus?.('SUBSCRIBED'));
-  expect(screen.queryByText('500.00')).not.toBeInTheDocument();
-  expect(screen.queryByText('200')).not.toBeInTheDocument();
-  expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
-  expect(screen.getByText('River Shark')).toBeInTheDocument();
+  await waitFor(() => {
+    expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(readsBeforeCatchup);
+    expect(screen.queryByText('500.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('200')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
+    expect(screen.getByText('River Shark')).toBeInTheDocument();
+  });
 });

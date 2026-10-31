@@ -14,6 +14,15 @@ const requireCapture = (value) => { if (!value) throw new Error('ISOLATED_SCHEMA
 const MAX_SCHEMA_BYTES = 128 * 1024 * 1024;
 const MAX_METADATA_BYTES = 32 * 1024 * 1024;
 const DEADLINE_MS = 45000;
+// Reserve the existing five-second Node query budget for snapshot closure and
+// private output finalization. The enclosing 45-second deadline stays fixed.
+const FINALIZE_RESERVE_MS = 5000;
+export function remainingDumpBudget(deadlineAt, now) {
+  const remaining = deadlineAt - now - FINALIZE_RESERVE_MS;
+  requireCapture(Number.isSafeInteger(deadlineAt) && Number.isSafeInteger(now) &&
+    remaining > 0 && remaining <= DEADLINE_MS - FINALIZE_RESERVE_MS);
+  return remaining;
+}
 // Reuse the maintained official public trust root from the existing migration
 // provider. Neither the connection URL nor an environment value selects a CA.
 const PROVIDER_CA_PATH = fileURLToPath(new URL('../../../scripts/ci/certificates/supabase-prod-ca-2021.crt', import.meta.url));
@@ -173,6 +182,9 @@ export async function dumpSnapshot(config, snapshot, { spawnProcess = spawn, dea
     PGPASSWORD: config.password, PGSSLMODE: 'verify-full', PGSSLROOTCERT: PROVIDER_CA_PATH, PGCONNECT_TIMEOUT: '5',
     PGAPPNAME: 'isolated-schema-readonly-dump',
     PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=1000' };
+  // Native pg_dump resets statement_timeout during startup. Its effective
+  // bounds are this whole-export deadline and explicit table-lock wait below;
+  // the Node catalogue connection retains its separate five-second queries.
   const child = spawnProcess('pg_dump', ['--no-password','--schema-only','--format=plain',
     '--quote-all-identifiers','--no-comments','--no-security-labels','--no-subscriptions',
     '--lock-wait-timeout=1000',`--snapshot=${snapshot}`], { env, stdio: ['ignore','pipe','pipe'] });
@@ -238,8 +250,7 @@ export async function captureSchema({ output, env = process.env, Client, dump = 
     const catalogueDigest = catalogue.catalogue_digest;
     const roleCatalogue = await captureRoleCatalogue(db);
     stage = 'schema-only-dump';
-    const remaining = Math.min(30000, deadlineAt - Date.now());
-    requireCapture(remaining > 0);
+    const remaining = remainingDumpBudget(deadlineAt, Date.now());
     const sql = await dump(config, snapshot, { deadlineMs: remaining });
     requireCapture(!transportFailed);
     // Keep every output private until the complete capture is closed. The

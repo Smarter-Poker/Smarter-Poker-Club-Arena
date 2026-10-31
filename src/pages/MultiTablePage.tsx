@@ -1309,6 +1309,9 @@ export default function MultiTablePage() {
           // setTables above has not committed yet at this line.
           setTimeout(() => {
             if (!isCurrent()) return;
+            // Seat refreshes must never take focus from an open page.
+            const visible = tablesRef.current[activeIndexRef.current];
+            if (visible && !isTableTab(visible)) return;
             try {
               const lastId = sessionStorage.getItem('ca_last_active_table');
               if (lastId) {
@@ -1591,17 +1594,7 @@ export default function MultiTablePage() {
         seated: true,
       };
 
-      // Dan 2026-08-15: if the player reached this table from a lobby tab
-      // opened by the in-table "+", replace that lobby tab IN PLACE. Appending
-      // instead would leave a dead lobby tab behind and consume one of the
-      // four slots. Oldest lobby tab wins, which is the one they just used.
-      const lobbyIdx = prev.findIndex(isLobbyTab);
-      if (lobbyIdx !== -1) {
-        const next = [...prev];
-        next[lobbyIdx] = { ...seatedTab, name: seatedTab.name };
-        return next;
-      }
-
+      // Seat events never consume a page the player still has open.
       if (prev.length >= MAX_TABLES) {
         // Engine seated us (tournament start, waitlist promotion) but the
         // device is full. Say so — silently dropping this used to leave the
@@ -1738,36 +1731,7 @@ export default function MultiTablePage() {
     const prev = tablesRef.current;
     const existingLobby = prev.findIndex(isLobbyTab);
     if (existingLobby !== -1) {
-      /**
-       * Already have one — focus it rather than stacking duplicates, AND put
-       * it back on the lobby (Dan 2026-08-28 round 2).
-       *
-       * It used to focus the tab and leave `lobbyTournamentId` alone, so "+"
-       * — a button whose entire meaning is "show me the games" — reopened
-       * whatever tournament page the tab happened to be parked on. If that tab
-       * was already active it did nothing visible at all, which reads as the
-       * button being broken. Pressing "+" is a request for the lobby; give
-       * them the lobby.
-       */
-      setTables((cur) =>
-        cur.map((t) =>
-          isLobbyTab(t) ? { ...clearLobbyTournaments(t), lobbyPageHistory: undefined } : t
-        )
-      );
-      /* A page still showing a list an earlier request landed it on is
-         remounted, so a plain request opens on the player's own saved tab.
-         `openLobbyTabOn` emits BEFORE it stamps, so its own request is
-         re-stamped with a newer nonce and the marker right after this. */
-      if (prev[existingLobby]?.lobbyLandedList === true) {
-        const nonce = ++lobbyLandingNonceRef.current;
-        setTables((cur) =>
-          cur.map((t) =>
-            isLobbyTab(t) && t.lobbyLandedList
-              ? { ...t, lobbyLandedList: undefined, lobbyLandingNonce: nonce }
-              : t
-          )
-        );
-      }
+      // Reopening a page focuses it without discarding its navigation state.
       setActiveIndex(existingLobby);
       revealPageTabOffRoute(existingLobby, prev);
       return;
@@ -2893,8 +2857,8 @@ export default function MultiTablePage() {
   /**
    * Open the lobby tab ON a named list (Dan 2026-10-04).
    *
-   * From a tournament table, "Browse Full Lobby" means that club's
-   * tournaments. OPEN_LOBBY_TAB does everything it always did (reuse the
+   * Explicit tournament-list navigation requests a named list. Generic
+   * Browse Full Lobby restores the saved view. OPEN_LOBBY_TAB reuses the
    * parked lobby tab or append one, announce the cap); this only stamps which
    * list the tab should show. The bus dispatches synchronously, so the lobby
    * tab already exists in the queued state by the time this updater runs, and
@@ -2913,7 +2877,13 @@ export default function MultiTablePage() {
       cur.some(isLobbyTab)
         ? cur.map((t) =>
             isLobbyTab(t)
-              ? { ...t, lobbyGameType: list, lobbyLandingNonce: nonce, lobbyLandedList: true }
+              ? {
+                  ...clearLobbyTournaments(t),
+                  lobbyPageHistory: undefined,
+                  lobbyGameType: list,
+                  lobbyLandingNonce: nonce,
+                  lobbyLandedList: true,
+                }
               : t
           )
         : cur
@@ -3172,9 +3142,9 @@ export default function MultiTablePage() {
         if (stale()) return;
         if (tournamentRows === null) {
           // Stalled or unreadable, not empty: the same exit the cash path
-          // takes, except that the lobby it lands on is the tournament list.
+          // takes: keep the player's last lobby view.
           setQuickJoin({ open: false, loading: false, rows: [] });
-          openLobbyTabOn(lobbyList);
+          masterBus.emit('OPEN_LOBBY_TAB', {});
           return;
         }
         setQuickJoin((q) =>
@@ -3344,12 +3314,11 @@ export default function MultiTablePage() {
       if (stale()) return;
       reportError(err, 'MultiTablePage.quickJoin_read_failed');
       // Query failed - fall back to the lobby tab rather than a dead sheet.
-      // A tournament sheet falls to the tournament list, as its stalled exit does.
+      // Both sheet families restore the player's last lobby view.
       setQuickJoin({ open: false, loading: false, rows: [] });
-      if (sheetTournamentList) openLobbyTabOn(sheetTournamentList);
-      else masterBus.emit('OPEN_LOBBY_TAB', {});
+      masterBus.emit('OPEN_LOBBY_TAB', {});
     }
-  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id, openLobbyTabOn]);
+  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id]);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════
@@ -3455,13 +3424,10 @@ export default function MultiTablePage() {
   );
 
   const handleQuickJoinLobby = useCallback(() => {
-    /* From a tournament table the full lobby is the tournament list (Dan
-       2026-10-04). From a cash table it is exactly what it was. */
-    const list = quickJoin.tournamentLobby;
+    // Generic lobby navigation restores the page and view the player last used.
     closeQuickJoin();
-    if (list) openLobbyTabOn(list);
-    else masterBus.emit('OPEN_LOBBY_TAB', {});
-  }, [closeQuickJoin, openLobbyTabOn, quickJoin.tournamentLobby]);
+    masterBus.emit('OPEN_LOBBY_TAB', {});
+  }, [closeQuickJoin]);
 
   // ─── Update table info (called by child TablePage instances) ─────────
   // P1-2 FIX: bail out when nothing actually changed so setTables returns the
@@ -4622,13 +4588,8 @@ export default function MultiTablePage() {
       pot: 0,
       kind: 'table',
     };
-    const lobbyIdx = prev.findIndex(isLobbyTab);
-    if (lobbyIdx !== -1) {
-      const next = [...prev];
-      next[lobbyIdx] = fromUrl;
-      setTables(next);
-      setActiveIndex(lobbyIdx); // focus the table they just picked
-    } else if (prev.length < MAX_TABLES) {
+    // Opening a game adds its tab; the page stays open until manually closed.
+    if (prev.length < MAX_TABLES) {
       setTables([...prev, fromUrl]);
       setActiveIndex(prev.length); // Switch to new table
     } else {

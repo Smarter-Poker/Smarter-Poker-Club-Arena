@@ -31,7 +31,9 @@ WHAT IT DOES
             under the database Cluster lock. A later foreign hold is refused.
     status  print the selected journal without touching the database.
 
-Request IDs remain uuid5 of (run key, action, cluster). Resolve-only answers
+Request IDs remain uuid5 of (run key, action, cluster, generation).
+Generation one preserves existing IDs; another generation starts only after
+a fully released same-run journal, never from a partial or unknown outcome. Resolve-only answers
 are bound to that exact request; absent, in-progress, malformed and transport
 unknown outcomes retain the journal. Cleanup cannot restart pause work. A
 missing original resume may continue with the SAME request ID and atomic pause
@@ -176,8 +178,11 @@ def https_transport(service_key: str, timeout_seconds: float) -> Transport:
     return call
 
 
-def request_id(run_id: str, action: str, cluster_id: str) -> str:
-    return str(uuid.uuid5(REQUEST_NAMESPACE, f"{run_id}:{action}:{cluster_id}"))
+def request_id(run_id: str, action: str, cluster_id: str, generation: int = 1) -> str:
+    # Preserve the first generation IDs of existing v2 journals. A later
+    # generation is permitted only after the prior hold is fully released.
+    suffix = "" if generation == 1 else f":{generation}"
+    return str(uuid.uuid5(REQUEST_NAMESPACE, f"{run_id}:{action}:{cluster_id}{suffix}"))
 
 
 def hold_reason(run_id: str, action: str) -> str:
@@ -193,7 +198,7 @@ def list_lightning_clusters(base_url: str, call: Transport) -> list[str]:
     query = urlencode(
         {
             "select": "id,cluster_mode",
-            "cluster_mode": "eq.lightning",
+            "cluster_mode": "in.(lightning,paused)",
             "order": "id.asc",
             "limit": str(CLUSTER_LIMIT + 1),
         }
@@ -211,21 +216,21 @@ def list_lightning_clusters(base_url: str, call: Transport) -> list[str]:
             uuid.UUID(row["id"])
         except ValueError:
             raise Unknown("the Cluster read returned a non-uuid id") from None
-        if row.get("cluster_mode") != "lightning":
+        if row.get("cluster_mode") not in ("lightning", "paused"):
             raise Unknown("the Cluster read returned a Cluster outside the asked mode")
         ids.append(row["id"])
     return ids
 
 
-def operator_control(base_url: str, call: Transport, run_id: str, action: str, cluster_id: str) -> dict:
+def operator_control(base_url: str, call: Transport, run_id: str, action: str, cluster_id: str, generation: int = 1) -> dict:
     payload = {
         "p_cluster_id": cluster_id,
         "p_action": action,
         "p_reason": hold_reason(run_id, action),
-        "p_args": {"request_id": request_id(run_id, action, cluster_id)},
+        "p_args": {"request_id": request_id(run_id, action, cluster_id, generation)},
     }
     if action == "resume":
-        payload["p_args"]["expected_pause_request_id"] = request_id(run_id, "pause", cluster_id)
+        payload["p_args"]["expected_pause_request_id"] = request_id(run_id, "pause", cluster_id, generation)
     answer = call(f"{base_url}/rest/v1/rpc/fn_lightning_operator_control", payload)
     if not isinstance(answer, dict) or not isinstance(answer.get("ok"), bool):
         raise Unknown(f"the operator door gave an unreadable answer for {action} {cluster_id}")
@@ -294,6 +299,8 @@ def read_hold(path: Path) -> dict | None:
     lists = ("candidates", "held", "already", "unknown", "resume_pending", "released")
     if (not isinstance(payload, dict) or payload.get("schema") != HOLD_SCHEMA
             or not re.fullmatch(r"[1-9][0-9]*(?:-[1-9][0-9]*)?", str(payload.get("run_id", "")))
+            or type(payload.get("generation", 1)) is not int
+            or not 1 <= payload.get("generation", 1) <= 1000000
             or payload.get("phase") not in {"pausing", "resuming", "released"}
             or not all(cluster_ids(payload.get(k)) for k in lists)
             or not all(isinstance(payload.get(k), dict) and len(payload[k]) <= CLUSTER_LIMIT
@@ -323,9 +330,9 @@ def own_record(hold_file: Path, run_id: str) -> dict | None:
     return record
 
 
-def retained_answer(answer: object, run_id: str, action: str, cluster: str) -> str:
+def retained_answer(answer: object, run_id: str, action: str, cluster: str, generation: int = 1) -> str:
     if (not isinstance(answer, dict) or type(answer.get("ok")) is not bool
-            or answer.get("request_id") != request_id(run_id, action, cluster)
+            or answer.get("request_id") != request_id(run_id, action, cluster, generation)
             or answer.get("action") != action or answer.get("cluster_id") != cluster):
         raise Unknown("the operator answer is not bound to this original request")
     if answer["ok"] is True:
@@ -340,18 +347,18 @@ def retained_answer(answer: object, run_id: str, action: str, cluster: str) -> s
     return "refused:" + code
 
 
-def resolve_outcome(base_url: str, call: Transport, run_id: str, action: str, cluster: str) -> str | None:
+def resolve_outcome(base_url: str, call: Transport, run_id: str, action: str, cluster: str, generation: int = 1) -> str | None:
     # An exact missing answer proves API support, never absence of a pause's
     # historical effects. Only phase=pausing may execute that original pause.
-    args = {"request_id": request_id(run_id, action, cluster), "expected_action": action}
+    args = {"request_id": request_id(run_id, action, cluster, generation), "expected_action": action}
     if action == "resume":
-        args["expected_pause_request_id"] = request_id(run_id, "pause", cluster)
+        args["expected_pause_request_id"] = request_id(run_id, "pause", cluster, generation)
     response = call(f"{base_url}/rest/v1/rpc/fn_lightning_operator_control", {
         "p_cluster_id": cluster, "p_action": "resolve_release_hold",
         "p_reason": hold_reason(run_id, "resume"), "p_args": args,
     })
     if (not isinstance(response, dict)
-            or response.get("request_id") != request_id(run_id, action, cluster)
+            or response.get("request_id") != request_id(run_id, action, cluster, generation)
             or response.get("action") != action or response.get("cluster_id") != cluster):
         raise Unknown("the original operator outcome remains unknown")
     if (response.get("ok") is False and response.get("resolved") is False
@@ -359,7 +366,7 @@ def resolve_outcome(base_url: str, call: Transport, run_id: str, action: str, cl
         return None
     if response.get("ok") is not True or response.get("resolved") is not True:
         raise Unknown("the original operator outcome remains unknown")
-    return retained_answer(response.get("answer"), run_id, action, cluster)
+    return retained_answer(response.get("answer"), run_id, action, cluster, generation)
 
 
 def save_pause_answer(record: dict, cluster: str, outcome: str, hold_file: Path) -> None:
@@ -376,20 +383,30 @@ def save_pause_answer(record: dict, cluster: str, outcome: str, hold_file: Path)
 def pause(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
     record = own_record(hold_file, run_id)
     if record is None:
-        if read_hold(hold_file.with_name(hold_file.name + ".released")) is not None:
-            raise Unknown("this release already finished its Lightning hold")
+        previous = own_record(hold_file.with_name(hold_file.name + ".released"), run_id)
+        generation = 1
+        if previous is not None:
+            if previous["phase"] != "released":
+                raise Unknown("the previous hold has not been completely released")
+            generation = int(previous.get("generation", 1)) + 1
+            if generation > 1000000:
+                raise Unknown("the hold generation bound was reached")
+            # Older v2 helpers wrote only .released. Preserve that exact receipt
+            # before a later generation can replace it, including on interruption.
+            write_durable(hold_file.with_name(f"{hold_file.name}.released.{generation - 1}"), previous)
         clusters = list_lightning_clusters(base_url, call)
         if not clusters:
             return EXIT_DONE
         if not cluster_ids(clusters):
             raise Unknown("the Cluster census has duplicate or invalid identities")
-        record = {"schema": HOLD_SCHEMA, "run_id": run_id, "phase": "pausing",
+        record = {"schema": HOLD_SCHEMA, "run_id": run_id, "phase": "pausing", "generation": generation,
                   "paused_at": now_iso(), "candidates": clusters, "held": [], "already": [],
                   "refused": {}, "unknown": [], "resume_pending": [], "released": [],
                   "resume_refused": {}}
         write_durable(hold_file, record)
     if record["phase"] != "pausing":
         raise Unknown("release cleanup has begun; no new pause may be sent")
+    generation = record.get("generation", 1)
     # Resume exact pending requests even if their committed mode no longer
     # appears in a fresh Lightning census. Never add another candidate here.
     answered = set(record["held"]) | set(record["already"]) | set(record["refused"])
@@ -401,10 +418,10 @@ def pause(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
             write_durable(hold_file, record)
         # The resolve-only contract also refuses an old uninstalled API before
         # any state change. A pending commit is read even if its mode changed.
-        outcome = resolve_outcome(base_url, call, run_id, "pause", cluster)
+        outcome = resolve_outcome(base_url, call, run_id, "pause", cluster, generation)
         if outcome is None:
-            outcome = retained_answer(operator_control(base_url, call, run_id, "pause", cluster),
-                                      run_id, "pause", cluster)
+            outcome = retained_answer(operator_control(base_url, call, run_id, "pause", cluster, generation),
+                                      run_id, "pause", cluster, generation)
         save_pause_answer(record, cluster, outcome, hold_file)
     print(f"{LOG} Lightning hold recorded: {len(record['held'])} owned, "
           f"{len(record['already'])} foreign, {len(record['refused'])} refused")
@@ -418,10 +435,11 @@ def resume(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
     if record["phase"] != "resuming":
         record["phase"] = "resuming"
         write_durable(hold_file, record)
+    generation = record.get("generation", 1)
     unresolved = False
     for cluster in list(record["unknown"]):
         try:
-            outcome = resolve_outcome(base_url, call, run_id, "pause", cluster)
+            outcome = resolve_outcome(base_url, call, run_id, "pause", cluster, generation)
             if outcome is None:
                 raise Unknown("the original pause outcome remains unknown")
         except Unknown:
@@ -432,15 +450,15 @@ def resume(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
         if cluster in record["released"] or cluster in record["resume_refused"]:
             continue
         try:
-            outcome = resolve_outcome(base_url, call, run_id, "resume", cluster)
+            outcome = resolve_outcome(base_url, call, run_id, "resume", cluster, generation)
             if outcome is None:
                 if cluster not in record["resume_pending"]:
                     record["resume_pending"].append(cluster)
                     write_durable(hold_file, record)
                 # Reissue only this exact original resume, guarded atomically
                 # by its expected pause owner; never recreate a missing pause.
-                outcome = retained_answer(operator_control(base_url, call, run_id, "resume", cluster),
-                                          run_id, "resume", cluster)
+                outcome = retained_answer(operator_control(base_url, call, run_id, "resume", cluster, generation),
+                                          run_id, "resume", cluster, generation)
             elif cluster not in record["resume_pending"]:
                 # A response exists but this journal never recorded the send.
                 raise Unknown("an unjournaled resume outcome cannot be adopted")
@@ -460,6 +478,8 @@ def resume(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
     record["resumed_at"] = now_iso()
     record["phase"] = "released"
     released_file = hold_file.with_name(hold_file.name + ".released")
+    # Archive before replacing the latest receipt; a kill cannot erase a prior generation.
+    write_durable(hold_file.with_name(f"{hold_file.name}.released.{generation}"), record)
     write_durable(released_file, record)
     hold_file.unlink()
     fd = os.open(hold_file.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)

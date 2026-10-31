@@ -175,7 +175,7 @@ bounded_recovery_command 15 "$CONTROL_DIR/engine-release-seal.py" attest-termina
 LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
 if [ -e "$LIGHTNING_HOLD_FILE" ]; then
   if bounded_recovery_command 60 "$LIGHTNING_HOLD" resume \
-    --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"; then
+    --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5; then
     echo '[engine-release-recover] released the Lightning hold the transaction left behind'
   else
     echo "[engine-release-recover] FATAL: the Lightning hold for run $RUN_ID is still not released; $LIGHTNING_HOLD_FILE retained for an operator" >&2

@@ -573,6 +573,7 @@ import { useTableArt } from '../hooks/useTableArt';
 import { useProtectedCardLayout } from '../hooks/useProtectedCardLayout';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
+  ACTION_NOT_DELIVERED_MESSAGE,
   isTimeBankTurnGone,
   submitAction,
   respondToRIT,
@@ -23688,7 +23689,7 @@ function LiveTablePage({
       action: string,
       amount?: number,
       callsite?: string
-    ): Promise<boolean> => {
+    ): Promise<boolean | null> => {
       try {
         if (isLightningObserverSnapshot(engineSnapshotRef.current)) return false;
         // Read at the tap: a retained callback must not send a token from an
@@ -23696,6 +23697,11 @@ function LiveTablePage({
         const res = await submitTableDecision({
           actionContext: tableStateRef.current.actionContext,
           allowContextless: Boolean(lightningRoomRef.current),
+          clientStateStale:
+            action !== 'fold' &&
+            (!tableStateRef.current.players[tableStateRef.current.heroSeat - 1] ||
+              tableStateRef.current.players[tableStateRef.current.heroSeat - 1]?.status ===
+                'folded'),
           send: async (context) => await submitAction(tid, uid, action, amount, context),
           refresh: () => awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot),
         });
@@ -23703,12 +23709,16 @@ function LiveTablePage({
         if (tableStateRef.current.tableId !== tid || actionUserRef.current !== uid) return false;
         if (!res.success) {
           showActionError({
-            error: safeErrorMessage(res.error, 'Action rejected'),
+            error: res.outcomeUnconfirmed
+              ? ACTION_NOT_DELIVERED_MESSAGE
+              : safeErrorMessage(res.error, 'Action rejected'),
             code: res.code,
-            hint: res.hint as ActionErrorData['hint'],
+            hint: res.outcomeUnconfirmed ? undefined : (res.hint as ActionErrorData['hint']),
           });
           if (callsite) console.warn(`[Table] Server ${action} rejected (${callsite}):`, res);
-          return false;
+          // null is an unknown outcome, not a refusal. Keep the optimistic
+          // display until an actual engine snapshot supplies the current turn.
+          return res.outcomeUnconfirmed ? null : false;
         }
         return true;
       } catch (err) {
@@ -24525,9 +24535,10 @@ function LiveTablePage({
         heroPlayer,
       });
       showActionError({
-        error: 'Your seat is out of sync with the table - resyncing',
+        error: 'Your Action Was Not Sent. Please Review The Table And Try Again.',
         code: 'CLIENT_STATE_STALE',
       });
+      requestEngineSnapshot();
       return false;
     }
     return true;
@@ -24630,7 +24641,10 @@ function LiveTablePage({
       // Input readiness is checked BEFORE optimistic paint. Otherwise the
       // missing-token fold arms a fence for no decision, and the refreshed
       // turn can remain hidden behind that fence even though nothing was sent.
-      if (!lightningRoomRef.current && !live.actionContext) {
+      const staleHero =
+        action !== 'fold' &&
+        (!live.players[live.heroSeat - 1] || live.players[live.heroSeat - 1]?.status === 'folded');
+      if ((!lightningRoomRef.current && !live.actionContext) || staleHero) {
         try {
           if (tableId) {
             await submitActionWithToast(tableId, userId, action, amount, 'panel-missing-decision');
@@ -24711,7 +24725,7 @@ function LiveTablePage({
                 undefined,
                 'panel-fold'
               );
-              if (!ok) revert();
+              if (ok === false) revert();
             }
           }
           break;
@@ -24728,7 +24742,7 @@ function LiveTablePage({
                 undefined,
                 'panel-check'
               );
-              if (!ok) revert();
+              if (ok === false) revert();
             }
           }
           break;
@@ -24746,7 +24760,7 @@ function LiveTablePage({
                 undefined,
                 'panel-call'
               );
-              if (!ok) revert();
+              if (ok === false) revert();
             }
           }
           break;
@@ -24769,7 +24783,7 @@ function LiveTablePage({
                   clamped,
                   'panel-raise'
                 );
-                if (!ok) revert();
+                if (ok === false) revert();
               }
             }
           }
@@ -24794,7 +24808,7 @@ function LiveTablePage({
                 heroStack,
                 'panel-allin'
               );
-              if (!ok) revert();
+              if (ok === false) revert();
             }
           }
           break;

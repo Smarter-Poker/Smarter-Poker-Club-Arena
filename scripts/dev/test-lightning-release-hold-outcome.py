@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Finite native PostgreSQL 17 request-outcome/CAS qualification; no production."""
-import argparse, os, pathlib, subprocess, tempfile, shutil, time, select, re
+import argparse, os, pathlib, subprocess, tempfile, shutil, time, select, re, json, importlib.util
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 p=argparse.ArgumentParser();p.add_argument('--pg-bin',default=os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin'));p.add_argument('--scratch',default=os.environ.get('TMPDIR'));a=p.parse_args()
 if os.uname().sysname=='Darwin' and not str(a.scratch).startswith('/Volumes/SmarterWork/agent-work/'):
@@ -128,6 +128,72 @@ try:
         sql("BEGIN; UPDATE cash_games SET "+column+"="+value+" WHERE id='00000000-0000-4000-a000-000000000002'; DO $g$ BEGIN IF "+call('resume','66666666-0000-4000-a000-000000000001')+"->>'code'<>'"+code+"' THEN RAISE EXCEPTION 'current admission guard'; END IF; END $g$; ROLLBACK;")
     check("NOT EXISTS(SELECT 1 FROM ca_money_rpc_registry WHERE proname='fn_lightning_operator_control')",'registry decision unchanged')
     check(f"NOT public.fn_ca_money_rpc_writes_balances((SELECT prosrc FROM pg_proc WHERE oid={sig}))",'production registry classifier unchanged')
+    # Drive the actual Python journal against the installed native RPC. This
+    # qualifies generation-derived UUIDs and exact owner arguments together,
+    # including a response lost AFTER the PostgreSQL transaction commits.
+    spec=importlib.util.spec_from_file_location('native_lightning_hold',ROOT/'server/scripts/engine-release-lightning-hold.py')
+    helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
+    cluster='00000000-0000-4000-a000-000000000002'
+    sql("TRUNCATE lightning_operator_request,cash_cluster_events,lightning_cluster_control; UPDATE cash_games SET cluster_mode='must_move' WHERE id='"+cluster+"';")
+    journal=work/'123-1.lightning-hold.json'
+    transport_calls=[]
+    lose_after_commit=set()
+    def quote(value):return "'"+str(value).replace("'","''")+"'"
+    def native_transport(url,payload):
+        transport_calls.append(payload)
+        if payload is None:
+            # Deliberately select the maintained MUST-MOVE fixture candidate.
+            # Census eligibility/pool entry is outside this native boundary;
+            # only this read is supplied. Every operator/resolve call below
+            # executes the unchanged installed RPC against real PostgreSQL.
+            assert sql("SELECT count(*) FROM cash_games WHERE id='"+cluster+"'")=='1'
+            return [{"id":cluster,"cluster_mode":"lightning"}]
+        answer=json.loads(sql('SELECT public.fn_lightning_operator_control('+','.join(quote(payload[k]) for k in ('p_cluster_id','p_action','p_reason'))+','+quote(json.dumps(payload['p_args']))+'::jsonb)'))
+        key=(payload['p_action'],payload['p_args']['request_id'])
+        if key in lose_after_commit:
+            lose_after_commit.remove(key)
+            raise helper.Unknown('native response lost after committed RPC')
+        return answer
+    base='https://kuklfnapbkmacvwxktbh.supabase.co'
+    assert helper.pause(base,native_transport,'123-1',journal)==helper.EXIT_DONE
+    assert helper.resume(base,native_transport,'123-1',journal)==helper.EXIT_DONE
+    first_receipt=journal.with_name(journal.name+'.released.1').read_bytes()
+    pause2=helper.request_id('123-1','pause',cluster,2)
+    resume2=helper.request_id('123-1','resume',cluster,2)
+    lose_after_commit.add(('pause',pause2))
+    try:helper.pause(base,native_transport,'123-1',journal)
+    except helper.Unknown:pass
+    else:raise AssertionError('lost native pause answer did not stay unknown')
+    assert helper.read_hold(journal)['unknown']==[cluster]
+    before=sql('SELECT count(*) FROM cash_cluster_events')
+    assert helper.pause(base,native_transport,'123-1',journal)==helper.EXIT_DONE
+    assert before==sql('SELECT count(*) FROM cash_cluster_events')
+    assert sql("SELECT paused_request_id FROM lightning_cluster_control WHERE cluster_id='"+cluster+"'")==pause2
+    lose_after_commit.add(('resume',resume2))
+    try:helper.resume(base,native_transport,'123-1',journal)
+    except helper.Unknown:pass
+    else:raise AssertionError('lost native resume answer did not stay unknown')
+    assert helper.read_hold(journal)['resume_pending']==[cluster]
+    before=sql('SELECT count(*) FROM cash_cluster_events')
+    calls_before=len(transport_calls)
+    try:helper.pause(base,native_transport,'123-1',journal)
+    except helper.Unknown:pass
+    else:raise AssertionError('unknown cleanup was reopened as pause')
+    assert len(transport_calls)==calls_before
+    assert helper.resume(base,native_transport,'123-1',journal)==helper.EXIT_DONE
+    assert before==sql('SELECT count(*) FROM cash_cluster_events')
+    assert journal.with_name(journal.name+'.released.1').read_bytes()==first_receipt
+    check("(SELECT args->>'expected_pause_request_id'='"+pause2+"' FROM lightning_operator_request WHERE request_id='"+resume2+"')",'helper generation two actual CAS owner')
+    assert helper.pause(base,native_transport,'123-1',journal)==helper.EXIT_DONE
+    sql("UPDATE lightning_cluster_control SET paused_request_id='"+B+"' WHERE cluster_id='"+cluster+"';")
+    before=sql('SELECT count(*) FROM cash_cluster_events')
+    assert helper.resume(base,native_transport,'123-1',journal)==helper.EXIT_PARTIAL
+    assert helper.read_hold(journal)['resume_refused']=={cluster:'HOLD_OWNERSHIP_CHANGED'}
+    assert helper.resume(base,native_transport,'123-1',journal)==helper.EXIT_PARTIAL
+    assert before==sql('SELECT count(*) FROM cash_cluster_events')
+    assert sql("SELECT paused_request_id FROM lightning_cluster_control WHERE cluster_id='"+cluster+"'")==B
+    assert helper.read_hold(journal)['generation']==3
+    print('PASS actual helper/native RPC generations (MUST-MOVE fixture; supplied candidate census), lost committed pause/resume answers, exact CAS, no duplicate effects, immutable prior receipt and foreign hold refusal')
     print('PASS native committed/negative/missing outcomes, global contention, strict identity, CAS, replay, ordinary callers, ACL and idempotent install')
 finally:
     stopped=subprocess.run([str(pg/'pg_ctl'),'-D',str(work/'db'),'-m','immediate','stop'],capture_output=True)

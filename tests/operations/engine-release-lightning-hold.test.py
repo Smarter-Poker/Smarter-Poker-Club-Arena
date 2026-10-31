@@ -42,7 +42,8 @@ def missing(payload):
 class FakeDoor:
     """Answers the Cluster listing and the operator door from a script."""
 
-    def __init__(self, clusters, answers=None, fail_on=None):
+    def __init__(self, clusters, answers=None, fail_on=None, generation=1):
+        self.generation = generation
         self.clusters = clusters
         self.answers = answers or {}
         self.fail_on = fail_on or set()
@@ -52,7 +53,7 @@ class FakeDoor:
         self.calls.append((url, payload))
         if payload is None:
             assert url.startswith(f"{BASE}/rest/v1/cash_games?"), url
-            assert "cluster_mode=eq.lightning" in url
+            assert "cluster_mode=in.%28lightning%2Cpaused%29" in url
             return [{"id": c, "cluster_mode": "lightning"} for c in self.clusters]
         assert url == f"{BASE}/rest/v1/rpc/fn_lightning_operator_control", url
         key = (payload["p_action"], payload["p_cluster_id"])
@@ -64,7 +65,7 @@ class FakeDoor:
             return missing(payload)
         if payload["p_action"] == "resume":
             assert payload["p_args"]["expected_pause_request_id"] == hold.request_id(
-                "123-1", "pause", payload["p_cluster_id"])
+                "123-1", "pause", payload["p_cluster_id"], self.generation)
         return {**identity, **self.answers.get(key, {"ok": True, "idempotent": False})}
 
 
@@ -455,6 +456,106 @@ h.pause('https://kuklfnapbkmacvwxktbh.supabase.co',door,'123-1',Path(sys.argv[2]
         with self.assertRaises(hold.Unknown):
             hold.pause(BASE, door, "123-1", self.hold_file)
         self.assertFalse(self.hold_file.exists())
+
+    def next_generation(self):
+        hold.pause(BASE, FakeDoor([C1]), "123-1", self.hold_file)
+        hold.resume(BASE, FakeDoor([C1]), "123-1", self.hold_file)
+
+    def test_complete_release_allows_new_generation_with_original_pause_cas(self):
+        self.next_generation()
+        first = self.hold_file.with_name(self.hold_file.name + ".released.1").read_bytes()
+        door = FakeDoor([C1], generation=2)
+        self.assertEqual(hold.pause(BASE, door, "123-1", self.hold_file), hold.EXIT_DONE)
+        self.assertEqual(self.read()["generation"], 2)
+        pause = [p for _, p in door.calls if p and p["p_action"] == "pause"][0]
+        self.assertEqual(pause["p_args"]["request_id"], hold.request_id("123-1", "pause", C1, 2))
+        self.assertNotEqual(pause["p_args"]["request_id"], hold.request_id("123-1", "pause", C1))
+        self.assertEqual(hold.resume(BASE, door, "123-1", self.hold_file), hold.EXIT_DONE)
+        resume = [p for _, p in door.calls if p and p["p_action"] == "resume"][0]
+        self.assertEqual(resume["p_args"]["expected_pause_request_id"], pause["p_args"]["request_id"])
+        self.assertEqual(self.hold_file.with_name(self.hold_file.name + ".released.1").read_bytes(), first)
+        self.assertEqual(hold.read_hold(self.hold_file.with_name(self.hold_file.name + ".released"))["generation"], 2)
+
+    def test_legacy_v2_release_receipt_is_archived_before_new_pause(self):
+        self.next_generation()
+        released = self.hold_file.with_name(self.hold_file.name + ".released")
+        previous = hold.read_hold(released)
+        previous.pop("generation")
+        hold.write_durable(released, previous)
+        archive = self.hold_file.with_name(self.hold_file.name + ".released.1")
+        archive.unlink()
+        def interrupted(url, payload):
+            self.assertEqual(hold.read_hold(archive), previous)
+            if payload is None:
+                return [{"id": C1, "cluster_mode": "lightning"}]
+            raise hold.Unknown("interrupted before generation two operator mutation")
+        with self.assertRaises(hold.Unknown):
+            hold.pause(BASE, interrupted, "123-1", self.hold_file)
+        self.assertEqual(self.read()["generation"], 2)
+        self.assertEqual(hold.read_hold(archive), previous)
+
+    def test_partial_cleanup_never_repauses_or_increments_generation(self):
+        hold.pause(BASE, FakeDoor([C1, C2]), "123-1", self.hold_file)
+        door = FakeDoor([C1, C2], answers={("resume", C1): {"ok": False, "code": "CLUSTER_FROZEN"}})
+        self.assertEqual(hold.resume(BASE, door, "123-1", self.hold_file), hold.EXIT_PARTIAL)
+        before = self.hold_file.read_bytes()
+        untouched = FakeDoor([C1, C2])
+        with self.assertRaises(hold.Unknown):
+            hold.pause(BASE, untouched, "123-1", self.hold_file)
+        self.assertEqual(untouched.calls, [])
+        self.assertEqual(self.hold_file.read_bytes(), before)
+
+    def test_generation_two_unknown_resume_keeps_exact_id_and_owner(self):
+        self.next_generation()
+        hold.pause(BASE, FakeDoor([C1], generation=2), "123-1", self.hold_file)
+        failed = FakeDoor([C1], fail_on={("resume", C1)}, generation=2)
+        with self.assertRaises(hold.Unknown):
+            hold.resume(BASE, failed, "123-1", self.hold_file)
+        before = self.hold_file.read_bytes()
+        with self.assertRaises(hold.Unknown):
+            hold.pause(BASE, FakeDoor([C1], generation=3), "123-1", self.hold_file)
+        self.assertEqual(self.hold_file.read_bytes(), before)
+        retry = FakeDoor([C1], generation=2)
+        self.assertEqual(hold.resume(BASE, retry, "123-1", self.hold_file), hold.EXIT_DONE)
+        original = [p for _, p in failed.calls if p and p["p_action"] == "resume"][0]
+        continued = [p for _, p in retry.calls if p and p["p_action"] == "resume"][0]
+        self.assertEqual(original["p_args"], continued["p_args"])
+
+    def test_generation_two_lost_pause_response_resolves_without_new_pause(self):
+        self.next_generation()
+        answer = None
+        def commit_then_lose(url, payload):
+            nonlocal answer
+            if payload is None:
+                return [{"id": C1, "cluster_mode": "lightning"}]
+            if payload["p_action"] == "resolve_release_hold":
+                if answer is None:
+                    return missing(payload)
+                return {"ok": True, "resolved": True, "answer": answer,
+                        **{k: answer[k] for k in ("request_id", "action", "cluster_id")}}
+            self.assertEqual(payload["p_action"], "pause")
+            self.assertEqual(payload["p_args"]["request_id"], hold.request_id("123-1", "pause", C1, 2))
+            answer = {"ok": True, "action": "pause", "cluster_id": C1,
+                      "request_id": payload["p_args"]["request_id"]}
+            raise hold.Unknown("response lost after commit")
+        with self.assertRaises(hold.Unknown):
+            hold.pause(BASE, commit_then_lose, "123-1", self.hold_file)
+        self.assertEqual(self.read()["unknown"], [C1])
+        self.assertEqual(hold.pause(BASE, commit_then_lose, "123-1", self.hold_file), hold.EXIT_DONE)
+        self.assertEqual(self.read()["held"], [C1])
+        self.assertEqual(self.read()["generation"], 2)
+
+    def test_unreleased_or_foreign_receipt_cannot_start_generation(self):
+        hold.pause(BASE, FakeDoor([C1]), "123-1", self.hold_file)
+        record = self.read()
+        self.hold_file.unlink()
+        released = self.hold_file.with_name(self.hold_file.name + ".released")
+        for changes in ({}, {"run_id": "999-1"}, {"generation": True}, {"generation": 0}):
+            hold.write_durable(released, {**record, **changes})
+            door = FakeDoor([C1])
+            with self.assertRaises(hold.Unknown):
+                hold.pause(BASE, door, "123-1", self.hold_file)
+            self.assertEqual(door.calls, [])
 
     def test_the_helper_never_reads_a_horse_flag(self):
         source = SCRIPT.read_text()

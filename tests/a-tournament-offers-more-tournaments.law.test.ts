@@ -505,13 +505,13 @@ describe('MultiTablePage', () => {
     expect(MULTI).toContain('Browse Full Lobby');
   });
 
-  it('Browse Full Lobby lands on the tournament list from a tournament, the lobby otherwise', () => {
+  it('Browse Full Lobby restores the last view from either table family', () => {
     const browse = MULTI.slice(
       MULTI.indexOf('const handleQuickJoinLobby = useCallback('),
       MULTI.indexOf('// ─── Update table info')
     );
-    expect(browse).toContain('if (list) openLobbyTabOn(list);');
-    expect(browse).toContain("else masterBus.emit('OPEN_LOBBY_TAB', {});");
+    expect(browse).not.toContain('openLobbyTabOn(');
+    expect(browse).toContain("masterBus.emit('OPEN_LOBBY_TAB', {});");
     expect(MULTI).toContain('initialGameType={table.lobbyGameType}');
     const home = read('src/pages/ClubHomePage.tsx');
     expect(home).toContain("useState<GameType>(initialGameType ?? 'ALL')");

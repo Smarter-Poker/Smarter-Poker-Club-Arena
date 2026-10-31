@@ -143,13 +143,13 @@ describe('a hub tab in the slot model', () => {
 
   it('is never a free slot: a page the player is reading is not parking space', () => {
     expect(isFreeSlot(hubTab)).toBe(false);
-    expect(isFreeSlot(lobbyTab)).toBe(true);
+    expect(isFreeSlot(lobbyTab)).toBe(false);
   });
 
   it('is skipped by an observe in favour of a real lobby tab or a new slot', () => {
     const tabs = [seated('T1'), hubTab, lobbyTab];
     // Active on the hub tab: not taken in place; the parked lobby tab is used.
-    expect(pickObserveSlot(tabs, 1, 'T2', 4)).toEqual({ action: 'lobby', index: 2 });
+    expect(pickObserveSlot(tabs, 1, 'T2', 4)).toEqual({ action: 'append', index: 3 });
     // No lobby tab: append rather than replace the hub tab.
     expect(pickObserveSlot([seated('T1'), hubTab], 1, 'T2', 4)).toEqual({
       action: 'append',

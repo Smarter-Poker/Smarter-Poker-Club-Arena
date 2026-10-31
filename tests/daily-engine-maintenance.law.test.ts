@@ -826,7 +826,7 @@ it('binds the new frozen-recovery hold-ownership carrier without rewriting prior
     expect(entry.releaseWitness.sha256).toBe(createHash('sha256').update(floorRaw).digest('hex'));
   for (const proof of [
     'b8e43e73864d46db088096474d0334f22076e83c1ce70b8a50c382a3a2cae312',
-    '4ab54bdd41159f69d4eef5f5b9f7d3f03bb64bafde6d95b3be470a969509fb4d',
+    '401a15fa30f663b8614cf962ed4650c7f55927d29705ab9bdef9dac0638ee6e4',
     '8ee8d46e5e8045ca727ea7684a3474c3',
     'current-head checks',
     'EED33',

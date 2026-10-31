@@ -65,6 +65,12 @@ on:
   # `${{ github.event.schedule || github.event_name }}` becomes its own group,
   # so a manual run never cancels or queues behind a scheduled one.
   workflow_dispatch:
+    inputs:
+      connected_ui_observations:
+        description: 'Run the protected isolated schema/UI qualification only'
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -79,11 +85,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  isolated-connected-ui:
+    if: github.event_name == 'workflow_dispatch' && inputs.connected_ui_observations && github.ref == 'refs/heads/main' && github.repository_id == '1132369872'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/component-fixture-native-smoke.yml
+    with:
+      source_sha: ${{ github.sha }}
+      connected_ui_observations: true
+      web_artifact_run_id: '41223006660'
+      web_artifact_id: '13050920506'
+      engine_source_sha: '1d13af76cbe267aa61b4edad0e10d26331cbf276'
+    secrets:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
   refresh:
     # The hourly cron exists for the security audit alone. Regenerating the
     # manifest comparison every hour would bury the one thing this workflow
     # needs a person to look at.
-    if: github.event.schedule != '40 * * * *'
+    if: github.event.schedule != '40 * * * *' && !(github.event_name == 'workflow_dispatch' && inputs.connected_ui_observations)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -166,6 +187,7 @@ jobs:
           echo "::error title=Stale manifest fragment::See the Absorb step - a fragment has declared something production does not have for over a day."
           exit 1
   anchor-ledger-days:
+    if: "!(github.event_name == 'workflow_dispatch' && inputs.connected_ui_observations)"
     name: The ledger attestation is anchored outside the database
     runs-on: ubuntu-latest
     # WHY THIS RUNS HERE AND NOT ON A SCHEDULE OF ITS OWN
@@ -385,6 +407,7 @@ jobs:
           gh issue close "$N" --repo "$REPO" || true
 
   second-writer:
+    if: "!(github.event_name == 'workflow_dispatch' && inputs.connected_ui_observations)"
     name: The second writer agrees with the register
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -493,6 +516,7 @@ jobs:
           gh issue close "$N" --repo "$REPO" || true
 
   definer-exposure:
+    if: "!(github.event_name == 'workflow_dispatch' && inputs.connected_ui_observations)"
     name: No unaccounted DEFINER writer is reachable from a browser
     runs-on: ubuntu-latest
     timeout-minutes: 6

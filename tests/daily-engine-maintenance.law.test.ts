@@ -1316,8 +1316,8 @@ it('binds the owner-ordered next :55 Horse V63-V69 activation without renewing a
   expect(entry.contains).toBe('0562b8d49cfc246b3e24327e23ba5e72fc402251');
   expect(entry.announceAtChicagoMinutes).toEqual([53]);
   expect(entry.migrations).toEqual([]);
-  expect(entry.notBefore).toBe('2026-10-31T17:25:00Z');
-  expect(entry.notAfter).toBe('2026-10-31T23:25:00Z');
+  expect(entry.notBefore).toBe('2026-10-31T17:15:00Z');
+  expect(entry.notAfter).toBe('2026-10-31T23:15:00Z');
   const span = Date.parse(entry.notAfter) - Date.parse(entry.notBefore);
   expect(span).toBeGreaterThanOrEqual(420_000);
   expect(span).toBeLessThanOrEqual(21_600_000);

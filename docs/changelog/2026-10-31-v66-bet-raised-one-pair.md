@@ -98,7 +98,21 @@ re-shove; V66 also stops that jam, so the ablation disables V66 too.
 
 ## League (duplicate-deal, 8000 pairs, equity governor off; a = V66 on, b = off)
 
-LEAGUE_TABLE_PLACEHOLDER
+Mirror (horse field, seed 2026103107) and human-field twin (seed 2026103108):
+
+| card          | mirror bb/100   | divergent pairs | human twin bb/100 | divergent pairs |
+| ------------- | --------------- | --------------- | ----------------- | --------------- |
+| nlh 100bb     | +2.26 +/- 1.31  | 120             | +3.10 +/- 1.34    | 11              |
+| nlh 40bb      | +0.12 +/- 0.52  | 68              | +1.03 +/- 0.64    | 7               |
+| nlh 200bb     | +1.44 +/- 2.03  | 139             | +7.14 +/- 3.18    | 14              |
+| mtt 40bb      | -0.80 +/- 0.65  | 80              | +1.26 +/- 0.62    | 6               |
+| mtt 25bb      | -0.30 +/- 0.34  | 54              | +0.48 +/- 0.29    | 3               |
+
+16,000 hands per card, no illegal actions, no truncated streets. No card
+below -2 standard errors, so the shade ships at 0.10. The class is rare in
+the league (the horse must bet, be raised and hold one pair), so the
+divergent-pair counts are small and the mirror tournament cards are inside
+noise; the live review rows are the primary evidence.
 
 ## Re-measure live
 

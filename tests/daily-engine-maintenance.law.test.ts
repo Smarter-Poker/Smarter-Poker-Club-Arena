@@ -986,7 +986,24 @@ it('binds the bounded-census correction without extending or retrying its failed
   expect(entry.notAfter).toBe('2026-10-31T06:10:00Z');
   expect(entry.announceAtChicagoMinutes).toEqual([53]);
   expect(entry.migrations).toEqual([]);
-  const floorRaw = readFileSync(join(root, 'server/release/activation-floor.json'));
+  const currentFloorRaw = readFileSync(join(root, 'server/release/activation-floor.json'));
+  const floorRaw = Buffer.from(
+    JSON.stringify(
+      {
+        schema: 'engine-release-activation-floor/v2-owner-window',
+        preparationAt: entry.notBefore,
+        activationAt: entry.notBefore,
+        expiresAt: entry.notAfter,
+        timeZone: 'America/Chicago',
+        ownerWindowId: id,
+        clientPublicationAt: entry.notBefore,
+      },
+      null,
+      2
+    ) + '\n'
+  );
+  if (JSON.parse(currentFloorRaw.toString()).ownerWindowId === id)
+    expect(currentFloorRaw.equals(floorRaw)).toBe(true);
   expect(JSON.parse(floorRaw.toString())).toEqual({
     schema: 'engine-release-activation-floor/v2-owner-window',
     preparationAt: entry.notBefore,
@@ -1018,4 +1035,73 @@ it('binds the bounded-census correction without extending or retrying its failed
     'automatic extension',
   ])
     expect(entry.ownerOrder).toContain(safeguard);
+});
+
+it('binds a distinct Cashier original-cohort census carrier while preserving historical authority', () => {
+  const raw = readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8');
+  const doc = JSON.parse(raw);
+  const id = '2026-10-31-cashier-original-cohort-safe-census-cutover';
+  const matches = doc.windows.filter((w: { id: string }) => w.id === id);
+  expect(matches).toHaveLength(1);
+  expect(doc.windows.length).toBeGreaterThanOrEqual(63);
+  expect(doc.windows.findIndex((w: { id: string }) => w.id === id)).toBe(62);
+  const entry = matches[0];
+  const marker = ',\n    {\n      "id": "' + id + '"';
+  expect(raw.split(marker)).toHaveLength(2);
+  expect(
+    createHash('sha256')
+      .update(raw.slice(0, raw.indexOf(marker)))
+      .digest('hex')
+  ).toBe('a285959ae407886721edc1bbef1137ea7a48a121aa862088b6f52cc1f39fa2b2');
+  expect(doc.databaseWindows.length).toBeGreaterThanOrEqual(3);
+  expect(
+    createHash('sha256')
+      .update(JSON.stringify(doc.databaseWindows.slice(0, 3)))
+      .digest('hex')
+  ).toBe('c1aabc10442b0299731ea9d1fae5bd8e4c94b42cb21bde52fb03271ae5b81bb9');
+  expect(entry.contains).toBe('976850bec328ac8b80d47603f18fcba81e05534f');
+  expect(entry.notBefore).toBe('2026-10-31T06:00:00Z');
+  expect(entry.notAfter).toBe('2026-10-31T08:10:00Z');
+  expect(entry.announceAtChicagoMinutes).toEqual([53]);
+  expect(entry.migrations).toEqual([]);
+  const historicalFloor = Buffer.from(
+    JSON.stringify(
+      {
+        schema: 'engine-release-activation-floor/v2-owner-window',
+        preparationAt: entry.notBefore,
+        activationAt: entry.notBefore,
+        expiresAt: entry.notAfter,
+        timeZone: 'America/Chicago',
+        ownerWindowId: id,
+        clientPublicationAt: entry.notBefore,
+      },
+      null,
+      2
+    ) + '\n'
+  );
+  expect(entry.releaseWitness).toEqual({
+    path: 'server/release/activation-floor.json',
+    sha256: '6008a4314d7a80e77ad0df28c6cc4dd83777ab813f3e66192108be25e063b0ac',
+  });
+  expect(createHash('sha256').update(historicalFloor).digest('hex')).toBe(
+    entry.releaseWitness.sha256
+  );
+  const currentFloor = readFileSync(join(root, 'server/release/activation-floor.json'));
+  if (JSON.parse(currentFloor.toString()).ownerWindowId === id)
+    expect(currentFloor.equals(historicalFloor)).toBe(true);
+  for (const proof of [
+    'PROTECTED inclusion of PR8853',
+    'current-head checks',
+    '35-million-object',
+    'all-parent restoration',
+    'disableBreaks',
+    'EED33',
+    'full285s reserve',
+    'OWN healthy v3 thaw',
+    'one actual activation maximum',
+    'no automatic extension',
+    'original15/128/110',
+    'KEEP DIAMOND CLOSED',
+  ])
+    expect(entry.ownerOrder).toContain(proof);
 });

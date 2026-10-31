@@ -909,9 +909,7 @@ test.describe('production routed gameplay customization', () => {
       // Real private note persistence over the deployed opponent-click menu.
       // Only the two isolated certification accounts own these rows. No throw
       // is consumed and the projected table never buys in or changes live play.
-      const rivalAvatar = writerRoot
-        .locator('.seat-wrapper:not(.seat-wrapper--hero) .seat__avatar')
-        .first();
+      const rivalAvatar = writerRoot.locator('[data-seat-wrapper="2"] .seat__avatar');
       await tapReady(rivalAvatar);
       const picker = writer.locator('.throwable-selector');
       await expect(picker.locator('.throwable-selector__tabs button')).toHaveText([

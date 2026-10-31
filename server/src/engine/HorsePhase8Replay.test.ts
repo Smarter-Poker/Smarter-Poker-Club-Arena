@@ -78,6 +78,8 @@ describe('Phase 8 captured public-line reconstruction', () => {
       // The committed-stack branch must respect V21's call-only rule after
       // hero bets AA and faces a turn raise. Isolate the repair: the same
       // seed with it disabled still reproduces the historical extra shove.
+      // V66 (2026-10-31) independently stops a one-pair hand jamming over a
+      // flop/turn raise after its own bet, so the ablation disables it too.
       expect(baseline.action).toBe('call');
       seedFastRandom(hand.reviewId);
       const prior = HorseLogic.decide(
@@ -91,6 +93,7 @@ describe('Phase 8 captured public-line reconstruction', () => {
           v61RiverOnePairShade: false,
           decisionTimeMs: 0,
           committedRaiseDiscipline: false,
+          v66BetRaisedOnePair: false,
         }
       );
       expect(prior.action).toBe('all_in');

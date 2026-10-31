@@ -209,7 +209,8 @@ describe('the stall predicate reads the by-design pause', () => {
     // stall list, deadStalledCount, the liveness verdict, poker_stalled_tables
     // and the deploy drain gate. They can only agree about what "broken" means
     // if they are all asking this one question.
-    const snap = methodBody(SERVER, 'tableLivenessSnapshot() {');
+    // Optional observation scope must not alter the pause/progress contract.
+    const snap = methodBody(SERVER, 'tableLivenessSnapshot(');
     expect(snap).toMatch(/paused:\s*engine\.isPausedByDesign\(\)/);
     expect(snap).toMatch(/msSinceProgress:\s*engine\.msSinceProgress\(\)/);
   });

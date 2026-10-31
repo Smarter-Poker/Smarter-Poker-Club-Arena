@@ -11,6 +11,7 @@ import { handStackBefore, requireHandSeatGeneration } from './handSeatGeneration
 import { KillPotSchedule } from './KillPot.ts';
 import { handRecordsDailyMissionEvents } from './dailyMissionEvents.ts';
 import { publicHandStatsFrame } from './presentation/publicHandStats.ts';
+import { PostHandStageTiming } from './PostHandStageTiming.ts';
 const readCurrent = (file) => fs.readFileSync(resolve(process.cwd(), 'src', file), 'utf8');
 const base = readCurrent('engine/ServerTableEngineBase.ts'),
   settlement = readCurrent('engine/ServerTableEngineSettlement.ts');
@@ -95,6 +96,7 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
     buildDailyMissionHandEvents: () => [],
     handRecordsDailyMissionEvents,
     publicHandStatsFrame,
+    PostHandStageTiming,
     handStackBefore,
     requireHandSeatGeneration,
     describeError: (e) => e?.message ?? String(e),

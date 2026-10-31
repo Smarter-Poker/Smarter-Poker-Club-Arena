@@ -14,13 +14,14 @@ export function PlayerNotesDialog({
 }) {
   const ref = useFocusTrap<HTMLDivElement>(true);
   return createPortal(
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={onClose}>
       <div
         ref={ref}
         className={styles.dialog}
         role="dialog"
         aria-modal="true"
         aria-label="Player Notes"
+        onClick={(event) => event.stopPropagation()}
       >
         <PlayerNotesPanel targetUserId={targetUserId} targetName={targetName} onClose={onClose} />
       </div>

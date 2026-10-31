@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 260024,
-      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+      "bytes": 260843,
+      "sha256": "acdc890f2b87c8d89246fbb47335081f022264596df1b09dc6be294873e6a3fa"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1592,5 +1592,21 @@
     "qualificationStateChanged": false,
     "execution_performed": false,
     "qualification": "Source identity only; exact integrated-head required checks and hosted execution remain necessary. No native, financial or production recertification."
+  },
+  "weeklyBoundaryFrameCoverEnforcementSourceAudit20261031": {
+    "scope": "Current CI source identity only: add the original pending cash-boundary frame-cover native qualification to existing accounting shard 2 and retain its result with an always-running artifact step. The 12 additive workflow lines preserve every prior command, native business input, financial assertion, profile, source generation, budget, runner, permission and dependency.",
+    "reason": "Enforce exact index installation, full original row/club-total equivalence and concurrent visibility regression protection for the demonstrated Midway pending-boundary timeout; this binding records the reviewed workflow bytes.",
+    "previousCiPin": {
+      "bytes": 260024,
+      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+    },
+    "currentCiPin": {
+      "bytes": 260843,
+      "sha256": "acdc890f2b87c8d89246fbb47335081f022264596df1b09dc6be294873e6a3fa"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false,
+    "qualification": "Source identity only; unchanged native business fixtures and prior financial verdicts are not recertified. Exact-head required checks, production installation and live book-closure proof remain separate."
   }
 }

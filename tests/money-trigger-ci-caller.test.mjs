@@ -253,34 +253,14 @@ test('approved transferred repository reports the same protected App check',()=>
 for(const repo of ['Smarter-Poker/Smarter-Poker-Club-Arena','Smarter-Software-PIQ/Smarter-Poker-Club-Arena'])test('approved repository requires its immutable ID '+repo,()=>{assert.equal(isClubArenaRepository(repo,'1132369872'),true);for(const id of [undefined,'','1','11323698720'])assert.equal(isClubArenaRepository(repo,id),false)});
 for(const repo of ['evil/Smarter-Poker-Club-Arena','Smarter-Software-PIQ/evil','smarter-software-piq/Smarter-Poker-Club-Arena'])test('same ID cannot authorize an unapproved full name '+repo,()=>assert.equal(isClubArenaRepository(repo,'1132369872'),false));
 
-const approvedPaidRoute = /^\$\{\{ github\.repository_owner == 'Smarter-Software-PIQ' && github\.repository_id == '1132369872' && 'ca-linux-(?:[48]core|delivery)' \|\| 'ubuntu-(?:latest|24\.04)' \}\}$/;
-const approvedNativeProfileRoute = "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}";
-test('paid client routes are exact while financial runners keep the immutable repository guard',()=>{
-  const warm={
-    'ci.yml':new Set(['changes','source_windows','stub_gate','typecheck_compile','unit_shards','build']),
-    'publish-club-arena.yml':new Set(['publish-needed']),
-    'publish-club-arena-client.yml':new Set(['admit','client-tests','build-and-store','publication-floor']),
-    'component-fixture-native-smoke.yml':new Set(),
-  };
-  for(const [file,expected] of Object.entries(warm)){
-    const text=fs.readFileSync(new URL('../.github/workflows/'+file,import.meta.url),'utf8');let job;const seen=new Set();let count=0;
-    for(const line of text.split('\n')){
-      const key=/^  ([A-Za-z_][A-Za-z_0-9-]*):\s*$/.exec(line);if(key)job=key[1];
-      const route=/^    runs-on: (.+)$/.exec(line);if(!route)continue;count++;
-      if(expected.has(job)){const heavy=(file==='ci.yml' && ['typecheck_compile','unit_shards','build'].includes(job)) || (file==='publish-club-arena-client.yml' && ['client-tests','build-and-store'].includes(job));assert.equal(route[1],"${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-"+(heavy?'8':'4')+"core' || 'ubuntu-latest' }}",job);seen.add(job)}
-      else if(file==='ci.yml' && ['typecheck','unit','server','verdict','css-beats-gate'].includes(job))assert.equal(route[1],'ubuntu-latest',job);
-      else if(file==='ci.yml' && ['css-beats-e2e','diamond-playfield-e2e'].includes(job))assert.equal(route[1],"${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}",job);
-      else if(file==='ci.yml' && ['accounting_postgres','server_shards'].includes(job))assert.equal(route[1],approvedNativeProfileRoute,job);
-      else if(file==='component-fixture-native-smoke.yml' && job==='native-smoke')assert.equal(route[1],approvedNativeProfileRoute.replace('ubuntu-latest','ubuntu-24.04'),job);
-      else assert.match(route[1],approvedPaidRoute,job);
-    }
-    assert.ok(count);assert.deepEqual([...seen].sort(),[...expected].sort());
+test('all qualification and publication jobs use only fixed standard hosted runners',()=>{
+  for(const file of ['ci.yml','publish-club-arena.yml','publish-club-arena-client.yml','publish-club-arena-transaction.yml','component-fixture-native-smoke.yml']){
+    const text=fs.readFileSync(new URL('../.github/workflows/'+file,import.meta.url),'utf8');
+    const routes=[...text.matchAll(/^    runs-on: (.+)$/gm)].map(match=>match[1]);
+    assert.ok(routes.length,file);
+    for(const route of routes)assert.equal(route,file==='component-fixture-native-smoke.yml'?'ubuntu-24.04':'ubuntu-latest',file);
+    assert.doesNotMatch(routes.join('\n'),/ca-linux|self-hosted|vars\./);
   }
-});
-test('delivery pool admission rejects foreign owners, IDs and arbitrary runner labels',()=>{
-  const route="${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}";
-  assert.match(route,approvedPaidRoute);
-  for(const bad of [route.replace('Smarter-Software-PIQ','foreign'),route.replace('1132369872','42'),route.replace('ca-linux-delivery','ca-linux-untrusted'),route.replace(" && github.repository_id == '1132369872'",'')])assert.doesNotMatch(bad,approvedPaidRoute);
 });
 
 test('local coordinator reads supported REST metadata and refuses another repository before dispatch',()=>{

@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 261919,
-      "sha256": "d21b38abec531563c1c652301b8cc4dd88da6a77c7c6313cc8c6300e2c5d32f8"
+      "bytes": 260243,
+      "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1701,6 +1701,56 @@
     "combinedWorkflowPin": {
       "bytes": 261919,
       "sha256": "d21b38abec531563c1c652301b8cc4dd88da6a77c7c6313cc8c6300e2c5d32f8"
+    },
+    "execution_performed": false,
+    "qualificationStateChanged": false
+  },
+  "standardHostedRunnerCostSourceAudit20261031": {
+    "scope": "Current CI source identity only: route the existing jobs to standard GitHub-hosted Ubuntu runners in this public repository. Preserve all tests, financial/native qualification commands, shard matrices, worker CPU clamps, deadlines, permissions, dependencies, required verdicts and historical evidence.",
+    "previousCiPin": {
+      "bytes": 260283,
+      "sha256": "ee357f77ae898d976025839707e3ff7e530b56ae41b5c2be0d59a03fb72d9b02"
+    },
+    "currentCiPin": {
+      "bytes": 258607,
+      "sha256": "6b0dffe8d3d0d8a05530a57f41f8219107bfa8cb856a9a7b9f95cc487826d749"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false,
+    "qualification": "Source binding only; no financial, native, installed or live certification is restamped. Exact-head protected checks and publication remain required."
+  },
+  "standardHostedRunnerProtectedMainIntegrationAudit20261031": {
+    "scope": "Preserve both branches source audits and protected-main qualification additions while retaining standard hosted runner routing. Refresh only current combined CI identity.",
+    "priorStandardCiPin": {
+      "bytes": 258607,
+      "sha256": "6b0dffe8d3d0d8a05530a57f41f8219107bfa8cb856a9a7b9f95cc487826d749"
+    },
+    "protectedMainCiPin": {
+      "bytes": 261102,
+      "sha256": "8fa7d5fcead6ebfa0b5db36a3f65797497e658482287b11e8c9125f8bed2bf7c"
+    },
+    "combinedCiPin": {
+      "bytes": 259426,
+      "sha256": "b919bc7b15034b51014d730f5d6a61c0a82a1cd53ad0ac1d9b29ae03347c6c76"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false
+  },
+  "satelliteProtectedFreeRouteComposition20261031": {
+    "scope": "Current source identity only: preserve protected free standard-hosted runner route from PR8887, protected main3c44fcbc, and unchanged satellite native qualifier/artifact with both-asset concurrency proof. No financial SQL, historical input or verdict changed.",
+    "branchWorkflowPin": {
+      "bytes": 261919,
+      "sha256": "d21b38abec531563c1c652301b8cc4dd88da6a77c7c6313cc8c6300e2c5d32f8"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 259426,
+      "sha256": "b919bc7b15034b51014d730f5d6a61c0a82a1cd53ad0ac1d9b29ae03347c6c76"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 260243,
+      "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
     },
     "execution_performed": false,
     "qualificationStateChanged": false

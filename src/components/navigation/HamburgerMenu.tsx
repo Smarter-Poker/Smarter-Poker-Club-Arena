@@ -448,6 +448,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           const { resolveUnionUUID } = await import('../../utils/unionIdResolver');
           const routeUnionId = await resolveUnionUUID(unionRouteRef);
           if (cancelled) return;
+          if (!routeUnionId) {
+            setUnionManageId(null);
+            setGameAuthorityContext(gameAuthorityKey);
+            return;
+          }
           const operator = await unionService.isUnionAdmin(routeUnionId, user.id);
           if (cancelled) return;
           setUnionManageId(operator ? unionRouteRef : null);

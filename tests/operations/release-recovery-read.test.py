@@ -32,6 +32,48 @@ def kernel_evidence(owner='unknown'):
 
 
 class ServingRoleTests(unittest.TestCase):
+    def test_pending_retains_exact_expired_announcement_causes(self):
+        unit = {'activeState':'activating','subState':'start','invocationId':'a'*32}
+        messages = [('[engine-release-recover] announcement-only owner retained; no runtime restoration or terminal certification','announcement_only_recovery_retained'),
+                    ('[engine-release-transaction] FATAL: this run announced inside an owner window that has since expired; its runtime entry is refused','expired_announced_runtime_refused'),
+                    ('[engine-release-transaction] FATAL: immutable release not-after epoch expired before new release mutation','immutable_request_expired')]
+        rows=[{'MESSAGE':message,'_SYSTEMD_INVOCATION_ID':unit['invocationId'],'_SYSTEMD_UNIT':'club-arena-engine-release-v1@'+REQUEST['runKey']+'.service','__REALTIME_TIMESTAMP':'1793440868000000'} for message,_ in messages]
+        with patch.object(R,'bounded_journal',return_value=subprocess.CompletedProcess([],0,stdout=('\n'.join(json.dumps(row) for row in rows)).encode())) as call:
+            signs=R.pending_journal(REQUEST,unit)
+        self.assertEqual([row['category'] for row in signs],[kind for _,kind in messages])
+        grep=next(x for x in call.call_args.args[0] if x.startswith('--grep='))
+        for message,_ in messages:
+            self.assertIsNotNone(R.re.search(grep[7:],message))
+        R.validate_pending_journal(signs,None)
+
+    def test_pending_child_exact_proc_identity_and_no_commandline_export(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState':'activating', 'subState':'start', 'invocationId':'a'*32}
+        name = 'club-arena-engine-release-v1@'+request['runKey']+'.service'
+        group = '/system.slice/'+name
+        control = 'b'*40
+        generation = '/usr/local/lib/club-arena/engine-control-generations/'+control
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            def write(pid, field, value):
+                path=root/str(pid)/field;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(value)
+            for pid, parent in [(12,1),(13,12)]:
+                write(pid,'stat',(str(pid)+' (bash) S '+str(parent)+' '+' '.join(['0']*17)+' 123 0').encode())
+                write(pid,'cgroup',('0::'+group+'\n').encode())
+            write(12,'cmdline',('bash\0/usr/local/lib/club-arena/engine-release-unit-wrapper-v1.sh\0start\0'+request['runKey']+'\0').encode())
+            write(12,'task/12/children',b'13')
+            props=('MainPID=12\nControlGroup='+group+'\nInvocationID='+unit['invocationId']+'\n').encode()
+            with patch.object(R,'KERNEL_PROC_ROOT',root), patch.object(R,'inspector_command',return_value=props):
+                for script, tail, expected in [('engine-release-transaction.sh','','pinned_transaction'),('engine-release-recover.sh','\0--mode\0retryable','pinned_announcement_recovery')]:
+                    write(13,'cmdline',('bash\0'+generation+'/'+script+'\0--run-id\0'+request['runKey']+tail+'\0').encode())
+                    answer=R.pending_child(request,unit,control);R.validate_pending_child(answer)
+                    self.assertEqual(answer['processClass'],expected)
+                    self.assertNotIn('/usr/',json.dumps(answer));self.assertNotIn('12',json.dumps({k:v for k,v in answer.items() if k!='argvSha256'}))
+                write(13,'cgroup',b'0::/other')
+                self.assertEqual(R.pending_child(request,unit,control)['status'],'unproven')
+                write(13,'cgroup',('0::'+group).encode());write(12,'task/12/children',b'13 14')
+                self.assertEqual(R.pending_child(request,unit,control)['status'],'unproven')
+
     def test_serving_role_exact_selector(self):
         request = {'mode':'current_serving_inspector_role', 'releaseSha':R.EED,
                    'instanceId':'1-12345678'}
@@ -885,8 +927,9 @@ class ReaderTests(unittest.TestCase):
         lists = [node for node in ast.walk(tree) if isinstance(node, ast.List)
                  and node.elts and isinstance(node.elts[0], ast.Constant)
                  and node.elts[0].value == 'systemctl']
-        self.assertEqual(len(lists), 1)
-        self.assertEqual(lists[0].elts[1].value, 'show')
+        self.assertEqual(len(lists), 2)
+        self.assertTrue(all(node.elts[1].value == 'show' for node in lists))
+        self.assertEqual({node.elts[-1].value for node in lists}, {'--property=ActiveState,SubState,InvocationID', '--property=MainPID,ControlGroup,InvocationID'})
         self.assertIn('--property=ActiveState,SubState,InvocationID', source)
 
     def witness_fixture(self):
@@ -1686,7 +1729,7 @@ class KernelOwnerTests(unittest.TestCase):
                 (kernel_evidence(),'main'),(unread,'unknown'),({'stage':'snapshot','code':'not_read'},'unknown')]:
             with self.subTest(value=value,owner=owner),self.assertRaises(ValueError):
                 R.validate_kernel_owner_evidence(value,owner)
-        self.assertEqual(R.PENDING_SCHEMA,'existing-release-pending-observation/v6')
+        self.assertEqual(R.PENDING_SCHEMA,'existing-release-pending-observation/v7')
 
     def test_kernel_snapshot_bounds_shared_unmapped_descriptors_and_process_races(self):
         # Native Linux components below exercise /proc; these finite adversarial

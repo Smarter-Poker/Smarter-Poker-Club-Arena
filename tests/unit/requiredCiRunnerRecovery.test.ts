@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
@@ -54,27 +53,9 @@ const normalizeFrameCoverAddition = (job: { steps: Array<Record<string, unknown>
 
 describe('required CI uses a closed standard hosted capacity recovery', () => {
   for (const [name, job, standard] of jobs) {
-    it(name + ' accepts only its declared standard OS or the fixed large profile', () => {
-      expect(job['runs-on']).toBe(expression(standard));
-      for (const [owner, id, value, expected] of [
-        ['Smarter-Software-PIQ', '1132369872', '', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'false', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'standard', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'large', 'ca-linux-8core'],
-        ['Smarter-Software-PIQ', '1132369872', 'self-hosted', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'custom-runner', standard],
-        ['other-org', '1132369872', 'large', standard],
-        ['Smarter-Software-PIQ', '42', 'large', standard],
-        ['other-org', '42', 'self-hosted', standard],
-      ]) {
-        const body = job['runs-on'].slice(3, -2).trim();
-        expect(
-          runInNewContext(body, {
-            github: { repository_owner: owner, repository_id: id },
-            vars: { CA_REQUIRED_NATIVE_PROFILE: value },
-          })
-        ).toBe(expected);
-      }
+    it(name + ' permits only its fixed standard hosted OS', () => {
+      expect(job['runs-on']).toBe(standard);
+      expect(job['runs-on']).not.toMatch(/ca-linux|self-hosted|vars\./);
     });
   }
 
@@ -82,15 +63,14 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
     const normalized = structuredClone(ci);
     normalizeFrameCoverAddition(normalized.jobs.accounting_postgres);
     const formerClientRoute = '$' + '{{ ' + trusted + " && 'ca-linux-4core' || 'ubuntu-latest' }}";
-    const browserRoute = '$' + '{{ ' + trusted + " && 'ca-linux-delivery' || 'ubuntu-latest' }}";
     const intendedRoutes = {
       typecheck: 'ubuntu-latest',
       unit: 'ubuntu-latest',
       server: 'ubuntu-latest',
       verdict: 'ubuntu-latest',
       'css-beats-gate': 'ubuntu-latest',
-      'css-beats-e2e': browserRoute,
-      'diamond-playfield-e2e': browserRoute,
+      'css-beats-e2e': 'ubuntu-latest',
+      'diamond-playfield-e2e': 'ubuntu-latest',
     };
     // Assert each authorized route before normalizing just that field. The
     // exhaustive sectional fingerprints protect every command and financial gate.
@@ -99,8 +79,20 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       normalized.jobs[name]['runs-on'] = formerClientRoute;
     }
     for (const name of ['typecheck_compile', 'unit_shards', 'build']) {
-      expect(normalized.jobs[name]['runs-on']).toBe(formerClientRoute.replace('4core', '8core'));
+      expect(normalized.jobs[name]['runs-on']).toBe('ubuntu-latest');
       normalized.jobs[name]['runs-on'] = formerClientRoute;
+    }
+    for (const name of ['changes', 'source_windows', 'stub_gate']) {
+      expect(normalized.jobs[name]['runs-on']).toBe('ubuntu-latest');
+      normalized.jobs[name]['runs-on'] = formerClientRoute;
+    }
+    for (const name of ['live-e2e', 'post-deploy-check']) {
+      expect(normalized.jobs[name]['runs-on']).toBe('ubuntu-latest');
+      normalized.jobs[name]['runs-on'] = formerClientRoute.replace('4core', '8core');
+    }
+    for (const name of ['accounting_postgres', 'server_shards']) {
+      expect(normalized.jobs[name]['runs-on']).toBe('ubuntu-latest');
+      normalized.jobs[name]['runs-on'] = expression('ubuntu-latest');
     }
     expect(normalized.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(8);
     normalized.jobs.unit_shards.env.VITEST_MAX_THREADS = 4;
@@ -170,6 +162,8 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
   });
   it('preserves every native qualification stage and cleanup requirement', () => {
     const normalized = structuredClone(native);
+    expect(normalized.jobs['native-smoke']['runs-on']).toBe('ubuntu-24.04');
+    normalized.jobs['native-smoke']['runs-on'] = expression('ubuntu-24.04');
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
       '9d89b70e835f0476c8b3d4abf5d5c11c07e7b77a83b5bd95aacfae472153c457'
     );

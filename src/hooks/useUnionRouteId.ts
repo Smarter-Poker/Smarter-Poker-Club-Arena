@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { resolveUnionUUID, resolveUnionUUIDSync } from '../utils/unionIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 /**
  * The union a /unions/:unionId route is about, as a UUID the database
@@ -15,6 +16,8 @@ import { resolveUnionUUID, resolveUnionUUIDSync } from '../utils/unionIdResolver
 export function useUnionRouteId(routeUnionRef?: string | null): {
   unionId: string | undefined;
   unionRef: string | undefined;
+  resolutionStatus: 'loading' | 'ready' | 'not_found' | 'error';
+  retryResolution: () => void;
 } {
   const { unionId: matchedUnionRef } = useParams<{ unionId: string }>();
   /* Layout chrome is rendered by the parameterless parent route, so its
@@ -22,33 +25,44 @@ export function useUnionRouteId(routeUnionRef?: string | null): {
      the hamburger and section rail pass the segment they read from the current
      pathname; route pages keep using the inherited match exactly as before. */
   const unionRef = routeUnionRef === null ? undefined : (routeUnionRef ?? matchedUnionRef);
+  const [revision, setRevision] = useState(0);
   const [resolved, setResolved] = useState<{
     ref: string | undefined;
     id: string | undefined;
+    status: 'loading' | 'ready' | 'not_found' | 'error';
   }>(() => ({
+    status:
+      unionRef && resolveUnionUUIDSync(unionRef) ? 'ready' : unionRef ? 'loading' : 'not_found',
     ref: unionRef,
     id: unionRef ? (resolveUnionUUIDSync(unionRef) ?? undefined) : undefined,
   }));
 
   useEffect(() => {
     if (!unionRef) {
-      setResolved({ ref: undefined, id: undefined });
+      setResolved({ ref: undefined, id: undefined, status: 'not_found' });
       return;
     }
     const sync = resolveUnionUUIDSync(unionRef);
     if (sync) {
-      setResolved({ ref: unionRef, id: sync });
+      setResolved({ ref: unionRef, id: sync, status: 'ready' });
       return;
     }
     let live = true;
-    setResolved({ ref: unionRef, id: undefined });
-    resolveUnionUUID(unionRef).then((id) => {
-      if (live) setResolved({ ref: unionRef, id });
-    });
+    setResolved({ ref: unionRef, id: undefined, status: 'loading' });
+    resolveUnionUUID(unionRef)
+      .then((id) => {
+        if (live)
+          setResolved({ ref: unionRef, id: id ?? undefined, status: id ? 'ready' : 'not_found' });
+      })
+      .catch((error) => {
+        if (!live) return;
+        reportError(error, 'useUnionRouteId.resolve', { unionRef });
+        setResolved({ ref: unionRef, id: undefined, status: 'error' });
+      });
     return () => {
       live = false;
     };
-  }, [unionRef]);
+  }, [unionRef, revision]);
 
   // Effects run after render. Associating the resolved UUID with the route ref
   // means a slug-to-slug navigation cannot expose the previous route's UUID
@@ -56,5 +70,7 @@ export function useUnionRouteId(routeUnionRef?: string | null): {
   return {
     unionId: resolved.ref === unionRef ? resolved.id : undefined,
     unionRef,
+    resolutionStatus: resolved.ref === unionRef ? resolved.status : 'loading',
+    retryResolution: () => setRevision((value) => value + 1),
   };
 }

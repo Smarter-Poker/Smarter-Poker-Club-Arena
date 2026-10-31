@@ -777,6 +777,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V65-league'
   ),
   flag(
+    'v68TurnAirDrawCalls',
+    '2026-10-31 Hold em high-card TURN calls of a wager hero did not initiate: the implied-odds bonus is withheld facing 0.7 pot or more when the effective stack behind after the call is under 1.5x the pot after it, and high card with no real draw that V65 left unshaded (a gutshot or board-only shape) carries the V65 price shade unless the bettor reads as a measured over-bluffer; real draws keep their equity; measured 7-day review hands: cash n=494 won 29.6% (about -62,000bb/week), tournament n=383 won 36.8% (about -25,000bb/week); explicit off arm retained',
+    'V68'
+  ),
+  flag(
+    'v68AirShadeScaleOverride',
+    'League-only scale on the V68 air shade (1 shipped; 0.5 half-strength fallback); production never sets it',
+    'V68-league'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
@@ -2214,6 +2224,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V65)',
     'Hold em one-pair turn call of a wager hero did not initiate, shaded against the price',
     'V65',
+    'decide',
+    0.001
+  ),
+  receipt(
+    'v68_turn_air_draw_calls',
+    'HorseLogic (V68)',
+    'Hold em high-card turn call of a wager hero did not initiate, implied odds withheld or air shaded against the price',
+    'V68',
     'decide',
     0.001
   ),

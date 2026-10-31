@@ -48,7 +48,7 @@ on:
 
 jobs:
   publish-needed:
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -267,7 +267,7 @@ jobs:
   build-record-gateway:
     needs: publish-needed
     if: needs.publish-needed.outputs.component == 'private-record-gateway'
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read

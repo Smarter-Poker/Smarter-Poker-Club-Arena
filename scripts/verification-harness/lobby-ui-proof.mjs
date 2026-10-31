@@ -14,11 +14,24 @@ export const COMPONENT_PATHS = [
   'src/pages/ClubHomePage.tsx',
   'src/components/lobby/lobbyViewPrefs.ts',
   'src/utils/tabSlots.ts',
+  'src/hooks/useMasterBusChannel.ts',
+  'src/core/MasterBus.ts',
 ];
-export const CASES = [
-  'the selected game list survives a cold return to the lobby',
-  'tournament Details stays inside the spectator table lobby tab',
+export const CASE_PAIRS = [
+  [
+    'production-mobile-lobby-chrome.spec.ts',
+    'the selected game list survives a cold return to the lobby',
+  ],
+  [
+    'production-mobile-lobby-chrome.spec.ts',
+    'tournament Details stays inside the spectator table lobby tab',
+  ],
+  [
+    'production-row-channel-owners.spec.ts',
+    'both club views keep receiving rows and one survives the other unmounting',
+  ],
 ];
+export const CASES = CASE_PAIRS.map(([, title]) => title);
 
 export function admitDispatch(environment, event) {
   if (
@@ -47,8 +60,10 @@ export function assertCases(report) {
       const file = String(spec.file || suite.file || '').replaceAll('\\', '/');
       for (const test of spec.tests || []) {
         if (
-          !file.endsWith('production-mobile-lobby-chrome.spec.ts') ||
-          !CASES.includes(spec.title) ||
+          !CASE_PAIRS.some(
+            ([expectedFile, title]) =>
+              file.split('/').at(-1) === expectedFile && spec.title === title
+          ) ||
           spec.ok !== true ||
           test.projectName !== 'chromium' ||
           test.status !== 'expected' ||
@@ -66,7 +81,7 @@ export function assertCases(report) {
   };
   report.suites.forEach(visit);
   if (JSON.stringify(actual.sort()) !== JSON.stringify([...CASES].sort()))
-    throw new Error('Exactly the saved-lobby and plus-page-retention cases must execute.');
+    throw new Error('Exactly the saved-lobby, plus-page and row-owner cases must execute.');
   return actual;
 }
 
@@ -245,7 +260,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       ) + '\n'
     );
     console.log(
-      'Both scoped Lobby cases passed once on the pinned live client; owned account cleanup verified.'
+      'All three scoped Lobby cases passed once on the pinned live client; owned account cleanup verified.'
     );
   } else
     throw new Error(

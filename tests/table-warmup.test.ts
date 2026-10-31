@@ -448,6 +448,10 @@ it('entry shares a pending token read and awaits real table readiness before ope
   await vi.waitFor(() => expect(waitForTableEntry).toHaveBeenCalledWith(T));
   expect(acquire).toHaveBeenCalledOnce();
   expect(entered).not.toHaveBeenCalled();
+  // A valid entry may still be preparing after an observer test's default
+  // five-second assertion budget. Only the real acknowledgement admits it.
+  await vi.advanceTimersByTimeAsync(6_000);
+  expect(entered).not.toHaveBeenCalled();
   acknowledge();
   await ready;
   expect(entered).toHaveBeenCalledOnce();

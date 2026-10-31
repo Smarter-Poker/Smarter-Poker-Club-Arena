@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify Saved Lobby And Plus Page Retention
+    name: Verify Saved Lobby, Plus Page And Row Owners
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -76,7 +76,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
         run: node scripts/ci/production-e2e-account.mjs prepare-staff
 
-      - name: Pin the published client before the two cases
+      - name: Pin the published client before the three cases
         id: before
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -84,7 +84,7 @@ jobs:
           node scripts/verification-harness/lobby-ui-proof.mjs pin
           e2e-report/lobby-ui-proof/before.json
 
-      - name: Verify only the saved lobby and plus page retention
+      - name: Verify only the saved lobby, plus page and row owners
         id: browser
         timeout-minutes: 12
         env:
@@ -97,12 +97,13 @@ jobs:
         run: |
           set -euo pipefail
           npx playwright test tests/e2e/production-mobile-lobby-chrome.spec.ts \
-            --grep '(the selected game list survives a cold return to the lobby|tournament Details stays inside the spectator table lobby tab)$' \
+            tests/e2e/production-row-channel-owners.spec.ts \
+            --grep '(the selected game list survives a cold return to the lobby|tournament Details stays inside the spectator table lobby tab|both club views keep receiving rows and one survives the other unmounting)$' \
             --project=chromium --workers=1 --retries=0 --trace=off --reporter=line,json \
             --output=test-results/lobby-ui-proof \
             2>&1 | tee e2e-report/lobby-ui-proof/browser.log
 
-      - name: Pin the published client after the two cases
+      - name: Pin the published client after the three cases
         id: after
         if: always() && steps.before.outcome == 'success'
         env:
@@ -129,7 +130,7 @@ jobs:
           }));
           NODE
 
-      - name: Certify exactly the two completed scoped cases
+      - name: Certify exactly the three completed scoped cases
         if: always() && steps.before.outcome == 'success'
         run: >-
           node scripts/verification-harness/lobby-ui-proof.mjs assert

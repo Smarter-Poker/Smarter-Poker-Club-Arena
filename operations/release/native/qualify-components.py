@@ -330,6 +330,92 @@ def validate_rit_player_ui_native(result, tuple_value, schema, runtime_image):
             'RELEASE_RIT_PLAYER_UI_EXECUTION_REQUIRED')
 
 
+def execute_combination(*, index, tuple_value, plan, scenario, operation, temp,
+                        controls, runtime_image, supabase_host, cleanup_report, output):
+    """One real isolated scene. Admission belongs to its unchanged outer caller."""
+    financial_scenario = scenario == 'financial'
+    player_ui_scenario = scenario == 'tournament-player-ui'
+    rit_ui_scenario = scenario == 'rit-player-ui'
+    prefix = f'release-{scenario}-{operation}-{index}'
+    network, fixture, engine = prefix + '-network', prefix + '-fixture', prefix + '-engine'
+    native = None
+    cleanup_entry = {'index': index, 'tuple_digest': fact_digest(tuple_value), 'complete': False}
+    cleanup_report['fixtures'].append(cleanup_entry)
+    write_cleanup(output, cleanup_report)
+    try:
+        command(['docker', 'network', 'create', '--internal', network])
+        require(json.loads(command(['docker', 'network', 'inspect', network]).stdout)[0]['Internal'] is True)
+        web_key = fact_digest({'target': 'club-arena-web', **tuple_value['club-arena-web']})
+        # The fixture owns only disposable services and exact static
+        # bytes. No Docker socket, provider token, runner environment,
+        # output directory or candidate checkout is mounted.
+        command(['docker', 'run', '-d', '--name', fixture, '--network', network,
+                 '--user', '1000:1000',
+                 '--network-alias', 'fixture', '--network-alias', 'smarter.poker',
+                 '--network-alias', 'ca-static.smarter.poker', '--network-alias', 'engine.smarter.poker',
+                 '--network-alias', supabase_host,
+                 '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only', '--pids-limit=1024',
+                 '--sysctl', 'net.ipv4.ip_unprivileged_port_start=0',
+                 '--memory=8g', '--cpus=2', '--tmpfs', '/tmp:rw,nosuid,size=2g,uid=1000,gid=1000,mode=1777',
+                 '--tmpfs', '/run:rw,nosuid,size=2g,uid=1000,gid=1000',
+                 '--tmpfs', '/run/fixture-observer:rw,nosuid,noexec,size=1m,uid=1000,gid=1001,mode=2750',
+                 '--tmpfs', '/var/lib/postgresql:rw,nosuid,size=4g,uid=1000,gid=1000',
+                 '--mount', f'type=bind,source={temp},target=/inputs,readonly',
+                 '--mount', f'type=bind,source={controls},target=/opt/qualification/controls,readonly',
+                 runtime_image, FIXTURE_SERVER, 'start', '--schema=/inputs/schema.zip',
+                 f'--web=/inputs/{web_key}.zip', '--engine=http://engine:8080'] +
+                (['--scenario=financial'] if financial_scenario or rit_ui_scenario else
+                 ['--scenario=tournament-player-ui'] if player_ui_scenario else []))
+        command(['docker', 'exec', fixture, FIXTURE_SERVER, 'ready'], timeout=120)
+        env = json.loads(command(['docker', 'exec', fixture, FIXTURE_SERVER, 'engine-environment']).stdout)
+        require(set(env) == {'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PORT', 'NODE_ENV'} and
+                env['SUPABASE_URL'] == 'http://fixture:8000' and env['PORT'] == '8080' and
+                env['NODE_ENV'] == 'production', 'RELEASE_SEMANTIC_FIXTURE_ENVIRONMENT_REFUSED')
+        # These are synthetic offline fixture values, never production
+        # credentials. The candidate receives no other environment.
+        args = ['docker', 'run', '-d', '--name', engine, '--network', network, '--network-alias', 'engine',
+                '--user', '1000:1000', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
+                '--pids-limit=1024', '--memory=6g', '--cpus=2',
+                '--tmpfs', '/tmp:rw,nosuid,size=2g,uid=1000,gid=1000,mode=1777',
+                '--tmpfs', '/var/lib/club-arena/engine-alerts:rw,nosuid,noexec,size=16m,uid=1000,gid=1000,mode=0700']
+        for key, value in env.items():
+            require(isinstance(value, str) and '\n' not in value and '\x00' not in value)
+            args.extend(['--env', f'{key}={value}'])
+        args.append(tuple_value['club-arena-engine']['identity'])
+        command(args)
+        observed = json.loads(command(['docker', 'inspect', engine]).stdout)[0]
+        require(observed['Image'] == tuple_value['club-arena-engine']['identity'])
+        result = command(['docker', 'exec', '--user', 'qualification',
+                          '--env', 'HOME=/tmp/qualification', '--env', 'TMPDIR=/tmp',
+                          '--env', 'XDG_CACHE_HOME=/tmp/qualification/cache', fixture,
+                          '/opt/qualification/node_modules/.bin/tsx',
+                          '/opt/qualification/controls/operations/release/native/' +
+                          ('rit-player-ui-suite.mjs' if rit_ui_scenario else
+                           'financial-route-suite.mjs' if financial_scenario else
+                           'tournament-player-ui-suite.mjs' if player_ui_scenario else 'component-semantic-suite.mjs'),
+                          str(index), runtime_image], timeout=400 if player_ui_scenario or rit_ui_scenario else 240)
+        lines = result.stdout.decode().splitlines()
+        marker = 'RIT_PLAYER_UI_RESULT:' if rit_ui_scenario else 'FINANCIAL_ROUTE_RESULT:' if financial_scenario else 'TOURNAMENT_PLAYER_UI_RESULT:' if player_ui_scenario else 'RELEASE_SEMANTIC_RESULT:'
+        matches = [line.removeprefix(marker) for line in lines if line.startswith(marker)]
+        require(len(matches) == 1)
+        native = json.loads(matches[0])
+        validator = validate_rit_player_ui_native if rit_ui_scenario else validate_financial_native if financial_scenario else validate_tournament_player_ui_native if player_ui_scenario else validate_native
+        validator(native, tuple_value, plan['schema'], runtime_image)
+    finally:
+        # Failed, crashed, intermediate and successful cases all close
+        # the entire fixture. No receipt is emitted on cleanup failure.
+        for name in (engine, fixture):
+            command(['docker', 'rm', '-f', name], check=False, timeout=30)
+        command(['docker', 'network', 'rm', network], check=False, timeout=30)
+        containers = command(['docker', 'container', 'ls', '--all', '--format', '{{.Names}}']).stdout.decode().splitlines()
+        networks = command(['docker', 'network', 'ls', '--format', '{{.Name}}']).stdout.decode().splitlines()
+        require(engine not in containers and fixture not in containers and network not in networks,
+                'RELEASE_SEMANTIC_FIXTURE_CLEANUP_REQUIRED')
+        cleanup_entry.update({'complete': True, 'remaining_objects': 0})
+        write_cleanup(output, cleanup_report)
+    return native
+
+
 def qualify(request, operation, controls, output, *, scenario='product'):
     require(scenario in ('product', 'financial', 'tournament-player-ui', 'rit-player-ui'), 'RELEASE_SEMANTIC_SCENARIO_REFUSED')
     financial_scenario = scenario == 'financial'
@@ -393,82 +479,10 @@ def qualify(request, operation, controls, output, *, scenario='product'):
             require(item.is_file() and not item.is_symlink())
             item.chmod(0o444)
         for index, tuple_value in enumerate(plan['tuples']):
-            prefix = f'release-{scenario}-{operation}-{index}'
-            network, fixture, engine = prefix + '-network', prefix + '-fixture', prefix + '-engine'
-            native = None
-            cleanup_entry = {'index': index, 'tuple_digest': fact_digest(tuple_value), 'complete': False}
-            cleanup_report['fixtures'].append(cleanup_entry)
-            write_cleanup(output, cleanup_report)
-            try:
-                command(['docker', 'network', 'create', '--internal', network])
-                require(json.loads(command(['docker', 'network', 'inspect', network]).stdout)[0]['Internal'] is True)
-                web_key = fact_digest({'target': 'club-arena-web', **tuple_value['club-arena-web']})
-                # The fixture owns only disposable services and exact static
-                # bytes. No Docker socket, provider token, runner environment,
-                # output directory or candidate checkout is mounted.
-                command(['docker', 'run', '-d', '--name', fixture, '--network', network,
-                         '--user', '1000:1000',
-                         '--network-alias', 'fixture', '--network-alias', 'smarter.poker',
-                         '--network-alias', 'ca-static.smarter.poker', '--network-alias', 'engine.smarter.poker',
-                         '--network-alias', supabase_host,
-                         '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only', '--pids-limit=1024',
-                         '--sysctl', 'net.ipv4.ip_unprivileged_port_start=0',
-                         '--memory=8g', '--cpus=2', '--tmpfs', '/tmp:rw,nosuid,size=2g,uid=1000,gid=1000,mode=1777',
-                         '--tmpfs', '/run:rw,nosuid,size=2g,uid=1000,gid=1000',
-                         '--tmpfs', '/run/fixture-observer:rw,nosuid,noexec,size=1m,uid=1000,gid=1001,mode=2750',
-                         '--tmpfs', '/var/lib/postgresql:rw,nosuid,size=4g,uid=1000,gid=1000',
-                         '--mount', f'type=bind,source={temp},target=/inputs,readonly',
-                         '--mount', f'type=bind,source={controls},target=/opt/qualification/controls,readonly',
-                         runtime_image, FIXTURE_SERVER, 'start', '--schema=/inputs/schema.zip',
-                         f'--web=/inputs/{web_key}.zip', '--engine=http://engine:8080'] +
-                        (['--scenario=financial'] if financial_scenario or rit_ui_scenario else
-                         ['--scenario=tournament-player-ui'] if player_ui_scenario else []))
-                command(['docker', 'exec', fixture, FIXTURE_SERVER, 'ready'], timeout=120)
-                env = json.loads(command(['docker', 'exec', fixture, FIXTURE_SERVER, 'engine-environment']).stdout)
-                require(set(env) == {'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PORT', 'NODE_ENV'} and
-                        env['SUPABASE_URL'] == 'http://fixture:8000' and env['PORT'] == '8080' and
-                        env['NODE_ENV'] == 'production', 'RELEASE_SEMANTIC_FIXTURE_ENVIRONMENT_REFUSED')
-                # These are synthetic offline fixture values, never production
-                # credentials. The candidate receives no other environment.
-                args = ['docker', 'run', '-d', '--name', engine, '--network', network, '--network-alias', 'engine',
-                        '--user', '1000:1000', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
-                        '--pids-limit=1024', '--memory=6g', '--cpus=2',
-                        '--tmpfs', '/tmp:rw,nosuid,size=2g,uid=1000,gid=1000,mode=1777']
-                for key, value in env.items():
-                    require(isinstance(value, str) and '\n' not in value and '\x00' not in value)
-                    args.extend(['--env', f'{key}={value}'])
-                args.append(tuple_value['club-arena-engine']['identity'])
-                command(args)
-                observed = json.loads(command(['docker', 'inspect', engine]).stdout)[0]
-                require(observed['Image'] == tuple_value['club-arena-engine']['identity'])
-                result = command(['docker', 'exec', '--user', 'qualification',
-                                  '--env', 'HOME=/tmp/qualification', '--env', 'TMPDIR=/tmp',
-                                  '--env', 'XDG_CACHE_HOME=/tmp/qualification/cache', fixture,
-                                  '/opt/qualification/node_modules/.bin/tsx',
-                                  '/opt/qualification/controls/operations/release/native/' +
-                                  ('rit-player-ui-suite.mjs' if rit_ui_scenario else
-                                   'financial-route-suite.mjs' if financial_scenario else
-                                   'tournament-player-ui-suite.mjs' if player_ui_scenario else 'component-semantic-suite.mjs'),
-                                  str(index), runtime_image], timeout=400 if player_ui_scenario or rit_ui_scenario else 240)
-                lines = result.stdout.decode().splitlines()
-                marker = 'RIT_PLAYER_UI_RESULT:' if rit_ui_scenario else 'FINANCIAL_ROUTE_RESULT:' if financial_scenario else 'TOURNAMENT_PLAYER_UI_RESULT:' if player_ui_scenario else 'RELEASE_SEMANTIC_RESULT:'
-                matches = [line.removeprefix(marker) for line in lines if line.startswith(marker)]
-                require(len(matches) == 1)
-                native = json.loads(matches[0])
-                validator = validate_rit_player_ui_native if rit_ui_scenario else validate_financial_native if financial_scenario else validate_tournament_player_ui_native if player_ui_scenario else validate_native
-                validator(native, tuple_value, plan['schema'], runtime_image)
-            finally:
-                # Failed, crashed, intermediate and successful cases all close
-                # the entire fixture. No receipt is emitted on cleanup failure.
-                for name in (engine, fixture):
-                    command(['docker', 'rm', '-f', name], check=False, timeout=30)
-                command(['docker', 'network', 'rm', network], check=False, timeout=30)
-                containers = command(['docker', 'container', 'ls', '--all', '--format', '{{.Names}}']).stdout.decode().splitlines()
-                networks = command(['docker', 'network', 'ls', '--format', '{{.Name}}']).stdout.decode().splitlines()
-                require(engine not in containers and fixture not in containers and network not in networks,
-                        'RELEASE_SEMANTIC_FIXTURE_CLEANUP_REQUIRED')
-                cleanup_entry.update({'complete': True, 'remaining_objects': 0})
-                write_cleanup(output, cleanup_report)
+            native = execute_combination(index=index, tuple_value=tuple_value, plan=plan,
+                scenario=scenario, operation=operation, temp=temp, controls=controls,
+                runtime_image=runtime_image, supabase_host=supabase_host,
+                cleanup_report=cleanup_report, output=output)
             combinations.append({'tuple_digest': fact_digest(tuple_value),
                 'schema_fixture_sha256': plan['schema']['fixture_sha256'],
                 'component_builds_digest': fact_digest(plan['component_builds']),

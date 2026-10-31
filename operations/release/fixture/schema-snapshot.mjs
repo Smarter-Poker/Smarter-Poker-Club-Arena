@@ -112,7 +112,7 @@ export async function dumpSnapshot(config, snapshot, { spawnProcess = spawn, dea
   // PGOPTIONS or inherited DATABASE_URL enters argv or the child environment.
   const env = { PATH: process.env.PATH, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8',
     PGHOST: config.host, PGPORT: '5432', PGDATABASE: 'postgres', PGUSER: config.user,
-    PGPASSWORD: config.password, PGSSLMODE: 'verify-full', PGCONNECT_TIMEOUT: '5',
+    PGPASSWORD: config.password, PGSSLMODE: 'verify-full', PGSSLROOTCERT: 'system', PGCONNECT_TIMEOUT: '5',
     PGAPPNAME: 'isolated-schema-readonly-dump',
     PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=1000' };
   const child = spawnProcess('pg_dump', ['--no-password','--schema-only','--format=plain',

@@ -183,6 +183,7 @@ test('pg_dump uses fixed no-data imported snapshot and no credential argv or inh
   assert.ok(observed.args.includes('--lock-wait-timeout=1000'));
   assert.ok(!JSON.stringify(observed.args).includes('synthetic-only'));
   assert.ok(!('DATABASE_URL' in observed.options.env));assert.equal(observed.options.env.PGSSLMODE,'verify-full');
+  assert.equal(observed.options.env.PGSSLROOTCERT,'system');
 });
 
 test('the original catalogue digest and private complete payload use the exact same canonical encoding', async () => {

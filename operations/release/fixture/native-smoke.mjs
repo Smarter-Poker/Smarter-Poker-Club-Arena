@@ -989,7 +989,7 @@ async function services() {
         extensions: 7,
         cron,
         safeupdate,
-        auth: '2.196.0',
+        auth: '2.197.0',
         mfa: 'aal2',
         ledger_attribution: 'banned-without-session',
         service_roles: { ...serviceRoles, auth_claim_helpers: 'service-owned-and-http-verified' },

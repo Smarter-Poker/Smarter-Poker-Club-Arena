@@ -2,6 +2,10 @@ import { configureFixtureSafeupdate } from './safeupdate-provider.mjs';
 import { captureFixtureServicePreimage } from './service-preimage.mjs';
 import { alignFixtureRoles } from './role-alignment.mjs';
 import {
+  alignCurrentApplicationRoles,
+  installCurrentApplicationExtensions,
+} from './current-application-roles.mjs';
+import {
   cronPostgresArguments,
   installFixtureCron,
   assertFixtureCronCatalog,
@@ -41,6 +45,7 @@ import {
   extractArchive,
   startArguments,
   fixtureTemplate,
+  requireFixtureSchemaMode,
   observationControl,
   NativeDatabaseOwner,
   nativeFailureDiagnostic,
@@ -574,12 +579,18 @@ function serviceEnvironments(secrets) {
   };
 }
 
-async function start(args, preimageOnly = false, roleAlignment = false) {
+async function start(args, preimageOnly = false, roleAlignment = false, schemaMode = null) {
   let inputs;
   let setupStage = 'arguments';
   try {
     if (preimageOnly) assert.equal(args.length, 0);
-    inputs = preimageOnly ? null : startArguments(args);
+    assert.ok(schemaMode === null || ['preimage', 'preflight'].includes(schemaMode));
+    if (schemaMode === 'preflight') assert.deepEqual(args, ['--schema=/inputs/schema.zip']);
+    inputs = preimageOnly
+      ? null
+      : schemaMode === 'preflight'
+        ? { schema: '/inputs/schema.zip' }
+        : startArguments(args);
     setupStage = 'package';
     await checkPackage();
     process.umask(0o077);
@@ -630,10 +641,13 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
         await controlFile.close();
       }
       await extractArchive(inputs.schema, schemaRoot, { maxBytes: 128 * 1024 * 1024 });
-      await extractArchive(inputs.web, webRoot);
+      if (schemaMode !== 'preflight') await extractArchive(inputs.web, webRoot);
       template = fixtureTemplate(JSON.parse(await readFile(schemaRoot + '/fixture.json', 'utf8')));
-      files = await loadStaticManifest(webRoot);
-      publicAnonKey = findPublicAnonKey([...files.values()], template.supabase_host);
+      requireFixtureSchemaMode(template, schemaMode === 'preflight');
+      if (schemaMode !== 'preflight') {
+        files = await loadStaticManifest(webRoot);
+        publicAnonKey = findPublicAnonKey([...files.values()], template.supabase_host);
+      }
     }
     const secrets = fixtureSecrets();
     const env = serviceEnvironments(secrets);
@@ -788,7 +802,40 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
       } finally {
         await supervisor.databaseOwner.end(preimageBootstrap);
       }
-      if (roleAlignment) await applyRoleAlignment();
+      if (roleAlignment || schemaMode === 'preimage') await applyRoleAlignment();
+      if (schemaMode === 'preimage') {
+        stage = 'current-application-role-extension';
+        await alignCurrentApplicationRoles({
+          applicationClient: db,
+          Client: pg.Client,
+          databaseOwner: supervisor.databaseOwner,
+        });
+        await installCurrentApplicationExtensions({
+          applicationClient: db,
+          Client: pg.Client,
+          databaseOwner: supervisor.databaseOwner,
+        });
+        stage = 'genuine-service-schema-preimage';
+        await supervisor.command(`${pgBin}/pg_dump`, [
+          '--no-password',
+          '--schema-only',
+          '--format=plain',
+          '--quote-all-identifiers',
+          '--no-comments',
+          '--no-security-labels',
+          '--no-subscriptions',
+          '--lock-wait-timeout=1000',
+          '-h',
+          '/run/postgresql',
+          '-U',
+          'supabase_admin',
+          '-d',
+          database,
+          '-f',
+          root + '/service-schema.sql',
+        ]);
+        await chmod(root + '/service-schema.sql', 0o400);
+      }
       // Docker tmpfs disappears on container stop. Keep this exact bootstrap
       // alive until the outer owner copies the catalog, then shut down normally.
       await writeFile(root + '/service-preimage.ready', '', { flag: 'wx', mode: 0o400 });
@@ -804,8 +851,19 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
       return;
     }
     await applyRoleAlignment();
-    // The held connection remains untouched throughout alignment and its
-    // observers. Reconnect only afterward to activate the new role settings.
+    stage = 'current-application-role-extension';
+    await alignCurrentApplicationRoles({
+      applicationClient: db,
+      Client: pg.Client,
+      databaseOwner: supervisor.databaseOwner,
+    });
+    await installCurrentApplicationExtensions({
+      applicationClient: db,
+      Client: pg.Client,
+      databaseOwner: supervisor.databaseOwner,
+    });
+    // The held connection remains untouched throughout role alignment and its
+    // observers. After genuine extension creation, reconnect to activate settings.
     await supervisor.databaseOwner.end(db);
     db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
     await db.connect();
@@ -827,6 +885,35 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
       schemaRoot + '/schema.sql',
     ]);
     const applicationOwner = await assertApplicationOwnerBoundary(db);
+    if (schemaMode === 'preflight') {
+      stage = 'full-schema-preflight';
+      const { preflightSchema } =
+        await import('/opt/qualification/controls/operations/release/native/schema-preflight.mjs');
+      const proof = await preflightSchema({
+        db,
+        supervisor,
+        env,
+        secrets,
+        api: fixtureAuth({ serviceKey: secrets.serviceKey, jwtSecret: secrets.jwtSecret }),
+        template,
+        applicationOwner,
+      });
+      await writeFile(root + '/schema-preflight.json', JSON.stringify(proof), {
+        flag: 'wx',
+        mode: 0o400,
+      });
+      await writeFile(root + '/schema-preflight.ready', '', { flag: 'wx', mode: 0o400 });
+      await supervisor.until(async () => {
+        try {
+          await access(root + '/schema-preflight.copied', constants.F_OK);
+          return true;
+        } catch (error) {
+          if (error.code === 'ENOENT') return false;
+          throw error;
+        }
+      });
+      return;
+    }
     await assertFixtureAuthPlatformHelpers(db);
     await assertFixtureCronCatalog(db);
     await assertFixtureAuthPlatformWriteDenied(db);
@@ -1073,6 +1160,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const [command, ...args] = process.argv.slice(2);
     if (command === 'start') await start(args);
     else if (command === 'preimage') await start(args, true);
+    else if (command === 'schema-preimage') await start(args, true, false, 'preimage');
+    else if (command === 'schema-preflight') await start(args, false, false, 'preflight');
     else if (command === 'align-roles') await start(args, true, true);
     else {
       assert.equal(args.length, 0);

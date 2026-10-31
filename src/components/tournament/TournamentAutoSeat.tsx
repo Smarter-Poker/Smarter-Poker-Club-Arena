@@ -40,6 +40,10 @@ import { reportError } from '../../utils/errorReporter';
 import { usePlatformCapability } from '../../hooks/usePlatformCapability';
 import { MULTI_DAY_CAPABILITY } from '../../utils/multiDaySchedule';
 import { readTournamentStageView } from '../../services/TournamentStageService';
+import {
+  markTournamentEntered,
+  tournamentEntryNavigationKey,
+} from '../../utils/tournamentEntryNavigation';
 import './TournamentAutoSeat.css';
 
 /**
@@ -246,7 +250,7 @@ export default function TournamentAutoSeat() {
 
         // Only the initial admission selects the game. Rebalances keep their
         // existing tab behavior, and a later multi-day resume remains opt-in.
-        const entryKey = `ca_tourney_entered:${user.id}:${t.tournament_id}`;
+        const entryKey = tournamentEntryNavigationKey(user.id, t.tournament_id);
         let enterGame = !enteredRef.current.has(entryKey);
         try {
           if (sessionStorage.getItem(entryKey)) enterGame = false;
@@ -281,11 +285,7 @@ export default function TournamentAutoSeat() {
         // paid entrant in the lobby until another click.
         if (enterGame) {
           enteredRef.current.add(entryKey);
-          try {
-            sessionStorage.setItem(entryKey, '1');
-          } catch {
-            /* In-memory guard retained. */
-          }
+          markTournamentEntered(user.id, t.tournament_id);
           navigate(`/table/${tableId}`);
         }
       }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { applicationTriggerWitness } from './schema-application-hooks.mjs';
 
 export const schemaHash = (value) => createHash('sha256').update(value).digest('hex');
 export const MANAGED_SCHEMAS = Object.freeze(['auth', 'realtime', '_realtime', 'cron', 'extensions']);
@@ -85,10 +86,12 @@ export function composeSchema(capture, serviceDump) {
     const expected = source.get(item.key);
     if (!expected || expected.owner !== item.owner || expected.sha256 !== item.sha256) refused();
   }
-  const removed = [], retained = [];
+  const removed = [], retained = [], applicationHooks = [];
   let sql = original.prefix;
   for (const item of original.objects) {
-    const managed = managedObject(item) || native.has(item.key);
+    const applicationHook = applicationTriggerWitness(item);
+    if (applicationHook && native.has(item.key)) refused();
+    const managed = !applicationHook && (managedObject(item) || native.has(item.key));
     if (managed) {
       const expected = native.get(item.key);
       if (!expected || expected.owner !== item.owner || expected.sha256 !== item.sha256) refused();
@@ -96,6 +99,7 @@ export function composeSchema(capture, serviceDump) {
     } else {
       sql += item.text;
       retained.push({ key: item.key, sha256: item.sha256 });
+      if (applicationHook) applicationHooks.push(applicationHook);
     }
   }
   // A whole managed namespace may never disappear because of an empty or
@@ -107,7 +111,7 @@ export function composeSchema(capture, serviceDump) {
     sql: sql + original.footer,
     manifest: { version: 1, scope: 'exact-native-service-schema-composition',
       original_sha256: schemaHash(capture), native_preimage_sha256: schemaHash(serviceDump),
-      composed_sha256: schemaHash(sql + original.footer), removed, retained,
+      composed_sha256: schemaHash(sql + original.footer), removed, retained, application_hooks: applicationHooks,
       current_database_contract_ready: false, reason: 'native-restore-and-catalogue-parity-not-yet-observed' },
   };
 }

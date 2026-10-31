@@ -7,6 +7,7 @@ import path from 'node:path';
 import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES } from '../schema-snapshot.mjs';
 import { assertSchemaOnly, composeSchema, dumpObjects, schemaHash } from '../schema-compose.mjs';
 import { schemaCatalogue, schemaCataloguePayload } from '../../native/component-semantic-observations.mjs';
+import { APPLICATION_TRIGGER_WITNESSES } from '../schema-application-hooks.mjs';
 
 const context = { GITHUB_REPOSITORY_ID: '1132369872',
   GITHUB_REPOSITORY: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',
@@ -81,6 +82,35 @@ test('schema-only refusal excludes data, external connections and literal creden
     assert.throws(() => assertSchemaOnly(object('x','public','unsafe;',type)), /PREIMAGE_REQUIRED/);
   assert.throws(() => assertSchemaOnly(object('x()','public',"SELECT 'postgres://user:password@example.invalid/db';")), /PREIMAGE_REQUIRED/);
   assert.throws(() => assertSchemaOnly(object('x()','public',"SELECT '-----BEGIN PRIVATE KEY-----';")), /PREIMAGE_REQUIRED/);
+});
+
+test('exact source-bound application hooks survive genuine service composition; unknown or changed hooks refuse', async () => {
+  assert.equal(APPLICATION_TRIGGER_WITNESSES.length, 6);
+  assert.deepEqual(APPLICATION_TRIGGER_WITNESSES.map((item) => item.function_name).sort(),
+    ['handle_new_user','initialize_user_diamonds','handle_new_user_v2_create_wallet',
+      'tr_auth_user_confirmed_settles_referral','tr_auth_user_confirmed_settles_referral','fn_ca_cash_failed_run_intake'].sort());
+  const hooks = APPLICATION_TRIGGER_WITNESSES.map((item) => object(
+    item.relation_name+' '+item.trigger_name,item.schema_name,
+    item.definition.replaceAll('auth.users','"auth"."users"').replaceAll('public.','"public".')+';','TRIGGER','-')).join('');
+  const result = composeSchema(prefix+managed+hooks+ordinary+footer,prefix+managed+footer);
+  assert.equal(result.sql,prefix+hooks+ordinary+footer);
+  assert.equal(result.manifest.application_hooks.length,6);
+  assert.equal(result.manifest.current_database_contract_ready,false);
+  assert.throws(() => composeSchema(prefix+managed+hooks.replace('AFTER INSERT ON','BEFORE INSERT ON')+ordinary+footer,prefix+managed+footer),/APPLICATION_TRIGGER_REFUSED/);
+  assert.throws(() => composeSchema(prefix+managed+hooks.replace('public".handle_new_user()', 'public".different_handler()')+ordinary+footer,prefix+managed+footer),/APPLICATION_TRIGGER_REFUSED/);
+  assert.throws(() => composeSchema(prefix+managed+hooks.replace('new.jobid = 259','new.jobid = 260')+ordinary+footer,prefix+managed+footer),/APPLICATION_TRIGGER_REFUSED/);
+  assert.throws(() => composeSchema(prefix+managed+hooks.replace('public".handle_new_user();','public".handle_new_user(); ALTER TABLE auth.users DISABLE TRIGGER on_auth_user_created;')+ordinary+footer,prefix+managed+footer),/APPLICATION_TRIGGER_REFUSED/);
+  assert.throws(() => composeSchema(prefix+managed+object('users unexpected_hook','auth','CREATE TRIGGER unexpected_hook AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();','TRIGGER','-')+ordinary+footer,prefix+managed+footer),/PREIMAGE_REQUIRED/);
+  assert.throws(() => composeSchema(prefix+managed+hooks+ordinary+footer,prefix+managed+hooks+footer),/PREIMAGE_REQUIRED/);
+  for(const witness of APPLICATION_TRIGGER_WITNESSES) {
+    const source = await readFile(new URL('../../../../'+witness.source.path,import.meta.url));
+    assert.equal(schemaHash(source),witness.source.sha256);
+    assert.ok(source.toString().includes(witness.trigger_name));
+    assert.ok(source.toString().includes(witness.function_name));
+    assert.equal(schemaHash(witness.definition),witness.definition_sha256);
+  }
+  assert.equal(APPLICATION_TRIGGER_WITNESSES.find((item)=>item.trigger_name==='on_auth_user_created_diamonds').source.kind,
+    'protected-function-repair-and-live-trigger-metadata');
 });
 
 function fakeClient(safety = {}) {

@@ -249,8 +249,7 @@
      lives on `.seat` in SeatSlot.css, where base and size resolve on the same
      element and the responsive overrides actually take. */
   --seat-avatar-base: 84px;
-  /* "HERO avatar should always be 33% bigger than the villains" — Dan. */
-  --seat-avatar-hero-ratio: 1.3333;
+  /* All occupied seats share the former hero size (owner, 2026-10-31). */
 
   /* ─── Card Shadows ─── */
   --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);

@@ -2,12 +2,12 @@
   "iPhone SE": {
     "vp": "375x667",
     "feltW": 307.5,
-    "feltH": 407,
+    "feltH": 413,
     "btnH": 52,
     "card2W": 50,
     "card2H": 70,
-    "avatar": 50,
-    "heroAvatar": 66.7,
+    "avatar": 62.3,
+    "heroAvatar": 62.3,
     "seatW": 72.3,
     "plo4Row": 112.5
   },
@@ -18,9 +18,9 @@
     "btnH": 52,
     "card2W": 50,
     "card2H": 70,
-    "avatar": 50.5,
+    "avatar": 67.4,
     "heroAvatar": 67.4,
-    "seatW": 75.1,
+    "seatW": 77,
     "plo4Row": 112.5
   },
   "iPhone 14 Pro Max": {
@@ -30,9 +30,9 @@
     "btnH": 52,
     "card2W": 50,
     "card2H": 70,
-    "avatar": 55.7,
+    "avatar": 74.3,
     "heroAvatar": 74.3,
-    "seatW": 82.9,
+    "seatW": 84.9,
     "plo4Row": 112.5
   },
   "iPhone 12/13/14 (real)": {
@@ -42,9 +42,9 @@
     "btnH": 52,
     "card2W": 50,
     "card2H": 70,
-    "avatar": 50.5,
+    "avatar": 67.4,
     "heroAvatar": 67.4,
-    "seatW": 75.1,
+    "seatW": 77,
     "plo4Row": 112.5
   },
   "iPhone 14 Pro Max (real)": {
@@ -54,9 +54,9 @@
     "btnH": 52,
     "card2W": 50,
     "card2H": 70,
-    "avatar": 55.7,
+    "avatar": 74.3,
     "heroAvatar": 74.3,
-    "seatW": 82.9,
+    "seatW": 84.9,
     "plo4Row": 112.5
   },
   "iPhone landscape": {
@@ -66,9 +66,9 @@
     "btnH": 46,
     "card2W": 50,
     "card2H": 70,
-    "avatar": 50,
+    "avatar": 66.7,
     "heroAvatar": 66.7,
-    "seatW": 66,
+    "seatW": 76.2,
     "plo4Row": 112.5
   },
   "iPad mini portrait": {
@@ -78,9 +78,9 @@
     "btnH": 55.4,
     "card2W": 87.2,
     "card2H": 122.1,
-    "avatar": 99.1,
+    "avatar": 132.2,
     "heroAvatar": 132.2,
-    "seatW": 113.3,
+    "seatW": 151.1,
     "plo4Row": 196.2
   },
   "iPad portrait": {
@@ -90,9 +90,9 @@
     "btnH": 56,
     "card2W": 77.1,
     "card2H": 108,
-    "avatar": 87.7,
+    "avatar": 116.9,
     "heroAvatar": 116.9,
-    "seatW": 112,
+    "seatW": 133.6,
     "plo4Row": 173.6
   },
   "iPad Pro 11 portrait": {
@@ -102,9 +102,9 @@
     "btnH": 57.7,
     "card2W": 76.8,
     "card2H": 107.5,
-    "avatar": 87.3,
+    "avatar": 116.4,
     "heroAvatar": 116.4,
-    "seatW": 112,
+    "seatW": 133,
     "plo4Row": 172.8
   },
   "iPad Pro 12.9 portrait": {
@@ -114,9 +114,9 @@
     "btnH": 62.5,
     "card2W": 89.9,
     "card2H": 125.9,
-    "avatar": 102.2,
+    "avatar": 136.3,
     "heroAvatar": 136.3,
-    "seatW": 116.8,
+    "seatW": 155.8,
     "plo4Row": 202.4
   },
   "iPad landscape": {
@@ -126,9 +126,9 @@
     "btnH": 62.5,
     "card2W": 50,
     "card2H": 70,
-    "avatar": 50,
+    "avatar": 66.7,
     "heroAvatar": 66.7,
-    "seatW": 71.9,
+    "seatW": 76.2,
     "plo4Row": 112.5
   },
   "iPad Pro 12.9 landscape": {
@@ -138,9 +138,9 @@
     "btnH": 71.3,
     "card2W": 62,
     "card2H": 86.8,
-    "avatar": 70.5,
+    "avatar": 93.9,
     "heroAvatar": 93.9,
-    "seatW": 104.8,
+    "seatW": 107.4,
     "plo4Row": 139.5
   },
   "laptop": {
@@ -150,9 +150,9 @@
     "btnH": 68,
     "card2W": 50,
     "card2H": 70,
-    "avatar": 50.7,
+    "avatar": 67.6,
     "heroAvatar": 67.6,
-    "seatW": 75.4,
+    "seatW": 77.2,
     "plo4Row": 112.5
   },
   "desktop": {
@@ -162,9 +162,9 @@
     "btnH": 72,
     "card2W": 52.1,
     "card2H": 73,
-    "avatar": 59.2,
+    "avatar": 79,
     "heroAvatar": 79,
-    "seatW": 88.1,
+    "seatW": 90.3,
     "plo4Row": 117.3
   },
   "large desktop": {
@@ -174,9 +174,9 @@
     "btnH": 72,
     "card2W": 66.4,
     "card2H": 92.9,
-    "avatar": 75.4,
+    "avatar": 100.6,
     "heroAvatar": 100.6,
-    "seatW": 112,
+    "seatW": 115,
     "plo4Row": 149.3
   }
 }

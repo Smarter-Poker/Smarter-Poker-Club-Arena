@@ -11,7 +11,7 @@
  *   - an ordinary World Hub link is left alone;
  *   - keystrokes inside the frame reach the strip;
  *   - going inactive pauses whatever is playing;
- *   - an idle frame is unloaded, and reloaded on return, at its last page.
+ *   - an inactive frame keeps its page and document until manually closed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
@@ -299,7 +299,7 @@ describe('a frame the player is not looking at', () => {
     expect(iframe.getAttribute('data-hub-active')).toBe('false');
   });
 
-  it('is unloaded after the idle window and reloaded on return, at its page', () => {
+  it('keeps its page mounted indefinitely while inactive', () => {
     const props = {
       tabId: 'hub:1',
       src: '/hub/social',
@@ -307,16 +307,15 @@ describe('a frame the player is not looking at', () => {
       swipe,
       onLocationChange: vi.fn(),
       onClubArenaTarget: vi.fn(),
-      idleSuspendMs: 1000,
     };
     // Seen once (so it loaded), then left behind another tab.
-    const { iframe, rerender } = mount({ active: true, idleSuspendMs: 1000 });
+    const { iframe, rerender } = mount({ active: true });
     rerender(<HubFrame {...props} active={false} />);
     // Not yet: the window has not elapsed.
     vi.advanceTimersByTime(999);
     expect(iframe.src.endsWith('about:blank')).toBe(false);
-    vi.advanceTimersByTime(1);
-    expect(iframe.src.endsWith('about:blank')).toBe(true);
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+    expect(iframe.src.endsWith('about:blank')).toBe(false);
     // Back on screen: the page comes back.
     rerender(<HubFrame {...props} active />);
     expect(iframe.src.endsWith('/hub/social')).toBe(true);
@@ -330,9 +329,8 @@ describe('a frame the player is not looking at', () => {
       swipe,
       onLocationChange: vi.fn(),
       onClubArenaTarget: vi.fn(),
-      idleSuspendMs: 1000,
     };
-    const { iframe, rerender } = mount({ active: true, idleSuspendMs: 1000 });
+    const { iframe, rerender } = mount({ active: true });
     rerender(<HubFrame {...props} active={false} />);
     vi.advanceTimersByTime(500);
     rerender(<HubFrame {...props} active />);

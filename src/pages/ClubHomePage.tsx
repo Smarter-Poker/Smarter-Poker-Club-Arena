@@ -2219,6 +2219,9 @@ function ClubHomePageContent({
       // into the other family after they explicitly opened this one.
       if (gameSectionRef.current === 'cash' && TOURNAMENT_TYPES.includes(shown)) return;
       if (gameSectionRef.current === 'tournaments' && !TOURNAMENT_TYPES.includes(shown)) return;
+      if (landingGameTypeRef.current || linkedGameTypeRef.current || p.tab) {
+        setGameSection(TOURNAMENT_TYPES.includes(shown) ? 'tournaments' : 'cash');
+      }
       setGameType(shown);
       setSortKey(sortForTab(p, shown));
       setFavoritesOnly(p.favoritesOnly);
@@ -5552,7 +5555,8 @@ function ClubHomePageContent({
                         section === 'cash'
                           ? gameType === 'ALL' || CASH_TYPES.includes(gameType)
                           : TOURNAMENT_TYPES.includes(gameType);
-                      if (!matching) selectGameType(section === 'cash' ? 'ALL' : 'MTT');
+                      // Opening a family is itself a preference, including ALL cash.
+                      selectGameType(matching ? gameType : section === 'cash' ? 'ALL' : 'MTT');
                     }
                   }}
                 />

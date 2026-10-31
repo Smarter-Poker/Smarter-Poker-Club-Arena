@@ -1309,6 +1309,9 @@ export default function MultiTablePage() {
           // setTables above has not committed yet at this line.
           setTimeout(() => {
             if (!isCurrent()) return;
+            // Seat refreshes must never take focus from an open page.
+            const visible = tablesRef.current[activeIndexRef.current];
+            if (visible && !isTableTab(visible)) return;
             try {
               const lastId = sessionStorage.getItem('ca_last_active_table');
               if (lastId) {
@@ -1591,17 +1594,7 @@ export default function MultiTablePage() {
         seated: true,
       };
 
-      // Dan 2026-08-15: if the player reached this table from a lobby tab
-      // opened by the in-table "+", replace that lobby tab IN PLACE. Appending
-      // instead would leave a dead lobby tab behind and consume one of the
-      // four slots. Oldest lobby tab wins, which is the one they just used.
-      const lobbyIdx = prev.findIndex(isLobbyTab);
-      if (lobbyIdx !== -1) {
-        const next = [...prev];
-        next[lobbyIdx] = { ...seatedTab, name: seatedTab.name };
-        return next;
-      }
-
+      // Seat events never consume a page the player still has open.
       if (prev.length >= MAX_TABLES) {
         // Engine seated us (tournament start, waitlist promotion) but the
         // device is full. Say so — silently dropping this used to leave the
@@ -1738,36 +1731,7 @@ export default function MultiTablePage() {
     const prev = tablesRef.current;
     const existingLobby = prev.findIndex(isLobbyTab);
     if (existingLobby !== -1) {
-      /**
-       * Already have one — focus it rather than stacking duplicates, AND put
-       * it back on the lobby (Dan 2026-08-28 round 2).
-       *
-       * It used to focus the tab and leave `lobbyTournamentId` alone, so "+"
-       * — a button whose entire meaning is "show me the games" — reopened
-       * whatever tournament page the tab happened to be parked on. If that tab
-       * was already active it did nothing visible at all, which reads as the
-       * button being broken. Pressing "+" is a request for the lobby; give
-       * them the lobby.
-       */
-      setTables((cur) =>
-        cur.map((t) =>
-          isLobbyTab(t) ? { ...clearLobbyTournaments(t), lobbyPageHistory: undefined } : t
-        )
-      );
-      /* A page still showing a list an earlier request landed it on is
-         remounted, so a plain request opens on the player's own saved tab.
-         `openLobbyTabOn` emits BEFORE it stamps, so its own request is
-         re-stamped with a newer nonce and the marker right after this. */
-      if (prev[existingLobby]?.lobbyLandedList === true) {
-        const nonce = ++lobbyLandingNonceRef.current;
-        setTables((cur) =>
-          cur.map((t) =>
-            isLobbyTab(t) && t.lobbyLandedList
-              ? { ...t, lobbyLandedList: undefined, lobbyLandingNonce: nonce }
-              : t
-          )
-        );
-      }
+      // Reopening a page focuses it without discarding its navigation state.
       setActiveIndex(existingLobby);
       revealPageTabOffRoute(existingLobby, prev);
       return;
@@ -2913,7 +2877,13 @@ export default function MultiTablePage() {
       cur.some(isLobbyTab)
         ? cur.map((t) =>
             isLobbyTab(t)
-              ? { ...t, lobbyGameType: list, lobbyLandingNonce: nonce, lobbyLandedList: true }
+              ? {
+                  ...clearLobbyTournaments(t),
+                  lobbyPageHistory: undefined,
+                  lobbyGameType: list,
+                  lobbyLandingNonce: nonce,
+                  lobbyLandedList: true,
+                }
               : t
           )
         : cur

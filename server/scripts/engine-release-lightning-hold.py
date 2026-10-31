@@ -171,12 +171,17 @@ def https_transport(service_key: str, timeout_seconds: float) -> Transport:
     return call
 
 
-def request_id(run_id: str, action: str, cluster_id: str, generation: int = 1) -> str:
-    """Stable per (run, hold generation, action, cluster). A release that waits
-    through more than one qualifying break holds Lightning once per break;
-    each hold is a new generation, because the door replays a repeated request
-    id instead of acting on it."""
+def request_id(run_id: str, action: str, cluster_id: str, generation: int = 1, attempt: int = 1) -> str:
+    """Stable per (run, hold generation, action, cluster, attempt). The door
+    answers a repeated request id with its FIRST answer - refusals included -
+    and does nothing again. So a pause is asked once per hold generation (a
+    release that waits through several qualifying breaks holds once per
+    break), and a resume that was refused (CLUSTER_FROZEN, say) is asked again
+    under a new attempt number, never under the id that already holds the
+    refusal."""
     suffix = "" if generation == 1 else f":{generation}"
+    if attempt > 1:
+        suffix += f":attempt{attempt}"
     return str(uuid.uuid5(REQUEST_NAMESPACE, f"{run_id}:{action}:{cluster_id}{suffix}"))
 
 
@@ -220,14 +225,14 @@ def list_lightning_clusters(base_url: str, call: Transport) -> list[str]:
     return ids
 
 
-def operator_control(base_url: str, call: Transport, run_id: str, action: str, cluster_id: str, generation: int = 1) -> dict:
+def operator_control(base_url: str, call: Transport, run_id: str, action: str, cluster_id: str, generation: int = 1, attempt: int = 1) -> dict:
     answer = call(
         f"{base_url}/rest/v1/rpc/fn_lightning_operator_control",
         {
             "p_cluster_id": cluster_id,
             "p_action": action,
             "p_reason": hold_reason(run_id, action),
-            "p_args": {"request_id": request_id(run_id, action, cluster_id, generation)},
+            "p_args": {"request_id": request_id(run_id, action, cluster_id, generation, attempt)},
         },
     )
     if not isinstance(answer, dict) or not isinstance(answer.get("ok"), bool):
@@ -305,7 +310,11 @@ def pause(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
         existing.pop("released", None)
         existing.pop("resume_refused", None)
         existing.pop("resumed_at", None)
+        # Another operator's pause from the last generation may have lifted
+        # since; those Clusters are asked again too.
+        existing["already"] = []
         existing["refused"] = {}
+        existing["resume_attempts"] = 0
         existing["complete"] = False
     record: dict = existing or {
         "schema": HOLD_SCHEMA,
@@ -372,8 +381,13 @@ def resume(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
     released: list[str] = []
     refused: dict[str, str] = {}
     generation = int(record.get("generation", 1))
+    # Each resume call is a new attempt with ids the door has not seen, kept
+    # durably BEFORE the calls so an unknown outcome can never reuse an id.
+    attempt = int(record.get("resume_attempts", 0)) + 1
+    record["resume_attempts"] = attempt
+    write_durable(hold_file, record)
     for cluster in record["held"]:
-        outcome = classify(operator_control(base_url, call, run_id, "resume", cluster, generation))
+        outcome = classify(operator_control(base_url, call, run_id, "resume", cluster, generation, attempt))
         if outcome in ("acted", "already"):
             released.append(cluster)
         else:

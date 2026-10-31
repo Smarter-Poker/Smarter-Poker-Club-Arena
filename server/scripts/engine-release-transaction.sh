@@ -418,7 +418,10 @@ AWAITING_CERTIFICATE_FILE="$REQUEST_ROOT/$RUN_ID.awaiting-certificate"
 # process: recover_on_exit releases it on every exit path, and
 # engine-release-recover.sh --mode terminal is its second reader.
 LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
+# A retried transaction (systemd Restart after a signalled exit) inherits the
+# hold its predecessor could not release: seed from the file, never from 0.
 LIGHTNING_HOLD_PLACED=0
+[ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1
 [[ "$AWAITING_CERTIFICATE_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.awaiting-certificate$ ]] \
   || die 'unsafe awaiting-certificate marker path'
 rm -f -- "$AWAITING_CERTIFICATE_FILE"
@@ -443,7 +446,16 @@ fi
 # admits or refuses the checkpoint by itself (the census guard still decides).
 hold_lightning_when_counting_down() {
   local response http_code body rc
-  [ "$LIGHTNING_HOLD_PLACED" = 0 ] || return 0
+  if [ "$LIGHTNING_HOLD_PLACED" = 1 ]; then
+    # A placed hold is not re-asked - unless it is a partly released one, whose
+    # resumed Clusters are dealing again and must be re-held (new generation).
+    [ -e "$LIGHTNING_HOLD_FILE" ] && python3 -c '
+import json, sys
+try: d = json.load(open(sys.argv[1]))
+except Exception: raise SystemExit(1)
+raise SystemExit(0 if d.get("resume_refused") else 1)
+' "$LIGHTNING_HOLD_FILE" 2>/dev/null || return 0
+  fi
   [ -z "${DRILL_MODE:-}" ] || return 0
   response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 0
@@ -456,8 +468,8 @@ hold_lightning_when_counting_down() {
   # or the one transition break), and a hold placed on those would park
   # Lightning for hours while the release waits. Same predicate as the
   # countdown, evaluated at the announcement instead of at admission.
-  printf '%s' "$body" | DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
-import json, os, sys
+  printf '%s' "$body" | DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" python3 -c '
+import json, os, sys, time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 try: d = json.load(sys.stdin)
@@ -469,7 +481,16 @@ local = datetime.now(ZoneInfo("America/Chicago"))
 daily = (local.hour == 3 and local.minute >= 58) or (local.hour == 4 and local.minute < 5)
 emergency = m.get("reason") == "Deployment Recovery"
 transition = os.environ.get("DAILY_TRANSITION") == "1" and m.get("schedule") is None and local.minute >= 55 and m.get("reason") == "Scheduled Engine Maintenance"
-raise SystemExit(0 if (daily or emergency or transition) else 1)
+floor_end = int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
+if os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW"):
+    # An owner-window release is admitted only on its Deployment Recovery break.
+    ok = emergency
+elif floor_end:
+    # A daily-floor release is admitted only on the daily break inside its floor.
+    ok = daily and m.get("reason") == "Scheduled Engine Maintenance" and floor_end - 300 <= time.time() < floor_end
+else:
+    ok = daily or emergency or transition
+raise SystemExit(0 if ok else 1)
 ' 2>/dev/null || return 0
   # The helper writes its hold file after every answered Cluster and lists
   # paused Clusters on a retry, so a kill here never strands a paused Cluster;
@@ -504,7 +525,7 @@ except Exception: raise SystemExit(1)
 m = d.get("maintenance") if isinstance(d, dict) else None
 raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get("active") is not True else 1)
 ' 2>/dev/null || return 0
-  release_lightning_hold 0
+  release_lightning_hold 0 0 1
   # Released means the file is gone. A hold that could not be released keeps
   # LIGHTNING_HOLD_PLACED=1 so this pass runs again and again until it is.
   [ -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=0
@@ -520,7 +541,7 @@ raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get
 # still cannot be released stays on disk for the next pass or the fence, and
 # says so. The second argument is a hard stop epoch for signalled exits.
 release_lightning_hold() {
-  local exit_code="${1:-0}" stop_epoch="${2:-0}" break_end wait_until response http_code body attempt rc attempts=3 budget=60
+  local exit_code="${1:-0}" stop_epoch="${2:-0}" attempts="${3:-3}" break_end wait_until response http_code body attempt rc budget=60
   [ -e "$LIGHTNING_HOLD_FILE" ] || return 0
   break_end="${BREAK_END_EPOCH:-0}"
   [ "${LEGACY_ENTRY_BREAK_END_EPOCH:-0}" -le "$break_end" ] || break_end="$LEGACY_ENTRY_BREAK_END_EPOCH"
@@ -561,7 +582,7 @@ raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get
   for attempt in $(seq 1 "$attempts"); do
     rc=0
     timeout --signal=TERM --kill-after=2s "${budget}s" \
-      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" || rc=$?
+      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5 || rc=$?
     [ "$rc" -ne 0 ] || return 0
     [ "$attempt" -lt "$attempts" ] && sleep 15
   done
@@ -2415,8 +2436,9 @@ while :; do
   # The legacy ladder is derived from the strict figure and keeps it. The
   # ordinary one is admitted by the first certificate the engine can actually
   # present, which is never at t=0: see BREAK_CERTIFICATE_LAG_SECONDS.
+  # A hold outlives neither a passed break nor the legacy path that placed it.
+  release_lightning_hold_if_break_over
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
-    release_lightning_hold_if_break_over
     hold_lightning_when_counting_down
     ENTRY_STARTED_MS="$(date +%s%3N)"
     LEGACY_ENTRY_DEADLINE_MS=$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))

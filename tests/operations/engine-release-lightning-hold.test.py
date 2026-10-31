@@ -218,6 +218,37 @@ class LightningHoldTests(unittest.TestCase):
         self.assertEqual(hold.resume(BASE, door2, "123-1", self.hold_file), hold.EXIT_DONE)
         self.assertFalse(self.hold_file.exists())
 
+    def test_a_refused_resume_is_asked_again_under_a_new_attempt_id(self):
+        # The door replays a repeated id with its FIRST answer, refusals
+        # included, so a second resume after CLUSTER_FROZEN must not reuse it.
+        hold.pause(BASE, FakeDoor([C1]), "123-1", self.hold_file)
+        door = FakeDoor([C1], answers={("resume", C1): {"ok": False, "code": "CLUSTER_FROZEN", "reason": "CLUSTER_FROZEN"}})
+        self.assertEqual(hold.resume(BASE, door, "123-1", self.hold_file), hold.EXIT_PARTIAL)
+        first = [p for _, p in door.calls if p is not None][0]["p_args"]["request_id"]
+        self.assertEqual(first, hold.request_id("123-1", "resume", C1, 1, 1))
+        self.assertEqual(self.read()["resume_attempts"], 1)
+        door2 = FakeDoor([C1])
+        self.assertEqual(hold.resume(BASE, door2, "123-1", self.hold_file), hold.EXIT_DONE)
+        second = [p for _, p in door2.calls if p is not None][0]["p_args"]["request_id"]
+        self.assertNotEqual(second, first)
+        self.assertEqual(second, hold.request_id("123-1", "resume", C1, 1, 2))
+        # The attempt number is durable before any call, so a crash mid-resume
+        # cannot reuse an id the door may already hold.
+        self.assertFalse(self.hold_file.exists())
+
+    def test_a_new_generation_asks_again_about_clusters_another_operator_had_paused(self):
+        door = FakeDoor([C1, C2], answers={("pause", C2): {"ok": True, "already": True, "code": "ALREADY"}})
+        hold.pause(BASE, door, "123-1", self.hold_file)
+        self.assertEqual(self.read()["already"], [C2])
+        refused = FakeDoor([C1, C2], answers={("resume", C1): {"ok": False, "code": "CLUSTER_FROZEN", "reason": "CLUSTER_FROZEN"}})
+        hold.resume(BASE, refused, "123-1", self.hold_file)
+        # Next break: the other operator has resumed C2, so it is dealing again.
+        door2 = FakeDoor([C1, C2], modes={C1: "paused"}, answers={("pause", C1): {"ok": True, "already": True, "code": "ALREADY"}})
+        self.assertEqual(hold.pause(BASE, door2, "123-1", self.hold_file), hold.EXIT_DONE)
+        asked = [p["p_cluster_id"] for _, p in door2.calls if p is not None]
+        self.assertEqual(asked, [C2])
+        self.assertEqual(sorted(self.read()["held"]), [C1, C2])
+
     def test_a_hold_file_from_another_run_is_never_resumed(self):
         hold.pause(BASE, FakeDoor([C1]), "123-1", self.hold_file)
         with self.assertRaises(hold.Unknown):

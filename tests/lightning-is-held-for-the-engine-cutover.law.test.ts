@@ -158,6 +158,21 @@ describe('Lightning is held for the engine cutover', () => {
     expect(helper).not.toMatch(/print\([^)]*service_key/);
   });
 
+  it('walks every exit path with a fake helper, health and clock', () => {
+    // The three shell functions, extracted verbatim: a non-qualifying break
+    // places nothing; a qualifying one places once; a passed break releases;
+    // a refused resume is one attempt per pass; a signalled exit is one
+    // attempt inside the stop clock; a retried run inherits the journal; a
+    // missing helper is NEVER ASKED.
+    const result = spawnSync('python3', ['-B', join(ROOT, 'tests', 'operations', 'lightning-hold-exit-paths.test.py')], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 120_000,
+    });
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(result.stderr).toMatch(/Ran 5 tests[\s\S]*\nOK\n?$/);
+  });
+
   it('passes its own unit tests', () => {
     const result = spawnSync('python3', ['-B', join(ROOT, 'tests', 'operations', 'engine-release-lightning-hold.test.py')], {
       cwd: ROOT,

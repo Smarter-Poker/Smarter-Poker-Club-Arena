@@ -301,4 +301,17 @@ describe('ArenaSectionRail union authority', () => {
       await Promise.all([refreshedOversight.promise, refreshedGames.promise]);
     });
   });
+  it('never queries UUID authority for a confirmed missing slug', async () => {
+    mocks.resolveUnionUUID.mockResolvedValue(null);
+    renderAt('/unions/demo');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mocks.resolveUnionUUID).toHaveBeenCalledWith('demo');
+    expect(mocks.canOverseeUnion).not.toHaveBeenCalled();
+    expect(mocks.isUnionAdmin).not.toHaveBeenCalled();
+    for (const label of [...oversightLinks, 'Table Management']) {
+      expect(screen.queryByRole('link', { name: label })).not.toBeInTheDocument();
+    }
+  });
 });

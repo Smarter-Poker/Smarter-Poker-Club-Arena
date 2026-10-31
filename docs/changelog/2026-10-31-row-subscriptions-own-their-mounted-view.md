@@ -32,3 +32,16 @@ row events, then returns to the persistent view after the other unmounts.
 Only topic ownership and event counts are retained, with both public client
 stamps. No member rows, credentials, synthetic traffic or financial writes
 are introduced.
+
+## Required Browser Check Recovery
+
+The existing WebKit stacked-door check failed because an already-open Diamond
+invitation's decline ran inside the greeting click's shorter deadline. A real
+Modal fixture with an 11-second deferred Not Now reproduces the failure. Settle
+that existing top door before starting the greeting's own click/response budget,
+while retaining the handler for a genuinely late invitation. Retain the actual
+hidden-dialog assertion with the existing measured frame-stall allowance: the
+failed trace required 4.8 seconds for a stable frame pair, exceeding the old exit
+check's headroom. No forced clicks, removed overlays or weakened hidden/persistence
+assertions. The before regression fails; both door orders and the deferred case
+pass after the correction.

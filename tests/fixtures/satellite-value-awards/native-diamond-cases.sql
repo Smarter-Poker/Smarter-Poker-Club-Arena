@@ -35,6 +35,15 @@ BEGIN
   SELECT ticket_id INTO tk FROM public.tournament_satellite_awards WHERE tournament_id=s AND user_id=u;
   PERFORM pg_temp.qualifier_assert(public.fn_ca_assert_satellite_value_ticket(tk)='diamonds',
    'each Diamond ticket proves its zero-wallet native issue leg');
+  refused:=false;
+  BEGIN
+   PERFORM public.fn_poker_diamond_tournament_drain(s,'prize',50,
+    'poker-value-ticket-issue:'||tk::text,'ticket_escrow:'||tk::text,NULL);
+  EXCEPTION WHEN SQLSTATE 'P0404' THEN
+   IF SQLERRM<>'DIAMOND_VALUE_TICKET_ALREADY_ISSUED' THEN RAISE; END IF;
+   refused:=true;
+  END;
+  PERFORM pg_temp.qualifier_assert(refused,'an exact already-issued ticket refuses a second native drain before touching other custody');
  END LOOP;
  u:=q[1];SELECT ticket_id INTO tk FROM public.tournament_satellite_awards WHERE tournament_id=s AND user_id=u;
  PERFORM set_config('request.jwt.claim.sub',u::text,true);
@@ -67,6 +76,14 @@ BEGIN
  PERFORM pg_temp.qualifier_assert((r->>'ok')::boolean AND (r->>'replayed')::boolean
    AND public.fn_poker_diamond_tournament_custody(dest)=50,
    'Diamond lost-ack replay returns the one funded entry');
+ PERFORM pg_temp.qualifier_assert(NOT EXISTS(SELECT 1 FROM public.diamond_transactions
+   WHERE reference_id LIKE 'poker-value-ticket-issue:%' OR reference_id LIKE 'poker-value-ticket-entry:%'),
+   'custody ticket issue and entry write no wallet journal rows, including zero rows');
+ PERFORM pg_temp.qualifier_assert(NOT EXISTS(SELECT 1 FROM public.ca_mint_ledger
+   WHERE op_id LIKE 'poker-value-ticket-issue:%' OR op_id LIKE 'poker-value-ticket-entry:%'),
+   'native ticket transfers never take the drain house-burn path');
+ PERFORM pg_temp.qualifier_assert(public.fn_ca_assert_satellite_value_ticket(tk)='diamonds',
+   'redeemed ticket proves its exact null-journal entry movement');
  PERFORM pg_temp.qualifier_assert(public.fn_settle_satellite_qualifiers(s,q)=first_receipt,
    'the source Diamond settlement receipt survives cross-event redemption');
  EXECUTE 'SET LOCAL ROLE authenticated';

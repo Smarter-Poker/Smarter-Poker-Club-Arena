@@ -1,0 +1,94 @@
+{
+  "columns": [
+    {
+      "type": "bigint",
+      "attname": "id",
+      "relname": "ca_guard_def_history",
+      "attnotnull": true,
+      "default_expression": "nextval('ca_guard_def_history_id_seq'::regclass)"
+    },
+    {
+      "type": "text",
+      "attname": "proname",
+      "relname": "ca_guard_def_history",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "type": "text",
+      "attname": "def_hash",
+      "relname": "ca_guard_def_history",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "type": "text",
+      "attname": "def_text",
+      "relname": "ca_guard_def_history",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "type": "timestamp with time zone",
+      "attname": "captured_at",
+      "relname": "ca_guard_def_history",
+      "attnotnull": true,
+      "default_expression": "now()"
+    },
+    {
+      "type": "text",
+      "attname": "proname",
+      "relname": "ca_guard_defs",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "type": "text",
+      "attname": "def_hash",
+      "relname": "ca_guard_defs",
+      "attnotnull": true,
+      "default_expression": null
+    },
+    {
+      "type": "timestamp with time zone",
+      "attname": "updated_at",
+      "relname": "ca_guard_defs",
+      "attnotnull": true,
+      "default_expression": "now()"
+    },
+    {
+      "type": "text",
+      "attname": "declared_ref",
+      "relname": "ca_guard_defs",
+      "attnotnull": false,
+      "default_expression": null
+    },
+    {
+      "type": "timestamp with time zone",
+      "attname": "declared_at",
+      "relname": "ca_guard_defs",
+      "attnotnull": false,
+      "default_expression": null
+    }
+  ],
+  "functions": [
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_declare_guard_redefinition(p_proname text, p_ref text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_hash text;\n  v_def text;\nBEGIN\n  /* A DECLARED GUARD CHANGE IS RECORDED, NOT RAISED (2026-09-10).\n     Call this from a migration that deliberately redefines a watched guard,\n     in the SAME transaction as the redefinition, passing the migration name.\n     It moves the baseline to the definition this transaction just produced,\n     so fn_ca_guard_defs_watch has nothing to report. A change nobody declares\n     still moves the hash away from the baseline and still raises. */\n  IF COALESCE(btrim(p_ref), '') = '' THEN\n    RAISE EXCEPTION 'a guard redefinition must name the migration that made it';\n  END IF;\n  IF NOT (p_proname = ANY (public.fn_ca_guard_watchlist())) THEN\n    RAISE EXCEPTION 'fn_ca_declare_guard_redefinition called for %, which is not on the guard watchlist', p_proname;\n  END IF;\n\n  SELECT md5(string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)),\n         string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)\n    INTO v_hash, v_def\n    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace\n   WHERE n.nspname = 'public' AND p.proname = p_proname;\n\n  IF v_hash IS NULL THEN\n    RAISE EXCEPTION 'guard function % does not exist; a declaration cannot baseline an absent guard', p_proname;\n  END IF;\n\n  -- keep the text so any later notice still has something to diff against\n  INSERT INTO public.ca_guard_def_history (proname, def_hash, def_text)\n  VALUES (p_proname, v_hash, v_def)\n  ON CONFLICT (proname, def_hash) DO NOTHING;\n\n  INSERT INTO public.ca_guard_defs (proname, def_hash, declared_ref, declared_at)\n  VALUES (p_proname, v_hash, p_ref, now())\n  ON CONFLICT (proname) DO UPDATE\n    SET def_hash = EXCLUDED.def_hash,\n        declared_ref = EXCLUDED.declared_ref,\n        declared_at = EXCLUDED.declared_at,\n        updated_at = now();\n\n  RETURN v_hash;\nEND;\n$function$\n"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist()\n RETURNS text[]\n LANGUAGE sql\n STABLE\nAS $function$\n  SELECT ARRAY(\n    SELECT DISTINCT x FROM unnest(ARRAY[\n      'fn_ca_raise_drift_incident','fn_ca_incident_notify','fn_ca_incident_action',\n      'fn_ca_incident_escalation_tick','fn_ca_incident_recipient_ids',\n      'fn_ca_quick_reconcile','fn_ca_supply_snapshot','fn_ca_diamond_snapshot',\n      'fn_ca_suspense_regression_check','fn_ca_settlement_correctness_check',\n      'fn_ca_autoledger','fn_ca_autoledger_delete','fn_ca_chip_ledger_enrich',\n      'fn_ca_journal_append_only','fn_ca_is_midway_scope',\n      'fn_ca_negative_balance_watch','fn_ca_mint_velocity_watch',\n      'fn_ca_cron_failure_watch','fn_ca_burnin_gate_tick','fn_ca_midway_burnin_gate',\n      'fn_ca_epoch3_preflight','fn_ca_execute_epoch3_reset',\n      'fn_club_members_ledger_writer','fn_ca_financial_alert_to_incident',\n      'fn_ca_settlement_transition_guard','fn_ca_guard_defs_watch',\n      'fn_ca_post_correction','fn_ca_repair_write_failure',\n      -- The Diamond money doors (2026-09-12).\n      'fn_poker_diamond_reserve','fn_poker_diamond_release',\n      'fn_poker_diamond_cashout','fn_poker_diamond_settle_cash_hand',\n      'fn_poker_diamond_buyin','fn_poker_diamond_top_up',\n      'fn_poker_diamond_seat_keeps_custody','fn_poker_diamond_plain_cash_table',\n      -- The unit rules (2026-09-12).\n      'fn_ca_unit_floor_cents','fn_ca_tournament_unit_cents',\n      'fn_ca_prize_ladder','fn_ca_recovery_fee_cents',\n      -- The seat guards that know a tournament seat (2026-09-13).\n      'fn_poker_guard_chip_seat','fn_poker_bind_diamond_seat',\n      'fn_poker_diamond_entry_custody_is_the_entry',\n      -- The Diamond tournament money doors (Phase 8, 2026-09-14): an entry\n      -- into custody, an add to it, its refund, its unregistration and\n      -- cancellation, the drain, the prize, the fee, the close, the shadow.\n      'fn_poker_diamond_tournament_charge','fn_poker_diamond_tournament_custody_add',\n      'fn_poker_diamond_tournament_refund','fn_poker_diamond_tournament_unregister',\n      'fn_poker_diamond_tournament_cancel','fn_poker_diamond_tournament_drain',\n      'fn_poker_diamond_tournament_pay','fn_poker_diamond_tournament_settle_fee',\n      'fn_poker_diamond_tournament_close_custody','fn_poker_diamond_tournament_open_shadow',\n      -- The two guards Phase 8 taught new names, and the two chip readers it\n      -- routes by asset. The wallet guard is the one thing between a browser\n      -- and profiles.diamonds.\n      'fn_guard_profile_privileged_columns','fn_poker_guard_arena_structure',\n      'fn_ca_escrow_can_pay','fn_ca_tournament_escrow',\n      -- The Diamond satellite seat door (Phase 9, 2026-09-21): a satellite\n      -- seat moved custody to custody, out of one prize bank into an entry.\n      'fn_poker_diamond_tournament_seat_transfer',\n      -- A balance never moves without its ledger row (2026-10-01): the tally,\n      -- its two sides, the account key and the commit-time check.\n      'fn_ca_ledger_tally_add','fn_ca_ledger_tally_key','fn_ca_felt_counts_table',\n      'fn_ca_tally_balance_move','fn_ca_tally_ledger_leg','fn_ca_balance_has_its_ledger_row',\n      -- Every chip store balances with its ledger row (2026-10-02): the store\n      -- side of the tally, its pair helper and the Diamond-event scope.\n      'fn_ca_tally_store_move','fn_ca_tally_pair','fn_ca_tournament_counts',\n      -- And the list itself.\n      'fn_ca_guard_watchlist'\n    ]) x)\n$function$\n"
+    }
+  ],
+  "constraints": [
+    {
+      "conname": "ca_guard_defs_pkey",
+      "relation": "ca_guard_defs",
+      "definition": "PRIMARY KEY (proname)"
+    },
+    {
+      "conname": "ca_guard_def_history_pkey",
+      "relation": "ca_guard_def_history",
+      "definition": "PRIMARY KEY (id)"
+    }
+  ]
+}

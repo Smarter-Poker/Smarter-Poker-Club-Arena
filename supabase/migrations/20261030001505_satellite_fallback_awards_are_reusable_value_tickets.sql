@@ -1,7 +1,9 @@
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid)'::regprocedure)='ec3d5f4747ef7712a9b0543a8ebc9eb2'
 -- Owner October29: future unavailable/already-held satellite seats remain reusable same-value tickets.
 -- Cash is paid only to the bubble. Historical settled receipts are retained and replayable.
 -- New tickets keep their original target as provenance, not an admission binding.
--- Chips and Diamonds retain separate native backing; no wallet prize conversion or hot-table DDL.
+-- Chips and Diamonds retain separate native backing; no wallet prize conversion.
+-- Requires the separately reserved daily-window custody CHECK prerequisite first.
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_settle_satellite_cohort')='821694e700215e473c9690640e0b9d08'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_satellite_cohort_receipt')='63e6d7cc589cf7b4858bd2e6e38479fa'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_register_for_tournament_with_ticket_for')='150a54216455d6751fb6e1567519de89'
@@ -14,18 +16,16 @@
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_arena_diamonds')='ef0881cd4e1da36e3bcf92409452bb63'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_poker_diamond_custody_balance')='24ab362f03ddea7e1314fb9a9a14e931'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_diamond_wallet_summary')='b757258cf4a042f8a46d8a4ddf3879a5'
--- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_diamond_arena_reconciliation')='dbc6a1a8172739c4fb70e02c62d3f6ce'
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_diamond_arena_reconciliation')='bd8c6ea804fcad7eba22b2c225ea9bef'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_diamond_trial_balance')='f55868f553f511674cb1be0792c9bb27'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_satellite_value_ticket_marked')='06733376c1f430457674381d041e2f12'
--- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_assert_satellite_value_ticket')='751d6b6d070b625a701892de72af4dca'
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_assert_satellite_value_ticket')='4e0f3938898fb16718673edf4743ac30'
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_diamond_value_ticket_float')='88eca689747cedc883e33b2505a461e8'
--- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_diamond_value_ticket_journal_net')='2585e33ec8d901d599af6d64534ef127'
--- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_issue_diamond_value_ticket')='63cf9af21bd05ff5254fcb7caa161d51'
--- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_diamond_value_ticket_fund_entry')='e73f3fabb6b85ddf02ef64a60c5e38fa'
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_issue_diamond_value_ticket')='8caa12c1bfeee2e79638ac58d5d2c32a'
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_diamond_value_ticket_fund_entry')='16f7c8315fc3ea51fb45f383a4c1080b'
 -- @live-proof: NOT has_function_privilege('authenticated','public.fn_ca_satellite_value_ticket_marked(uuid)','EXECUTE')
 -- @live-proof: NOT has_function_privilege('authenticated','public.fn_ca_assert_satellite_value_ticket(uuid)','EXECUTE')
 -- @live-proof: NOT has_function_privilege('authenticated','public.fn_ca_diamond_value_ticket_float(uuid)','EXECUTE')
--- @live-proof: NOT has_function_privilege('authenticated','public.fn_ca_diamond_value_ticket_journal_net(uuid[])','EXECUTE')
 -- @live-proof: NOT has_function_privilege('authenticated','public.fn_ca_issue_diamond_value_ticket(uuid,uuid,uuid)','EXECUTE')
 -- @live-proof: NOT has_function_privilege('authenticated','public.fn_ca_diamond_value_ticket_fund_entry(uuid,uuid,uuid)','EXECUTE')
 -- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_ca_refund_entitlement_commit_valid()'::regprocedure)='4da9c1df2d71030bef3b3289b20cb41f'
@@ -33,6 +33,11 @@ BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='8s';
 DO $preimage$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261031075352') THEN RAISE EXCEPTION 'VALUE_TICKET_CUSTODY_CHECK_PREREQUISITE_NOT_INSTALLED'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.poker_diamond_movements'::regclass AND conname='poker_diamond_movements_amount_check' AND NOT convalidated AND md5(pg_get_constraintdef(oid))='fc6c4f604342103c8181084586a69e44') THEN RAISE EXCEPTION 'VALUE_TICKET_CUSTODY_CHECK_PREREQUISITE_CHANGED: poker_diamond_movements_amount_check'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.poker_diamond_tournament_ledger'::regclass AND conname='poker_diamond_tournament_ledger_inflow' AND NOT convalidated AND md5(pg_get_constraintdef(oid))='14bb613840792e4fe07859f0e9ef8079') THEN RAISE EXCEPTION 'VALUE_TICKET_CUSTODY_CHECK_PREREQUISITE_CHANGED: poker_diamond_tournament_ledger_inflow'; END IF;
+
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid)'::regprocedure) IS DISTINCT FROM '9e590a91e702937d34dd6507f5c778ef' THEN RAISE EXCEPTION 'VALUE_TICKET_DRAIN_PREIMAGE_CHANGED'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_ca_refund_entitlement_commit_valid()'::regprocedure) IS DISTINCT FROM 'b3a3353b87e0e0afbfaeef29a42fb154' THEN RAISE EXCEPTION 'VALUE_TICKET_ENTITLEMENT_PREIMAGE_CHANGED'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_settle_satellite_cohort' AND pg_get_function_identity_arguments(oid)='p_tournament_id uuid, p_observed_qualifier_ids uuid[]') IS DISTINCT FROM '0a124091854663df1ddebc8e477bea03' THEN RAISE EXCEPTION 'VALUE_TICKET_PREIMAGE_CHANGED: fn_ca_settle_satellite_cohort'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_satellite_cohort_receipt' AND pg_get_function_identity_arguments(oid)='p_tournament_id uuid, p_observed_qualifier_ids uuid[]') IS DISTINCT FROM '1b54b5dced237a808a805cb59da22816' THEN RAISE EXCEPTION 'VALUE_TICKET_PREIMAGE_CHANGED: fn_ca_satellite_cohort_receipt'; END IF;
@@ -51,7 +56,6 @@ DO $preimage$ BEGIN
  IF EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_satellite_value_ticket_marked') THEN RAISE EXCEPTION 'VALUE_TICKET_HELPER_ALREADY_EXISTS: fn_ca_satellite_value_ticket_marked'; END IF;
  IF EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_assert_satellite_value_ticket') THEN RAISE EXCEPTION 'VALUE_TICKET_HELPER_ALREADY_EXISTS: fn_ca_assert_satellite_value_ticket'; END IF;
  IF EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_diamond_value_ticket_float') THEN RAISE EXCEPTION 'VALUE_TICKET_HELPER_ALREADY_EXISTS: fn_ca_diamond_value_ticket_float'; END IF;
- IF EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_diamond_value_ticket_journal_net') THEN RAISE EXCEPTION 'VALUE_TICKET_HELPER_ALREADY_EXISTS: fn_ca_diamond_value_ticket_journal_net'; END IF;
  IF EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_issue_diamond_value_ticket') THEN RAISE EXCEPTION 'VALUE_TICKET_HELPER_ALREADY_EXISTS: fn_ca_issue_diamond_value_ticket'; END IF;
  IF EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='fn_ca_diamond_value_ticket_fund_entry') THEN RAISE EXCEPTION 'VALUE_TICKET_HELPER_ALREADY_EXISTS: fn_ca_diamond_value_ticket_fund_entry'; END IF;
 END $preimage$;
@@ -141,12 +145,30 @@ BEGIN
    OR d.request->>'delivery' IS DISTINCT FROM 'satellite_value_ticket'
    OR d.request->>'ticket_id' IS DISTINCT FROM t.id::text
    OR d.request->>'payout_id' IS DISTINCT FROM p.id::text
-   OR NOT EXISTS(SELECT 1 FROM public.diamond_transactions j WHERE j.id=d.wallet_journal_id
-       AND j.user_id=t.holder_id AND j.amount=0 AND j.type='tournament_satellite_ticket'
-       AND j.metadata->>'ticket_id'=t.id::text AND (j.metadata->>'amount')::numeric=t.value)
-   OR (SELECT coalesce(sum(m.amount),0) FROM public.poker_diamond_movements m
-       WHERE m.wallet_journal_id=d.wallet_journal_id AND m.action='release'
-        AND m.destination_account='ticket_escrow:'||t.id::text) IS DISTINCT FROM t.value
+   OR d.wallet_journal_id IS NOT NULL
+   OR jsonb_typeof(d.request->'drained') IS DISTINCT FROM 'array'
+   OR (SELECT coalesce(sum((x->>'amount')::numeric),0)
+       FROM jsonb_array_elements(d.request->'drained') x) IS DISTINCT FROM t.value
+   OR EXISTS(SELECT 1 FROM jsonb_array_elements(d.request->'drained') x
+       LEFT JOIN public.poker_diamond_movements m ON m.request_id=(x->>'request_id')::uuid
+       LEFT JOIN public.poker_diamond_custody c ON c.id=m.custody_id
+       WHERE m.request_id IS NULL OR m.action IS DISTINCT FROM 'release'
+        OR m.custody_id::text IS DISTINCT FROM x->>'custody_id'
+        OR m.user_id IS DISTINCT FROM c.user_id OR c.purpose IS DISTINCT FROM 'tournament_entry'
+        OR c.target_id IS DISTINCT FROM t.source_satellite_id
+        OR m.amount::numeric IS DISTINCT FROM (x->>'amount')::numeric
+        OR m.source_account IS DISTINCT FROM 'arena_custody:'||c.id::text
+        OR m.destination_account IS DISTINCT FROM 'ticket_escrow:'||t.id::text
+        OR m.wallet_journal_id IS NOT NULL
+        OR m.request->>'action' IS DISTINCT FROM 'tournament_drain'
+        OR m.request->>'bank' IS DISTINCT FROM 'prize'
+        OR m.request->>'reason' IS DISTINCT FROM 'poker-value-ticket-issue:'||t.id::text
+        OR m.request->>'delivery' IS DISTINCT FROM 'satellite_value_ticket'
+        OR m.request->>'ticket_contract' IS DISTINCT FROM 'same_value_entry_v1'
+        OR m.request->>'ticket_id' IS DISTINCT FROM t.id::text
+        OR m.request->>'payout_id' IS DISTINCT FROM p.id::text)
+   OR (SELECT count(*) FROM jsonb_array_elements(d.request->'drained') x)
+      IS DISTINCT FROM (SELECT count(DISTINCT x->>'request_id') FROM jsonb_array_elements(d.request->'drained') x)
    OR EXISTS(SELECT 1 FROM public.chip_ledger WHERE to_type='escrow' AND to_entity_id=t.id AND category='ticket_issue')
    OR EXISTS(SELECT 1 FROM public.chip_transactions WHERE metadata->>'ticket_id'=t.id::text) THEN
    RAISE EXCEPTION 'VALUE_TICKET_DIAMOND_BACKING_UNPROVEN %',t.id USING ERRCODE='P0404';
@@ -158,6 +180,30 @@ BEGIN
  IF (t.status='issued' AND (v_count<>0 OR v_amount<>0))
   OR (t.status='redeemed' AND (v_count<>1 OR v_amount IS DISTINCT FROM t.value)) THEN
   RAISE EXCEPTION 'VALUE_TICKET_CONSUMPTION_UNPROVEN %',t.id USING ERRCODE='P0404';
+ END IF;
+ IF v_asset='diamonds' AND t.status='redeemed' AND NOT EXISTS(
+  SELECT 1 FROM public.poker_diamond_tournament_ledger e
+   JOIN public.poker_diamond_custody c ON c.id=e.custody_id
+   JOIN public.poker_diamond_movements m ON m.request_id=(e.request->>'request_id')::uuid
+  WHERE e.idempotency_key='poker-value-ticket-entry:'||t.id::text
+   AND e.kind='entry' AND e.user_id=t.holder_id AND e.amount=t.value
+   AND e.wallet_journal_id IS NULL AND e.registration_id IS NOT NULL
+   AND e.request->>'source'='satellite_value_ticket'
+   AND e.request->>'ticket_contract'='same_value_entry_v1'
+   AND e.request->>'ticket_id'=t.id::text
+   AND c.user_id=t.holder_id AND c.purpose='tournament_entry'
+   AND c.target_id=e.tournament_id AND c.entry_key='entry:'||e.registration_id::text
+   AND m.custody_id=c.id AND m.user_id=t.holder_id AND m.action='reserve'
+   AND m.amount=t.value AND m.wallet_journal_id IS NULL
+   AND m.source_account='ticket_escrow:'||t.id::text
+   AND m.destination_account='arena_custody:'||c.id::text
+   AND m.request->>'action'='satellite_value_ticket_entry'
+   AND m.request->>'ticket_contract'='same_value_entry_v1'
+   AND m.request->>'ticket_id'=t.id::text
+   AND m.request->>'target_id'=e.tournament_id::text
+   AND m.request->>'registration_id'=e.registration_id::text
+ ) THEN
+  RAISE EXCEPTION 'VALUE_TICKET_DIAMOND_ENTRY_BACKING_UNPROVEN %',t.id USING ERRCODE='P0404';
  END IF;
  RETURN v_asset;
 END;
@@ -179,23 +225,167 @@ RETURNS numeric LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO public,p
       AND used.request->>'ticket_id'=t.id::text);
 $function$;
 
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_value_ticket_journal_net(p_journal_ids uuid[])
-RETURNS TABLE(journal_id uuid,net numeric) LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO public,pg_temp AS $function$
- SELECT l.wallet_journal_id,sum(CASE WHEN l.kind='prize' THEN -l.amount ELSE l.amount END)::numeric
- FROM public.poker_diamond_tournament_ledger l
- JOIN public.tournament_tickets t ON l.request->>'ticket_id'=t.id::text
- WHERE l.wallet_journal_id=ANY(p_journal_ids)
-  AND l.user_id=t.holder_id AND l.amount=t.value
-  AND public.fn_ca_satellite_value_ticket_marked(t.id)
-  AND public.fn_poker_diamond_tournament(t.source_satellite_id)
-  AND ((l.kind='prize' AND l.tournament_id=t.source_satellite_id
-        AND l.idempotency_key='poker-value-ticket-issue:'||t.id::text)
-    OR (l.kind='entry' AND l.idempotency_key='poker-value-ticket-entry:'||t.id::text))
-  AND ((l.kind='prize' AND l.request->>'delivery'='satellite_value_ticket')
-    OR (l.kind='entry' AND l.request->>'source'='satellite_value_ticket'))
-  AND l.request->>'ticket_contract'='same_value_entry_v1'
- GROUP BY l.wallet_journal_id;
-$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_left bigint := p_amount; v_take bigint; v_c record; v_lot record; v_loss bigint;
+  v_drained jsonb := '[]'::jsonb; v_req uuid; v_journal uuid; v_wallet bigint; v_name text;
+  v_register text; v_label text; v_supply numeric;
+  v_ticket uuid; v_ticket_payout uuid;
+BEGIN
+  IF p_tournament_id IS NULL OR p_bank NOT IN ('prize','fee','bounty') OR p_amount IS NULL OR p_amount < 1 OR p_reason IS NULL
+     OR p_destination_account IS NULL OR length(btrim(p_destination_account))=0 THEN
+    RAISE EXCEPTION 'invalid_diamond_tournament_drain' USING ERRCODE='22023';
+  END IF;
+  -- A ticket transfer is neither a wallet credit nor a house burn. Its
+  -- destination must be the exact already-authored immutable prize contract.
+  IF p_destination_account LIKE 'ticket_escrow:%' THEN
+    IF p_journal_for IS NOT NULL OR p_bank IS DISTINCT FROM 'prize'
+       OR p_destination_account !~ '^ticket_escrow:[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' THEN
+      RAISE EXCEPTION 'DIAMOND_VALUE_TICKET_DRAIN_CONTRACT_INVALID' USING ERRCODE='P0404';
+    END IF;
+    v_ticket:=substring(p_destination_account FROM 15)::uuid;
+    SELECT p.id INTO v_ticket_payout
+      FROM public.tournament_tickets t JOIN public.tournament_payouts p
+        ON p.tournament_id=t.source_satellite_id AND p.user_id=t.holder_id
+     WHERE t.id=v_ticket AND t.status='issued' AND t.redemption_mode='tournament_entry_only'
+       AND t.source_satellite_id=p_tournament_id AND t.value=p_amount
+       AND p.amount=t.value AND p.source='satellite_ticket'
+       AND p.metadata->>'ticket_id'=t.id::text
+       AND p.metadata->>'ticket_contract'='same_value_entry_v1'
+       AND p.metadata->>'asset'='diamonds'
+       AND public.fn_poker_diamond_tournament(p_tournament_id)
+       AND p_reason='poker-value-ticket-issue:'||t.id::text
+     FOR UPDATE OF t;
+    IF v_ticket_payout IS NULL THEN
+      RAISE EXCEPTION 'DIAMOND_VALUE_TICKET_DRAIN_BACKING_UNPROVEN' USING ERRCODE='P0404';
+    END IF;
+    IF EXISTS(SELECT 1 FROM public.poker_diamond_tournament_ledger WHERE idempotency_key=p_reason)
+       OR EXISTS(SELECT 1 FROM public.poker_diamond_tournament_ledger e
+         JOIN public.poker_diamond_movements m ON m.request_id=uuid_in(md5(p_reason||':'||e.custody_id::text)::cstring)
+         WHERE e.tournament_id=p_tournament_id AND e.custody_id IS NOT NULL
+           AND e.kind IN ('entry','rebuy','reentry','addon','spin_underwrite','overlay')) THEN
+      RAISE EXCEPTION 'DIAMOND_VALUE_TICKET_ALREADY_ISSUED' USING ERRCODE='P0404';
+    END IF;
+  END IF;
+  IF public.fn_poker_diamond_tournament_custody(p_tournament_id) < p_amount THEN
+    RAISE EXCEPTION 'diamond_tournament_custody_short' USING ERRCODE='P0404';
+  END IF;
+  SELECT t.name INTO v_name FROM public.tournaments t WHERE t.id=p_tournament_id;
+  SET CONSTRAINTS public.zzz_diamond_entry_custody_is_the_entry IMMEDIATE;
+  FOR v_c IN
+    SELECT c.id, c.user_id, c.balance, c.arena_id,
+           (SELECT COALESCE(sum(CASE WHEN p_bank='prize' THEN l.prize_part
+                                     WHEN p_bank='bounty' THEN l.bounty_part
+                                     ELSE l.fee_part END),0)
+              FROM public.poker_diamond_tournament_ledger l
+             WHERE l.custody_id=c.id AND l.kind IN ('entry','rebuy','reentry','addon','spin_underwrite','overlay'))
+         - (SELECT COALESCE(sum(m.amount),0) FROM public.poker_diamond_movements m
+             WHERE m.custody_id=c.id AND m.action='release'
+               AND m.request->>'action'='tournament_drain' AND m.request->>'bank'=p_bank) AS held
+      FROM public.poker_diamond_custody c
+     WHERE c.purpose='tournament_entry' AND c.target_id=p_tournament_id AND c.state<>'released' AND c.balance > 0
+     ORDER BY c.created_at, c.id
+     FOR UPDATE OF c
+  LOOP
+    EXIT WHEN v_left = 0;
+    CONTINUE WHEN v_c.held <= 0;
+    v_take := LEAST(v_left, v_c.held, v_c.balance);
+    -- The lots this row holds are consumed for what leaves it, oldest first,
+    -- exactly as fn_poker_diamond_settle_cash_hand consumes a lost stack.
+    v_loss := v_take;
+    FOR v_lot IN
+      SELECT l.id, r.amount-r.consumed AS held, greatest(l.issued-l.consumed-l.refunded,0) AS outstanding
+        FROM public.poker_diamond_lot_reservations r
+        JOIN public.diamond_purchase_lots l ON l.id=r.lot_id
+       WHERE r.custody_id=v_c.id AND r.released_at IS NULL
+       ORDER BY l.created_at, l.id FOR UPDATE OF l, r
+    LOOP
+      EXIT WHEN v_loss = 0;
+      IF v_lot.held > 0 THEN
+        UPDATE public.diamond_purchase_lots
+           SET arena_reserved=arena_reserved-LEAST(v_loss,v_lot.held),
+               consumed=consumed+LEAST(LEAST(v_loss,v_lot.held),v_lot.outstanding)::integer
+         WHERE id=v_lot.id;
+        UPDATE public.poker_diamond_lot_reservations SET consumed=consumed+LEAST(v_loss,v_lot.held)
+         WHERE custody_id=v_c.id AND lot_id=v_lot.id;
+        v_loss := v_loss - LEAST(v_loss,v_lot.held);
+      END IF;
+    END LOOP;
+    -- The journal row the movement carries: the recipient's credit for a
+    -- prize or a bounty, which moved that recipient's wallet.
+    --
+    -- A HOUSE-BOUND DRAIN (a fee, a Spin surplus, a guarantee overlay return)
+    -- MOVES NO WALLET, SO IT WRITES NO WALLET JOURNAL ROW (20261007132503).
+    -- The Diamonds left the player's wallet once, when the entry was bought
+    -- (that arena_deposit row is the wallet's record of it); here they leave
+    -- custody for the house. A diamond_transactions row would record the same
+    -- Diamonds leaving the wallet a second time, and from 13:03 UTC on
+    -- 2026-10-07 it did (four tournament_fee rows, 800 Diamonds). The register
+    -- still retires them from the player, because it counts custody Diamonds as
+    -- the player's: that burn is written here directly, with the wallet
+    -- unchanged on both sides, exactly as fn_ca_diamond_sweep_cash_rake writes
+    -- the cash rake (20261007112751).
+    IF p_journal_for IS NOT NULL THEN
+      v_journal := p_journal_for;
+      v_register := NULL;
+    ELSIF v_ticket IS NOT NULL THEN
+      -- Supply remains player-owned ticket escrow; no wallet or mint row.
+      v_journal := NULL;
+      v_register := NULL;
+    ELSE
+      v_journal := NULL;
+      v_register := p_reason||':'||v_c.id::text;
+      SELECT COALESCE(diamonds,0), COALESCE(NULLIF(btrim(username),''), full_name, id::text)
+        INTO v_wallet, v_label FROM public.profiles WHERE id=v_c.user_id;
+      IF v_supply IS NULL THEN
+        SELECT COALESCE(SUM(CASE WHEN action='mint' THEN amount ELSE -amount END),0) INTO v_supply
+          FROM public.ca_mint_ledger WHERE asset='diamonds';
+      END IF;
+      v_supply := v_supply - v_take;
+      INSERT INTO public.ca_mint_ledger
+        (op_id, action, asset, holder_type, holder_id, holder_label, amount,
+         balance_before, balance_after, supply_after, reason)
+      VALUES
+        (v_register, 'burn', 'diamonds', 'player', v_c.user_id, COALESCE(v_label, v_c.user_id::text), v_take,
+         COALESCE(v_wallet,0), COALESCE(v_wallet,0), v_supply,
+         CASE WHEN p_bank='prize' AND p_reason LIKE 'poker-guarantee-overlay-return:%'
+              THEN 'Diamond guarantee overlay returned from this player''s entry custody to the house: '||COALESCE(v_name,'tournament')
+              WHEN p_bank='prize'
+              THEN 'Diamond Spin surplus returned from this player''s entry custody to the house: '||COALESCE(v_name,'spin')
+              ELSE 'Tournament entry fee retired from this player''s entry custody for the house: '||COALESCE(v_name,'tournament') END
+         ||'. The wallet does not move: the Diamonds left it when the entry was bought.');
+    END IF;
+    -- The movement first, then the balance: P0814 (an entry holds exactly its
+    -- movements) is checked at the end of this UPDATE, not at commit, because
+    -- a row drained twice in one settlement (the fee, then a prize) would
+    -- otherwise present its first version against the final movement sum.
+    v_req := uuid_in(md5(p_reason||':'||v_c.id::text)::cstring);
+    INSERT INTO public.poker_diamond_movements(request_id,custody_id,user_id,action,amount,
+      source_account,destination_account,wallet_journal_id,request,receipt)
+    VALUES (v_req,v_c.id,v_c.user_id,'release',v_take,'arena_custody:'||v_c.id,p_destination_account,v_journal,
+      jsonb_build_object('action','tournament_drain','bank',p_bank,'reason',p_reason,'custody_id',v_c.id,'amount',v_take)
+        || CASE WHEN v_ticket IS NULL THEN '{}'::jsonb ELSE jsonb_build_object(
+             'delivery','satellite_value_ticket','ticket_contract','same_value_entry_v1',
+             'ticket_id',v_ticket,'payout_id',v_ticket_payout) END,
+      jsonb_build_object('success',true,'custody_id',v_c.id,'amount',v_take,'custody_balance',v_c.balance-v_take,'journal_id',v_journal,
+                         'register_op_id',v_register));
+    UPDATE public.poker_diamond_custody SET balance=balance-v_take WHERE id=v_c.id;
+    v_drained := v_drained || jsonb_build_object('custody_id',v_c.id,'user_id',v_c.user_id,'amount',v_take,'journal_id',v_journal,
+                                                 'register_op_id',v_register,'request_id',v_req);
+    v_left := v_left - v_take;
+  END LOOP;
+  SET CONSTRAINTS public.zzz_diamond_entry_custody_is_the_entry DEFERRED;
+  IF v_left <> 0 THEN
+    RAISE EXCEPTION 'diamond_tournament_custody_short' USING ERRCODE='P0404';
+  END IF;
+  RETURN v_drained;
+END $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_ca_issue_diamond_value_ticket(p_satellite_id uuid,p_ticket_id uuid,p_payout_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public,pg_temp AS $function$
@@ -231,13 +421,6 @@ BEGIN
  END IF;
  SELECT diamonds INTO v_wallet FROM public.profiles WHERE id=t.holder_id FOR NO KEY UPDATE;
  IF NOT FOUND THEN RAISE EXCEPTION 'DIAMOND_VALUE_TICKET_HOLDER_MISSING' USING ERRCODE='P0404'; END IF;
- INSERT INTO public.diamond_transactions(user_id,type,transaction_type,amount,balance_after,
-  reference_id,description,source,issuance_class,counterparty,metadata)
- VALUES(t.holder_id,'tournament_satellite_ticket','tournament_satellite_ticket',0,v_wallet,v_key,
-  'Satellite Award: '||t.value::bigint::text||' Diamond Entry Ticket; Wallet Unchanged',
-  'poker_arena','arena','ticket_escrow:'||t.id::text,
-  jsonb_build_object('ticket_id',t.id,'payout_id',p.id,'satellite_id',p_satellite_id,
-   'amount',t.value,'ticket_contract','same_value_entry_v1','wallet_moved',0)) RETURNING id INTO v_journal;
  v_drain:=public.fn_poker_diamond_tournament_drain(p_satellite_id,'prize',t.value::bigint,
   v_key,'ticket_escrow:'||t.id::text,v_journal);
  INSERT INTO public.poker_diamond_tournament_ledger(tournament_id,arena_id,user_id,custody_id,
@@ -302,13 +485,6 @@ BEGIN
  END IF;
  PERFORM public.fn_poker_diamond_tournament_open_shadow(p_tournament_id);
  SELECT diamonds INTO v_wallet FROM public.profiles WHERE id=t.holder_id FOR NO KEY UPDATE;
- INSERT INTO public.diamond_transactions(user_id,type,transaction_type,amount,balance_after,
-  reference_id,description,source,issuance_class,counterparty,metadata)
- VALUES(t.holder_id,'tournament_ticket_entry','tournament_ticket_entry',0,v_wallet,v_key,
-  'Diamond Value Ticket Used For Tournament Entry; Wallet Unchanged','poker_arena','arena',
-  'arena_custody:'||v_custody::text,jsonb_build_object('ticket_id',t.id,'registration_id',r.id,
-   'target_id',p_tournament_id,'custody_id',v_custody,'amount',t.value,
-   'ticket_contract','same_value_entry_v1','wallet_moved',0)) RETURNING id INTO v_journal;
  INSERT INTO public.poker_diamond_custody(id,user_id,arena_id,purpose,target_id,entry_key,balance,state)
  VALUES(v_custody,t.holder_id,v_target.club_id,'tournament_entry',p_tournament_id,
   'entry:'||r.id::text,t.value::bigint,'active');
@@ -319,7 +495,7 @@ BEGIN
   source_account,destination_account,wallet_journal_id,request,receipt)
  VALUES(v_request,v_custody,t.holder_id,'reserve',t.value::bigint,'ticket_escrow:'||t.id::text,
   'arena_custody:'||v_custody::text,v_journal,jsonb_build_object('action','satellite_value_ticket_entry',
-   'ticket_id',t.id,'target_id',p_tournament_id,'registration_id',r.id,'amount',t.value),v_receipt);
+   'ticket_contract','same_value_entry_v1','ticket_id',t.id,'target_id',p_tournament_id,'registration_id',r.id,'amount',t.value),v_receipt);
  INSERT INTO public.poker_diamond_tournament_ledger(tournament_id,arena_id,user_id,custody_id,
   kind,amount,prize_part,bounty_part,fee_part,idempotency_key,wallet_journal_id,registration_id,request)
  VALUES(p_tournament_id,v_target.club_id,t.holder_id,v_custody,'entry',t.value::bigint,
@@ -4171,15 +4347,11 @@ BEGIN
            AND m.destination_account <> 'house'
            AND m.source_account NOT LIKE 'house:%'
          GROUP BY m.wallet_journal_id
-    ), value_ticket_bridges AS MATERIALIZED (
-        SELECT * FROM public.fn_ca_diamond_value_ticket_journal_net(ARRAY(SELECT journal_id FROM mine))
     ), legs AS (
         SELECT mine.journal_id,
-               (SUM(CASE WHEN m.action = 'reserve' THEN -m.amount ELSE m.amount END)
-                +coalesce(max(bridge.net),0))::bigint AS moved
+               SUM(CASE WHEN m.action = 'reserve' THEN -m.amount ELSE m.amount END)::bigint AS moved
           FROM mine
           JOIN public.poker_diamond_movements m ON m.wallet_journal_id = mine.journal_id
-          LEFT JOIN value_ticket_bridges bridge ON bridge.journal_id=mine.journal_id
          WHERE m.destination_account <> 'house'
            AND m.source_account NOT LIKE 'house:%'
          GROUP BY mine.journal_id
@@ -4465,8 +4637,6 @@ ALTER FUNCTION public.fn_ca_assert_satellite_value_ticket(uuid) OWNER TO postgre
 REVOKE ALL ON FUNCTION public.fn_ca_assert_satellite_value_ticket(uuid) FROM PUBLIC,anon,authenticated,service_role;
 ALTER FUNCTION public.fn_ca_diamond_value_ticket_float(uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_value_ticket_float(uuid) FROM PUBLIC,anon,authenticated,service_role;
-ALTER FUNCTION public.fn_ca_diamond_value_ticket_journal_net(uuid[]) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_value_ticket_journal_net(uuid[]) FROM PUBLIC,anon,authenticated,service_role;
 ALTER FUNCTION public.fn_ca_issue_diamond_value_ticket(uuid,uuid,uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_issue_diamond_value_ticket(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
 ALTER FUNCTION public.fn_ca_diamond_value_ticket_fund_entry(uuid,uuid,uuid) OWNER TO postgres;
@@ -4595,4 +4765,8 @@ GRANT EXECUTE ON FUNCTION public.fn_diamond_wallet_summary(uuid) TO authenticate
 REVOKE ALL ON FUNCTION public.fn_diamond_arena_reconciliation(uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_diamond_arena_reconciliation(uuid) TO authenticated,service_role;
 
+ALTER FUNCTION public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_tournament_drain(uuid,text,bigint,text,text,uuid) TO service_role;
+SELECT public.fn_ca_declare_guard_redefinition('fn_poker_diamond_tournament_drain','20261030001505_satellite_fallback_awards_are_reusable_value_tickets');
 COMMIT;

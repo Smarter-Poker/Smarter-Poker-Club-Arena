@@ -69,6 +69,36 @@ def main():
   (output/'current-owners.sql').write_text('\n'.join(r['definition'].rstrip().rstrip(';')+';' for r in owners))
   e.sql(db,file=output/'current-owners.sql',label='actual-current-owners',seconds=120)
   candidate=next((root/'supabase/migrations').glob('*_satellite_fallback_awards_are_reusable_value_tickets.sql'))
+  prerequisite=next((root/'supabase/migrations').glob('*_diamond_value_ticket_custody_transfers_retain_no_wallet_jour.sql'))
+  # The shared historical foundation predates the house-leg CHECK expansion.
+  # Reconstruct these two captured current production constraints exactly.
+  constraints=json.loads((fixture/'custody-constraints.json').read_text())
+  current_checks='\n'.join('ALTER TABLE public.'+r['relation']+' DROP CONSTRAINT '+r['conname']+'; ALTER TABLE public.'+r['relation']+' ADD CONSTRAINT '+r['conname']+' '+r['definition']+';' for r in constraints)
+  e.sql(db,current_checks,label='actual-current-custody-checks',seconds=30)
+  # CHECK grammar boundaries in a separate disposable catalog, never by
+  # dropping or bypassing a constraint in the actual funded-owner scene.
+  check_db=e.database()
+  minimal="CREATE TABLE public.poker_diamond_movements(request_id uuid,custody_id uuid,user_id uuid,action text,amount bigint,source_account text,destination_account text,wallet_journal_id uuid,request jsonb,receipt jsonb); CREATE TABLE public.poker_diamond_tournament_ledger(kind text,user_id uuid,custody_id uuid,wallet_journal_id uuid,registration_id uuid,idempotency_key text,amount bigint,prize_part bigint,bounty_part bigint,fee_part bigint,request jsonb);"
+  minimal+=''.join('ALTER TABLE public.'+r['relation']+' ADD CONSTRAINT '+r['conname']+' '+r['definition']+';' for r in constraints)
+  e.sql(check_db,minimal,label='custody-check-only-catalog')
+  e.sql(check_db,file=prerequisite,label='custody-check-only-exact-DDL')
+  e.sql(check_db,file=fixture/'custody-check-cases.sql',label='custody-check-45-boundaries')
+  code,_,error=e.sql(check_db,file=prerequisite,label='custody-check-refuses-DDL-replay',check=False)
+  if code==0 or 'VALUE_TICKET_CONSTRAINT_PREIMAGE_CHANGED' not in error:raise ValueError('exact custody CHECK DDL replay was not refused')
+  e.discard(check_db)
+  e.sql(db,file=prerequisite,label='exact-custody-check-prerequisite',seconds=30)
+  # The native route records exact prerequisite installation, like the real
+  # applier; the candidate refuses absent or changed CHECK postimages.
+  e.sql(db,"CREATE SCHEMA IF NOT EXISTS supabase_migrations; CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations(version text PRIMARY KEY,name text); INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261031075352','diamond_value_ticket_custody_transfers_retain_no_wallet_jour');",label='prerequisite-installation-history')
+  guard=json.loads((fixture/'guard-declaration.json').read_text())
+  tables={}
+  for col in guard['columns']:
+   tables.setdefault(col['relname'],[]).append('"'+col['attname']+'" '+col['type']+(' NOT NULL' if col['attnotnull'] else '')+(' DEFAULT '+col['default_expression'] if col['default_expression'] else ''))
+  guard_sql="CREATE SEQUENCE IF NOT EXISTS public.ca_guard_def_history_id_seq;\n"+'\n'.join('CREATE TABLE IF NOT EXISTS public.'+name+' ('+','.join(cols)+');' for name,cols in tables.items())
+  guard_sql+='\n'.join('ALTER TABLE public.'+r['relation']+' ADD CONSTRAINT '+r['conname']+' '+r['definition']+';' for r in guard['constraints'])
+  guard_sql+='\n'.join(r['definition'].rstrip().rstrip(';')+';' for r in json.loads((fixture/'guard-declaration-indexes.json').read_text()))
+  guard_sql+='\n'.join(r['definition'].rstrip().rstrip(';')+';' for r in guard['functions'])
+  e.sql(db,guard_sql,label='actual-guard-declaration-catalog')
   e.sql(db,file=candidate,label='exact-value-ticket-candidate',seconds=120)
   expected=json.loads((fixture/'postimages.json').read_text())
   for name,digest in expected.items():

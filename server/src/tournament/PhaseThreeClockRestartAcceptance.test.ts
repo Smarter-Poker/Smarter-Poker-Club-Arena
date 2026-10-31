@@ -223,6 +223,10 @@ function tournamentTransport() {
   };
   const writes: { patch: Record<string, unknown>; authority: unknown }[] = [];
   vi.mocked(supabase.from).mockImplementation((relation: string) => {
+    if (relation === 'tournament_stage_plans')
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+      } as never;
     if (!['tournaments', 'tables'].includes(relation))
       throw new Error(`Unexpected relation ${relation}`);
     let patch: Record<string, unknown> | null = null;

@@ -183,6 +183,10 @@ function staleBreakTransport(opts: { beforeFirstUpdate?: (row: any) => void } = 
   const attempts: Record<string, unknown>[] = [];
   let firstUpdateSeen = false;
   vi.mocked(supabase.from).mockImplementation((relation: string) => {
+    if (relation === 'tournament_stage_plans')
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+      } as never;
     if (!['tournaments', 'tables'].includes(relation))
       throw new Error(`Unexpected relation ${relation}`);
     let patch: Record<string, unknown> | null = null;

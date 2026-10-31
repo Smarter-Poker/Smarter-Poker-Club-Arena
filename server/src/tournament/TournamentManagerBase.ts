@@ -10213,16 +10213,16 @@ export abstract class TournamentManagerBase {
           .from('hand_history')
           .select('id', { count: 'exact', head: true })
           .eq('table_id', table.id);
-        if (error) {
+        if (error || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
           // Unreadable history is UNKNOWN, and the safe unknown here is "it may
           // already have dealt" — re-forcing the button on a live table is the
           // damaging direction.
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not check hand history for table ${table.id.slice(0, 8)} (${error.message}) - leaving the drawn button alone`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not check hand history for table ${table.id.slice(0, 8)} (${error?.message ?? 'invalid hand count'}) - leaving the drawn button alone`
           );
           continue;
         }
-        if ((count || 0) > 0) {
+        if (count > 0) {
           await supabase.from('tables').update({ first_button_seat: null }).eq('id', table.id);
           continue;
         }

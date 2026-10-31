@@ -28575,11 +28575,11 @@ function LiveTablePage({
                     } else {
                       // Open throwable selector targeting this seat
                       setThrowTargetSeat(seatNumber);
-                      setShowThrowableSelector(true);
-                      // Also record clicked player for Player Notes targeting
-                      if (player) {
-                        setSelectedPlayerForNotes({ id: player.id, name: player.name });
-                      }
+                      setSelectedPlayerForNotes(
+                        displayPlayer ? { id: displayPlayer.id, name: displayPlayer.name } : null
+                      );
+                      if (v8Settings.emoji_enabled) setShowThrowableSelector(true);
+                      else if (displayPlayer) setShowPlayerNotes(true);
                     }
                   }}
                   isDealing={isSeatDealing}
@@ -30194,6 +30194,10 @@ function LiveTablePage({
         showPlayerNotes={showPlayerNotes}
         selectedPlayerForNotes={selectedPlayerForNotes}
         onClosePlayerNotes={() => setShowPlayerNotes(false)}
+        onOpenPlayerNotes={() => {
+          setShowThrowableSelector(false);
+          setShowPlayerNotes(true);
+        }}
         // Hand Replay
         showHandReplay={showHandReplay}
         lastHandId={replaySubjectId ?? lastHandId}

@@ -1105,3 +1105,77 @@ it('binds a distinct Cashier original-cohort census carrier while preserving his
   ])
     expect(entry.ownerOrder).toContain(proof);
 });
+
+it('binds the independent Horse input correction to one new qualified tournament-aligned activation', () => {
+  const raw = readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8');
+  const doc = JSON.parse(raw);
+  const id = '2026-10-31-horse-input-attribution-qualified-next-55';
+  const marker = ',\n    {\n      "id": "' + id + '"';
+  expect(raw.split(marker)).toHaveLength(2);
+  expect(doc.windows.findIndex((w: { id: string }) => w.id === id)).toBe(63);
+  expect(
+    createHash('sha256')
+      .update(raw.slice(0, raw.indexOf(marker)))
+      .digest('hex')
+  ).toBe('bec8a5de78129d4e67b19deda54811172a30d8b70af77d54df4e340ecc38d9dd');
+  expect(
+    createHash('sha256')
+      .update(raw.slice(raw.indexOf('  "databaseWindows"')))
+      .digest('hex')
+  ).toBe('b42eb3dd7b76725a8fb83d8282cfd599a7edc2c3b5a6d3ddb6a70f075fd18ca1');
+  const entry = doc.windows[63];
+  expect(entry.contains).toBe('2f9ca8db67acdcdeb02e0da8c261570d2d87e2e9');
+  expect(entry.notBefore).toBe('2026-10-31T05:10:00Z');
+  expect(entry.notAfter).toBe('2026-10-31T07:10:00Z');
+  expect(entry.announceAtChicagoMinutes).toEqual([53]);
+  expect(entry.migrations).toEqual([]);
+  expect(entry.releaseWitness).toEqual({
+    path: 'server/release/activation-floor.json',
+    sha256: '1bc98b68090b4be486d2d062ebca013b5abbf77e8cbdc3f17f13bf14617b7ea1',
+  });
+  const floorRaw = readFileSync(join(root, 'server/release/activation-floor.json'));
+  const floor = JSON.parse(floorRaw.toString());
+  if (floor.ownerWindowId === id) {
+    expect(floor).toEqual({
+      schema: 'engine-release-activation-floor/v2-owner-window',
+      preparationAt: entry.notBefore,
+      activationAt: entry.notBefore,
+      expiresAt: entry.notAfter,
+      timeZone: 'America/Chicago',
+      ownerWindowId: id,
+      clientPublicationAt: entry.notBefore,
+    });
+    expect(createHash('sha256').update(floorRaw).digest('hex')).toBe(entry.releaseWitness.sha256);
+  }
+  for (const announcement of ['2026-10-31T05:53:59.999Z', '2026-10-31T06:53:59.999Z']) {
+    expect(Date.parse(announcement)).toBeGreaterThanOrEqual(Date.parse(entry.notBefore));
+    expect(Date.parse(entry.notAfter) - Date.parse(announcement)).toBeGreaterThanOrEqual(420_000);
+  }
+  for (const safeguard of [
+    'actual protected inclusion',
+    'current-head required checks',
+    'EED33',
+    '29 runtime pins',
+    'actual terminal readback',
+    'source-bound cleanup/disposition',
+    'supported owning correction and exact qualification',
+    'or authoritative evidence resolving the known976 legacy heap lookup timeout and cleanup failure',
+    'a new window or mere old-lease cleanup is not a retry reason',
+    'before any new host operation',
+    '120s notice',
+    '300s durable freeze',
+    'full285s reserve',
+    '40s checkpoint including5s cleanup',
+    '245s post-checkpoint proof',
+    '135s rollback reserve',
+    'one actual activation maximum',
+    'complete OWN healthy v3 thaw',
+    'no arbitrary-minute restart',
+    'automatic extension',
+    'NEVER replay an installed migration',
+    'KEEP DIAMOND CLOSED',
+    '01a18fed-2211-7a62-9416-611dd6e4d96d',
+    'every canonical index0-999',
+  ])
+    expect(entry.ownerOrder).toContain(safeguard);
+});

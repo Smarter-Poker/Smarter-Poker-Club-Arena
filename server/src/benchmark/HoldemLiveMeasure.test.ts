@@ -225,18 +225,20 @@ describe('river one-pair calls by size class', () => {
 });
 
 describe('receipt counts and the report', () => {
-  it('counts the four receipts by day and renders every section', () => {
+  it('counts the five receipts by day and renders every section', () => {
     const rows = [
       { day: '2026-10-31', feature: 'v62_river_bettor_polarity', fires: 12 },
       { day: '2026-10-30', feature: 'v62_river_bettor_polarity', fires: '3' },
       { day: '2026-10-30', feature: 'v61_river_one_pair_shade', fires: 40 },
+      { day: '2026-10-30', feature: 'v63_large_river_bet_shade', fires: 7 },
       { day: '2026-10-30', feature: 'unrelated', fires: 99 },
     ];
     const counts = receiptCounts(rows);
-    expect(counts.map((r) => r.feature)).toEqual(['v61_river_one_pair_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold']);
-    expect(counts[1].total).toBe(15);
-    expect(counts[1].byDay.map((d) => d.day)).toEqual(['2026-10-30', '2026-10-31']);
-    expect(counts[2].total).toBe(0);
+    expect(counts.map((r) => r.feature)).toEqual(['v61_river_one_pair_shade', 'v63_large_river_bet_shade', 'v62_river_bettor_polarity', 'v38_river_call', 'v38_river_fold']);
+    expect(counts[1].total).toBe(7);
+    expect(counts[2].total).toBe(15);
+    expect(counts[2].byDay.map((d) => d.day)).toEqual(['2026-10-30', '2026-10-31']);
+    expect(counts[3].total).toBe(0);
     const md = renderMarkdown({
       generatedAt: '2026-10-31T00:00:00Z',
       servingReleaseSha: 'abc',

@@ -51,11 +51,11 @@ jobs:
       - name: Prepare the scoped evidence directory
         run: mkdir -p e2e-report/lobby-ui-proof
 
-      - name: Install Chromium only
+      - name: Install the project and mobile fixture browsers
         timeout-minutes: 5
         run: |
           sudo python3 scripts/ci/ubuntu-apt-mirror.py
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
 
       - name: Require installed scoped cleanup before production fixtures
         env:

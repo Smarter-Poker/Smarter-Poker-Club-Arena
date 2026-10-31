@@ -1,14 +1,28 @@
 import type { BrowserContext, WebSocketRoute } from '@playwright/test';
 
-/** Only this reserved context's private-record engine channel can be interrupted. */
-export async function installPrivateRecordEngineInterruption(context: BrowserContext) {
+const endpoints = {
+  engine: 'wss://engine.smarter.poker/ws/channel',
+  gateway: 'wss://ca-static.smarter.poker/private-record/ws/channel',
+} as const;
+
+/** Only exact private-record endpoints in this reserved context can be interrupted. */
+export async function installPrivateRecordEngineInterruption(
+  context: BrowserContext,
+  endpoint: 'engine' | 'gateway' = 'engine'
+) {
   let blocked = false;
   const servers: WebSocketRoute[] = [];
   await context.routeWebSocket(
-    (url) =>
-      url.protocol === 'wss:' &&
-      url.hostname === 'engine.smarter.poker' &&
-      url.pathname === '/ws/channel',
+    (url) => {
+      const allowed = new URL(endpoints[endpoint]);
+      return (
+        url.protocol === allowed.protocol &&
+        url.host === allowed.host &&
+        url.pathname === allowed.pathname &&
+        !url.username &&
+        !url.password
+      );
+    },
     (socket) => {
       if (blocked) {
         void socket.close({ code: 4000, reason: 'Reserved Client Record Channel Qualification' });

@@ -11,6 +11,8 @@ on:
       - scripts/ci/fixtures/payout-receipt-payer-reuse/**
       - scripts/ci/test-payout-receipt-payer-reuse-postgres.py
       - scripts/ci/test-readonly-payer-receipts-postgres.py
+      - scripts/ci/fixtures/leaderboard-monday/**
+      - scripts/ci/test-leaderboard-monday-postgres.py
       - scripts/ci/fixtures/weekly-close-hour-guard/**
       - scripts/ci/test-weekly-close-hour-guard-postgres.py
       - .github/workflows/weekly-close-hour-guard.yml
@@ -63,6 +65,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-readonly-payer-receipts-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
+      - name: Leaderboards pay Monday at 02 Chicago across DST
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-leaderboard-monday-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
       - name: Weekly quality preserves exact source bags through typed aggregate maps
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

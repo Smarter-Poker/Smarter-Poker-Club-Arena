@@ -669,6 +669,7 @@ async function cleanupTemporaryCustomizationAccountOnce(
     'signup_errors',
     'table_waitlist',
     'rate_limits',
+    'player_notes',
   ];
 
   const relatedTables = [

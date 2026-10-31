@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import resource
+import signal
 import stat
 import subprocess
 import sys
@@ -300,7 +301,16 @@ def main(image, run_id, deadline):
                                                   'binding':binding, 'result':result}, sort_keys=True))
 
 
+def refuse_signal(signum, _frame):
+    # Raise inside the owning operation so its bounded finally cleanup runs.
+    # SIGKILL/power loss still retains the durable one-shot intent for readback.
+    raise RuntimeError('disposable qualification interrupted by signal ' + str(signum))
+
+
 if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, refuse_signal)
+    signal.signal(signal.SIGINT, refuse_signal)
+    signal.signal(signal.SIGHUP, refuse_signal)
     try:
         require(len(sys.argv) == 4, 'usage: legacy-census-scale-preflight.py IMAGE RUN DEADLINE')
         main(*sys.argv[1:])

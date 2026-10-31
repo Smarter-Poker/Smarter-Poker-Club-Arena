@@ -4,6 +4,8 @@ import copy
 import importlib.util
 import io
 import json
+import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -153,6 +155,31 @@ class ScaleBoundary(unittest.TestCase):
                     m.main('sha256:'+'a'*64,'42-1',str(int(time.time())+600))
                 command.assert_not_called()
                 write.assert_not_called()
+
+    def test_real_term_int_hup_enter_main_finally_and_leave_nonretryable_receipt(self):
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            with self.subTest(signal=signum), tempfile.TemporaryDirectory(prefix='native-scale-signal-') as directory:
+                state = Path(directory)
+                identity = {'revision':next(iter(m.LEGACY))}
+                original = Path.read_text
+                def read(path, *args, **kwargs):
+                    return 'MemAvailable:       60000000 kB\n' if str(path) == '/proc/meminfo' else original(path,*args,**kwargs)
+                def interrupt(*args, **kwargs):
+                    os.kill(os.getpid(), signum)
+                    self.fail('signal did not refuse')
+                previous = signal.signal(signum, m.refuse_signal)
+                try:
+                    with patch.object(m,'STATE',state), patch.object(m.os,'geteuid',return_value=0), patch.object(m.sys,'platform','linux'), patch.object(m,'serving',return_value=identity), patch.object(m,'candidate_identity',return_value={}), patch.object(m,'secure_directory'), patch.object(m.os,'fstat',return_value=type('S',(),{'st_mode':0o100600,'st_uid':0})()), patch.object(m.Path,'read_text',read), patch.object(m.subprocess,'run',side_effect=interrupt), patch.object(m,'cleanup') as cleanup:
+                        with self.assertRaisesRegex(RuntimeError,'interrupted by signal'):
+                            m.main('sha256:'+'a'*64,'42-1',str(int(time.time())+600))
+                        cleanup.assert_called_once()
+                    receipt = json.loads(next(state.glob('*.json')).read_text())
+                    self.assertEqual(receipt['status'],'refused')
+                    self.assertIs(receipt['cleanupProved'],True)
+                    self.assertIn('interrupted by signal',receipt['error'])
+                    self.assertEqual(len(list(state.glob('*.intent'))),1)
+                finally:
+                    signal.signal(signum,previous)
 
     def test_connected_source_enforces_existing_route_and_containment(self):
         helper = (ROOT/'server/scripts/prewarm-engine-image.sh').read_text()

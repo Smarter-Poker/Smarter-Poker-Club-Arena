@@ -3614,13 +3614,20 @@ esac
     expect(workflow).toContain('"$STAGE/server/scripts/install-engine-intake.sh"');
     expect(workflow).not.toMatch(/(?:engine-up|engine-supervisor)\.sh/);
 
+    // Match the controller basename, not the install-engine-supervisor.sh
+    // path filter that makes resource qualification run after installer edits.
+    const controllerReference = /(?:^|[^A-Za-z0-9_-])(?:engine-up|engine-supervisor)\.sh/m;
+    expect(controllerReference.test('bash /control/engine-supervisor.sh')).toBe(true);
+    expect(controllerReference.test('TOOL=engine-supervisor.sh')).toBe(true);
+    expect(controllerReference.test('"/control/engine-up.sh"')).toBe(true);
+    expect(controllerReference.test('- server/scripts/install-engine-supervisor.sh')).toBe(false);
     for (const name of workflowFiles.filter((file) => file !== 'auto-deploy-hetzner.yml')) {
       const runnable = readFileSync(resolve(workflowDir, name), 'utf8')
         .split('\n')
         .filter((line) => !line.trimStart().startsWith('#'))
         .join('\n');
       expect(runnable, `${name} invokes a sealed engine controller`).not.toMatch(
-        /(?:engine-up|engine-supervisor)\.sh/
+        controllerReference
       );
       expect(runnable, `${name} touches canonical engine configuration`).not.toMatch(
         /(?:\/opt\/club-arena|\$?REPO_DIR)\/server\/\.env/

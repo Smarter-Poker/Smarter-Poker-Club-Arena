@@ -11,6 +11,16 @@ on:
       - server/src/**
       - server/scripts/build-engine-image.sh
       - server/scripts/engine-image-archive.py
+      - server/scripts/native/**
+      - server/scripts/legacy-census-scale-*
+      - server/scripts/prewarm-engine-image.sh
+      - server/scripts/install-engine-supervisor.sh
+      - server/scripts/legacy-engine-checkpoint.mjs
+      - tests/operations/legacy-census-scale-preflight.test.py
+      - tests/operations/legacy-census-native.mjs
+      - tests/operations/legacy-census-source.test.mjs
+      - server/scripts/qualification/retained-original-checkpoint/**
+      - server/scripts/retained-original-checkpoint-guard.mjs
       - tests/operations/engine-image-archive.test.py
       - tests/operations/engine-build-resource-proof.py
       - tests/operations/engine-build-resource-proof.test.py
@@ -29,6 +39,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fetch the fixed predecessor qualification objects without lazy fetch
+        run: |
+          git fetch --no-tags --depth=1 origin eed06fe51dea622069c661a6213d5b031ff3a9e3
+          git cat-file -e eed06fe51dea622069c661a6213d5b031ff3a9e3^{commit}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -38,6 +52,9 @@ jobs:
         run: |
           python3 tests/operations/engine-image-archive.test.py
           python3 tests/operations/engine-build-resource-proof.test.py
+          node --test tests/operations/legacy-census-source.test.mjs
+          python3 tests/operations/legacy-census-scale-preflight.test.py
+          node --check server/scripts/legacy-census-scale-fixture.mjs
       - name: Produce the reference runtime with the full TypeScript check
         working-directory: server
         run: |

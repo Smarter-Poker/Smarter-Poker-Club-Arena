@@ -51,6 +51,24 @@ const normalizeFrameCoverAddition = (job: { steps: Array<Record<string, unknown>
   job.steps.splice(start, 2);
 };
 
+const postpaidQualityStep = {
+  name: 'Paid weekly books qualify statements before replaying cash checks',
+  if: 'matrix.shard == 1',
+  run: 'set -o pipefail\nmkdir -p artifacts/weekly-payout-owned-pause\npython3 -B scripts/ci/test-weekly-postpaid-quality-postgres.py --repo . --candidate-source scripts/ci/fixtures/weekly-postpaid-quality/after-scope.json --before-source scripts/ci/fixtures/weekly-postpaid-quality/before-scope.json --prepare-source scripts/ci/fixtures/weekly-postpaid-quality/prepare.sql --catalog scripts/ci/fixtures/weekly-postpaid-quality/actual-owners.json --pg-bin /usr/lib/postgresql/17/bin --scratch "$RUNNER_TEMP" --output artifacts/weekly-payout-owned-pause/postpaid-quality.json\npython3 -B scripts/ci/test-weekly-postpaid-discovery-postgres.py --repo . --before-scope scripts/ci/fixtures/weekly-postpaid-quality/before-scope.json --after-scope scripts/ci/fixtures/weekly-postpaid-quality/after-scope.json --before-eligible scripts/ci/fixtures/weekly-postpaid-quality/before-discovery.sql --after-eligible scripts/ci/fixtures/weekly-postpaid-quality/after-discovery.sql --pg-bin /usr/lib/postgresql/17/bin --scratch "$RUNNER_TEMP" --output artifacts/weekly-payout-owned-pause/postpaid-discovery.json\npython3 -B scripts/ci/test-weekly-postpaid-migration-postgres.py --candidate supabase/migrations/20261031162838_qualify_paid_weekly_statement_evidence_before_replaying_cash.sql --owners scripts/ci/fixtures/weekly-postpaid-quality/actual-owners.json --discovery scripts/ci/fixtures/weekly-postpaid-quality/actual-discovery-owners.json --pg-bin /usr/lib/postgresql/17/bin --scratch "$RUNNER_TEMP" --output artifacts/weekly-payout-owned-pause/postpaid-migration.json\n',
+};
+
+const normalizePostpaidQualityAddition = (job: { steps: Array<Record<string, unknown>> }) => {
+  const start = job.steps.findIndex((step) => step.name === postpaidQualityStep.name);
+  expect(job.steps.filter((step) => step.name === postpaidQualityStep.name)).toHaveLength(1);
+  expect(job.steps[start - 1]?.name).toBe(
+    'Original weekly financial rounds wait for the concurrent physical fleet ACK'
+  );
+  // Exact shape rejects added env/continue-on-error as well as changed commands.
+  expect(job.steps[start]).toStrictEqual(postpaidQualityStep);
+  expect(job.steps[start + 1]?.name).toBe('Preserve original weekly payout qualification evidence');
+  job.steps.splice(start, 1);
+};
+
 describe('required CI uses a closed standard hosted capacity recovery', () => {
   for (const [name, job, standard] of jobs) {
     it(name + ' permits only its fixed standard hosted OS', () => {
@@ -62,6 +80,7 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
     normalizeFrameCoverAddition(normalized.jobs.accounting_postgres);
+    normalizePostpaidQualityAddition(normalized.jobs.accounting_postgres);
     const formerClientRoute = '$' + '{{ ' + trusted + " && 'ca-linux-4core' || 'ubuntu-latest' }}";
     const intendedRoutes = {
       typecheck: 'ubuntu-latest',
@@ -158,6 +177,42 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       );
       mutate(job.steps, start);
       expect(() => normalizeFrameCoverAddition(job)).toThrow();
+    }
+  });
+  it('rejects missing, duplicate, displaced or weakened paid-book qualification', () => {
+    const mutations = [
+      (steps: Array<Record<string, unknown>>, start: number) => steps.splice(start, 1),
+      (steps: Array<Record<string, unknown>>, start: number) =>
+        steps.push(structuredClone(steps[start])),
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        [steps[start - 1], steps[start]] = [steps[start], steps[start - 1]];
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start].if = 'false';
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start].env = { SKIP: 'true' };
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start]['continue-on-error'] = true;
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start].run = String(steps[start].run).replace(
+          'postpaid-discovery-postgres.py',
+          'wrong.py'
+        );
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start].run = String(steps[start].run) + 'true\n';
+      },
+    ];
+    for (const mutate of mutations) {
+      const job = structuredClone(ci.jobs.accounting_postgres);
+      const start = job.steps.findIndex(
+        (step: Record<string, unknown>) => step.name === postpaidQualityStep.name
+      );
+      mutate(job.steps, start);
+      expect(() => normalizePostpaidQualityAddition(job)).toThrow();
     }
   });
   it('preserves every native qualification stage and cleanup requirement', () => {

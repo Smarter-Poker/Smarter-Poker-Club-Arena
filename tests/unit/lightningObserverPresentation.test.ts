@@ -119,7 +119,9 @@ describe('public Lightning observer consumer', () => {
     expect(page).toContain(
       'if (isLightningObserverSnapshot(engineSnapshotRef.current)) return false;'
     );
-    expect(page).toContain('if (lightningObserver || !USE_ENGINE_WS');
+    const invariant = readFileSync('src/hooks/useEngineHeroSeatInvariant.ts', 'utf8');
+    expect(invariant).toContain('if (lightningObserver || !USE_ENGINE_WS');
+    expect(page).toContain('useEngineHeroSeatInvariant({');
     expect(page).toContain('heroBoughtIn: lightningObserver');
     expect(page).toContain(': lightningAnchorFunded');
   });

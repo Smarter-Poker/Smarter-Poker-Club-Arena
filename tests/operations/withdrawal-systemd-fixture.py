@@ -110,6 +110,8 @@ def main():
                 assert empty_state['MainPID'] == '0'
                 m.loaded_stop_contract(unit, key)
                 m.empty_retry_admission(unit, empty_state, key, {'originals': {}})
+                bindings = {service: m.configured_service_cgroup(service, m.unit_snapshot(service, service_context=True))
+                            for service in [unit, intake_unit]}
                 for other in [intake_unit, path_unit]:
                     empty_other = m.prove_unit_empty(other)
                     assert empty_other['ActiveState'] in {'inactive', 'failed'}
@@ -118,8 +120,9 @@ def main():
                 mask.symlink_to('/dev/null'); m.fsync_directory(mask.parent)
                 run(['systemctl', 'daemon-reload'])
                 wait_for(lambda: m.unit_snapshot(unit)['ActiveState'] in {'inactive', 'failed'}, seconds=35)
-                m.quiet_units([unit, intake_unit, path_unit], empty_state['ControlGroup'] or None, native_empty=True)
-                closed = m.prove_unit_empty(unit)
+                m.quiet_units([unit, intake_unit, path_unit], empty_state['ControlGroup'] or None, native_empty=True, bindings=bindings)
+                m.loaded_stop_contract(unit, key, allow_masked=True, bindings=bindings)
+                closed = m.prove_unit_empty(unit, bindings)
                 assert closed['MainPID'] == '0'
                 if empty_state['ControlGroup']: assert m.cgroup_empty(empty_state['ControlGroup'])
                 assert run(['systemctl', 'show', unit, '-p', 'LoadState', '--value']) == 'masked'

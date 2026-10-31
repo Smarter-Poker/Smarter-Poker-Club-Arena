@@ -240,11 +240,14 @@ def own_wants_edge(unit):
     return edge
 
 
-def unit_snapshot(unit):
+def unit_snapshot(unit, service_context=False):
     is_path = unit.endswith('.path')
     names = (['InvocationID', 'ActiveState', 'SubState', 'Result'] if is_path else
              ['MainPID', 'InvocationID', 'ActiveState', 'SubState', 'Result',
               'ExecMainCode', 'ExecMainStatus', 'ControlGroup'])
+    if service_context:
+        require(not is_path)
+        names += ['Slice', 'ControlPID']
     args = ['systemctl', 'show', unit, '--all']
     for name in names: args += ['-p', name]
     value = dict(line.split('=', 1) for line in command(args).splitlines())
@@ -272,7 +275,14 @@ def prove_empty_exec_properties(unit, fields):
     require(shlex.split(command(identity)) == ['s', unit] and shlex.split(command(get_unit)) == resolved)
 
 
-def loaded_stop_contract(unit, key, allow_masked=False):
+def loaded_stop_contract(unit, key, allow_masked=False, bindings=None):
+    if allow_masked and bindings and unit in bindings and masked([unit]):
+        state = unit_snapshot(unit)
+        if state['MainPID'] == '0' and state['ActiveState'] in {'inactive', 'failed'}:
+            if manager_unit_absent(unit):
+                require(cgroup_empty(bindings[unit]))
+                require(manager_unit_absent(unit))
+                return {'maskedEmpty': True}
     fields = ['ExecStart', 'ExecStop', 'ExecStopPost', 'KillMode', 'FragmentPath', 'DropInPaths',
               'RequiredBy', 'RequisiteOf', 'BoundBy', 'ConsistsOf', 'PropagatesStopTo']
     args = ['systemctl', 'show', unit, '--all']
@@ -322,7 +332,59 @@ def cgroup_empty(path):
     return values.get('populated') == '0'
 
 
-def prove_unit_empty(unit):
+def manager_unit_absent(unit):
+    raw = command(['busctl', '--system', '--timeout=5s', 'call', 'org.freedesktop.systemd1',
+                   '/org/freedesktop/systemd1', 'org.freedesktop.systemd1.Manager',
+                   'ListUnitsByPatterns', 'asas', '0', '1', unit])
+    values = shlex.split(raw)
+    require(len(values) >= 2 and values[0] == 'a(ssssssouso)' and values[1].isdigit())
+    if values[1] == '0': require(len(values) == 2)
+    return values == ['a(ssssssouso)', '0']
+
+
+def configured_service_cgroup(unit, snapshot):
+    require(unit.endswith('.service') and '@' in unit)
+    prefix = unit.split('@', 1)[0]
+    require(re.fullmatch(r'[A-Za-z0-9-]+', prefix) is not None)
+    expected_slice = 'system-' + prefix.replace('-', r'\x2d') + '.slice'
+    require(snapshot['Slice'] == expected_slice)
+    root = command(['systemctl', 'show', '--all', '-p', 'ControlGroup', '--', '-.slice'])
+    require(root == 'ControlGroup=/')
+    # v255 cg_slice_to_path uses literal '-' hierarchy separators; escaped
+    # template hyphens remain literal \x2d bytes in a single slice component.
+    stem = expected_slice[:-6]
+    parts = stem.split('-')
+    require(all(parts) and len(parts) == 2 and parts[0] == 'system')
+    slice_path = '/'.join('-'.join(parts[:i]) + '.slice' for i in range(1, len(parts)+1))
+    group = '/' + slice_path + '/' + unit
+    if snapshot['ControlGroup']: require(snapshot['ControlGroup'] == group)
+    return group
+
+
+def prove_unloaded_unit_empty(unit, before, bindings=None):
+    require(before['ActiveState'] in {'inactive', 'failed'})
+    if unit.endswith('.path'):
+        require(before.get('unitType') == 'path' and before['MainPID'] is None)
+        companion = unit[:-5] + '.service'
+        companion_state = prove_unit_empty(companion, bindings)
+        require(companion_state['ActiveState'] in {'inactive', 'failed'})
+        require(manager_unit_absent(unit))
+        require(manager_unit_absent(unit))
+        return before
+    if bindings and unit in bindings:
+        group = bindings[unit]
+    else:
+        context = unit_snapshot(unit, service_context=True)
+        require({key:value for key,value in context.items() if key not in {'Slice','ControlPID'}} == before)
+        require(context['MainPID'] == '0' and context['ControlPID'] == '0')
+        group = configured_service_cgroup(unit, context)
+    require(manager_unit_absent(unit))
+    require(cgroup_empty(group))
+    require(manager_unit_absent(unit))
+    return before
+
+
+def prove_unit_empty(unit, bindings=None):
     """Positive native enumeration includes cgroup descendants and main/control PIDs."""
     before = unit_snapshot(unit)
     is_path = unit.endswith('.path')
@@ -330,20 +392,26 @@ def prove_unit_empty(unit):
     prefix = ['busctl', '--system', '--timeout=5s']
     lookup = prefix + ['call', 'org.freedesktop.systemd1', '/org/freedesktop/systemd1',
                        'org.freedesktop.systemd1.Manager', 'GetUnit', 's', unit]
-    resolved = shlex.split(command(lookup))
+    try:
+        resolved = shlex.split(command(lookup))
+    except subprocess.CalledProcessError:
+        return prove_unloaded_unit_empty(unit, before, bindings)
     require(len(resolved) == 2 and resolved[0] == 'o'
             and re.fullmatch(r'/org/freedesktop/systemd1/unit/[A-Za-z0-9_]+', resolved[1]) is not None)
-    prop = prefix + ['get-property', 'org.freedesktop.systemd1', resolved[1]]
-    identity = prop + ['org.freedesktop.systemd1.Unit', 'Id']
-    require(shlex.split(command(identity)) == ['s', unit])
-    if not is_path:
-        require(shlex.split(command(prop + ['org.freedesktop.systemd1.Service', 'ControlPID'])) == ['u', '0'])
-    require(shlex.split(command(prefix + ['call', 'org.freedesktop.systemd1', '/org/freedesktop/systemd1',
-        'org.freedesktop.systemd1.Manager', 'GetUnitProcesses', 's', unit])) == ['a(sus)', '0'])
-    if before['ControlGroup']: require(cgroup_empty(before['ControlGroup']))
-    require(shlex.split(command(identity)) == ['s', unit] and shlex.split(command(lookup)) == resolved)
-    require(unit_snapshot(unit) == before)
-    return before
+    try:
+        prop = prefix + ['get-property', 'org.freedesktop.systemd1', resolved[1]]
+        identity = prop + ['org.freedesktop.systemd1.Unit', 'Id']
+        require(shlex.split(command(identity)) == ['s', unit])
+        if not is_path:
+            require(shlex.split(command(prop + ['org.freedesktop.systemd1.Service', 'ControlPID'])) == ['u', '0'])
+        require(shlex.split(command(prefix + ['call', 'org.freedesktop.systemd1', '/org/freedesktop/systemd1',
+            'org.freedesktop.systemd1.Manager', 'GetUnitProcesses', 's', unit])) == ['a(sus)', '0'])
+        if before['ControlGroup']: require(cgroup_empty(before['ControlGroup']))
+        require(shlex.split(command(identity)) == ['s', unit] and shlex.split(command(lookup)) == resolved)
+        require(unit_snapshot(unit) == before)
+        return before
+    except subprocess.CalledProcessError:
+        return prove_unloaded_unit_empty(unit, before, bindings)
 
 
 def empty_retry_admission(unit, state, key, evidence):
@@ -355,17 +423,17 @@ def empty_retry_admission(unit, state, key, evidence):
     require(prove_unit_empty(unit) == state)
 
 
-def quiet_units(units, original_group, native_empty=False):
+def quiet_units(units, original_group, native_empty=False, bindings=None):
     states = [unit_snapshot(unit) for unit in units]
     require(all((row['MainPID'] == '0' or (row.get('unitType') == 'path' and row['MainPID'] is None)) and row['ActiveState'] in {'inactive', 'failed'}
                 and (not row['ControlGroup'] or cgroup_empty(row['ControlGroup'])) for row in states))
     if native_empty:
-        require([prove_unit_empty(unit) for unit in units] == states)
+        require([prove_unit_empty(unit, bindings) for unit in units] == states)
         if original_group is not None: require(cgroup_empty(original_group))
     else:
         require(cgroup_empty(original_group))
         for unit, row in zip(units, states):
-            if row.get('unitType') == 'path': require(prove_unit_empty(unit) == row)
+            if row.get('unitType') == 'path': require(prove_unit_empty(unit, bindings) == row)
     return states
 
 
@@ -556,7 +624,7 @@ def cancel_announced(request):
         quiet_path = directory / (key + '.quiescent.json')
         if os.path.lexists(receipt_path):
             receipt = json.loads(regular(receipt_path, 0o600)); validate_cancellation_reply(receipt, request)
-            require(masked(units)); quiet_units(units, receipt['originalControlGroup'], receipt['schema'] == EMPTY_CANCEL_SCHEMA)
+            require(masked(units)); quiet_units(units, receipt['originalControlGroup'], receipt['schema'] == EMPTY_CANCEL_SCHEMA, receipt.get('unitCgroups'))
             require(container_identity(request) == receipt['container']); health_pair(request)
             return receipt
         for unit in units: own_wants_edge(unit)
@@ -571,6 +639,11 @@ def cancel_announced(request):
             require(state['ActiveState'] in {'active', 'activating'} and INVOCATION_PATTERN(state['InvocationID']))
             if state['MainPID'] == '0':
                 empty_retry_admission(units[0], state, key, evidence)
+                unit_cgroups = {}
+                for service in units[:2]:
+                    context = unit_snapshot(service, service_context=True)
+                    require(context['MainPID'] == '0' and context['ControlPID'] == '0')
+                    unit_cgroups[service] = configured_service_cgroup(service, context)
                 for unit in units[1:]:
                     row = prove_unit_empty(unit)
                     require(row['ActiveState'] in {'inactive', 'failed'})
@@ -578,7 +651,7 @@ def cancel_announced(request):
                 health_pair(request); empty_retry_admission(units[0], state, key, evidence)
                 intent = {'schema': EMPTY_CANCEL_SCHEMA, 'admission': 'positive-empty-auto-restart',
                           'request': request, 'container': container, 'evidence': evidence,
-                          'originalUnit': state, 'originalProcess': None, 'originalChild': None, 'stopContract': stop_contract}
+                          'originalUnit': state, 'originalProcess': None, 'originalChild': None, 'stopContract': stop_contract, 'unitCgroups': unit_cgroups}
             else:
                 parent = process(int(state['MainPID']))
                 require(bash_command(parent['argv'], [str(PARENT / 'engine-release-unit-wrapper-v1.sh'), 'start', key]))
@@ -603,18 +676,23 @@ def cancel_announced(request):
         allowed |= {'engine-intake-requests/' + key + '.' + suffix for suffix in ('request', 'intent')}
         empty_admission = intent.get('schema') == EMPTY_CANCEL_SCHEMA
         schema = intent['schema']
-        require(set(intent) == {'schema', 'request', 'container', 'evidence', 'originalUnit', 'originalProcess', 'originalChild', 'stopContract'} | ({'admission'} if empty_admission else set())
+        require(set(intent) == {'schema', 'request', 'container', 'evidence', 'originalUnit', 'originalProcess', 'originalChild', 'stopContract'} | ({'admission', 'unitCgroups'} if empty_admission else set())
                 and schema in {CANCEL_SCHEMA, EMPTY_CANCEL_SCHEMA})
         if empty_admission:
             require(intent['admission'] == 'positive-empty-auto-restart' and intent['originalProcess'] is None and intent['originalChild'] is None)
             require(intent['originalUnit']['MainPID'] == '0' and intent['originalUnit']['SubState'] == 'auto-restart')
+        bindings = intent.get('unitCgroups') if empty_admission else None
+        if empty_admission:
+            require(isinstance(bindings, dict) and set(bindings) == set(units[:2]))
+            for service, group in bindings.items():
+                require(isinstance(group, str) and group.startswith('/system.slice/') and group.endswith('/'+service) and '..' not in group.split('/'))
         original_group = intent['originalUnit']['ControlGroup'] or (None if empty_admission else '')
         require(set(intent['evidence']['originals']) <= allowed and all(re.fullmatch('[0-9a-f]{64}', value) for value in intent['evidence']['originals'].values()))
         if empty_admission and not os.path.lexists(issued_path):
             require(key == '41177442979-1' and 'engine-release-requests/'+key+'.awaiting-certificate' not in intent['evidence']['originals'])
             require(announcement_evidence(request) == intent['evidence'])
             require(container_identity(request) == intent['container']); health_pair(request)
-            loaded_stop_contract(units[0], key, allow_masked=masked(units))
+            loaded_stop_contract(units[0], key, allow_masked=masked(units), bindings=bindings)
             # Mask only. Even a successor racing this point is never signalled.
             for unit in units:
                 path = SYSTEMD / unit
@@ -623,7 +701,7 @@ def cancel_announced(request):
             command(['systemctl', 'daemon-reload']); require(masked(units))
             quiescence_deadline = time.monotonic() + 60
             while True:
-                try: quiet_units(units, original_group, native_empty=True); break
+                try: quiet_units(units, original_group, native_empty=True, bindings=bindings); break
                 except (ValueError, OSError, subprocess.SubprocessError):
                     if time.monotonic() >= quiescence_deadline:
                         raise ValueError('Empty retry masked; natural quiescence remains unknown; no stop issued')
@@ -648,7 +726,7 @@ def cancel_announced(request):
                     raise ValueError('Original process is present or reused; cancellation remains unproven')
             require(announcement_evidence(request) == intent['evidence'])
             require(container_identity(request) == intent['container']); health_pair(request)
-            loaded_stop_contract(units[0], key, allow_masked=masked(units))
+            loaded_stop_contract(units[0], key, allow_masked=masked(units), bindings=bindings)
             for unit in units:
                 path = SYSTEMD / unit
                 if os.path.lexists(path): require(path.is_symlink() and os.readlink(path) == '/dev/null')
@@ -658,14 +736,14 @@ def cancel_announced(request):
             current = unit_snapshot(units[0])
             if not (current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'}):
                 raise ValueError('Changed invocation masked; waiting for natural quiescence without issuing stop')
-            quiet_units(units, original_group, empty_admission)
+            quiet_units(units, original_group, empty_admission, bindings)
             unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
         if not os.path.lexists(issued_path):
             current = unit_snapshot(units[0])
             already_quiet = current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'}
             if empty_admission: require(already_quiet)
             if already_quiet:
-                quiet_units(units, original_group, empty_admission)
+                quiet_units(units, original_group, empty_admission, bindings)
                 unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
             else:
                 require(announcement_evidence(request) == intent['evidence'])
@@ -680,7 +758,7 @@ def cancel_announced(request):
             command(['systemctl', 'daemon-reload'])
             require(masked(units))
             if already_quiet:
-                quiet_units(units, original_group, empty_admission)
+                quiet_units(units, original_group, empty_admission, bindings)
                 unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
             else:
                 loaded_stop_contract(units[0], key, allow_masked=True)
@@ -705,7 +783,7 @@ def cancel_announced(request):
         require(masked(units))
         deadline = quiescence_deadline if quiescence_deadline is not None else time.monotonic() + 60
         while True:
-            try: states = quiet_units(units, original_group, empty_admission); break
+            try: states = quiet_units(units, original_group, empty_admission, bindings); break
             except (ValueError, OSError, subprocess.SubprocessError):
                 if time.monotonic() >= deadline: raise ValueError('Cancellation stop outcome unknown; no repeat stop')
                 time.sleep(1)
@@ -729,12 +807,13 @@ def cancel_announced(request):
             if os.path.lexists(edge):
                 edge.unlink(); fsync_directory(edge.parent)
         require(all(not os.path.lexists(ROOT / relative) for relative in allowed))
-        require(masked(units)); quiet_units(units, original_group, empty_admission)
+        require(masked(units)); quiet_units(units, original_group, empty_admission, bindings)
         require(container_identity(request) == container); health_pair(request)
         receipt = {'schema': schema, 'request': request, 'result': 'cancelled-expired-announcement',
                    'servingInstanceUnchanged': True, 'originalTerminalEdgesRetired': True, 'quiescent': True,
                    'container': container, 'originalControlGroup': original_group,
                    'actualUnitStates': quiet['actualUnitStates'], 'stopDisposition': json.loads(regular(issued_path, 0o600))['stopDisposition'], 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+        if empty_admission: receipt['unitCgroups'] = bindings
         save_once(receipt_path, receipt)
         return receipt
     finally:

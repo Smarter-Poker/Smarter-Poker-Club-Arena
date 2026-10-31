@@ -539,16 +539,18 @@ class AnnouncedCancellation(unittest.TestCase):
                 marker = 'engine-release-requests/'+request['runKey']+'.awaiting-certificate'
                 evidence['originals'].pop(marker); (state/marker).unlink()
                 snapshot = module.unit_snapshot.side_effect
-                def retry_snapshot(unit):
+                def retry_snapshot(unit, service_context=False):
                     row = snapshot(unit)
                     if unit == units[0] and not control['stopped']:
                         row.update(MainPID='0', SubState='auto-restart', ControlGroup='')
                         if race and any(cmd[:2] == ['systemctl','daemon-reload'] for cmd in control['commands']):
                             row.update(MainPID='22', InvocationID='e'*32, SubState='start')
+                    if service_context: row.update(Slice='system-fixture.slice',ControlPID='0')
                     return row
                 with patch.object(module, 'unit_snapshot', side_effect=retry_snapshot), \
                      patch.object(module, 'empty_retry_admission') as admitted, \
-                     patch.object(module, 'prove_unit_empty', side_effect=retry_snapshot):
+                     patch.object(module, 'prove_unit_empty', side_effect=lambda unit, bindings=None: retry_snapshot(unit)), \
+                     patch.object(module, 'configured_service_cgroup', side_effect=lambda unit, context: '/system.slice/'+unit):
                     with self.assertRaises(ValueError): module.cancel_announced(request)
                     self.assertEqual(control['stopCount'], 0)
                     path = state/'engine-release-cancellations'/(request['runKey']+'.intent.json')
@@ -595,6 +597,50 @@ class AnnouncedCancellation(unittest.TestCase):
             module.cgroup_empty('/system.slice/exact.service')
         with patch.object(module.os,'lstat',side_effect=FileNotFoundError(module.errno.ENOENT,'gone')):
             self.assertTrue(module.cgroup_empty('/system.slice/exact.service'))
+
+    def test_gc_absence_requires_typed_manager_empty_and_actual_template_slice(self):
+        unit = module.cancel_units('41177442979-1')[1]
+        state={'MainPID':'0','ControlGroup':'','ActiveState':'inactive','SubState':'dead'}
+        slice_name='system-club\\x2darena\\x2dengine\\x2dintake\\x2dv1.slice'
+        context=state|{'ControlPID':'0','Slice':slice_name}
+        expected='/system.slice/'+slice_name+'/'+unit
+        def command(args, timeout=5):
+            if 'ListUnitsByPatterns' in args: return 'a(ssssssouso) 0'
+            if '-.slice' in args: return 'ControlGroup=/'
+            raise AssertionError(args)
+        with patch.object(module,'unit_snapshot',return_value=context), patch.object(module,'command',side_effect=command), patch.object(module,'cgroup_empty',return_value=True) as empty:
+            self.assertEqual(module.prove_unloaded_unit_empty(unit,state),state)
+            empty.assert_called_with(expected)
+        for field,value in [('Slice','system-foreign.slice'),('ControlPID','22'),('MainPID','22')]:
+            with self.subTest(field=field), patch.object(module,'unit_snapshot',return_value=context|{field:value}), patch.object(module,'command',side_effect=command), self.assertRaises(ValueError):
+                module.prove_unloaded_unit_empty(unit,state)
+        for reply in ['', 'a(ssssssouso) 1', 'as 0']:
+            def bad(args, timeout=5): return reply if 'ListUnitsByPatterns' in args else command(args,timeout)
+            with self.subTest(reply=reply), patch.object(module,'unit_snapshot',return_value=context), patch.object(module,'command',side_effect=bad), self.assertRaises(ValueError):
+                module.prove_unloaded_unit_empty(unit,state)
+
+    def test_masked_gc_proof_uses_retained_binding_without_reloading_configuration(self):
+        unit=module.cancel_units('41177442979-1')[0]
+        state={'MainPID':'0','ControlGroup':'','ActiveState':'inactive','SubState':'dead'}
+        binding={unit:'/system.slice/system-original.slice/'+unit}
+        with patch.object(module,'unit_snapshot',return_value=state), patch.object(module,'masked',return_value=True), \
+             patch.object(module,'manager_unit_absent',return_value=True), patch.object(module,'cgroup_empty',return_value=True) as empty, \
+             patch.object(module,'command',side_effect=AssertionError('No reload or command property guessing')):
+            self.assertEqual(module.loaded_stop_contract(unit,'41177442979-1',allow_masked=True,bindings=binding),{'maskedEmpty':True})
+            self.assertEqual(module.prove_unloaded_unit_empty(unit,state,binding),state)
+            empty.assert_called_with(binding[unit])
+        with patch.object(module,'manager_unit_absent',return_value=True), patch.object(module,'cgroup_empty',side_effect=PermissionError()), self.assertRaises(PermissionError):
+            module.prove_unloaded_unit_empty(unit,state,binding)
+
+    def test_unloaded_path_requires_exact_companion_service_empty(self):
+        unit=module.cancel_units('41177442979-1')[2]
+        state={'MainPID':None,'ControlGroup':None,'ActiveState':'inactive','unitType':'path'}
+        with patch.object(module,'prove_unit_empty',return_value={'ActiveState':'inactive'}) as companion, patch.object(module,'manager_unit_absent',return_value=True) as absent:
+            self.assertEqual(module.prove_unloaded_unit_empty(unit,state,{}),state)
+            companion.assert_called_once_with(unit[:-5]+'.service',{})
+            self.assertEqual(absent.call_count,2)
+        with patch.object(module,'prove_unit_empty',side_effect=PermissionError()), self.assertRaises(PermissionError):
+            module.prove_unloaded_unit_empty(unit,state,{})
 
     def test_empty_retry_admission_requires_exact_loaded_retry_contract(self):
         key='41177442979-1'; unit=module.cancel_units(key)[0]

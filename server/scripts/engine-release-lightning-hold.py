@@ -171,8 +171,13 @@ def https_transport(service_key: str, timeout_seconds: float) -> Transport:
     return call
 
 
-def request_id(run_id: str, action: str, cluster_id: str) -> str:
-    return str(uuid.uuid5(REQUEST_NAMESPACE, f"{run_id}:{action}:{cluster_id}"))
+def request_id(run_id: str, action: str, cluster_id: str, generation: int = 1) -> str:
+    """Stable per (run, hold generation, action, cluster). A release that waits
+    through more than one qualifying break holds Lightning once per break;
+    each hold is a new generation, because the door replays a repeated request
+    id instead of acting on it."""
+    suffix = "" if generation == 1 else f":{generation}"
+    return str(uuid.uuid5(REQUEST_NAMESPACE, f"{run_id}:{action}:{cluster_id}{suffix}"))
 
 
 def hold_reason(run_id: str, action: str) -> str:
@@ -212,14 +217,14 @@ def list_lightning_clusters(base_url: str, call: Transport) -> list[str]:
     return ids
 
 
-def operator_control(base_url: str, call: Transport, run_id: str, action: str, cluster_id: str) -> dict:
+def operator_control(base_url: str, call: Transport, run_id: str, action: str, cluster_id: str, generation: int = 1) -> dict:
     answer = call(
         f"{base_url}/rest/v1/rpc/fn_lightning_operator_control",
         {
             "p_cluster_id": cluster_id,
             "p_action": action,
             "p_reason": hold_reason(run_id, action),
-            "p_args": {"request_id": request_id(run_id, action, cluster_id)},
+            "p_args": {"request_id": request_id(run_id, action, cluster_id, generation)},
         },
     )
     if not isinstance(answer, dict) or not isinstance(answer.get("ok"), bool):
@@ -282,15 +287,22 @@ def pause(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
         return EXIT_PARTIAL if existing.get("refused") else EXIT_DONE
 
     clusters = list_lightning_clusters(base_url, call)
+    generation = 1
+    if existing is None:
+        previous = read_hold(hold_file.with_name(hold_file.name + ".released"))
+        if previous is not None and previous.get("run_id") == run_id:
+            generation = int(previous.get("generation", 1)) + 1
     record: dict = existing or {
         "schema": HOLD_SCHEMA,
         "run_id": run_id,
+        "generation": generation,
         "paused_at": now_iso(),
         "held": [],
         "already": [],
         "refused": {},
         "unknown": [],
     }
+    generation = int(record.get("generation", 1))
     # A retry after an UNKNOWN answer picks up where the first call stopped.
     answered = set(record["held"]) | set(record.get("already", [])) | set(record.get("refused", {}))
     record["unknown"] = []
@@ -299,7 +311,7 @@ def pause(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
             if cluster in answered:
                 continue
             try:
-                outcome = classify(operator_control(base_url, call, run_id, "pause", cluster))
+                outcome = classify(operator_control(base_url, call, run_id, "pause", cluster, generation))
             except Unknown:
                 # Everything paused so far is recorded before the refusal
                 # propagates, so resume can still release it.
@@ -337,8 +349,9 @@ def resume(base_url: str, call: Transport, run_id: str, hold_file: Path) -> int:
 
     released: list[str] = []
     refused: dict[str, str] = {}
+    generation = int(record.get("generation", 1))
     for cluster in record["held"]:
-        outcome = classify(operator_control(base_url, call, run_id, "resume", cluster))
+        outcome = classify(operator_control(base_url, call, run_id, "resume", cluster, generation))
         if outcome in ("acted", "already"):
             released.append(cluster)
         else:

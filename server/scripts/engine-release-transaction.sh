@@ -450,14 +450,26 @@ hold_lightning_when_counting_down() {
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in 200|503) ;; *) return 0 ;; esac
-  printf '%s' "$body" | python3 -c '
-import json, sys
+  # Only a break this release may actually use. The serving original still
+  # announces an hourly :55 break it cannot consume (the countdown refuses
+  # everything but the daily 04:00 certificate, a Deployment Recovery window
+  # or the one transition break), and a hold placed on those would park
+  # Lightning for hours while the release waits. Same predicate as the
+  # countdown, evaluated at the announcement instead of at admission.
+  printf '%s' "$body" | DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
+import json, os, sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
 try: d = json.load(sys.stdin)
 except Exception: raise SystemExit(1)
 m = d.get("maintenance") if isinstance(d, dict) else None
 if not isinstance(m, dict): raise SystemExit(1)
-ok = m.get("active") is True and m.get("phase") == "counting_down" and m.get("durableConfirmed") is True
-raise SystemExit(0 if ok else 1)
+if not (m.get("active") is True and m.get("phase") == "counting_down" and m.get("durableConfirmed") is True): raise SystemExit(1)
+local = datetime.now(ZoneInfo("America/Chicago"))
+daily = (local.hour == 3 and local.minute >= 58) or (local.hour == 4 and local.minute < 5)
+emergency = m.get("reason") == "Deployment Recovery"
+transition = os.environ.get("DAILY_TRANSITION") == "1" and m.get("schedule") is None and local.minute >= 55 and m.get("reason") == "Scheduled Engine Maintenance"
+raise SystemExit(0 if (daily or emergency or transition) else 1)
 ' 2>/dev/null || return 0
   set +e
   timeout --signal=TERM --kill-after=2s 60s \
@@ -472,6 +484,28 @@ raise SystemExit(0 if ok else 1)
   return 0
 }
 
+# A qualifying break that passed without a cutover: give Lightning back now,
+# and let the next qualifying break place a fresh hold (new request ids).
+release_lightning_hold_if_break_over() {
+  local response http_code body
+  [ "$LIGHTNING_HOLD_PLACED" = 1 ] || return 0
+  response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+    http://127.0.0.1:8080/health 2>/dev/null)" || return 0
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in 200|503) ;; *) return 0 ;; esac
+  printf '%s' "$body" | python3 -c '
+import json, sys
+try: d = json.load(sys.stdin)
+except Exception: raise SystemExit(1)
+m = d.get("maintenance") if isinstance(d, dict) else None
+raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get("active") is not True else 1)
+' 2>/dev/null || return 0
+  release_lightning_hold 0
+  LIGHTNING_HOLD_PLACED=0
+  return 0
+}
+
 # Release the hold after the thaw, on every exit path. Resuming while the
 # platform is still frozen would only be refused, so this waits for the
 # serving engine to report the break over, bounded by the latest known break
@@ -479,12 +513,16 @@ raise SystemExit(0 if ok else 1)
 # is retried three times; a hold that still cannot be released stays on disk
 # for engine-release-recover.sh, and says so.
 release_lightning_hold() {
-  local break_end wait_until response http_code body attempt rc
+  local exit_code="${1:-0}" break_end wait_until response http_code body attempt rc
   [ -e "$LIGHTNING_HOLD_FILE" ] || return 0
   break_end="${BREAK_END_EPOCH:-0}"
   [ "${LEGACY_ENTRY_BREAK_END_EPOCH:-0}" -le "$break_end" ] || break_end="$LEGACY_ENTRY_BREAK_END_EPOCH"
   wait_until=$(( break_end + 90 ))
   [ "$wait_until" -le $(( $(date +%s) + 600 )) ] || wait_until=$(( $(date +%s) + 600 ))
+  # A signalled exit (systemd stop: TERM/HUP -> 75, INT -> 130) has 330 s before
+  # SIGKILL; it waits at most two minutes and then asks anyway - a refusal
+  # keeps the hold on disk for the retry or the fence.
+  case "$exit_code" in 75|130) [ "$wait_until" -le $(( $(date +%s) + 120 )) ] || wait_until=$(( $(date +%s) + 120 )) ;; esac
   while [ "$(date +%s)" -lt "$wait_until" ]; do
     response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
       http://127.0.0.1:8080/health 2>/dev/null)" || { sleep 5; continue; }
@@ -557,7 +595,7 @@ recover_on_exit() {
   elif [ "$rc" -ne 0 ] && [ "$MUTATION_STARTED" = 1 ]; then
     echo '[engine-release-transaction] WARN: deferred recovery to ExecStopPost because the engine lock is not held' >&2
   fi
-  release_lightning_hold
+  release_lightning_hold "$rc"
   if [ "$LOCK_HELD" = 1 ]; then
     flock -u 9
   fi
@@ -2356,6 +2394,7 @@ while :; do
   # ordinary one is admitted by the first certificate the engine can actually
   # present, which is never at t=0: see BREAK_CERTIFICATE_LAG_SECONDS.
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    release_lightning_hold_if_break_over
     hold_lightning_when_counting_down
     ENTRY_STARTED_MS="$(date +%s%3N)"
     LEGACY_ENTRY_DEADLINE_MS=$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))

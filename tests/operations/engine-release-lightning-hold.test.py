@@ -186,6 +186,25 @@ class LightningHoldTests(unittest.TestCase):
             hold.pause(BASE, door, "123-1", self.hold_file)
         self.assertFalse(self.hold_file.exists())
 
+    def test_a_second_hold_in_the_same_run_is_a_new_generation_with_new_request_ids(self):
+        # First break: held and released. Second qualifying break: a repeated
+        # request id would be replayed by the door (nothing paused), so the
+        # new hold carries generation 2 and different ids; resume matches.
+        hold.pause(BASE, FakeDoor([C1]), "123-1", self.hold_file)
+        hold.resume(BASE, FakeDoor([C1]), "123-1", self.hold_file)
+        door = FakeDoor([C1])
+        self.assertEqual(hold.pause(BASE, door, "123-1", self.hold_file), hold.EXIT_DONE)
+        self.assertEqual(self.read()["generation"], 2)
+        pauses = [p for _, p in door.calls if p is not None]
+        self.assertEqual(pauses[0]["p_args"]["request_id"], hold.request_id("123-1", "pause", C1, 2))
+        self.assertNotEqual(pauses[0]["p_args"]["request_id"], hold.request_id("123-1", "pause", C1, 1))
+        door2 = FakeDoor([C1])
+        self.assertEqual(hold.resume(BASE, door2, "123-1", self.hold_file), hold.EXIT_DONE)
+        resumes = [p for _, p in door2.calls if p is not None]
+        self.assertEqual(resumes[0]["p_args"]["request_id"], hold.request_id("123-1", "resume", C1, 2))
+        released = json.loads(self.hold_file.with_name(self.hold_file.name + ".released").read_text())
+        self.assertEqual(released["generation"], 2)
+
     def test_the_helper_never_reads_a_horse_flag(self):
         source = SCRIPT.read_text()
         self.assertNotIn("is_horse", source)

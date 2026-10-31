@@ -101,7 +101,9 @@ async function select<T>(table: string, query: string): Promise<T[]> {
 
 async function report(): Promise<void> {
   const sinceHours = Number(arg('--since-hours', '24'));
-  if (!Number.isFinite(sinceHours) || sinceHours <= 0 || sinceHours > 24 * 14) throw new Error('--since-hours must be 1..336');
+  // ~1,760 unfloored+floored play rows a day (measured 2026-10-31): a week
+  // stays inside the single 20,000-row play read.
+  if (!Number.isFinite(sinceHours) || sinceHours <= 0 || sinceHours > 24 * 7) throw new Error('--since-hours must be 1..168');
   const out = arg('--out', '/tmp/holdem-live-measure')!;
   const since = new Date(Date.now() - sinceHours * 3600000);
   const sinceDay = since.toISOString().slice(0, 10);

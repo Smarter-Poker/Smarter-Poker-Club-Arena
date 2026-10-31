@@ -601,6 +601,35 @@ it('targets three-run history and permits mandatory three while refusing mandato
   expect(selectNaturalMultiRunSubject(tables, rows).id).toBe('choice');
 });
 
+it('prefers the latest actual three-run opportunity over a stale larger count', () => {
+  const tables = [subject('stale', 6), subject('short-deck', 6), subject('flh', 9)];
+  const at = (id: string, two: number, three: number, created_at: string) =>
+    history(id, two, three).map((row) => ({ ...row, created_at }));
+  const rows = [
+    ...at('stale', 0, 2, '2026-10-31T14:28:49.348665Z'),
+    ...at('short-deck', 0, 1, '2026-10-31T15:51:29.372126Z'),
+    ...at('flh', 0, 1, '2026-10-31T15:51:17.500892Z'),
+    // Later two-run activity does not make the stale three-run sample recent.
+    ...at('stale', 1, 0, '2026-10-31T16:00:00Z'),
+  ];
+  expect(selectNaturalMultiRunSubject(tables, rows, [3]).id).toBe('short-deck');
+  // Missing or malformed dates retain the existing count-based tie break.
+  expect(
+    selectNaturalMultiRunSubject(
+      tables,
+      rows.map(({ created_at: _createdAt, ...row }) => row),
+      [3]
+    ).id
+  ).toBe('stale');
+  expect(
+    selectNaturalMultiRunSubject(
+      tables,
+      rows.map((row) => ({ ...row, created_at: 'not-a-timestamp' })),
+      [3]
+    ).id
+  ).toBe('stale');
+});
+
 it('natural timing forbids settled-choice overlays and keeps the full 4100ms winning-card results', () => {
   const w: any = {
     confirmations: {},
@@ -723,7 +752,7 @@ it('retains a natural three-run opportunity across provider queue time within th
   );
   expect(queries).toHaveLength(2);
   for (const query of queries) {
-    expect(query.get('select')).toBe('table_id,rit_boards');
+    expect(query.get('select')).toBe('table_id,rit_boards,created_at');
     expect(query.get('limit')).toBe('500');
     expect(query.get('created_at')).toBe('gte.2026-10-28T22:15:47.000Z');
   }

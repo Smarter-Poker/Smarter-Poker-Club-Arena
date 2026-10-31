@@ -25,7 +25,7 @@ def valid_result():
             'qualification':'synthetic-cardinality-and-memory-only', 'fixtureSHA256':'f'*64,
             'count':35000000, 'prototypeRestored':True, 'matched':11, 'node':'v22.23.2',
             'v8':'12.4.254.21-node.56', 'platform':'linux', 'arch':'x64',
-            'sourceSHA256':'4188fe96998d59bf5450d778a3a4f08f5bc3cd9dabc55ae1259e0066056f3ea6',
+            'sourceSHA256':'cbd7279fc6595a31bd2044769d2ad85684d63713351acd0bb602dbfcdbdce31e',
             'binarySHA256':'b'*64, 'before':{'used':3913011648, 'available':322107592,
             'process':50471874560}, 'queryMs':19000, 'fixtureMs':34000,
             'cgroupPeak':5*1024**3, 'maxRSSKiB':4000000,

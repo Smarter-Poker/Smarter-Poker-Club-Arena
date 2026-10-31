@@ -44,6 +44,10 @@ class Predicate final : public v8::QueryObjectPredicate {
             int64_t deadline)
       : context_(context), marker_(marker), deadline_(deadline) {}
   bool Filter(v8::Local<v8::Object> object) override {
+    // QueryObjects does not scope its second-pass predicate callbacks. Keep
+    // context/prototype traversal handles local to this visit. Matches are
+    // promoted by V8 after this boolean predicate returns.
+    v8::HandleScope handles(context_->GetIsolate());
     ++lastAttempt.predicateVisits;
     const auto now = Now();
     if (now >= deadline_) {

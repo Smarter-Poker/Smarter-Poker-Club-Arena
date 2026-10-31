@@ -53,7 +53,9 @@ function loadOnce(url: string): Promise<void> {
         return;
       }
       const done = () => resolve();
-      if (typeof img.decode === 'function') img.decode().then(done, done);
+      // A successful fetch is not a decoded image. Keep a rejected decode
+      // out of the session cache and let the existing bounded load retry it.
+      if (typeof img.decode === 'function') img.decode().then(done, reject);
       else done();
     };
     img.onerror = () => reject(new Error('image_failed'));

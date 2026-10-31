@@ -1205,7 +1205,8 @@ export class ScheduledTournamentService {
           }
           // A successful HTTP response can still mean the compare-and-set lost.
           if (
-            moved?.id !== t.id ||
+            !moved ||
+            moved.id !== t.id ||
             Date.parse(String(moved.start_time)) !== plan.newStart.getTime()
           )
             continue;
@@ -1227,7 +1228,8 @@ export class ScheduledTournamentService {
           );
           continue;
         }
-        if (renamed?.spawn_key !== plan.newKey || renamed.tournament_id !== t.id) continue;
+        if (!renamed || renamed.spawn_key !== plan.newKey || renamed.tournament_id !== t.id)
+          continue;
         claimedSet.delete(plan.oldKey);
         claimedSet.add(plan.newKey);
         console.log(

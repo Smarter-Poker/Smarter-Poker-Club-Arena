@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { browserStorage } from '../auth-fixture.mjs';
 import { collectPlayerUIWire } from './tournament-player-ui-wire.mjs';
+import { submitLegalAllInThroughUI } from './player-browser-input.mjs';
 import {
   playerUIRun,
   provePreActionThroughUI,
@@ -87,6 +88,7 @@ export async function runTournamentPlayerUI({ browser, ingress, observations }) 
         if (pending?.error) throw pending.error;
         if (pending?.done) {
           run.record(cohort.format, phase, pending.value);
+          if (phase === 'paid_rebuy_return') pendingActor.tableId = pending.value.tableId;
           phase =
             phase === 'call_any'
               ? 'call_amount'
@@ -197,27 +199,53 @@ export async function runTournamentPlayerUI({ browser, ingress, observations }) 
           // Positive native and current dealer chairs agree before each input.
           assert.equal(p.user_id, a.user.id);
           const allIn = phase === 'paid_rebuy_return' || phase === 'finish_report';
-          const control = a.page.locator(
-            allIn
-              ? '.action-btn--allin'
-              : phase === 'call_amount' && !pending
-                ? '.action-btn--raise'
-                : '.action-btn--call'
-          );
-          if (await control.isVisible()) {
-            acted.add(turn);
-            await a.page.bringToFront();
-            await control.click({ timeout: 3000 });
-            if (!allIn && phase === 'call_amount' && !pending)
-              await a.page.locator('.raise-confirm').click({ timeout: 3000 });
-          } else {
-            const check = a.page.getByRole('button', { name: 'Check', exact: true });
-            if (await check.isVisible()) {
-              acted.add(turn);
-              await a.page.bringToFront();
-              await check.click({ timeout: 3000 });
+          const isCurrentTurn = () => {
+            const current = a.wire.state(a.tableId),
+              player = current?.players?.find((p) => p.user_id === a.user.id);
+            return Boolean(
+              current &&
+              current.current_player === a.user.id &&
+              player &&
+              player.stack > 0 &&
+              !player.is_folded &&
+              !player.is_all_in &&
+              `${a.tableId}:${current.hand_number}:${current.turn_start_time_ms}:${a.user.id}` ===
+                turn
+            );
+          };
+          await a.page.bringToFront();
+          let submitted = false;
+          if (allIn) submitted = await submitLegalAllInThroughUI({ page: a.page, isCurrentTurn });
+          else {
+            const raise = phase === 'call_amount' && !pending;
+            const control = a.page.locator(
+              raise ? '.action-panel .action-btn--raise' : '.action-panel .action-btn--call'
+            );
+            if ((await control.isVisible()) && (await control.isEnabled()) && isCurrentTurn()) {
+              await control.click({ timeout: 3000 });
+              if (raise) {
+                const confirm = a.page.locator('.action-panel .raise-confirm');
+                if ((await confirm.isVisible()) && (await confirm.isEnabled()) && isCurrentTurn()) {
+                  await confirm.click({ timeout: 3000 });
+                  submitted = true;
+                }
+              } else submitted = true;
+            } else {
+              for (const selector of ['.action-btn--call', '.action-btn--check']) {
+                const fallback = a.page.locator(`.action-panel ${selector}`);
+                if (
+                  (await fallback.isVisible()) &&
+                  (await fallback.isEnabled()) &&
+                  isCurrentTurn()
+                ) {
+                  await fallback.click({ timeout: 3000 });
+                  submitted = true;
+                  break;
+                }
+              }
             }
           }
+          if (submitted) acted.add(turn);
         }
         if (phase === 'finish_report' && Date.now() - lastNative >= 3000) {
           lastNative = Date.now();

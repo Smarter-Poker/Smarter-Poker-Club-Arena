@@ -36,3 +36,37 @@ and financial observer contracts pass. Changed JavaScript and Python syntax
 pass. Full-schema connected execution remains unverified pending an admitted
 immutable runtime and exact engine/web/schema input tuple. No live pass,
 protected delivery or publication is claimed by these contract results.
+
+## Native control dependency closure
+
+Native CI41218460465 built the image but refused observation bridge startup.
+The closed smoke helper list in `smoke-image.sh` and the corresponding source
+hash inventory in `ci/fixture-smoke.py` still contained only the original three
+helpers; the protocol's new `tournament-player-observations.mjs` import was
+missing from that isolated mount. All five native cleanup observations passed.
+
+An actual isolated staging/import regression reproduces ERR_MODULE_NOT_FOUND
+before repair. Add only that exact reviewed fourth helper to both closed
+allowlists, preserving read-only committed bytes, source hashes, separate
+identity and the container/network/image cleanup. A second assertion requires
+the native source-hash inventory to equal the actual staged helper list.
+The native retry remains required after this source correction; no application
+qualification or previously failed native result is represented as passing.
+
+## Normal NLH browser all-in input
+
+The first driver selected only `.action-btn--allin` in its rebuy/finish
+phases. Actual ActionPanel renders that main button only when a stack cannot
+make a normal raise; ordinary NLH instead requires opening the raise panel
+and clicking its immediate `.raise-preset--allin` control. The driver could
+therefore keep checking and never create its required bust or finish.
+
+Use one shared NLH browser-input helper for the actual enabled/visible main
+All In or Raise-panel All In paths. Retain legal Call/Check fallback and
+recheck the current turn before every click. Return true only after actual
+game input, so the driver records an acted turn after successful submission,
+never after merely opening a panel. Focused regression uses the real rendered
+ActionPanel with existing component facilities; it is not runtime acceptance.
+After a verified paid rebuy, subsequent inputs use the exact destination table
+already proved by the automatic URL transition, native receipt and occupied
+hero chair, including a legitimate return onto another tournament table.

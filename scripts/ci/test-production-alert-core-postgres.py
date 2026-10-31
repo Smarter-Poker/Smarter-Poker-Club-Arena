@@ -58,6 +58,7 @@ CHECKOUT_INPUTS.update({
  'hand_refusal_migration':'supabase/migrations/20261029205730_hand_commit_detector_requires_exact_original_outcome.sql',
  'hand_identity_preimages':'scripts/qualification/fixtures/hand-history-incident-identity/preimages.sql',
  'hand_identity_migration':'supabase/migrations/20261029180738_hand_history_incidents_retain_exact_original_identity.sql',
+ 'legacy_batch_migration':'supabase/migrations/20261031154921_legacy_incident_batches_close_only_after_their_complete_sour.sql',
  'storm_component':'supabase/components/tournament-finish-storm-members.sql',
  'storm_bridge':'scripts/qualification/fixtures/tournament-finish-storm/current-bridge.sql',
  'storm_preimages':'scripts/qualification/fixtures/tournament-finish-storm/preimages.sql',

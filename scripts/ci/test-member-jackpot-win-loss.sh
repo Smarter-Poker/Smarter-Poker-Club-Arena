@@ -30,3 +30,7 @@ echo 'MEMBER_JACKPOT PASS: before/after, all readers, retained ownership, DST/cu
 "${psql[@]}" -f "$repo/supabase/migrations/20261031044413_preserve_every_paid_jackpot_reporting_owner_and_wallet_recei.sql"
 "${psql[@]}" -f "$fixture/everyone-assertions.sql"
 echo 'EVERYONE_JACKPOT PASS: Main/Mini, all three recipient roles, seat/wallet, exact historical wallet receipt, display-only seed exclusion, immutable owner/variant, duplicate/rollback, six private signals'
+
+"${psql[@]}" -f "$repo/supabase/migrations/20261031053510_keep_current_jackpot_results_visible_when_historical_ownersh.sql"
+"${psql[@]}" -f "$fixture/current-period.sql"
+echo 'CURRENT_JACKPOT PASS: old client refusal, new client partial totals, current windows preserved, no fabricated history or repayment'

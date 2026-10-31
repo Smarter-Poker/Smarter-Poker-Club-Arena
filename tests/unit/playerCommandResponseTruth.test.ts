@@ -220,3 +220,32 @@ it('preserves an explicit export authorization refusal', async () => {
   );
   expect(state.fetch).toHaveBeenCalledTimes(1);
 });
+
+it('preserves explicit incomplete historical results while decoding current figures', async () => {
+  answer({ ...detail, stats: { ...detail.stats, total_winnings: null } });
+  await expect(ClubRosterService.getMemberDetail('club', 'player')).resolves.toMatchObject({
+    stats: { total_winnings: null, mtt_winnings: 0 },
+  });
+  expect(new Headers(state.fetch.mock.calls[0][1].headers).get('x-client-info')).toBe(
+    'club-arena-member-results/2'
+  );
+  answer({ ...statistics, net: null });
+  await expect(ClubRosterService.getMemberStatistics('club', 'player')).resolves.toMatchObject({
+    net: null,
+    hands: 0,
+  });
+  answer({
+    today: { cash: 25, mtt: -5, net: 20 },
+    week: { cash: 25, mtt: -5, net: 20 },
+    month: { cash: 25, mtt: -5, net: 20 },
+    overall: { cash: null, mtt: -5, net: null },
+  });
+  await expect(ClubRosterService.getMemberWinLoss('club', 'player')).resolves.toMatchObject({
+    today: { net: 20 },
+    overall: { cash: null, net: null, mtt: -5 },
+  });
+  answer([{ user_id: 'player', cash: null, mtt: -5, net: null, fees: 0, downline_fees: 0 }]);
+  expect(
+    (await ClubRosterService.getMembersWinLoss('club', ['player'], 'overall')).get('player')?.net
+  ).toBeNull();
+});

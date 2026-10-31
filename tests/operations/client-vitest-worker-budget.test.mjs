@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { clientVitestWorkerBudget as budget } from '../../scripts/ci/client-vitest-worker-budget.mjs';
 
 test('requested width uses public VM capacity and clamps smaller private allocations', () => {
+  for (const cpus of [1, 2, 4, 8, 16])
+    assert.equal(budget({ requested: '8', ci: true, availableCpus: cpus }), Math.min(8, cpus));
   assert.equal(budget({ requested: '4', ci: true, availableCpus: 4 }), 4);
   assert.equal(budget({ requested: '4', ci: true, availableCpus: 2 }), 2);
   assert.equal(budget({ requested: '4', ci: true, availableCpus: 1 }), 1);
@@ -85,5 +87,6 @@ test('the real Vitest config enforces the budget without starting any test worke
   const cpus = availableParallelism();
   assert.equal(readConfig({ requested: String(cpus + 100), ci: true }), cpus);
   assert.equal(readConfig({ requested: '2', ci: true }), Math.min(2, cpus));
+  assert.equal(readConfig({ requested: '8', ci: true }), Math.min(8, cpus));
   assert.equal(readConfig({ requested: undefined, ci: false }), null);
 });

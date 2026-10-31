@@ -484,11 +484,64 @@ test.describe('the mobile lobby chrome on production', () => {
         timeout: 20_000,
       });
       await expect(actionBar).toBeVisible();
+      const lobbyTab = actionBar.locator('[data-tabid^="lobby:"]');
+      await expect(lobbyTab).toHaveCount(1);
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      // The former restore only stole focus when the remembered table index
+      // was greater than zero. Put that observer behind the active lobby
+      // through the real tab menu so this case exercises that exact branch.
+      const lobbyId = await lobbyTab.getAttribute('data-tabid');
+      const observerId = new URL(tableUrl).pathname.split('/').pop()!;
+      await lobbyTab.click({ button: 'right' });
+      await page.getByRole('button', { name: 'Move Left', exact: true }).click();
+      await expect(actionBar.locator('[data-tabid]').nth(0)).toHaveAttribute(
+        'data-tabid',
+        lobbyId!
+      );
+      await expect(actionBar.locator('[data-tabid]').nth(1)).toHaveAttribute(
+        'data-tabid',
+        observerId
+      );
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      const ownerId = await readLobbyPreferenceOwner(page);
+      const seatRefresh = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname.endsWith('/table_seats') &&
+          url.searchParams.get('select') === 'table_id' &&
+          url.searchParams.get('user_id') === `eq.${ownerId}`
+        );
+      });
+      // Exercise the real visibility recovery read, without a seat or purchase.
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      const refreshed = await seatRefresh;
+      expect(refreshed.ok(), 'the owned seat refresh failed').toBe(true);
+      expect(await refreshed.json(), 'the certificate identity must stay an observer').toEqual([]);
+      // The former focus theft ran 250ms after this authoritative response.
+      // Observe past that known deadline, then require the same details page.
+      await page.waitForTimeout(500);
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      await expect(
+        page.locator('.tournament-details[data-lobby-tab="true"]:visible')
+      ).toBeVisible();
+      await testInfo.attach('plus-page-after-seat-refresh', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
       expect(page.url()).toBe(tableUrl);
       expect(
         routeTrace.every((url) => url === tableUrl),
         'Details left the running table route'
       ).toBe(true);
+      // Only the player's explicit Close Lobby gesture removes this page.
+      await lobbyTab.click({ button: 'right' });
+      await page.getByRole('button', { name: 'Close Lobby', exact: true }).click();
+      await expect(actionBar.locator('[data-tabid^="lobby:"]')).toHaveCount(0);
+      await expect(actionBar.locator(`[data-tabid="${observerId}"]`)).toHaveAttribute(
+        'aria-current',
+        'true'
+      );
       expect(participation, 'spectator navigation attempted participation').toEqual([]);
     } finally {
       page.off('framenavigated', observeRoute);

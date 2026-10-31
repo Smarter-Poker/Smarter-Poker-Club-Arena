@@ -15,5 +15,15 @@ describe('Lightning anchor ordering native qualification is enforced', () => {
     expect(native).toContain('pg_blocking_pids(mpid)');
     expect(native).toContain('result.returncode == 0');
     expect(native).toContain("result.stdout.count('PASS anchor:') == 3");
+    expect(native).toContain("result.stdout.count('PASS pass:') == 4");
+    expect(native).toContain('lightning-matcher-pass-source.sql');
+    expect(native).toContain('lightning-matcher-pass-race.sql');
+    const pass = read('scripts/ci/fixtures/lightning-matcher-pass-race.sql');
+    expect(pass).toContain("harness.pass_race('before',true)");
+    expect(pass).toContain("harness.pass_race('after',false)");
+    expect(pass).toContain('harness.parallel_race()');
+    expect(pass).toContain('pg_blocking_pids(spid)');
+    expect(pass).toContain('disjoint settlers did not both pass shared admission');
+    expect(pass).toContain("(r-'replay') IS DISTINCT FROM first_result");
   });
 });

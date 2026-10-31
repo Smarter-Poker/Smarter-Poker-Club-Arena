@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import {
   PRIVATE_RECORD_CLIENT_TITLE,
+  PRIVATE_RECORD_ROSTER_READ_MS,
+  PRIVATE_RECORD_CASE_MS,
+  PRIVATE_RECORD_OBSERVATION_LIMIT,
   snapshotPrivateRecordFixtureProfile,
   readPrivateRecordFixturePlayerNumber,
   assertPrivateRecordFixtureRoster,
@@ -19,7 +22,7 @@ const ENGINE = 'wss://engine.smarter.poker/ws/channel';
 const images = ['/avatars/table/free_ninja@2x.webp', '/avatars/table/free_shark@2x.webp'];
 
 test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
-  test.setTimeout(420_000);
+  test.setTimeout(PRIVATE_RECORD_CASE_MS);
   expect(
     process.env.E2E_PRIVATE_RECORD_CLIENT_PROOF,
     'Explicit admitted provider proof required'
@@ -67,7 +70,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
             !/^(?:realtime:)?(?:member-record:|club-roster:)/.test(frame.topic)
           )
             return;
-          if (paid.length >= 512) {
+          if (paid.length >= PRIVATE_RECORD_OBSERVATION_LIMIT) {
             observationsOverflow = true;
             return;
           }
@@ -113,11 +116,11 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     socket.on('framereceived', ({ payload }) => {
       try {
         const frame = JSON.parse(String(payload));
-        if (frames.length >= 512) observationsOverflow = true;
+        if (frames.length >= PRIVATE_RECORD_OBSERVATION_LIMIT) observationsOverflow = true;
         if (
           ['PRIVATE_RECORD_STATUS', 'PRIVATE_RECORD_CHANGED'].includes(frame.type) &&
           typeof frame.topic === 'string' &&
-          frames.length < 512
+          frames.length < PRIVATE_RECORD_OBSERVATION_LIMIT
         )
           frames.push({
             socket: id,
@@ -473,7 +476,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
             return false;
           }
         },
-        { timeout: 45_000 }
+        { timeout: roster ? PRIVATE_RECORD_ROSTER_READ_MS : 45_000 }
       );
       void responseRead.catch(() => {});
       await page.evaluate(

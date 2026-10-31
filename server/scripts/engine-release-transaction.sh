@@ -2065,7 +2065,14 @@ if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announce
   ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" admit \
     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
     --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
-  ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expiresEpoch"])')"
+  # An announced owner whose window has since expired reads 'legacy' from a
+  # fresh admit (an expired floor is no floor, 2026-10-30). Its announcement
+  # was made under that window, so it ends here by name rather than carrying
+  # on as a routine release that never announced.
+  if [ "$FLOOR_DISPOSITION" = announced ] && [ "$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("schema",""))')" = legacy-no-activation-floor ]; then
+    die 'this run announced inside an owner window that has since expired; its runtime entry is refused'
+  fi
+  ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("expiresEpoch", 0))')"
   ACTIVATION_FLOOR_OWNER_WINDOW="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerWindowId") or "")')"
 fi
 

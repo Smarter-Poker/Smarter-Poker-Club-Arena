@@ -1,3 +1,5 @@
+DO $$ BEGIN IF (SELECT count(*) FROM signals)<>1 THEN RAISE EXCEPTION 'Cutover did not invalidate existing record'; END IF; END $$;
+TRUNCATE signals;
 DO $$
 DECLARE c uuid:='10000000-0000-0000-0000-000000000001'; u uuid:='20000000-0000-0000-0000-000000000001';
  d jsonb; s jsonb; r record; period text; start_at timestamptz; end_at timestamptz; payout uuid; i int:=0;

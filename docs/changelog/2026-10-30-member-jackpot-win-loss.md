@@ -18,3 +18,8 @@ new engine contract or client build.
 
 Validation and delivery status are retained in the task checkpoint; source is
 not installation proof.
+
+The installation also invalidates existing recipient records once. Older paid
+receipts with no recorded funding/hand/rake ownership report unavailable data
+instead of inventing a club or silently treating the award as zero. This is an
+existing historical evidence gap, separate from Burls' fully witnessed award.

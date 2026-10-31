@@ -1,9 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 
 const migration = '20261031040028_member_win_loss_includes_paid_jackpot_shares.sql';
 const read = (path: string) => readFileSync(path, 'utf8');
 describe('paid jackpot member reporting qualification', () => {
+  it.each([
+    'scripts/ci/test-member-jackpot-win-loss.sh',
+    'tests/fixtures/member-jackpot-win-loss/assertions.sql',
+  ])('qualifies changes to %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
   it('runs the native regression in the existing required Data Console verdict', () => {
     expect(read('scripts/ci/test-data-console-postgres-contracts.sh')).toContain(
       'bash "$repo/scripts/ci/test-member-jackpot-win-loss.sh"'

@@ -109,4 +109,13 @@ BEGIN
   PERFORM public.fn_publish_member_record_user(p_user_id);
   RETURN true;$new$);
 END $patch$;
+-- Existing open records must see this reader cutover without another payout.
+-- One finite invalidation of affected members; no data repair or new scheduler.
+DO $activate$
+DECLARE recipient uuid;
+BEGIN
+ FOR recipient IN SELECT DISTINCT user_id FROM public.bbj_payout_recipients LOOP
+  PERFORM public.fn_publish_member_record_user(recipient);
+ END LOOP;
+END $activate$;
 COMMIT;

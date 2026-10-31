@@ -34,7 +34,8 @@ The projection reads stored original components from the unchanged canonical
 refund sources; it does not derive new payout ratios or select another payer.
 For chips, match original entitlement/user/charge/wallet club and stored gross,
 prize, bounty, fee against actual canonical refund tranches. For Diamonds, match
-original charge/user against actual canonical refund ledger components. Stable
+original charge/user against actual canonical refund ledger components. Money values use value-preserving trim_scale normalization without rounding;
+original bigint charge IDs are strings so private JSON clients cannot round them. Stable
 hashes exclude generated refund/journal/obligation IDs and timestamps. The private
 basis digest is the exact SHA256 of PostgreSQL's JSONB projection text. Copy only
 that digest and the canonical quiescence money hash to the manual workflow inputs.
@@ -49,9 +50,8 @@ network. The execution workspace uses exclusive durable attempt creation. No
 automatic retry exists. New dispatches are distinct explicit owner operations;
 an unknown prior attempt must first be resolved, never blindly redispatched.
 
-The wrapper invokes the unchanged canonical settlement, compares original to actual
-posted economics, and calls the same canonical idempotent path again to confirm an
-identical receipt. It then raises uncaught SQLSTATE `PZ069`, fixed marker
+The wrapper invokes the unchanged canonical settlement exactly once, compares
+original to actual posted economics, then raises uncaught SQLSTATE `PZ069`, fixed marker
 `ORIGINAL69_PROBE_ROLLBACK_V1`. This aborts the entire service transaction. Expected
 HTTP400 is not sufficient alone: the strict bounded aggregate DETAIL must match
 scope/hash/nonce/canonical/economic identity, a fresh service read must report that
@@ -80,3 +80,8 @@ The maintained required accounting shard runs the focused socket-only PG17
 qualification and Node privacy/transport cases. Those use synthetic local data and
 local simulated request auth context with the real unchanged canonical financial
 components; they do not prove production service authorization or live rollback.
+
+Idempotence replay is qualified only in the disposable local fixture. Production
+performs exactly one canonical settlement invocation, then the uncaught rollback.
+The state read uses indexed exact canonical entitlement/charge-derived idempotency
+keys and entitlement-to-tranche joins; no global prefix fingerprint or new index.

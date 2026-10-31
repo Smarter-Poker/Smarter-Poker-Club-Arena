@@ -35,10 +35,10 @@ export function validateRollback(body,intent) {
   keys(body,['code','details','hint','message']);
   demand(body.code === 'PZ069' && body.message === 'ORIGINAL69_PROBE_ROLLBACK_V1' && body.hint === null && typeof body.details === 'string' && Buffer.byteLength(body.details)<=4096);
   const d=JSON.parse(body.details);
-  keys(d,['schema','operation_id','tournament_id','nonce','probe_xid','money_hash','canonical_md5','state_sha256','asset','source_player_count','refunded_count','refund_line_count','total_refunded','fees_reversed','refund_prize','refund_bounty','refund_fee','economic_sha256','canonical_replay_equal']);
+  keys(d,['schema','operation_id','tournament_id','nonce','probe_xid','money_hash','canonical_md5','state_sha256','asset','source_player_count','refunded_count','refund_line_count','total_refunded','fees_reversed','refund_prize','refund_bounty','refund_fee','economic_sha256']);
   demand(d.schema === 'original69-probe-rollback/v1' && d.operation_id === operation && d.tournament_id === intent.tournament_id && d.nonce === intent.nonce);
   demand(d.money_hash === intent.money_hash && d.canonical_md5 === md5 && d.economic_sha256 === intent.expected_economic_sha256 && hex.test(d.state_sha256));
-  demand(/^[0-9]{1,20}$/.test(d.probe_xid) && ['chips','diamonds'].includes(d.asset) && d.canonical_replay_equal === true);
+  demand(/^[0-9]{1,20}$/.test(d.probe_xid) && ['chips','diamonds'].includes(d.asset));
   for (const k of ['source_player_count','refunded_count','refund_line_count']) demand(Number.isSafeInteger(d[k]) && d[k]>=0);
   demand(d.refunded_count <= d.source_player_count);
   for (const k of ['total_refunded','fees_reversed','refund_prize','refund_bounty','refund_fee']) demand(typeof d[k] === 'string' && decimal.test(d[k]));

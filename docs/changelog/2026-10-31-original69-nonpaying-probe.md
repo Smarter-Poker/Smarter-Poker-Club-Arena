@@ -3,7 +3,7 @@
 The existing operator control can commit the canonical original-charge refund,
 but management MCP auth cannot call that service-only function and separate MCP
 BEGIN/ROLLBACK calls do not enclose it. A fixed service-only wrapper now performs
-the unchanged canonical settlement and idempotent replay, verifies original stored
+the unchanged canonical settlement, verifies original stored
 economics against the actual posted components, then always raises an uncaught
 exception. Its entire transaction rolls back. There is no new payer or canonical
 settlement modification.
@@ -21,3 +21,8 @@ economic digest, while public evidence contains strict bounded aggregates only.
 The existing original-recovery helper is unchanged by this follow-up; its separate
 privacy correction has its own source owner. Migration installation and any actual
 service probe remain with the coordinating original69 operation owner.
+
+Idempotence replay is qualified only in the disposable local fixture. Production
+performs exactly one canonical settlement invocation, then the uncaught rollback.
+The state read uses indexed exact canonical entitlement/charge-derived idempotency
+keys and entitlement-to-tranche joins; no global prefix fingerprint or new index.

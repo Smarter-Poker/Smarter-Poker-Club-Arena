@@ -22,14 +22,14 @@ BEGIN
  IF NOT smarter_private.original69_probe_member(p_tournament_id) THEN RAISE EXCEPTION 'original69_scope_required' USING ERRCODE='22023';END IF;
  IF public.fn_poker_diamond_tournament(p_tournament_id) THEN
   IF p_receipt IS NULL THEN
-   SELECT coalesce(jsonb_agg(jsonb_build_object('user_id',c.user_id,'source_charge_id',c.id,'source_entitlement_id',NULL,'wallet_club_id',NULL,
-    'amount',c.amount::numeric::text,'prize',c.prize_part::numeric::text,'bounty',c.bounty_part::numeric::text,'fee',c.fee_part::numeric::text) ORDER BY c.user_id,c.id),'[]') INTO result
+   SELECT coalesce(jsonb_agg(jsonb_build_object('user_id',c.user_id,'source_charge_id',c.id::text,'source_entitlement_id',NULL,'wallet_club_id',NULL,
+    'amount',trim_scale(c.amount::numeric)::text,'prize',trim_scale(c.prize_part::numeric)::text,'bounty',trim_scale(c.bounty_part::numeric)::text,'fee',trim_scale(c.fee_part::numeric)::text) ORDER BY c.user_id,c.id),'[]') INTO result
    FROM public.poker_diamond_tournament_ledger c WHERE c.tournament_id=p_tournament_id AND c.kind IN('entry','rebuy','reentry','addon')
    AND NOT EXISTS(SELECT 1 FROM public.poker_diamond_tournament_ledger r WHERE r.custody_id=c.custody_id AND r.kind='refund'
     AND coalesce(r.request->>'abort_operation_id','')<>'d44c4440-2911-430c-8ee7-376611ef3f38');
   ELSE
-   SELECT coalesce(jsonb_agg(jsonb_build_object('user_id',r.user_id,'source_charge_id',c.id,'source_entitlement_id',NULL,'wallet_club_id',NULL,
-    'amount',r.amount::numeric::text,'prize',r.prize_part::numeric::text,'bounty',r.bounty_part::numeric::text,'fee',r.fee_part::numeric::text) ORDER BY r.user_id,c.id),'[]') INTO result
+   SELECT coalesce(jsonb_agg(jsonb_build_object('user_id',r.user_id,'source_charge_id',c.id::text,'source_entitlement_id',NULL,'wallet_club_id',NULL,
+    'amount',trim_scale(r.amount::numeric)::text,'prize',trim_scale(r.prize_part::numeric)::text,'bounty',trim_scale(r.bounty_part::numeric)::text,'fee',trim_scale(r.fee_part::numeric)::text) ORDER BY r.user_id,c.id),'[]') INTO result
    FROM jsonb_array_elements(p_receipt->'financial'->'refunds') j
    JOIN public.poker_diamond_tournament_ledger r ON r.id=(j->>'ledger_id')::bigint AND r.tournament_id=p_tournament_id AND r.kind='refund'
    JOIN public.poker_diamond_tournament_ledger c ON c.id=(j->'charge_ledger_ids'->>0)::bigint AND c.tournament_id=p_tournament_id;
@@ -37,13 +37,13 @@ BEGIN
  ELSE
   IF p_receipt IS NULL THEN
    SELECT coalesce(jsonb_agg(jsonb_build_object('user_id',e.user_id,'source_charge_id',e.source_ledger_id,'source_entitlement_id',e.id,'wallet_club_id',e.refund_wallet_club_id,
-    'amount',e.gross::numeric::text,'prize',e.refund_prize::numeric::text,'bounty',e.refund_bounty::numeric::text,'fee',e.refund_fee::numeric::text) ORDER BY e.user_id,e.id),'[]') INTO result
+    'amount',trim_scale(e.gross::numeric)::text,'prize',trim_scale(e.refund_prize::numeric)::text,'bounty',trim_scale(e.refund_bounty::numeric)::text,'fee',trim_scale(e.refund_fee::numeric)::text) ORDER BY e.user_id,e.id),'[]') INTO result
    FROM public.tournament_refund_entitlements e WHERE e.tournament_id=p_tournament_id AND e.entitlement_kind='wallet_charge'
     AND NOT EXISTS(SELECT 1 FROM public.tournament_refund_tranches tr WHERE tr.entitlement_id=e.id)
     AND NOT EXISTS(SELECT 1 FROM public.tournament_tickets tk WHERE tk.source_refund_entitlement_id=e.id);
   ELSE
    SELECT coalesce(jsonb_agg(jsonb_build_object('user_id',tr.user_id,'source_charge_id',e.source_ledger_id,'source_entitlement_id',e.id,'wallet_club_id',tr.source_wallet_club_id,
-    'amount',tr.amount_paid_now::numeric::text,'prize',tr.refund_prize::numeric::text,'bounty',tr.refund_bounty::numeric::text,'fee',tr.refund_fee::numeric::text) ORDER BY tr.user_id,e.id),'[]') INTO result
+    'amount',trim_scale(tr.amount_paid_now::numeric)::text,'prize',trim_scale(tr.refund_prize::numeric)::text,'bounty',trim_scale(tr.refund_bounty::numeric)::text,'fee',trim_scale(tr.refund_fee::numeric)::text) ORDER BY tr.user_id,e.id),'[]') INTO result
    FROM jsonb_array_elements(p_receipt->'financial'->'refunds') j
    JOIN public.tournament_refund_entitlements e ON e.id=(j->>'entitlement_id')::uuid AND e.tournament_id=p_tournament_id
    JOIN public.tournament_refund_tranches tr ON tr.entitlement_id=e.id AND tr.tournament_id=p_tournament_id;
@@ -74,13 +74,20 @@ BEGIN
  IF p_probe_xid IS NOT NULL AND p_probe_xid !~ '^[0-9]{1,20}$' THEN RAISE EXCEPTION 'original69_xid_invalid' USING ERRCODE='22023';END IF;
  SELECT a.state INTO STRICT target_state FROM smarter_private.tournament_abort_targets a WHERE a.operation_id=p_operation_id AND a.tournament_id=p_tournament_id;
  SELECT encode(sha256(convert_to(jsonb_build_object(
- 'money',smarter_private.tournament_abort_money_snapshot(p_tournament_id),
+ 'escrow',(SELECT to_jsonb(e) FROM public.tournament_escrow e WHERE e.tournament_id=p_tournament_id),
+ 'entitlements',(SELECT coalesce(jsonb_agg(to_jsonb(e) ORDER BY e.id),'[]') FROM public.tournament_refund_entitlements e WHERE e.tournament_id=p_tournament_id),
+ 'refund_tranches',(SELECT coalesce(jsonb_agg(to_jsonb(tr) ORDER BY tr.entitlement_id),'[]') FROM public.tournament_refund_entitlements e JOIN public.tournament_refund_tranches tr ON tr.entitlement_id=e.id WHERE e.tournament_id=p_tournament_id),
+ 'diamond_ledger',(SELECT coalesce(jsonb_agg(to_jsonb(l) ORDER BY l.id),'[]') FROM public.poker_diamond_tournament_ledger l WHERE l.tournament_id=p_tournament_id),
+ 'diamond_custody',(SELECT coalesce(jsonb_agg(to_jsonb(c) ORDER BY c.id),'[]') FROM public.poker_diamond_custody c WHERE c.id IN(SELECT l.custody_id FROM public.poker_diamond_tournament_ledger l WHERE l.tournament_id=p_tournament_id AND l.custody_id IS NOT NULL)),
+ 'fee_attribution',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]') FROM public.rake_records r WHERE r.tournament_id=p_tournament_id),
  'target',(SELECT to_jsonb(a) FROM smarter_private.tournament_abort_targets a WHERE a.operation_id=p_operation_id AND a.tournament_id=p_tournament_id),
  'receipt',(SELECT to_jsonb(r) FROM public.tournament_cancellation_receipts r WHERE r.tournament_id=p_tournament_id),
  'refund_obligations',(SELECT coalesce(jsonb_agg(to_jsonb(o) ORDER BY o.id),'[]') FROM public.tournament_obligations o WHERE o.tournament_id=p_tournament_id AND o.kind='refund'),
  'event_ledger',(SELECT coalesce(jsonb_agg(to_jsonb(l) ORDER BY l.id),'[]') FROM public.chip_ledger l WHERE l.tournament_id=p_tournament_id),
- 'refund_keys',(SELECT coalesce(jsonb_agg(to_jsonb(k) ORDER BY k.key),'[]') FROM public.wallet_credit_idempotency k
-  WHERE k.key LIKE 'tourney:'||p_tournament_id||':refund-%' OR k.key LIKE 'poker-tournament-abort-refund:'||p_tournament_id||':charge:%')
+ 'refund_keys',(SELECT coalesce(jsonb_agg(to_jsonb(k) ORDER BY k.key),'[]') FROM (
+  SELECT 'tourney:'||p_tournament_id||':refund-entitlement:'||e.id AS key FROM public.tournament_refund_entitlements e WHERE e.tournament_id=p_tournament_id
+  UNION ALL SELECT 'poker-tournament-abort-refund:'||p_tournament_id||':charge:'||l.id AS key FROM public.poker_diamond_tournament_ledger l WHERE l.tournament_id=p_tournament_id AND l.kind IN('entry','rebuy','reentry','addon')
+ ) original_keys JOIN public.wallet_credit_idempotency k ON k.key=original_keys.key)
  )::text,'UTF8')),'hex') INTO state_hash;
  IF p_probe_xid IS NOT NULL THEN outcome:=pg_xact_status(p_probe_xid::xid8);END IF;
  RETURN jsonb_build_object('schema','original69-probe-state/v1','operation_id',p_operation_id,'tournament_id',p_tournament_id,
@@ -91,7 +98,7 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_original69_probe_state(uuid,uuid,text) TO
 
 CREATE FUNCTION public.fn_ca_probe_original69_abort(p_operation_id uuid,p_tournament_id uuid,p_expected_money_hash text,p_nonce text)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,smarter_private AS $fn$
-DECLARE original jsonb;posted jsonb;receipt jsonb;replay jsonb;detail jsonb;fees numeric;total numeric;digest text;before_state jsonb;
+DECLARE original jsonb;posted jsonb;receipt jsonb;detail jsonb;fees numeric;total numeric;digest text;before_state jsonb;
 BEGIN
  PERFORM smarter_private.original69_probe_assert(p_operation_id,p_tournament_id);
  IF p_expected_money_hash IS NULL OR p_expected_money_hash !~ '^[a-f0-9]{32}$' OR p_nonce IS NULL OR p_nonce !~ '^github-run-[0-9]{1,20}$'
@@ -113,8 +120,6 @@ BEGIN
  SELECT coalesce(sum((j->>'amount')::numeric),0) INTO total FROM jsonb_array_elements(posted) j;
  IF total IS DISTINCT FROM (receipt->>'total_refunded')::numeric OR fees IS DISTINCT FROM (receipt->>'fees_reversed')::numeric
  THEN RAISE EXCEPTION 'original69_aggregate_mismatch' USING ERRCODE='55000';END IF;
- replay:=public.fn_ca_settle_tournament_abort(p_operation_id,p_tournament_id,p_expected_money_hash);
- IF replay IS DISTINCT FROM receipt THEN RAISE EXCEPTION 'original69_replay_mismatch' USING ERRCODE='55000';END IF;
  digest:=encode(sha256(convert_to(posted::text,'UTF8')),'hex');
  detail:=jsonb_build_object('schema','original69-probe-rollback/v1','operation_id',p_operation_id,'tournament_id',p_tournament_id,
  'nonce',p_nonce,'probe_xid',pg_current_xact_id()::text,'money_hash',p_expected_money_hash,
@@ -124,7 +129,7 @@ BEGIN
  'total_refunded',total::text,'fees_reversed',fees::text,
  'refund_prize',(SELECT coalesce(sum((j->>'prize')::numeric),0)::text FROM jsonb_array_elements(posted) j),
  'refund_bounty',(SELECT coalesce(sum((j->>'bounty')::numeric),0)::text FROM jsonb_array_elements(posted) j),
- 'refund_fee',(SELECT coalesce(sum((j->>'fee')::numeric),0)::text FROM jsonb_array_elements(posted) j),'economic_sha256',digest,'canonical_replay_equal',true);
+ 'refund_fee',(SELECT coalesce(sum((j->>'fee')::numeric),0)::text FROM jsonb_array_elements(posted) j),'economic_sha256',digest);
  IF octet_length(detail::text)>4096 THEN RAISE EXCEPTION 'original69_receipt_bound_exceeded' USING ERRCODE='54000';END IF;
  -- MUST remain uncaught: this aborts the entire genuine PostgREST transaction.
  RAISE EXCEPTION 'ORIGINAL69_PROBE_ROLLBACK_V1' USING ERRCODE='PZ069',DETAIL=detail::text;

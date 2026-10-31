@@ -11778,14 +11778,9 @@ export abstract class TournamentManagerBase {
   }
 
   private addOnBreakDurationMs(): number {
-    const configured = Number(
-      (this.tournamentCache as { addon_break_minutes?: number } | null)?.addon_break_minutes ?? 1
-    );
-    const minutes = Math.min(
-      10,
-      Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : 1)
-    );
-    return minutes * 60_000;
+    // Owner 2026-10-31: every add-on tournament owes one fully parked minute.
+    // Historical creator settings cannot lengthen or shorten that minute.
+    return 60_000;
   }
 
   /**
@@ -11796,7 +11791,7 @@ export abstract class TournamentManagerBase {
    * Only a break whose countdown is running has a known end. The bound is the
    * break itself plus its last-hand grace, so a stale instant can never stretch
    * an offer past one real break. The persisted window then runs to the
-   * break's end and its final configured minute is still the add-on break
+   * break's end and its final minute is still the add-on break
    * (addOnBreakStartMs): the :55 break holds every table until then and the
    * add-on break takes the hold over, so play resumes once, at the break end.
    */
@@ -11830,7 +11825,7 @@ export abstract class TournamentManagerBase {
 
   /**
    * Reconstruct the add-on break from the durable window. No second flag or
-   * entitlement is needed: breakStart = persisted end - configured break.
+   * entitlement is needed: breakStart = persisted end - 60 seconds.
    * Calling this after resume or thaw therefore restores the same phase rather
    * than granting a new one.
    */

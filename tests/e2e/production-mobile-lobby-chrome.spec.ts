@@ -546,6 +546,11 @@ test.describe('the mobile lobby chrome on production', () => {
         'aria-current',
         'true'
       );
+      expect(page.url()).toBe(tableUrl);
+      expect(
+        routeTrace.every((url) => url === tableUrl),
+        'Closing The Lobby Left The Running Table Route'
+      ).toBe(true);
       expect(participation, 'spectator navigation attempted participation').toEqual([]);
     } finally {
       page.off('framenavigated', observeRoute);

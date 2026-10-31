@@ -273,9 +273,33 @@ def write_cleanup(output, report):
     (directory / 'receipt.json').write_text(canonical(report))
 
 
+def validate_tournament_player_ui_native(result, tuple_value, schema, runtime_image):
+    readiness = result.get('engine_readiness', {})
+    cases = [f'{format}:{flow}' for format in ('MTT', 'SPIN', 'SNG')
+             for flow in ('call_any', 'call_amount', 'paid_rebuy_return', 'finish_report')
+             if flow != 'paid_rebuy_return' or format == 'MTT']
+    require(result.get('version') == 1 and
+            result.get('scope') == 'isolated-tournament-player-ui-observations' and
+            result.get('product_certificate') is False and result.get('tuple') == tuple_value and
+            result.get('runtime_image') == runtime_image and
+            result.get('schema_fixture_sha256') == schema['fixture_sha256'] and
+            result.get('schema_catalogue_digest') == schema['catalogue_digest'] and
+            result.get('success') is True and result.get('executed') == len(cases) and
+            result.get('failed') == 0 and result.get('skipped') == 0 and result.get('retries') == 0 and
+            result.get('cases') == [{'name': name, 'passed': True} for name in cases] and
+            readiness.get('timeout_ms') == 90000 and
+            type(readiness.get('elapsed_ms')) is int and 0 <= readiness['elapsed_ms'] <= 90000 and
+            type(readiness.get('observations')) is int and readiness['observations'] > 0 and
+            readiness.get('source_sha') == tuple_value['club-arena-engine']['source_sha'] and
+            readiness.get('running') is True and
+            result.get('cleanup') == {'complete': False, 'owner': 'outer-native-driver'},
+            'RELEASE_TOURNAMENT_PLAYER_UI_EXECUTION_REQUIRED')
+
+
 def qualify(request, operation, controls, output, *, scenario='product'):
-    require(scenario in ('product', 'financial'), 'RELEASE_SEMANTIC_SCENARIO_REFUSED')
+    require(scenario in ('product', 'financial', 'tournament-player-ui'), 'RELEASE_SEMANTIC_SCENARIO_REFUSED')
     financial_scenario = scenario == 'financial'
+    player_ui_scenario = scenario == 'tournament-player-ui'
     require(re.fullmatch(r'[0-9a-f-]{36}', operation))
     require(request['phase'] == 'COMPATIBILITY' and request['repository'] == REPO and
             os.environ['GITHUB_REPOSITORY'] == REPO and os.environ['GITHUB_RUN_ATTEMPT'] == '1')
@@ -361,7 +385,8 @@ def qualify(request, operation, controls, output, *, scenario='product'):
                          '--mount', f'type=bind,source={controls},target=/opt/qualification/controls,readonly',
                          runtime_image, FIXTURE_SERVER, 'start', '--schema=/inputs/schema.zip',
                          f'--web=/inputs/{web_key}.zip', '--engine=http://engine:8080'] +
-                        (['--scenario=financial'] if financial_scenario else []))
+                        (['--scenario=financial'] if financial_scenario else
+                         ['--scenario=tournament-player-ui'] if player_ui_scenario else []))
                 command(['docker', 'exec', fixture, FIXTURE_SERVER, 'ready'], timeout=120)
                 env = json.loads(command(['docker', 'exec', fixture, FIXTURE_SERVER, 'engine-environment']).stdout)
                 require(set(env) == {'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PORT', 'NODE_ENV'} and
@@ -385,14 +410,15 @@ def qualify(request, operation, controls, output, *, scenario='product'):
                                   '--env', 'XDG_CACHE_HOME=/tmp/qualification/cache', fixture,
                                   '/opt/qualification/node_modules/.bin/tsx',
                                   '/opt/qualification/controls/operations/release/native/' +
-                                  ('financial-route-suite.mjs' if financial_scenario else 'component-semantic-suite.mjs'),
-                                  str(index), runtime_image], timeout=240)
+                                  ('financial-route-suite.mjs' if financial_scenario else
+                                   'tournament-player-ui-suite.mjs' if player_ui_scenario else 'component-semantic-suite.mjs'),
+                                  str(index), runtime_image], timeout=400 if player_ui_scenario else 240)
                 lines = result.stdout.decode().splitlines()
-                marker = 'FINANCIAL_ROUTE_RESULT:' if financial_scenario else 'RELEASE_SEMANTIC_RESULT:'
+                marker = 'FINANCIAL_ROUTE_RESULT:' if financial_scenario else 'TOURNAMENT_PLAYER_UI_RESULT:' if player_ui_scenario else 'RELEASE_SEMANTIC_RESULT:'
                 matches = [line.removeprefix(marker) for line in lines if line.startswith(marker)]
                 require(len(matches) == 1)
                 native = json.loads(matches[0])
-                validator = validate_financial_native if financial_scenario else validate_native
+                validator = validate_financial_native if financial_scenario else validate_tournament_player_ui_native if player_ui_scenario else validate_native
                 validator(native, tuple_value, plan['schema'], runtime_image)
             finally:
                 # Failed, crashed, intermediate and successful cases all close
@@ -416,7 +442,10 @@ def qualify(request, operation, controls, output, *, scenario='product'):
                'control_sha': request['control_sha'], 'runtime_image': runtime_image,
                'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': 1, 'request': plan,
                'request_digest': fact_digest(plan), 'combinations': combinations, 'cleanup': cleanup_report}
-    if financial_scenario:
+    if player_ui_scenario:
+        receipt.update({'scope': 'isolated-tournament-player-ui-observations', 'product_certificate': False})
+        (output / 'tournament-player-ui-observations.json').write_text(canonical(receipt))
+    elif financial_scenario:
         # A financial route result has no product certificate authority. The
         # release provider still requires its separately named product receipt.
         receipt.update({'scope': 'isolated-financial-route-observations', 'product_certificate': False})
@@ -427,11 +456,11 @@ def qualify(request, operation, controls, output, *, scenario='product'):
 
 if __name__ == '__main__':
     try:
-        require(len(sys.argv) in (3, 4) and (len(sys.argv) == 3 or sys.argv[3] == '--financial-route'),
+        require(len(sys.argv) in (3, 4) and (len(sys.argv) == 3 or sys.argv[3] in ('--financial-route', '--tournament-player-ui')),
                 'RELEASE_SEMANTIC_SCENARIO_REFUSED')
         qualify(json.loads(os.environ['RELEASE_REQUEST']), os.environ['RELEASE_OPERATION_ID'],
                 Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(),
-                scenario='financial' if len(sys.argv) == 4 else 'product')
+                scenario=('financial' if sys.argv[3] == '--financial-route' else 'tournament-player-ui') if len(sys.argv) == 4 else 'product')
     except Exception as error:
         # Raw API errors may contain signed URLs; child errors may contain
         # fixture tokens. Keep logs and failure reasons strictly sanitized.

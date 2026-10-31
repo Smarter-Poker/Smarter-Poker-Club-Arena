@@ -1440,13 +1440,16 @@ it('refuses an unfunded post-claim stack change before original controller mutat
 
 it.each([
   'ready',
+  'action_fold',
+  'action_call',
+  'action_raise',
   'peer_resync',
   'publish_failed',
   'superseded',
   'hand_completed',
   'retention_failed',
 ] as const)('publishes only retained current input after a pending read: %s', async (mode) => {
-  const { e, roster } = fixture();
+  const { e, roster, emitted } = fixture();
   const published: any[] = [];
   e.tableInfo = { game_variant: 'nlh', big_blind: 20, small_blind: 10, max_players: 2 };
   e.hub = {
@@ -1524,6 +1527,57 @@ it.each([
         .getState()
         .actionHistory.filter((a: any) => !['sb', 'bb', 'ante'].includes(a.action))
     ).toEqual([]);
+    if (mode === 'action_fold' || mode === 'action_call' || mode === 'action_raise') {
+      const action = mode.slice('action_'.length);
+      originalAuth.userId = 'u' + controller.getState().currentPlayerSeat;
+      const request = async () => {
+        let status = 0;
+        let body = '';
+        const res = {
+          writeHead: (code: number) => {
+            status = code;
+            return res;
+          },
+          end: (value?: string) => {
+            body = value ?? '';
+          },
+        };
+        __resetRateLimiterForTests();
+        await handleAction(
+          {
+            __body: JSON.stringify({
+              tableId: config.tableId,
+              action,
+              // Heads-up blinds 10/20: raising to 40 is a legal full raise.
+              ...(action === 'raise' ? { amount: 40 } : {}),
+              actionContext: published[0].action_context,
+              idempotencyKey: `retained-ready-${action}`,
+            }),
+          } as never,
+          res as never,
+          { gameServer: { getTableEngine: () => e } }
+        );
+        return { status, body: JSON.parse(body) };
+      };
+      const accepted = await request();
+      expect(accepted.status).toBe(200);
+      expect(accepted.body.success).toBe(true);
+      await e.handContinuation.join();
+      const acceptedState = controller.serializeRecoveryState();
+      const eventsBeforeReplay = emitted.length;
+      const actions = controller
+        .getState()
+        .actionHistory.filter((entry: any) => !['sb', 'bb', 'ante'].includes(entry.action));
+      expect(actions).toHaveLength(1);
+      expect(actions[0].action).toBe(action);
+      expect(emitted.filter((event: HandEvent) => event.type === 'PLAYER_ACTION')).toHaveLength(1);
+      const replay = await request();
+      expect(replay.status).toBe(200);
+      expect(replay.body).toMatchObject({ success: true, replayed: true });
+      await e.handContinuation.join();
+      expect(controller.serializeRecoveryState()).toBe(acceptedState);
+      expect(emitted).toHaveLength(eventsBeforeReplay);
+    }
   } finally {
     blocked = false;
     release?.();

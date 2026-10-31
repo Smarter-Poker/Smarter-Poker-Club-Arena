@@ -26,6 +26,7 @@ import {
 } from './presentation/handEventFrames.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { HandController } from './HandController.js';
+import { playerActionContext } from './PlayerActionContext.js';
 import type { Street as ShadowStreet } from './eventlog/events.js';
 import { logHandHistory } from '../services/supabase.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
@@ -395,7 +396,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       }
 
       case 'TURN_CHANGE': {
-        const decisionContext = this.getActionContext();
+        // Decision identity survives a control-only retention checkpoint. Input
+        // availability may temporarily be null while this same decision waits
+        // for durable bytes; that must not cancel its only turn-clock owner.
+        const decisionContext = this.handController
+          ? playerActionContext(this.handController)
+          : null;
         // ═══════════════════════════════════════════════════════════════════
         // Dan 2026-08-20: "every player's action MUST GO IN TURN. Their action
         // MUST BE DISPLAYED, an animation MUST PLAY after every decision. NO
@@ -483,7 +489,15 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           break;
         }
 
-        if (this.getActionContext() !== decisionContext) break;
+        if (
+          !this.running ||
+          !this.isCurrentEngine() ||
+          !this.lifecycleCanMutate() ||
+          !decisionContext ||
+          !this.handController ||
+          playerActionContext(this.handController) !== decisionContext
+        )
+          break;
 
         const tcSeatedPlayer = players.find((p) => p.seat_number === event.seat);
 
@@ -543,7 +557,15 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           reportError(err, 'ServerTableEngine.' + this.tableId + '.broadcast_threw');
         }
 
-        if (this.getActionContext() !== decisionContext) break;
+        if (
+          !this.running ||
+          !this.isCurrentEngine() ||
+          !this.lifecycleCanMutate() ||
+          !decisionContext ||
+          !this.handController ||
+          playerActionContext(this.handController) !== decisionContext
+        )
+          break;
 
         // Bible V8 §1.16 (Real-Time Law): discrete turn_change event. Now
         // carries the correct absolute deadline for the CURRENT player.
@@ -551,7 +573,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           this.hub?.emitEvent(
             this.tableId,
             turnChangeFrame({
-              actionContext: decisionContext,
+              actionContext: this.getActionContext(),
               tableId: this.tableId,
               handNumber: this.handCount,
               seat: event.seat,

@@ -1586,3 +1586,113 @@ it.each([
     await started;
   }
 });
+
+it.each(['unchanged', 'changed', 'stopped'] as const)(
+  'preserves turn ownership across a control checkpoint: %s',
+  async (mode) => {
+    const { e, roster } = fixture();
+    e.tableInfo = { game_variant: 'nlh', big_blind: 20, small_blind: 10, max_players: 2 };
+    e.hub = { publish: vi.fn(), emitEvent: vi.fn() };
+    e.retainOriginalBatch = async (_o: unknown, _s: unknown, batch: any) => {
+      e.retainedPublicHandState = JSON.parse(batch.controller).state;
+    };
+    const controller = e.handController;
+    const started = e.runOriginalController(roster, controller, 42, Date.now(), {
+      started: false,
+      cause: null,
+    });
+    try {
+      await vi.waitFor(() => expect(e.handContinuation).toBeTruthy());
+      await e.handContinuation.join();
+      const decision = e.getActionContext();
+      expect(decision).toBeTruthy();
+      const actualHandler = (ServerTableEngine.prototype as any).handleHandEvent;
+      let dispatched = false;
+      e.handleHandEvent = async (...args: any[]) => {
+        if (dispatched) return;
+        dispatched = true;
+        await actualHandler.apply(e, args);
+      };
+      let release!: () => void;
+      let settling = false;
+      e.sleep = async () => {
+        settling = true;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      };
+      const timer = vi.spyOn(e, 'startTurnTimer');
+      e.handContinuation.enqueue({
+        type: 'TURN_CHANGE',
+        seat: controller.getState().currentPlayerSeat,
+        availableActions: [],
+      });
+      await vi.waitFor(() => expect(settling).toBe(true));
+      expect(e.getActionContext()).toBe(decision);
+      e.handContinuation.checkpoint();
+      expect(e.getTableState('u1').action_context).toBeNull();
+      if (mode === 'changed') {
+        expect(controller.performAction(controller.getState().currentPlayerSeat, 'call')).toBe(
+          true
+        );
+        expect(playerActionContext(controller)).not.toBe(decision);
+      }
+      if (mode === 'stopped') e.running = false;
+      release();
+      if (mode === 'stopped') await expect(e.handContinuation.join()).rejects.toThrow();
+      else await e.handContinuation.join();
+      if (mode !== 'unchanged') {
+        expect(timer).not.toHaveBeenCalled();
+        return;
+      }
+      expect(e.getActionContext()).toBe(decision);
+      expect(timer).toHaveBeenCalledTimes(1);
+      expect(
+        e.preciseTimer.hasTimer(e.tableId, 'u' + controller.getState().currentPlayerSeat)
+      ).toBe(true);
+      expect(
+        e.currentHandTimerLog.filter((entry: any) => entry.event === 'timer_start')
+      ).toHaveLength(1);
+      const turnFrames = e.hub.emitEvent.mock.calls
+        .map((call: any[]) => call[1])
+        .filter((frame: any) => frame.type === 'turn_change');
+      expect(turnFrames).toHaveLength(1);
+      expect(turnFrames[0].action_context).toBeNull();
+      originalAuth.userId = 'u' + controller.getState().currentPlayerSeat;
+      let status = 0;
+      let body = '';
+      const res = {
+        writeHead: (code: number) => {
+          status = code;
+          return res;
+        },
+        end: (value?: string) => {
+          body = value ?? '';
+        },
+      };
+      __resetRateLimiterForTests();
+      await handleAction(
+        {
+          __body: JSON.stringify({
+            tableId: config.tableId,
+            action: 'call',
+            actionContext: decision,
+            idempotencyKey: 'settle-retained-call',
+          }),
+        } as never,
+        res as never,
+        { gameServer: { getTableEngine: () => e } }
+      );
+      expect(status).toBe(200);
+      expect(JSON.parse(body).success).toBe(true);
+      await e.handContinuation.join();
+      expect(
+        controller.getState().actionHistory.filter((entry: any) => entry.action === 'call')
+      ).toHaveLength(1);
+    } finally {
+      e.running = false;
+      e.activeHandWaitRelease?.release('test_cleanup');
+      await started;
+    }
+  }
+);

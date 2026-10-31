@@ -244,7 +244,7 @@ describe('readStageResumeBoard', () => {
               ? events
               : allStages.filter((row) => ids.includes(row.tournament_id));
           return Promise.resolve({
-            data: rows.slice(0, 1000),
+            data: rows.slice(0, 1000), // window-ok: simulated PostgREST row cap, not a source pin
             count: rows.length,
             error: null,
           }).then(resolve);

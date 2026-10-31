@@ -73,8 +73,6 @@ function selectorFor(needle: string): string {
   return CSS.slice(prevEnd + 1, open).trim();
 }
 
-const rank = (a: [number, number, number]) => a[0] * 1e6 + a[1] * 1e3 + a[2];
-
 /**
  * Dan 2026-10-24: "IN 6 HANDED GAMES, THE AVATAR OR VILLIAN IN THE 'DONKQUEEN'
  * POSITION CAN BE FULL SCREEN NOW THAT THE BBJ IS REMOVED FROM ABOVE THEM...
@@ -107,16 +105,17 @@ describe('the short-canvas top seat is full size, and the cascade says so', () =
     for (const n of [7, 8, 9]) expect(shortSlot.selector).not.toContain(`[data-seats='${n}']`);
   });
 
-  it('the slot rule is 0-3-0 and beats the 76px top-row cap', () => {
+  it('every top row uses the full slot without a smaller cap', () => {
     expect(specificity(shortSlot.selector)).toEqual([0, 3, 0]);
-    const cap = selectorFor('min(var(--seat-avatar-full), 76px)');
-    expect(rank(specificity(shortSlot.selector))).toBeGreaterThan(rank(specificity(cap)));
+    expect(selectorFor('--seat-avatar-base: var(--seat-avatar-full)')).toBe('.seat');
+    expect(CSS).not.toMatch(/--seat-avatar-base:\s*min\(/);
   });
 
-  it('the wrapper rule beats the 1.05x top-row bust', () => {
-    const bust = selectorFor('--sp-bust-scale: 1.05');
-    expect(bust).toBe('.seat-wrapper--top');
-    expect(rank(specificity(shortWrapper.selector))).toBeGreaterThan(rank(specificity(bust)));
+  it('top artwork uses the same full bust scale', () => {
+    expect(CSS).not.toContain('--sp-bust-scale: 1.05');
+    expect(CSS).not.toMatch(
+      /seat-wrapper:not\(\.seat-wrapper--hero\)[^{]*\{[^}]*--sp-bust-scale: 1\.3;/
+    );
   });
 
   it('no 56px cap survives anywhere', () => {

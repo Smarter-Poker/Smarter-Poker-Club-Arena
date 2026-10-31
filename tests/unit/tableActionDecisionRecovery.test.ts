@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { submitTableDecision } from '../../src/lib/tableActionDecision';
+import { submitTableDecision, tableDecisionIsReady } from '../../src/lib/tableActionDecision';
 
 const page = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 
@@ -29,7 +29,7 @@ describe('Mongo missing decision recovery', () => {
   });
   it('checks missing-token input before optimistic paint can hide its refreshed turn', () => {
     const panel = page.slice(page.indexOf('const handleActionPanelAction = useCallback('));
-    const guard = panel.indexOf('!lightningRoomRef.current && !live.actionContext');
+    const guard = panel.search(/if\s*\(\s*!tableDecisionIsReady\(\{/);
     expect(guard).toBeGreaterThan(0);
     expect(panel.indexOf('finally {', guard)).toBeLessThan(panel.indexOf('setTimeout('));
     expect(panel.indexOf('actionLockRef.current = false;', guard)).toBeLessThan(
@@ -121,5 +121,63 @@ describe('Mongo missing decision recovery', () => {
       })
     ).toBe(result);
     expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('authoritative decision readiness', () => {
+  it('withholds Classic controls and submission together, then accepts only a fresh explicit tap', async () => {
+    const send = vi.fn(async () => ({ success: true }));
+    const refresh = vi.fn(async () => true);
+    const withheld = { actionContext: undefined, allowContextless: false };
+    expect(tableDecisionIsReady(withheld)).toBe(false);
+    expect(await submitTableDecision({ ...withheld, send, refresh })).toMatchObject({
+      code: 'CLIENT_DECISION_REFRESHED',
+    });
+    expect(send).not.toHaveBeenCalled();
+    const ready = { ...withheld, actionContext: 'incarnation:preflop:0:4:20' };
+    expect(tableDecisionIsReady(ready)).toBe(true);
+    // Receiving readiness never submits the previously refused choice.
+    expect(send).not.toHaveBeenCalled();
+    await submitTableDecision({ ...ready, send, refresh });
+    expect(send).toHaveBeenCalledExactlyOnceWith(ready.actionContext);
+  });
+
+  it('shares readiness across the actual panel, keyboard and submit paths without stopping the clock', () => {
+    expect(page).toContain('const heroDecisionReady = tableDecisionIsReady({');
+    expect(page).toContain('isHeroTurn: isHeroTurnContext && heroDecisionReady');
+    expect(page).toMatch(/tableState\.isHandInProgress &&\s+heroDecisionReady &&/);
+    const timer = page.slice(
+      page.indexOf('const { clock: actionClock'),
+      page.indexOf('const { clock: actionClock') + 1600
+    );
+    expect(timer).toContain('isHeroTurn: isHeroTurnContext,');
+    expect(timer).not.toContain('heroDecisionReady');
+    expect(page).toContain(
+      'const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;'
+    );
+  });
+
+  it('never turns a stale hero into ready input, and preserves the existing Lightning contract', () => {
+    expect(
+      tableDecisionIsReady({
+        actionContext: 'old-hand-token',
+        allowContextless: false,
+        clientStateStale: true,
+      })
+    ).toBe(false);
+    expect(tableDecisionIsReady({ actionContext: undefined, allowContextless: true })).toBe(true);
+    expect(
+      tableDecisionIsReady({
+        actionContext: undefined,
+        allowContextless: true,
+        clientStateStale: true,
+      })
+    ).toBe(false);
+    // The actual actor/hand gate remains independent; a valid token alone never grants a turn.
+    const gate = page.match(/const isHeroTurnContext =([\s\S]*?);/)?.[1];
+    expect(gate).toBeTruthy();
+    const isTurn = new Function('tableState', 'return (' + gate + ')');
+    expect(isTurn({ heroSeat: 4, currentPlayerSeat: 2, isHandInProgress: true })).toBe(false);
+    expect(isTurn({ heroSeat: 4, currentPlayerSeat: 4, isHandInProgress: false })).toBe(false);
   });
 });

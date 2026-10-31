@@ -44,7 +44,7 @@
  * are gated at all is that they should not exist in production.
  *
  * So the flags stay build-time, and the safety of the whole change reduces to
- * ONE property: **the harness flags appear in the CSS Beat job and nowhere
+ * ONE property: **the harness flags appear in the CSS Beat build job and nowhere
  * else.** `Production Build` and `publish-club-arena.yml` build without them.
  * That property is what this file exists to hold. If it ever fails, the fix is
  * not to relax the assertion - it is that a throwaway CI flag has reached the
@@ -92,17 +92,17 @@ describe('the harness never reaches a bundle a player downloads', () => {
     }
   });
 
-  it('the flags appear only in the CSS Beat job', () => {
+  it('the flags appear only in the CSS Beat build job', () => {
     // Any OTHER job setting them is either shipping them or wasting the build
     // cache on a bundle that differs from the one it is meant to verify.
-    const beats = job(CI, 'css-beats-e2e');
+    const beats = job(CI, 'css-beats-build') + job(CI, 'css-beats-e2e');
     for (const flag of HARNESS_FLAGS) {
       const everywhere = (CI.match(new RegExp(flag, 'g')) || []).length;
       const inBeats = (beats.match(new RegExp(flag, 'g')) || []).length;
-      expect(inBeats, `${flag} is not set in the css-beats-e2e job`).toBeGreaterThan(0);
+      expect(inBeats, `${flag} is not set in the css-beats-build job`).toBeGreaterThan(0);
       expect(
         everywhere,
-        `${flag} appears ${everywhere}x in ci.yml but only ${inBeats}x in css-beats-e2e - ` +
+        `${flag} appears ${everywhere}x in ci.yml but only ${inBeats}x in css-beats-build - ` +
           `a harness flag outside that job is either shipping or misleading`
       ).toBe(inBeats);
     }

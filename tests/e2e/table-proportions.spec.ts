@@ -74,7 +74,7 @@ const css = buildCss(ROOT);
 /** Declared once on `.seat` in SeatSlot.css. Restated here so a change to either
  *  fails against this file's arithmetic rather than silently re-baselining it. */
 const CARD_FRACTION = 0.139;
-const AVATAR_FRACTION = 0.158;
+const AVATAR_FRACTION = 0.158 * 1.3333;
 /** Legibility floors, the one place a proportion is deliberately overruled.
  *
  *  2026-08-28: CARD_FLOOR 44 -> 50. Dan, from a phone that evening: "the size of
@@ -91,7 +91,22 @@ const AVATAR_FRACTION = 0.158;
  *  file. The crossover belongs just UNDER the canonical answer, not on top of
  *  it. See the note on --sp-card2-w. */
 const CARD_FLOOR = 50;
-const AVATAR_FLOOR = 50;
+const AVATAR_FLOOR = 50 * 1.3333;
+
+// Shared hero-size pods fit the real measured height on short portrait phones.
+// Every seat takes this same cap; normal-height phones keep the former hero size.
+const fittedAvatar = (r: { vp: string; feltW: number; feltH: number }) => {
+  const [width, height] = r.vp.split('x').map(Number);
+  const full = Math.min(124, Math.max(50, r.feltW * 0.158)) * 1.3333;
+  return width <= 480 && height > width
+    ? Math.min(
+        full,
+        width <= 340
+          ? Math.max(32, 32 + (r.feltH - 324) * 0.75)
+          : Math.max(36, 40 + (r.feltH - 324) * 0.25)
+      )
+    : full;
+};
 
 /** A device whose felt is small enough that a floor binds cannot be compared on
  *  ratio — the floor is doing its job, which is to STOP the proportion. */
@@ -155,40 +170,15 @@ test.describe('every device gets the same proportions', () => {
     ).toEqual([]);
   });
 
-  test('the avatar slot is one fraction of the felt, everywhere', async ({ page }) => {
-    const rows = await measureAll(page, css);
-    const offenders: string[] = [];
-    for (const r of rows) {
-      if (r.feltW * AVATAR_FRACTION < AVATAR_FLOOR) continue; // floor is binding
-      const pct = r.avatar / r.feltW;
-      if (Math.abs(pct - AVATAR_FRACTION) > 0.005) {
-        offenders.push(
-          `${r.device} (${r.vp}): avatar is ${r.avatar}px on a ${r.feltW}px felt = ` +
-            `${(pct * 100).toFixed(1)}%, expected ${(AVATAR_FRACTION * 100).toFixed(1)}%`
-        );
-      }
+  test('every avatar uses the hero size with a shared short-phone fit', async ({ page }) => {
+    for (const r of await measureAll(page, css)) {
+      expect(r.avatar, `${r.device}: shared avatar size`).toBeCloseTo(fittedAvatar(r), 0);
     }
-    expect(offenders).toEqual([]);
   });
 
-  test('the HERO slot scales too, and stays 1.3333x the villain', async ({ page }) => {
-    /* ADDED 2026-08-28 after this file missed a live regression it existed to
-       catch. It rendered only `.seat`, the villain slot, so three
-       `@media ... .seat.seat--hero { --seat-avatar-size: calc(66|58|52px * …)
-       !important }` rungs survived the conversion untouched: below 641px the
-       hero — the one seat the player is looking at — was still on the px ladder
-       while every villain beside it was proportional.
-
-       It was not a cosmetic miss either. --seat-avatar-size feeds --vh-card-h
-       and thence --vh-card-w, so a rung on the hero puts every VILLAIN HOLE
-       CARD back on a ladder indirectly, after --sp-card2-w had been converted.
-
-       Two assertions, because either alone can be satisfied while the bug is
-       present: the hero must hold the 1.3333 ratio to the villain (a rung that
-       pinned both equally would pass a ratio check), and it must itself be a
-       fraction of the felt (a rung that scaled both together would pass that). */
+  test('all avatars use the former hero size at every device width', async ({ page }) => {
     const rows = await measureAll(page, css);
-    const HERO_RATIO = 1.3333;
+    const HERO_RATIO = 1;
 
     const offenders: string[] = [];
     for (const r of rows) {
@@ -202,7 +192,7 @@ test.describe('every device gets the same proportions', () => {
       // ...and the hero must ride the felt, not a rung.
       if (r.feltW * AVATAR_FRACTION * HERO_RATIO < AVATAR_FLOOR * HERO_RATIO) continue;
       const pct = r.heroAvatar / r.feltW;
-      const want = AVATAR_FRACTION * HERO_RATIO;
+      const want = fittedAvatar(r) / r.feltW;
       if (Math.abs(pct - want) > 0.006) {
         offenders.push(
           `${r.device} (${r.vp}): hero avatar is ${r.heroAvatar}px on a ${r.feltW}px felt = ` +
@@ -513,7 +503,7 @@ test.describe('every device gets the same proportions', () => {
         CARD_FLOOR - 0.5
       );
       expect(r.avatar, `${r.device}: avatar below its floor`).toBeGreaterThanOrEqual(
-        AVATAR_FLOOR - 0.5
+        Math.min(AVATAR_FLOOR, fittedAvatar(r)) - 0.5
       );
       expect(
         r.btnH,
@@ -1111,7 +1101,14 @@ for (const [width, heightOverride] of occupiedViewports)
             page.locator('.seat__cards--revealed .seat__card').evaluateAll((cards) =>
               cards.map((card) => {
                 const b = card.getBoundingClientRect();
-                return { x: b.x, y: b.y, w: b.width, h: b.height };
+                return {
+                  x: b.x,
+                  y: b.y,
+                  w: b.width,
+                  h: b.height,
+                  translate: (card.closest('.seat__cards--revealed') as HTMLElement).style
+                    .translate,
+                };
               })
             );
           const before = await measure();
@@ -1142,7 +1139,18 @@ for (const [width, heightOverride] of occupiedViewports)
                 requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
               )
           );
-          expect(await measure()).toEqual(before);
+          const after = await measure();
+          expect(after).toHaveLength(before.length);
+          for (let index = 0; index < before.length; index++) {
+            // Preserve the exact retained placement. Composited DOMRects can
+            // differ by 0.00005px during a native transform with no layout move.
+            expect(after[index].translate).toBe(before[index].translate);
+            for (const axis of ['x', 'y', 'w', 'h'] as const)
+              expect(after[index][axis], `Settled Card ${index} ${axis}`).toBeCloseTo(
+                before[index][axis],
+                3
+              );
+          }
           const steps = await page
             .locator('.seat__cards--opponent.seat__cards--revealed')
             .evaluateAll((rows) =>
@@ -1468,7 +1476,9 @@ for (const [width, heightOverride] of occupiedViewports)
                     '.seat__info,.seat__avatar-img,.seat__action'
                   ))
                     if (overlaps(box(a), box(b)))
-                      violations.push('Neighbouring Player Lanes Overlap');
+                      violations.push(
+                        `Neighbouring Player Lanes Overlap: ${wrapper.querySelector('.seat__name')?.textContent} ${a.className} ${JSON.stringify(box(a))} / ${other.querySelector('.seat__name')?.textContent} ${b.className} ${JSON.stringify(box(b))}`
+                      );
               }
             }
             for (const action of document.querySelectorAll('.seat__action'))
@@ -1478,49 +1488,18 @@ for (const [width, heightOverride] of occupiedViewports)
           for (const action of document.querySelectorAll('.seat__action'))
             for (const plaque of document.querySelectorAll('.bbj-widget,.bbj-mini-plate'))
               if (overlaps(box(action), box(plaque)))
-                violations.push('Action Badge Covers Jackpot');
-          // Dan 2026-10-24: the compact top pod belongs to 7-9 max only. A 2-6
-          // ring's single top seat is full size ("CAN BE FULL SCREEN NOW THAT
-          // THE BBJ IS REMOVED FROM ABOVE THEM"), so there it must match the
-          // other villains instead.
-          const villainAvatars = [
-            ...document.querySelectorAll(
-              '.seat-wrapper:not(.seat-wrapper--top):not(.seat-wrapper--hero) .seat__avatar'
-            ),
-          ].map((e) => box(e).width);
-          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar'))
-            if (
-              !largePortrait &&
-              villainAvatars.length &&
-              Math.abs(box(e).width - Math.max(...villainAvatars)) > 1.5
-            )
-              violations.push('Top Avatar Is Not Full Size');
-          if (innerWidth <= 480) {
-            const plates = [
-              ...document.querySelectorAll(
-                '.seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top) .seat__info'
-              ),
-            ].map(box);
-            for (const plate of document.querySelectorAll('.seat-wrapper--top .seat__info')) {
-              const measured = box(plate);
+                violations.push(
+                  `Action Badge Covers Jackpot: ${action.closest('.seat')?.querySelector('.seat__name')?.textContent} action=${JSON.stringify(box(action))} plaque=${JSON.stringify(box(plaque))}`
+                );
+          // Owner 2026-10-31: top, side and hero pods share the hero dimensions.
+          for (const selector of ['.seat__avatar', '.seat__info', '.seat__action']) {
+            const sizes = [...document.querySelectorAll(selector)].map(box);
+            for (const measured of sizes)
               if (
-                plates.length &&
-                (Math.abs(measured.width - plates[0].width) > 1.5 ||
-                  Math.abs(measured.height - plates[0].height) > 1.5)
+                Math.abs(measured.width - sizes[0].width) > 1.5 ||
+                Math.abs(measured.height - sizes[0].height) > 1.5
               )
-                violations.push('Top Name And Stack Plate Is Smaller Than Other Villains');
-            }
-          }
-          if (!largePortrait) {
-            const scales = [
-              ...document.querySelectorAll(
-                '.seat-wrapper:not(.seat-wrapper--hero) .seat__avatar-img'
-              ),
-            ].map(
-              (e) => parseFloat(getComputedStyle(e).getPropertyValue('--sp-bust-scale')) || 1.45
-            );
-            if (Math.max(...scales) - Math.min(...scales) > 0.01)
-              violations.push('Top Artwork Is Smaller Than Other Villains');
+                violations.push(`Unequal Seat Size: ${selector} ${JSON.stringify(sizes)}`);
           }
           const canvas = box(document.querySelector('.table-scaler')!);
           const felt = box(document.querySelector('.table-surface')!);
@@ -2030,8 +2009,13 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
               r.bottom > board.top
             );
           })
-          .map((el) => el.className);
+          .map(
+            (el) =>
+              `${el.className} ${el.closest('.seat')?.querySelector('.seat__name')?.textContent} ${JSON.stringify(el.getBoundingClientRect())} board=${JSON.stringify(board)}`
+          );
       });
+      if (boardCollisions.length)
+        await page.screenshot({ path: testInfo.outputPath('spectator-board-failure.png') });
       expect(boardCollisions, `${width}px spectator board stays clear of players`).toEqual([]);
       const footer = await page.locator('.spectator-footer-bar').boundingBox();
       const plates = await page

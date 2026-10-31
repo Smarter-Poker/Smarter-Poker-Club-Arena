@@ -32,16 +32,16 @@ describe('nine-seat lanes on a 320px phone', () => {
       expect(x + 29).toBeLessThan(248);
     }
   });
-  it.each([375, 393, 430])('preserves the existing wider phone ring at %spx', (width) => {
-    for (const seat of seatLayoutFor(9)) {
-      const pod = seatPodPx(width, seat.y === 100, canvas.w, {
-        seats: 9,
-        canvasHeightPx: canvas.h,
-      });
-      expect(fitSeatToViewport(seat, canvas, width, pod, undefined, 9)).toEqual(
-        fitSeatToViewport(seat, canvas, width, pod)
-      );
+  it.each([375, 393, 430])('keeps side chairs stable and top panels apart at %spx', (width) => {
+    const ring = fitted(width, 9);
+    for (let i = 0; i < ring.length; i++) {
+      const raw = seatLayoutFor(9)[i];
+      const pod = seatPodPx(width, raw.y === 100, canvas.w, { seats: 9, canvasHeightPx: canvas.h });
+      if (raw.y >= 20) expect(ring[i]).toEqual(fitSeatToViewport(raw, canvas, width, pod));
     }
+    const caps = ring.filter((seat) => seat.y < 20);
+    const panel = seatPodPx(width, false, canvas.w, { seats: 9, canvasHeightPx: canvas.h });
+    expect(((caps[1].x - caps[0].x) * canvas.w) / 100).toBeGreaterThanOrEqual(panel.w + 3);
   });
   it('preserves the six-seat ring', () => {
     for (const seat of seatLayoutFor(6)) {

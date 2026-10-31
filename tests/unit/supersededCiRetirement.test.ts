@@ -214,6 +214,7 @@ describe('the heavy matrix runs for the head that will be merged', () => {
       'accounting_postgres',
       'server_shards',
       'build',
+      'css-beats-build',
       'css-beats-e2e',
     ]) {
       expect(job(name), `${name} pays for a sha nobody will merge`).toContain(

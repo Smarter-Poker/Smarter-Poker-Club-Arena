@@ -87,11 +87,22 @@ finally:
 elapsed = (time.monotonic() - started) * 1000
 intent = root / (run + '.main-inspector-retirement-intent')
 receipt = root / (run + '.main-inspector-retirement-receipt')
+# The host publishes its bounded, redacted failure facts directly to fd 2,
+# not redirect_stderr's StringIO. Keep those facts when an earlier admission
+# predicate fails, without changing any acceptance condition or deadline.
+assertion_facts = {
+    'code': code,
+    'intentPresent': intent.is_file(),
+    'receiptPresent': receipt.exists(),
+    'elapsedMs': round(elapsed, 3),
+    'hostDiagnostic': error_bytes.decode('ascii', errors='replace'),
+    'adapterStderr': err.getvalue()[:4096],
+}
 if scenario == 'success':
-    assert code == 0 and receipt.is_file(), err.getvalue()
+    assert code == 0 and receipt.is_file(), assertion_facts
     outcome = json.loads(receipt.read_text())['outcome']
 else:
-    assert code == 1 and intent.is_file() and not receipt.exists(), err.getvalue()
+    assert code == 1 and intent.is_file() and not receipt.exists(), assertion_facts
     lines = error_bytes.decode('ascii').splitlines()
     diagnostic = json.loads(lines[0])
     assert diagnostic['intent'] == 'durable' and diagnostic['ack'] == 'flushed', diagnostic

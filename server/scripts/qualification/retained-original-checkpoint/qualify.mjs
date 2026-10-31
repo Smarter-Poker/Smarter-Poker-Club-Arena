@@ -93,7 +93,8 @@ function run(program, args, cwd, timeout = 120000, extraEnv = {}) {
   }
   need(
     !result.error && result.status === 0,
-    `historical qualification command failed: ${program} (${result.status ?? 'unknown'})`
+    `historical qualification command failed: ${program} (${result.status ?? 'unknown'})\n` +
+      `${result.error?.message ?? ''}\n${result.stdout ?? ''}\n${result.stderr ?? ''}`.slice(-24000)
   );
   return result.stdout;
 }
@@ -177,6 +178,13 @@ try {
     const container = `eed-native-guard-${process.pid}`;
     const nativeScratch = join(folder, 'native-tmp');
     mkdirSync(nativeScratch);
+    // Locked Vite bundles its config beside the input before loading it.
+    // Keep historical inputs read-only; only the byte-exact config copy and
+    // generated bundle live in owned scratch. Its relative source stays RO.
+    const nativeConfig = join(nativeScratch, 'vitest.config.ts');
+    copyFileSync(join(server, 'vitest.config.ts'), nativeConfig);
+    symlinkSync(join(server, 'src'), join(nativeScratch, 'src'), 'dir');
+
     try {
       output = run('docker', ['run', '--rm', '--name', container, '--network', 'none',
         '--memory', '2g', '--memory-swap', '2g', '--read-only',
@@ -188,7 +196,8 @@ try {
         '--env', 'SUPABASE_URL=https://supabase.invalid',
         '--env', 'SUPABASE_SERVICE_ROLE_KEY=unit-test-placeholder-key',
         ...Object.entries(fixtureEnv).flatMap(([key, value]) => ['--env', `${key}=${value}`]),
-        '--entrypoint', 'node', nativeImage, '--max-old-space-size=512', ...fixtureArgs], server, 60000);
+        '--entrypoint', 'node', nativeImage, '--max-old-space-size=512', ...fixtureArgs,
+        '--config', nativeConfig], server, 60000);
     } finally {
       // An expired Docker client is not evidence that its child stopped.
       spawnSync('docker', ['rm', '--force', container], { timeout:5000, encoding:'utf8' });

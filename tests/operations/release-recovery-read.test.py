@@ -2310,5 +2310,26 @@ class NativeScaleRecordsTests(unittest.TestCase):
         read.assert_called_once_with(self.request)
 
 
+class NativeCheckpointIntentTests(unittest.TestCase):
+    def native_intent(self):
+        q={'runKey':'41233374402-1','releaseSha':'b1f2a037f70d2361dbe1775f8599a11d9a914124'}
+        root='/app/.legacy-census-checkpoint-'+q['runKey']+'/legacy-census.node'
+        return {'instance':'1-11ea1175','container':'a'*64,'startedAt':'2026-10-31T18:18:56.378Z',
+            'hostPid':123,'source':R.EED,'runId':q['runKey'],'controlSha':q['releaseSha'],'at':1793476511.0,
+            'retryAllowed':False,'nativeCensus':{'schema':'legacy-native-census-artifact/v1','path':root,
+            'manifestPath':root+'.json','binarySHA256':'b'*64,'manifestSHA256':'c'*64,'sourceSHA256':'d'*64,
+            'candidateSHA':q['releaseSha'],'candidateImageId':'sha256:'+'e'*64,'candidateSourceTree':'f'*40}}
+
+    def test_native_and_old_intents_are_exact_and_spoof_refused(self):
+        q={'runKey':'41233374402-1','releaseSha':'b1f2a037f70d2361dbe1775f8599a11d9a914124'};value=self.native_intent()
+        with patch.object(R,'read_json',return_value=value):self.assertEqual(R.inspector_intent(q,0),value)
+        old={k:v for k,v in value.items() if k!='nativeCensus'}
+        with patch.object(R,'read_json',return_value=old):self.assertEqual(R.inspector_intent(q,0),old)
+        for broken in ({**value,'extra':True},{**value,'custody':[]},
+                       {**value,'nativeCensus':{**value['nativeCensus'],'candidateSHA':'a'*40}}):
+            with patch.object(R,'read_json',return_value=broken),self.assertRaises(ValueError):R.inspector_intent(q,0)
+
+
+
 if __name__ == '__main__':
     unittest.main()

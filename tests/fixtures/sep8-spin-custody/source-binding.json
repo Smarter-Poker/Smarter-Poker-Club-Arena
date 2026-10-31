@@ -57,7 +57,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4",
+    "tests/unit/fixtureNativeCi.test.ts": "a1ba44a1d977916db277778b6c565f12913437804c6feaf4adbadbc05311b931",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1695,5 +1695,30 @@
     "previous": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c",
     "currentSha256": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4",
     "scope": "Only compiler simulation condition source-contract output changes from presentation_only to isolated_simulations_unchanged. All native assertions, probes and financial data remain unchanged. Source wiring only, no native or live recertification."
+  },
+  "isolatedConnectedUiSourceAudit20261031": {
+    "scope": "Current source identity only for isolated connected UI qualification; no financial qualification, SQL, oracle, profile or historical evidence restamped.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "previous": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c",
+    "current": {
+      "bytes": 118900,
+      "sha256": "008d4e923b5ca66f45c878767d6cc5ffc1406fa47af77936fb0cfcb1dcbb9abc"
+    },
+    "reason": "Pin readonly Actions permission ceiling and strict protected manual capture/privacy source guards; require actual native command position before emitting verification. Existing financial assertions unchanged.",
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "protectedLatencyIntegration20261031": {
+    "scope": "Current source binding only: preserve protected delivery-latency contracts and private connected qualification together; original qualification data and assertions unchanged.",
+    "changes": {
+      "repository_files:tests/unit/fixtureNativeCi.test.ts": {
+        "previous_main": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4",
+        "current": "a1ba44a1d977916db277778b6c565f12913437804c6feaf4adbadbc05311b931"
+      }
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
   }
 }

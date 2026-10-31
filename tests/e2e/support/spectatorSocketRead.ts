@@ -19,3 +19,8 @@ export function isReadOnlySpectatorSocketType(type: string): boolean {
     'LEAVE_TOURNAMENT',
   ].includes(type);
 }
+
+/** Exercise the real client foreground handler through its routed application socket. */
+export function requestObserverForegroundProbe(): void {
+  document.dispatchEvent(new Event('visibilitychange'));
+}

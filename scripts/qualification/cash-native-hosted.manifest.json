@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 262364,
-      "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
+      "bytes": 262384,
+      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -325,8 +325,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 116664,
-      "sha256": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4"
+      "bytes": 118936,
+      "sha256": "a1ba44a1d977916db277778b6c565f12913437804c6feaf4adbadbc05311b931"
     }
   },
   "nativePgCron": {
@@ -5721,5 +5721,74 @@
       },
       "scope": "Updated source contract output name only; all native cases/assertions unchanged."
     }
+  },
+  "isolatedConnectedUiSourceAudit20261031": {
+    "scope": "Current source identity only: add readonly Actions permission to native reusable caller and exact protected manual private-capture source guards. Existing cash/financial inputs, assertions, profiles, budgets, historical receipts and qualification status are unchanged.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 260243,
+          "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
+        },
+        "current": {
+          "bytes": 260263,
+          "sha256": "f2eccd7b1c58bf3677f9647bcfea51831f647be47b19c41b64bf2e65f0bc9693"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": {
+          "bytes": 116628,
+          "sha256": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c"
+        },
+        "current": {
+          "bytes": 118900,
+          "sha256": "008d4e923b5ca66f45c878767d6cc5ffc1406fa47af77936fb0cfcb1dcbb9abc"
+        }
+      }
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "protectedMainIntegration20261031": {
+    "scope": "Current source binding only. Preserve protected postpaid statement qualification and private connected UI readonly permission together; no historical result or financial input recertified.",
+    "previous_main_ci": {
+      "bytes": 261967,
+      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+    },
+    "current_ci": {
+      "bytes": 261987,
+      "sha256": "c1d61a5219586c70e99141545b903ee0274992a6c61e0f3a37a311f9be37c37a"
+    },
+    "execution_performed": false,
+    "qualificationStateChanged": false
+  },
+  "protectedLatencyIntegration20261031": {
+    "scope": "Current source binding only: preserve protected delivery-latency contracts and private connected qualification together; original qualification data and assertions unchanged.",
+    "changes": {
+      "files:.github/workflows/ci.yml": {
+        "previous_main": {
+          "bytes": 262364,
+          "sha256": "2877ab16e4c6f17e313a22a4b208dff12d425c20c373d3ea64349c149cf1feff"
+        },
+        "current": {
+          "bytes": 262384,
+          "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+        }
+      },
+      "files:tests/unit/fixtureNativeCi.test.ts": {
+        "previous_main": {
+          "bytes": 116664,
+          "sha256": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4"
+        },
+        "current": {
+          "bytes": 118936,
+          "sha256": "a1ba44a1d977916db277778b6c565f12913437804c6feaf4adbadbc05311b931"
+        }
+      }
+    },
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
   }
 }

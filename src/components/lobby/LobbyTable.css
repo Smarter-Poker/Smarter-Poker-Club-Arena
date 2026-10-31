@@ -2105,3 +2105,81 @@ abbr.lt-variant[title] {
   height: 20px;
   object-fit: contain;
 }
+
+/* October 31 event schema. The row's format owns its rail; selection and a
+   guarantee never repaint black glass with the retired amber/gold wash. */
+.lobby-table tr[data-kind]:not([data-kind='cash']) {
+  --tournament-row-accent: #45adff;
+  background: #000;
+  border-color: rgb(228 231 236 / 16%);
+  box-shadow: none;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-standard,
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-rebuy {
+  --tournament-row-accent: #45adff;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-deepstack {
+  --tournament-row-accent: #e4e7ec;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-turbo {
+  --tournament-row-accent: #45adff;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-hyper {
+  --tournament-row-accent: #f02849;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-freezeout {
+  --tournament-row-accent: #f4f7fb;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-bounty {
+  --tournament-row-accent: #35d95a;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-freeroll {
+  --tournament-row-accent: #45adff;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-satellite {
+  --tournament-row-accent: #ffd700;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']) td {
+  background: #000;
+  border-radius: 0;
+  vertical-align: middle;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']) td:first-child {
+  box-shadow: inset 4px 0 0 var(--tournament-row-accent);
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-featured {
+  outline: 2px solid var(--accent-red, #f02849);
+  outline-offset: -2px;
+  background: #000;
+  border-color: var(--accent-red, #f02849);
+  box-shadow: none;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-featured td:first-child {
+  box-shadow: inset 6px 0 0 var(--tournament-row-accent);
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']).is-featured .lt-name__line1 {
+  color: var(--accent-red, #f02849);
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']) .lt-name__gtd,
+.lobby-table tr[data-kind]:not([data-kind='cash']) .lt-gtd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  border: 1px solid #e4e7ec;
+  background: #000;
+  color: #e4e7ec;
+  line-height: 1.2;
+}
+.lobby-table tr[data-kind]:not([data-kind='cash']) td.lt-col-fav {
+  text-align: center;
+  vertical-align: middle;
+}
+@media (max-width: 900px) {
+  .lobby-table tr[data-kind]:not([data-kind='cash']) {
+    border-left-color: var(--tournament-row-accent);
+  }
+  .lobby-table tr[data-kind]:not([data-kind='cash']).is-featured {
+    border-left-color: var(--accent-red, #f02849);
+  }
+}

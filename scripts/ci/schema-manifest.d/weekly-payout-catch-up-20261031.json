@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/weekly-payout-isolation-capacity-20261031",
+  "_comment": "Column added by migration 20261031190020 (every prepared scope is paid; owed scopes catch up in one owned slot per hour). Declaration only; installation remains a separate protected-main operation.",
+  "columns": {
+    "weekly_accounting_payout_pauses": ["attempt_no"]
+  }
+}

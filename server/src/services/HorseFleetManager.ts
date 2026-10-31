@@ -100,7 +100,6 @@ import {
 } from './HorseGameWaitlistYield.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 import { bankrollBuyIn, bankrollPolicyFor, canSit, referenceBuyIn } from './HorseBankroll.js';
-import { loadPilotSeatScope, pilotSeatVerdict, seatPolicyFor } from './LightningPilotSeatScope.js';
 import {
   bankrollCounters,
   bankrollEvent,
@@ -2574,17 +2573,6 @@ export class HorseFleetManager {
       const nowMs2 = Date.now();
       const book = controllerEnabled() ? await tagBook.load() : null;
       const chicagoWeekday = chicagoNow().weekday;
-      /* THE STANDING LIGHTNING PILOT ASSIGNMENT (2026-10-22). Read once per
-         cycle; unread or inactive means no opinion, today's behaviour. See
-         LightningPilotSeatScope. */
-      const pilotScopeRead = await loadPilotSeatScope(supabase);
-      if (pilotScopeRead === 'unread') {
-        console.warn(
-          '[HorseFleet] Lightning pilot assignment unread this cycle - assigned horses seat as before.'
-        );
-      }
-      /* Assigned pilot horses refused a new seat outside the pilot club. */
-      let pilotElsewhereDropped = 0;
       if (book) {
         console.log(
           `[HorseFleet] Tag book: ${book.tags.size} membership tag(s), ${book.states.size} horse state(s)`
@@ -3167,13 +3155,6 @@ export class HorseFleetManager {
               clubDropped++;
               return false;
             }
-            /* AN ASSIGNED PILOT HORSE SEATS ONLY IN THE PILOT (2026-10-22).
-               New seats only; nothing it already holds is touched. See
-               LightningPilotSeatScope. */
-            if (!bankrollOnly && pilotSeatVerdict(h.id, seatClub) === 'elsewhere') {
-              pilotElsewhereDropped++;
-              return false;
-            }
 
             /* ── THE DOOR (2026-09-05). A horse barred from THIS game for low
                VPIP is not a candidate for it - the database would refuse the
@@ -3394,7 +3375,7 @@ export class HorseFleetManager {
                 Number((table as any).min_buy_in) || undefined,
                 Number((table as any).max_buy_in) || undefined
               );
-              if (!canSit(roll, ref, seatPolicyFor(h.id, seatClub))) {
+              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) {
                 bankrollEvent('seat_refused_underrolled');
                 return false;
               }
@@ -4022,12 +4003,6 @@ export class HorseFleetManager {
           `[HorseFleet] tags: ${tagDropped} horse/table pair(s) excluded by the horse's own ` +
             `game, stake or lane; ${restDayDropped} on a rest day; ${dailyCapDropped} at their ` +
             `daily cap. A human short-handed at the table bypasses all three.`
-        );
-      }
-      if (pilotElsewhereDropped > 0) {
-        console.log(
-          `[HorseFleet] lightning pilot: ${pilotElsewhereDropped} horse/table pair(s) excluded - ` +
-            `an assigned pilot horse takes new seats only in the pilot club.`
         );
       }
       if (barredDropped > 0 || floorUnaffordableDropped > 0) {
@@ -4887,13 +4862,6 @@ export class HorseFleetManager {
         // with the club that can pay for it, or does not answer at all.
         const seatClub = this.resolveSeatClub(membership, table, offer.user_id);
         if (seatClub === null) continue;
-        /* An assigned pilot horse answers no seat call outside the pilot; the
-           offer passes to the next player by its own sweep. */
-        if (
-          cashRosterAllows(offer.user_id) !== true &&
-          pilotSeatVerdict(offer.user_id, seatClub) === 'elsewhere'
-        )
-          continue;
         /* The same door rules as the seeding loop: a horse barred from this
            game does not answer its seat call, and one holding a rejoin floor
            answers with the floor. */
@@ -4976,9 +4944,7 @@ export class HorseFleetManager {
         desired: buyIn,
         minBuyIn: minB,
         maxBuyIn: maxB,
-        /* The pilot wallet is a dedicated fund at a pilot seat; every other
-           seat is sized exactly as before. See LightningPilotSeatScope. */
-        policy: seatPolicyFor(horseId, seatClub),
+        policy: bankrollPolicyFor(horseId),
       });
       if (capped <= 0) {
         note('seat_refused_share_below_min');

@@ -195,7 +195,8 @@ test.describe('Visible achievement and rate history readers', () => {
     expect(before.every((row) => !row.unlocked_at && Number(row.progress) < 100)).toBe(true);
 
     const fixtureIds = [randomUUID(), randomUUID()];
-    const topic = `realtime:achievement-notifications-${ownerId}`;
+    const topicPrefix = `realtime:achievement-notifications-${ownerId}:row:`;
+    const ownerTopics = new Set<string>();
     let ownerJoin = false;
     const delivered = new Set<string>();
     const reads: Response[] = [];
@@ -217,14 +218,22 @@ test.describe('Visible achievement and rate history readers', () => {
           const frameTopic = Array.isArray(frame) ? frame[2] : frame.topic;
           const event = Array.isArray(frame) ? frame[3] : frame.event;
           const body = Array.isArray(frame) ? frame[4] : frame.payload;
-          if (frameTopic === topic && event === 'phx_join') {
-            ownerJoin =
+          if (
+            typeof frameTopic === 'string' &&
+            frameTopic.startsWith(topicPrefix) &&
+            event === 'phx_join'
+          ) {
+            const validOwnerBinding =
               body?.config?.postgres_changes?.some(
                 (binding: any) =>
                   binding.table === 'notifications' &&
                   binding.event === 'INSERT' &&
                   binding.filter === `user_id=eq.${ownerId}`
               ) === true;
+            if (validOwnerBinding) {
+              ownerTopics.add(frameTopic);
+              ownerJoin = true;
+            }
           }
         } catch {
           /* Unrelated non-JSON frame. Never retain authentication payloads. */
@@ -238,7 +247,7 @@ test.describe('Visible achievement and rate history readers', () => {
           const body = Array.isArray(frame) ? frame[4] : frame.payload;
           const row = body?.data?.record;
           if (
-            frameTopic === topic &&
+            ownerTopics.has(frameTopic) &&
             event === 'postgres_changes' &&
             row?.user_id === ownerId &&
             fixtureIds.includes(row?.id)

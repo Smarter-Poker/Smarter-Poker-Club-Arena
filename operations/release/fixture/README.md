@@ -104,20 +104,22 @@ only the namespace key name from the fixture descriptor, never its owner's
 stored value, and use stripped ordinary actor JWTs with validated subject,
 authenticated role, finite real expiry and an empty refresh token.
 
-The Dockerfile pins Linux amd64 platform manifests, verified through the official
-Docker Registry API on 2026-09-11. Other architectures deliberately fail closed.
+The Dockerfile pins Linux amd64 platform manifests. The current Auth v2.197.0
+manifest was verified through the official Docker Registry API on 2026-10-31;
+the other base manifests retain their 2026-09-11 verification. Other architectures
+deliberately fail closed.
 
 | Input             | Version                | Linux amd64 manifest digest                                               |
 | ----------------- | ---------------------- | ------------------------------------------------------------------------- |
 | Official Node     | 22.23.2, bookworm-slim | `sha256:4d676821dff059fd00d277ee4261ef34ea712317fed0737c03941481b5760c96` |
-| Supabase GoTrue   | v2.196.0               | `sha256:7e813221b93fbf54b515036438550e483bfaf057b9db52fe9bc1ce91c47e817e` |
+| Supabase GoTrue   | v2.197.0               | `sha256:839f529492d116b4e8b7777c953a27c381d34c15a744b1bcefde5eefaa1f9f9f` |
 | PostgREST         | v14.5                  | `sha256:bb289d00570b569525e1e22fb77c49cd17c17ca3f41da9ee2b4351a35027551b` |
 | Supabase Realtime | v2.134.10              | `sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76` |
 
 Realtime's official image supplies its matching Debian trixie runtime and Erlang
 release. The [tagged upstream Dockerfile](https://github.com/supabase/realtime/blob/v2.134.10/Dockerfile)
 documents that layout. GoTrue is copied as the upstream static Go binary; the
-[tagged build](https://github.com/supabase/auth/blob/v2.196.0/Dockerfile)
+[tagged build](https://github.com/supabase/auth/blob/v2.197.0/Dockerfile)
 sets `CGO_ENABLED=0`. The PostgREST amd64 image supplies `/bin/postgrest`, the
 [upstream static build](https://github.com/PostgREST/postgrest/blob/v14.5/nix/tools/docker/default.nix).
 No Alpine libc or independent Erlang installation is copied into Debian.
@@ -306,11 +308,11 @@ enter the failure receipt. The one-loopback-listener requirement stays enforced.
    CREATE permission on `public` before running the unchanged migration command.
 2. With synthetic `GOTRUE_DB_DATABASE_URL` and local auth configuration, run
    `/usr/local/bin/auth migrate`. This runs the
-   [upstream embedded migrations](https://github.com/supabase/auth/blob/v2.196.0/cmd/migrate_cmd.go).
+   [upstream embedded migrations](https://github.com/supabase/auth/blob/v2.197.0/cmd/migrate_cmd.go).
    Apply the reviewed app schema only after those succeed; do not replace the
    GoTrue-owned schema with an old dump lacking its migration ledger. Start
    `/usr/local/bin/auth serve`, then create users and MFA through its real API.
-   Both paths require the exact 70-version migration ledger from v2.196.0,
+   Both paths require the exact 75-version migration ledger from v2.197.0,
    including `00`; partial, replaced or fabricated extra versions fail.
    TOTP enrollment returns an SVG QR image from the pinned Auth API. Read that
    response through a 1 MiB streaming byte limit; all other Auth responses keep
@@ -539,3 +541,45 @@ This is a disposable service preimage, not a full role-graph installer, effectiv
 application privilege proof or production certificate. A future reviewed installer
 must reassert its exact preimage and preserve the separate commit, observer and
 ordinary-role behavior checks before full-schema qualification.
+
+## Explicit protected same-job connected observations
+
+The existing Schema Audit workflow has an opt-in manual connected-observation
+mode. Its existing reusable native job accepts this mode only from the exact
+canonical protected-main caller, matching source SHA and repository numeric ID.
+The default PR mode remains credential-free. The sole optional `DATABASE_URL`
+secret is present only in the read-only capture step; it never enters the native
+driver, image build, container, browser, artifact or logs.
+
+Six raw candidate files remain in a private runner-temporary directory. The
+original catalogue, role graph/settings/default ACLs and genuine service dump
+must qualify exact composition and a real no-game restore with ordinary Auth,
+MFA and PostgREST facts. Capture and service smoke leave readiness false. Only
+successful native parity permits the ordinary ready-schema runtime. No generic
+role cloning, extension substitution, omitted schema or guessed readiness is
+accepted. Raw files are removed on every outcome; only sanitized fixed receipts
+are uploaded, including failures and verified cleanup.
+
+The foreground native job reuses one source-bound fixture image lifetime. It
+runs the ten tournament UI cases and four three-run UI cases in two separate
+fresh fixtures with one exact immutable published client archive and one engine
+built from its actual protected source context. This is isolated observation,
+not release admission, publication, serving-engine adoption or a product
+certificate. Existing release-controller admission remains unchanged. This mode
+is **NOT_EXECUTED** until its actual terminal native receipt establishes all14
+cases and complete cleanup. No active production player game may be used.
+
+### Exact original-to-restored public column ordinal adapter
+
+The canonical production catalogue and its digest remain unchanged. The private
+preflight derives one explicit versioned expected restore from that original
+payload before reading the restored native catalogue: only public live-column
+physical ordinals become their original relative live-column rank, because a
+schema-only dump omits dropped physical slots. Genuine Auth migration ordinals
+remain exact. PostgreSQL canonical JSONB text, all other metadata, role/default
+and effective ACL checks remain authoritative. Native observations never supply
+the expected catalogue. Both scenes bind the independently expected restored
+digest; the original digest remains separately retained. Only fixed mapping
+counts/digests are public; changed column rows and original literal payloads
+remain private and are removed with the owned fixture inputs. This mapping is
+source preparation, not a full-schema or connected fourteen-case pass.

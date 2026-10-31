@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exact current R2/R3 and owned global phase on the existing native board.
+Also: every prepared scope is paid and owed scopes catch up hourly (20261031190020).
 Reuse only the maintained family's setup, not its unrelated cases. The original
 standalone bank owner runs; its external mint and precomputed inventory/prep are
 explicit adapters. Wallet/ledger/invoice execution and ordering are real PG17.
@@ -25,6 +26,12 @@ extra=r'''
     q("CREATE TABLE engine_table_leases(table_id uuid PRIMARY KEY,instance_id text,engine_version text,acquired_at timestamptz,heartbeat_at timestamptz,lease_generation uuid,protocol_version integer);CREATE TABLE engine_tournament_leases(tournament_id uuid PRIMARY KEY,instance_id text,engine_version text,acquired_at timestamptz,heartbeat_at timestamptz,lease_generation uuid,protocol_version integer);")
     migration=next((R/'supabase/migrations').glob('20261028162126_*')).read_text()
     q('SET check_function_bodies=true;'+migration)
+    # The later owned-slot migration: every prepared scope is paid and the rest
+    # catch up. Its exact native section (the production authority guard pins
+    # production bodies and is outside it) replaces the three owners here, so
+    # every case below runs the CURRENT owners.
+    catch_up=next((R/'supabase/migrations').glob('20261031190020_*')).read_text()
+    q(catch_up[catch_up.index('-- native:begin'):catch_up.index('-- native:end')])
     # The complete original financial owners execute. Only existing external
     # precomputation and mint transport are adapters, explicitly not live proof.
     q("CREATE FUNCTION caw2_u(label text)RETURNS uuid LANGUAGE sql IMMUTABLE AS $$SELECT md5('owned-phase-second-board:'||label)::uuid$$;")
@@ -63,6 +70,59 @@ extra=r'''
     owned_case('foreign-fresh-engine-refuses-all-money',"SELECT fixture_owned_ack();UPDATE fixture_clock SET n='2026-10-12 09:00Z';UPDATE engine_table_leases SET instance_id='foreign',heartbeat_at='2026-10-12 09:00Z';SELECT smarter_private.weekly_payout_execute(caw_u('owned-run'));",'weekly_payout_not_prepared_and_parked_at_four')
     owned_case('global-r3-fault-rolls-back-earlier-real-r1-r2',"SELECT fixture_owned_ack();UPDATE fixture_clock SET n='2026-10-12 09:00Z';UPDATE engine_table_leases SET heartbeat_at='2026-10-12 09:00Z';SET LOCAL fixture.refuse_player='on';SELECT smarter_private.weekly_payout_execute(caw_u('owned-run'));",'fixture-player-fault')
     owned_case('original-due-fault-recorded-with-no-partial-wallets',"CREATE TEMP TABLE before_fault AS SELECT caw_balances()b,(SELECT count(*)FROM chip_ledger)n;SELECT fixture_owned_ack();UPDATE fixture_clock SET n='2026-10-12 09:00Z';UPDATE engine_table_leases SET heartbeat_at='2026-10-12 09:00Z';SET LOCAL fixture.refuse_player='on';SELECT smarter_private.weekly_payout_due();SELECT caw_assert((SELECT b FROM before_fault)=caw_balances()AND(SELECT n FROM before_fault)=(SELECT count(*)FROM chip_ledger),'failed-due-has-no-partial-money');SELECT caw_assert((SELECT phase='released'AND result->>'paid'='false'AND result->>'reason'='fixture-player-fault'FROM weekly_accounting_payout_pauses),'failed-due-durable-result');")
+    # EVERY PREPARED SCOPE IS PAID; THE REST CATCH UP (20261031190020).
+    two="jsonb_build_array(jsonb_build_object('kind','club','id',caw_u('club'),'period_start','2026-10-05T07:00:00+00:00','period_end','2026-10-12T07:00:00+00:00'),jsonb_build_object('kind','club','id',caw2_u('club'),'period_start','2026-10-05T07:00:00+00:00','period_end','2026-10-12T07:00:00+00:00'))"
+    owed=("CREATE OR REPLACE FUNCTION smarter_private.weekly_payout_scope_plan(p_end timestamptz,p_now timestamptz)RETURNS jsonb LANGUAGE sql AS $f$SELECT COALESCE(jsonb_agg(j ORDER BY o),'[]'::jsonb)FROM jsonb_array_elements("+two+")WITH ORDINALITY x(j,o)"
+     " WHERE NOT EXISTS(SELECT FROM smarter_private.weekly_payout_financial_receipts r WHERE r.scope_kind=j->>'kind' AND r.scope_id=(j->>'id')::uuid AND r.period_start=(j->>'period_start')::timestamptz)$f$;"
+     "CREATE OR REPLACE FUNCTION public.fn_accounting_close_windows_pending(uuid,uuid,timestamptz,timestamptz)RETURNS boolean LANGUAGE sql AS $f$SELECT false$f$;"
+     "CREATE OR REPLACE FUNCTION public.fn_prepare_accounting_week(uuid,uuid,timestamptz,timestamptz)RETURNS jsonb LANGUAGE sql AS $f$SELECT CASE WHEN $2=caw2_u('club')AND current_setting('fixture.refuse_club2',true)='on' THEN jsonb_build_object('success',false,'problems',jsonb_build_array(jsonb_build_object('reason','fixture_still_preparing'))) ELSE jsonb_build_object('success',true,'fixture_boundary','precomputed-original-inventory')END$f$;"
+     # Per-club order: each paid club's agent round precedes its own players.
+     "CREATE OR REPLACE FUNCTION fixture_observe_money()RETURNS trigger LANGUAGE plpgsql AS $f$BEGIN IF NEW.category='commission'AND NEW.status='posted' THEN INSERT INTO fixture_order(kind,club_id)VALUES('agent',NEW.club_id);"
+     " ELSIF NEW.category='rakeback'AND NEW.status='posted' THEN IF NOT EXISTS(SELECT FROM accounting_routed_settlement_runs WHERE round_no=2 AND scope_id=NEW.club_id)THEN RAISE EXCEPTION 'player-before-own-agent-round';END IF;"
+     " INSERT INTO fixture_order(kind,club_id)VALUES('player',NEW.club_id);END IF;RETURN NEW;END$f$;")
+    def at(t):return "UPDATE fixture_clock SET n='"+t+"';UPDATE engine_table_leases SET heartbeat_at='"+t+"';"
+    def ack(attempt):return ("SELECT public.fn_weekly_accounting_payout_pause_ack(p.run_id,p.ownership_token,'fixture-engine',jsonb_build_array(jsonb_build_object('scope','cash','table_id',caw_u('table'),'tournament_id',NULL,'lease_generation',caw_u('lease'))))"
+     " FROM weekly_accounting_payout_pauses p WHERE p.attempt_no="+str(attempt)+";")
+    def paid(club):return ("SELECT caw_assert((SELECT chip_treasury=1421 FROM clubs WHERE id="+club+")AND EXISTS(SELECT FROM smarter_private.weekly_payout_financial_receipts WHERE scope_id="+club+")"
+     " AND (SELECT count(*)=2 FROM accounting_routed_settlement_runs WHERE scope_id="+club+"),'paid-'||"+club+"::text);")
+    def unpaid(club):return ("SELECT caw_assert(NOT EXISTS(SELECT FROM smarter_private.weekly_payout_financial_receipts WHERE scope_id="+club+")AND NOT EXISTS(SELECT FROM accounting_routed_settlement_runs WHERE scope_id="+club+")"
+     " AND NOT EXISTS(SELECT FROM fixture_order WHERE club_id="+club+"),'unpaid-'||"+club+"::text);")
+    stage=lambda expected,label:"SELECT caw_assert((smarter_private.weekly_payout_due())->>'stage'='"+expected+"','"+label+"');"
+    owned_case('subset-boundary-pays-its-prepared-club-and-leaves-the-other-owed',owed+
+     "UPDATE weekly_accounting_payout_pauses SET scope_plan=jsonb_build_array(scope_plan->0);"+ack(1)+at('2026-10-12 09:00Z')+
+     "SELECT caw_assert((smarter_private.weekly_payout_execute(caw_u('owned-run'))->>'success')='true','subset-run');"+paid("caw_u('club')")+unpaid("caw2_u('club')"))
+    owned_case('revalidation-change-defers-only-that-club-then-next-hour-pays-it',owed+"SET LOCAL fixture.refuse_club2='on';"+ack(1)+at('2026-10-12 09:00Z')+
+     "SELECT caw_assert(jsonb_array_length(smarter_private.weekly_payout_execute(caw_u('owned-run'))->'deferred_scopes')=1,'one-deferred');"+paid("caw_u('club')")+unpaid("caw2_u('club')")+
+     "SELECT caw_assert((SELECT jsonb_array_length(scope_plan)=1 AND phase='released' FROM weekly_accounting_payout_pauses WHERE attempt_no=1),'boundary-owned-only-paid-club');"+
+     "SET LOCAL fixture.refuse_club2='off';"+at('2026-10-12 09:06Z')+stage('weekly_payout_prepared','catch-up-prepared')+
+     "SELECT caw_assert((SELECT money_starts_at='2026-10-12 10:00Z' AND announced_at='2026-10-12 09:58Z' AND scope_plan->0->>'id'=caw2_u('club')::text AND jsonb_array_length(scope_plan)=1 FROM weekly_accounting_payout_pauses WHERE attempt_no=2),'second-slot-owns-the-owed-club');"+
+     at('2026-10-12 09:30Z')+stage('weekly_payout_prepared','waits-for-own-slot')+
+     "SELECT caw_assert(((public.fn_weekly_accounting_payout_pause_state())->'boundary'->>'money_starts_at')::timestamptz='2026-10-12 10:00Z','engine-reads-the-second-slot');"+
+     at('2026-10-12 09:58:30Z')+ack(2)+at('2026-10-12 10:00Z')+
+     "SELECT caw_assert((smarter_private.weekly_payout_due()->>'success')='true','second-slot-paid');"+paid("caw_u('club')")+paid("caw2_u('club')")+
+     "SELECT caw_assert((SELECT count(*)=2 AND sum(amount)=1000 FROM ca_mint_ledger),'each-club-banked-once');"+
+     "SELECT caw_assert((SELECT count(*)=4 FROM accounting_routed_settlement_runs),'four-stage-receipts-no-duplicate');"+
+     at('2026-10-12 10:06Z')+"SELECT caw_assert(smarter_private.weekly_payout_due() IS NULL,'nothing-owed-docs-continue');")
+    owned_case('a-missed-first-slot-prepares-the-next-hour-instead-of-owning-every-tick',owed+"DELETE FROM weekly_accounting_payout_pauses;"+at('2026-10-12 09:07Z')+
+     stage('weekly_payout_prepared','late-prepared')+
+     "SELECT caw_assert((SELECT attempt_no=2 AND money_starts_at='2026-10-12 10:00Z' AND jsonb_array_length(scope_plan)=2 FROM weekly_accounting_payout_pauses),'late-row');")
+    owned_case('final-ticks-own-the-slot-with-ready-scopes-only',owed+"DELETE FROM weekly_accounting_payout_pauses;SET LOCAL fixture.refuse_club2='on';"+at('2026-10-12 08:40Z')+
+     stage('weekly_payout_preparing','early-waits-for-all')+"SELECT caw_assert(NOT EXISTS(SELECT FROM weekly_accounting_payout_pauses),'no-early-subset');"+
+     at('2026-10-12 08:52Z')+stage('weekly_payout_prepared','final-subset')+
+     "SELECT caw_assert((SELECT attempt_no=1 AND jsonb_array_length(scope_plan)=1 AND scope_plan->0->>'id'=caw_u('club')::text FROM weekly_accounting_payout_pauses),'final-row-ready-only');")
+    owned_case('a-refused-slot-is-prepared-again-for-the-next-hour',owed+at('2026-10-12 09:01Z')+stage('weekly_payout_financial_refused','unacknowledged-refused')+
+     "SELECT caw_assert((SELECT phase='released' FROM weekly_accounting_payout_pauses WHERE attempt_no=1),'refused-released');"+unpaid("caw_u('club')")+unpaid("caw2_u('club')")+
+     at('2026-10-12 09:10Z')+stage('weekly_payout_prepared','retry-prepared')+
+     "SELECT caw_assert((SELECT jsonb_array_length(scope_plan)=2 FROM weekly_accounting_payout_pauses WHERE attempt_no=2),'retry-owns-both');")
+    owned_case('owned-slots-end-after-eight',owed+"DELETE FROM weekly_accounting_payout_pauses;"+at('2026-10-12 15:50Z')+stage('weekly_payout_prepared','eighth-slot')+
+     "SELECT caw_assert((SELECT attempt_no FROM weekly_accounting_payout_pauses)=8,'eighth');DELETE FROM weekly_accounting_payout_pauses;"+at('2026-10-12 15:58Z')+
+     "SELECT caw_assert(smarter_private.weekly_payout_due() IS NULL,'no-ninth-slot');")
+    owned_case('one-unreleased-boundary-per-week',"INSERT INTO weekly_accounting_payout_pauses(period_start,period_end,attempt_no,announced_at,money_starts_at,money_deadline_at,expires_at,scope_plan)"
+     "VALUES('2026-10-05 07:00Z','2026-10-12 07:00Z',2,'2026-10-12 09:58Z','2026-10-12 10:00Z','2026-10-12 10:04Z','2026-10-12 10:05Z','[{}]');",'weekly_accounting_payout_pauses_one_unreleased')
+    owned_case('a-slot-is-on-its-own-hour',"UPDATE weekly_accounting_payout_pauses SET phase='released';INSERT INTO weekly_accounting_payout_pauses(period_start,period_end,attempt_no,announced_at,money_starts_at,money_deadline_at,expires_at,scope_plan)"
+     "VALUES('2026-10-05 07:00Z','2026-10-12 07:00Z',2,'2026-10-12 08:58Z','2026-10-12 09:00Z','2026-10-12 09:04Z','2026-10-12 09:05Z','[{}]');",'weekly_accounting_payout_pauses_slot_check')
+    owned_case('a-boundary-cannot-own-a-scope-the-week-no-longer-owes',owed+"UPDATE weekly_accounting_payout_pauses SET scope_plan=scope_plan||jsonb_build_array(scope_plan->0);"+ack(1)+at('2026-10-12 09:00Z')+
+     "SELECT smarter_private.weekly_payout_execute(caw_u('owned-run'));",'weekly_payout_prepared_scope_changed')
     # Commit only this isolated synthetic board so a second PostgreSQL backend
     # can ACK the original DUE while its original statement is waiting. The
     # observed server wait event supplies synchronization; no guessed delay.

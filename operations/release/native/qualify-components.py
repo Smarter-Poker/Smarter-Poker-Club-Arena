@@ -22,7 +22,8 @@ import urllib.request
 import zipfile
 from contextlib import contextmanager
 
-REPO = 'Smarter-Poker/Smarter-Poker-Club-Arena'
+REPO = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena'
+REPOSITORY_ID = 1132369872
 FIXTURE_SERVER = '/usr/local/bin/fixture-server'
 CASES = ['exact-schema-catalogue', 'authenticated-web-bundle',
          'engine-browser-causal-hand', 'completed-hand-persisted',
@@ -34,6 +35,15 @@ FINANCIAL_CASES = ['exact-schema-catalogue', 'ordinary-auth-topup-replay',
 def require(value, reason='RELEASE_COMPONENT_SEMANTIC_REFUSED'):
     if not value:
         raise RuntimeError(reason)
+
+
+def validate_repository_identity(request_repository, github_repository, metadata):
+    # The transferred repository keeps its numeric identity. Neither an old
+    # namespace redirect nor a replacement repository at this name qualifies.
+    require(request_repository == REPO and github_repository == REPO and
+            isinstance(metadata, dict) and metadata.get('full_name') == REPO and
+            type(metadata.get('id')) is int and metadata['id'] == REPOSITORY_ID,
+            'RELEASE_SEMANTIC_REPOSITORY_IDENTITY_REQUIRED')
 
 
 def validate_source_contract(contract):
@@ -79,7 +89,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def provider(route, *, archive=None):
-    require(route.startswith('/repos/' + REPO + '/'))
+    require(route == '/repos/' + REPO or route.startswith('/repos/' + REPO + '/'))
     request = urllib.request.Request('https://api.github.com' + route, headers={
         'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28'})
@@ -301,8 +311,9 @@ def qualify(request, operation, controls, output, *, scenario='product'):
     financial_scenario = scenario == 'financial'
     player_ui_scenario = scenario == 'tournament-player-ui'
     require(re.fullmatch(r'[0-9a-f-]{36}', operation))
-    require(request['phase'] == 'COMPATIBILITY' and request['repository'] == REPO and
-            os.environ['GITHUB_REPOSITORY'] == REPO and os.environ['GITHUB_RUN_ATTEMPT'] == '1')
+    require(request['phase'] == 'COMPATIBILITY' and os.environ['GITHUB_RUN_ATTEMPT'] == '1')
+    validate_repository_identity(request['repository'], os.environ['GITHUB_REPOSITORY'],
+                                 provider(f'/repos/{REPO}'))
     runtime_image = request['runtime_image']
     require(re.fullmatch(r'[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}', runtime_image))
     require(command(['git', '-C', str(controls), 'rev-parse', 'HEAD']).stdout.decode().strip() == request['control_sha'])

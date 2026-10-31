@@ -13,6 +13,7 @@ import {
   PRIVATE_RECORD_ROSTER_READ_MS,
   PRIVATE_RECORD_CASE_MS,
   PRIVATE_RECORD_OBSERVATION_LIMIT,
+  summarizePrivateRecordObservations,
   snapshotPrivateRecordFixtureProfile,
   readPrivateRecordFixturePlayerNumber,
   assertPrivateRecordFixtureRoster,
@@ -156,6 +157,22 @@ function report(evidence = browserEvidence()) {
   };
 }
 describe('finite published record client proof admission and verdict', () => {
+  it('retains bounded diagnostics without exceeding the unchanged certificate cap', () => {
+    const frames = Array.from({ length: PRIVATE_RECORD_OBSERVATION_LIMIT }, (_, socket) => ({
+      socket,
+      endpoint: 'gateway',
+      topic: `member-record:${'a'.repeat(36)}:${'b'.repeat(36)}`,
+      type: 'PRIVATE_RECORD_STATUS',
+      ready: true,
+    }));
+    const summary = summarizePrivateRecordObservations(frames);
+    expect(summary.observedRecordFrames).toEqual(frames.slice(-64));
+    expect(summary.observedRecordFrameCount).toBe(PRIVATE_RECORD_OBSERVATION_LIMIT);
+    expect(frames).toHaveLength(PRIVATE_RECORD_OBSERVATION_LIMIT);
+    expect(Buffer.byteLength(JSON.stringify({ ...browserEvidence(), ...summary }))).toBeLessThan(
+      32768
+    );
+  });
   it('fits both real roster refresh intervals and cleanup within the existing provider budget', () => {
     const roster = readFileSync('src/pages/ClubMembersPage.tsx', 'utf8');
     const interval = roster.match(/liveRosterRefreshPolicy = \{ minIntervalMs: ([\d_]+) \}/);

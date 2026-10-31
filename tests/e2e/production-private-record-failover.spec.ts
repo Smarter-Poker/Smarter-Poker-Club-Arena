@@ -4,6 +4,7 @@ import {
   PRIVATE_RECORD_ROSTER_READ_MS,
   PRIVATE_RECORD_CASE_MS,
   PRIVATE_RECORD_OBSERVATION_LIMIT,
+  summarizePrivateRecordObservations,
   snapshotPrivateRecordFixtureProfile,
   readPrivateRecordFixturePlayerNumber,
   assertPrivateRecordFixtureRoster,
@@ -641,7 +642,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     fault.restore();
     gatewayFault.restore();
     proof.faultRestored = true;
-    proof.observedRecordFrames = frames;
+    Object.assign(proof, summarizePrivateRecordObservations(frames));
     proof.openGatewaySockets = [...gatewayOpen];
     proof.allFaultsRestored = true;
     try {

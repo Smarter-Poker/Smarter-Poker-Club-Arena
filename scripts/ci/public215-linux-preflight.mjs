@@ -307,9 +307,13 @@ async function healthy(){
  if(!r.ok)refuse('health_http',{http_status:r.status});return servingIdentity(await r.json());
 }
 
+// Closed corrected-run continuation: only the reviewed 79 original exit0 receipts.
+const correctedHandoffBytes=readFileSync(new URL('./fixtures/public215-corrected-r7-linux-handoff.json',import.meta.url));
+requireValue(createHash('sha256').update(correctedHandoffBytes).digest('hex')==='7bf8cefeb60e4dbf8478ead73dfc293baf36be8e158c5a37c4cc008aa372ca39','Corrected continuation fixture bytes differ');
+export const CORRECTED_R7_RESUME_HANDOFF=Object.freeze(JSON.parse(correctedHandoffBytes));
 export function resumeSelection(selected,tree,servingSha,image){
- if(selected.dataset!==R7_RESUME_HANDOFF.dataset)return null;
- const m=R7_RESUME_HANDOFF;
+ const m=selected.dataset===R7_RESUME_HANDOFF.dataset?R7_RESUME_HANDOFF:selected.dataset===CORRECTED_R7_RESUME_HANDOFF.dataset?CORRECTED_R7_RESUME_HANDOFF:null;
+ if(!m)return null;
  requireValue(selected.candidate_sha===m.candidate_sha&&selected.stage_run===m.stage_run&&image===m.image_id&&tree===m.server_tree&&servingSha===m.serving_sha,'Explicit R7 continuation identity differs');return m;
 }
 export function resumeProvider(m,run,jobs,artifact){
@@ -354,7 +358,7 @@ export async function downloadResumeArchive(m,{fetchImpl=fetch,token=process.env
 const ZIP_READER=String.raw`import sys,json,base64,io,zipfile,hashlib,stat
 try:
  p=json.load(sys.stdin); expected={f['name']:f for f in p['files']}
- assert len(expected)==len(p['files']) and len(expected)==16
+ assert len(expected)==len(p['files']) and len(expected) in (16,479)
  raw=base64.b64decode(p['archive'],validate=True)
  z=zipfile.ZipFile(io.BytesIO(raw)); entries=z.infolist()
  assert len(entries)==len(expected) and len({i.filename for i in entries})==len(entries)
@@ -381,9 +385,27 @@ export function resumeFilesAdmission(m,files){
  for(const f of m.files){const b=files.get(f.name);requireValue(Buffer.isBuffer(b)&&b.length===f.bytes&&createHash('sha256').update(b).digest('hex')===f.sha256,'Pinned predecessor bytes differ');}
  const json=name=>JSON.parse(files.get(name).toString('utf8'));
  requireValue(existingImageIdentity(json('existing-image-identity.json'),m.candidate_sha,m.server_tree)===m.image_id,'Predecessor immutable image differs');
- const serving=json('serving-identity.json');requireValue(exact(serving,['contexts','serving_sha_before','serving_sha_after'])&&serving.contexts===6&&serving.serving_sha_before===m.serving_sha&&serving.serving_sha_after===m.serving_sha,'Predecessor global serving identity differs');
+ const serving=json('serving-identity.json');requireValue(exact(serving,['contexts','serving_sha_before','serving_sha_after'])&&serving.contexts===m.contexts.length&&serving.serving_sha_before===m.serving_sha&&serving.serving_sha_after===m.serving_sha,'Predecessor global serving identity differs');
  const source=json('source-admission.json');requireValue(source.format==='public215_protected_source_admission_v1'&&source.candidate_sha===m.candidate_sha&&source.integration?.stage_run===Number(m.stage_run)&&source.status==='source_evidence_only_not_deployed_frozen_or_certified','Predecessor source identity differs');
  requireValue(json('failure.json').status==='incomplete_unqualified_no_freeze_or_activation','Predecessor partial outcome required');
+ if(m.dataset===CORRECTED_R7_RESUME_HANDOFF.dataset)correctedResumeBoundary(m,files);
+}
+export function correctedResumeBoundary(m,files){
+ const json=name=>JSON.parse(files.get(name).toString('utf8'));
+ requireValue(m.contexts.length===79&&m.files.length===479&&m.contexts.every((c,i)=>c.offset===i)&&new Set(m.contexts.map(c=>c.context_id)).size===79,'Exact corrected prefix required');
+ const failure={format:'public215_linux_preflight_failure_v2',status:'incomplete_unqualified_no_freeze_or_activation',phase:'preparation',offset:79,context_id:null,request_sha256:null,code:'preparation_http',facts:{http_status:500},secondary_evidence_unavailable:false};
+ requireValue(digest(json('failure.json'))===digest(failure),'Original offset79 preparation HTTP500 required');
+ const started=json('attempt-79.started.json');
+ requireValue(exact(started,['phase','offset','context_id','request_sha256','observedAt'])&&started.phase==='preparation'&&started.offset===79&&started.context_id===null&&started.request_sha256===null&&typeof started.observedAt==='string','Original unbound offset79 required');
+ requireValue(!['bound','native-terminal','terminal'].some(kind=>files.has(`attempt-79.${kind}.json`)),'No offset79 request or native execution may be inherited');
+ for(const c of m.contexts){
+  const bound=json(`attempt-${c.offset}.bound.json`),terminal=json(`attempt-${c.offset}.terminal.json`),native=json(`attempt-${c.offset}.native-terminal.json`);
+  requireValue(bound.phase==='request'&&terminal.phase==='result'&&terminal.status==='actual_ssh_and_native_exit0'&&native.phase==='native'&&[bound,terminal,native].every(v=>v.offset===c.offset&&v.context_id===c.context_id&&v.request_sha256===c.request_sha256),'Original corrected context phases required');
+  requireValue(native.command_exit===0&&native.ssh_exit===0&&native.native_exit===0&&['errno','host_code','http_status','native_code','signal'].every(k=>native[k]===null),'Original actual native exit0 required');
+  const exit=json(c.context_id+'.exit.json');
+  requireValue(exact(exit,['exit_code','context_id','request_sha256','candidate_sha','image_id','stage_run','observedAt'])&&exit.exit_code===0&&exit.context_id===c.context_id&&exit.request_sha256===c.request_sha256&&exit.candidate_sha===m.candidate_sha&&exit.image_id===m.image_id&&exit.stage_run===m.stage_run,'Original corrected exit identity required');
+ }
+
 }
 export function inheritedEvidence(m,files,offset,cid,requestSha,row){
  const entry=m.contexts.find(c=>c.offset===offset);if(!entry){requireValue(!m.contexts.some(c=>c.context_id===cid),'Predecessor context moved ordinal');return null;}
@@ -427,7 +449,7 @@ async function main(){
  await preservePrimary(async()=>{
  state.phase='image';imageId=resolveImageSelection(selected,tree,remote=>command(process.env.PUBLIC215_SSH_COMMAND,[remote]),(name,bytes)=>writeEvidence(out,name,bytes));
  resume=resumeSelection(selected,tree,before.releaseSha,imageId);
- if(resume){state.phase='resume';prior=await loadResume(resume,out);record('resume-lineage.json',{format:'public215_linux_explicit_resume_v1',predecessor_run:resume.predecessor.run_id,predecessor_attempt:resume.predecessor.attempt,artifact_id:resume.predecessor.artifact_id,archive_sha256:resume.predecessor.archive_sha256,handoff_sha256:digest(resume),contexts:resume.contexts,status:'six_prior_receipts_only_remaining_contexts_required'});}
+ if(resume){state.phase='resume';prior=await loadResume(resume,out);record('resume-lineage.json',{format:'public215_linux_explicit_resume_v1',predecessor_run:resume.predecessor.run_id,predecessor_attempt:resume.predecessor.attempt,artifact_id:resume.predecessor.artifact_id,archive_sha256:resume.predecessor.archive_sha256,handoff_sha256:digest(resume),contexts:resume.contexts,status:resume===R7_RESUME_HANDOFF?'six_prior_receipts_only_remaining_contexts_required':`${resume.contexts.length}_prior_receipts_only_remaining_contexts_required`});}
  for(let offset=0;offset<=1024;offset++){
   Object.assign(state,{phase:'preparation',offset,context_id:null,request_sha256:null});record(`attempt-${offset}.started.json`,{...state,observedAt:new Date().toISOString()});
   const page=await rpc('fn_gto_v31_model_preparations',{p_dataset_id:selected.dataset,p_offset:offset,p_limit:1});requireValue(Array.isArray(page)&&page.length<=1,'One private preparation page required');if(!page.length){record(`attempt-${offset}.terminal.json`,{...state,status:'end_of_preparations'});break;}
@@ -443,7 +465,7 @@ async function main(){
   executionEvidence(result,{exit_code:0,context_id:cid,request_sha256:requestSha,candidate_sha:selected.candidate_sha,image_id:imageId,stage_run:selected.stage_run,observedAt:new Date().toISOString()},(name,bytes)=>writeEvidence(out,name,bytes));count++;
   record(`attempt-${offset}.terminal.json`,{...state,status:'actual_ssh_and_native_exit0'});
  }
- state.phase='census';requireValue(count===107&&(!resume||imported===6),'Complete 107-context private preparation set required');
+ state.phase='census';requireValue(count===107&&(!resume||imported===resume.contexts.length),'Complete 107-context private preparation set required');
  },async()=>{
   after=await healthy();record('serving-identity.json',{serving_sha_before:before.releaseSha,serving_sha_after:after.releaseSha,contexts:count});requireValue(before.releaseSha===after.releaseSha,'Healthy serving identity changed');if(resume)requireValue(after.releaseSha===resume.serving_sha,'Original continuation serving identity changed');
  },error=>record('post-health-failure.json',failureEvidence(error,{phase:'health_after',offset:state.offset,context_id:state.context_id,request_sha256:state.request_sha256})));

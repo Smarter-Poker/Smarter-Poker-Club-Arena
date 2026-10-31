@@ -530,7 +530,7 @@ describe('S-04: the ledger CSV cannot carry a formula', () => {
     fireEvent.click(screen.getByText('Transaction Ledger'));
     const exportButton = await screen.findByRole('button', { name: 'Export CSV' });
     // The control is rendered before its rows arrive. Visibility is not readiness.
-    expect(exportButton).toBeDisabled();
+    await waitFor(() => expect(exportButton).toBeDisabled());
     expect(fx.downloads).toHaveLength(0);
     await act(async () => ledger.resolve({ data: ledgerPage(), error: null }));
     await waitFor(() => expect(exportButton).toBeEnabled());

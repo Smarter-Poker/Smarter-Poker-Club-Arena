@@ -1,0 +1,11 @@
+# Owner-directed Diamond history removal
+
+The owner explicitly requested deleting Diamond Arena hands and leaving the arena parked, without refunds. The first finite operation removes completed tournament history only. It requires both Diamond switches off, the exact closure operation, a closed Diamond table, a completed tournament with paid bounties and closed escrow, completed atomic receipts, and no original-hand, restoration, jackpot, reporting or post-commit obligations. At most two raw pages are limited to 250 rows each and the transaction has 500 ms lock and 5 s statement deadlines. No recurring cleanup or production function is installed.
+
+The operation explicitly preserves and compares every financial summary before deleting history, because the existing history-delete trigger swallows insert failures. Atomic settlement receipts, original submissions, custody, wallets and seats remain untouched. Their retained gameplay payloads and unfinished/cash hands are not claimed deleted by this operation. Player notes cascade through the existing foreign keys.
+
+Native PostgreSQL 17 verifies scope refusal, open-arena refusal, unpaid-bounty refusal, rollback, eligible-only deletion, receipt preservation and idempotent repeat against controlled selector dependencies. Freeze and F06 leaf answers are controlled in this fixture; it is not whole-financial-engine qualification. The same exact operation was executed in one self-aborting production transaction on a terminal Diamond table: 121 eligible histories, all rolled back and read back intact. The subsequent commit removed those 121 histories and readback retained 121 atomic receipts and financial summaries. A further 47 bounded table transactions removed 4,211 histories; live readback confirmed 4,211 retained receipts/summaries and zero remaining histories for those tables. No refunds or wallet changes.
+
+The existing required continuation qualification invokes this native operation test and retains its evidence. This SQL is an explicit operator action, not a cron or release-triggered data cleanup.
+
+A ten-table production rollback qualification hit the unchanged 5 s deadline and rolled back. The operation was reduced to at most two pages; no timeout was extended and no partial result was treated as committed.

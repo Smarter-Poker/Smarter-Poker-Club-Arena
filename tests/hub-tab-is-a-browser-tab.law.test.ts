@@ -261,9 +261,9 @@ describe('round 2: a hub tab the player is not looking at', () => {
     expect(FRAME).toContain('isOffSite(url, window.location.origin)');
   });
 
-  it('inactive frames are quiet, then unloaded, and come back at their page', () => {
+  it('inactive frames stay quiet and keep their page until manually closed', () => {
     expect(FRAME).toContain('pauseMediaIn(doc)');
-    expect(FRAME).toContain("iframe.src = 'about:blank';");
+    expect(FRAME).not.toContain("iframe.src = 'about:blank';");
     expect(FRAME).toContain('iframe.src = lastPathRef.current;');
   });
 

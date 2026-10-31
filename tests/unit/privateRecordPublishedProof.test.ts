@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
+  hasLiveGatewayReady,
+  type PrivateRecordObservation,
+} from '../e2e/support/privateRecordObservation';
+import {
   admitPrivateRecordClientProof,
   assertQualifiedGateway,
   readPrivateRecordClientPin,
@@ -144,6 +148,33 @@ function report(evidence = browserEvidence()) {
   };
 }
 describe('finite published record client proof admission and verdict', () => {
+  it('accepts retained readiness only on an open gateway with no later refusal', () => {
+    const ready: PrivateRecordObservation = {
+      endpoint: 'gateway',
+      socket: 1,
+      topic: 'member-record:fixture',
+      type: 'PRIVATE_RECORD_STATUS',
+      ready: true,
+    };
+    const frames = [ready];
+    expect(hasLiveGatewayReady(frames, new Set([1]), ready.topic)).toBe(true);
+    expect(hasLiveGatewayReady(frames, new Set(), ready.topic)).toBe(false);
+    expect(hasLiveGatewayReady(frames, new Set([2]), ready.topic)).toBe(false);
+    expect(hasLiveGatewayReady(frames, new Set([1]), 'foreign')).toBe(false);
+    expect(hasLiveGatewayReady([{ ...ready, endpoint: 'engine' }], new Set([1]), ready.topic)).toBe(
+      false
+    );
+    expect(
+      hasLiveGatewayReady([...frames, { ...ready, ready: false }], new Set([1]), ready.topic)
+    ).toBe(false);
+    expect(
+      hasLiveGatewayReady(
+        [...frames, { ...ready, ready: false }, { ...ready, socket: 2 }],
+        new Set([2]),
+        ready.topic
+      )
+    ).toBe(true);
+  });
   it('accepts only the fixed protected event and exact identity-only payload', () => {
     expect(admitPrivateRecordClientProof(payload(), environment())).toEqual(input());
     for (const patch of [

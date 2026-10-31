@@ -164,7 +164,7 @@ export function profileStatsFromV2(payload: any): PokerStats | null {
     hoursPlayed: finiteStat(overall.hours_played),
     hoursMeasured: payload.quality?.metric_availability?.hours_played === true,
     cashHands: finiteStat(overall.cash_hands),
-    tourneyHands: finiteStat(overall.tourney_hands),
+    tourneyHands: finiteStat(payload.tournament_overall?.tourney_hands ?? overall.tourney_hands),
     tournamentsPlayed: finiteStat(tournaments.entries),
     tournamentsWon: finiteStat(tournaments.wins),
     tournamentCashes: finiteStat(tournaments.cashes),

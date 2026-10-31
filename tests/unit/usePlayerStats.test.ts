@@ -50,4 +50,18 @@ describe('usePlayerStats', () => {
     });
     expect(result.current.getStats('p1')?.handsPlayed).toBe(1);
   });
+  it('keeps the same opponent separate across cash and tournament samples', () => {
+    const cash = renderHook(() => usePlayerStats('mode-observer', 'cash'));
+    const tournament = renderHook(() => usePlayerStats('mode-observer', 'tournament'));
+    act(() => {
+      cash.result.current.recordHandPlayed('same-opponent');
+      cash.result.current.recordVPIP('same-opponent');
+      tournament.result.current.recordHandPlayed('same-opponent');
+      tournament.result.current.recordHandPlayed('same-opponent');
+    });
+    expect(cash.result.current.getStats('same-opponent')?.handsPlayed).toBe(1);
+    expect(cash.result.current.getStats('same-opponent')?.vpipCount).toBe(1);
+    expect(tournament.result.current.getStats('same-opponent')?.handsPlayed).toBe(2);
+    expect(tournament.result.current.getStats('same-opponent')?.vpipCount).toBe(0);
+  });
 });

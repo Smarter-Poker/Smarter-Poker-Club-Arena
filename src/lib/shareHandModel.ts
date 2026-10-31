@@ -354,6 +354,7 @@ export function shareableFromModel(
     potTotal: model.potTotal,
     winners,
     handNumber: model.handNumber ?? null,
+    ...(model.tournamentId !== undefined ? { tournamentId: model.tournamentId } : {}),
   };
 
   if (discardActions.length) hand.discard = { actions: discardActions };
@@ -501,6 +502,7 @@ export function replayFromShareable(hand: ShareableHand): ReplayModel {
 
   const input: ReplayInput = {
     handNumber: hand.handNumber ?? null,
+    ...(hand.tournamentId !== undefined ? { tournamentId: hand.tournamentId } : {}),
     playedAt: hand.timestamp ? new Date(hand.timestamp).toISOString() : null,
     gameVariant: VARIANT_KEY[hand.variant] || 'nlh',
     smallBlind,

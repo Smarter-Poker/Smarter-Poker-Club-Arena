@@ -94,7 +94,7 @@ export default function StatsHeadlineDeck(props: Props) {
               {/* max() prints the ALL-TIME count when it is larger, on a range-scoped
               page: say so (2026-09-20). */}
               <span className="hero-stat-label">
-                {lifetime.hands > overall.total_hands ? 'Lifetime Hands' : 'Total Hands'}
+                {lifetime.hands > overall.total_hands ? 'Recorded Cash Hands' : 'Cash Hands'}
               </span>
               <span className="hero-stat-value cyan">
                 {Math.max(lifetime.hands, overall.total_hands).toLocaleString()}
@@ -169,7 +169,8 @@ export default function StatsHeadlineDeck(props: Props) {
       "never present a truncated figure as a lifetime total". */}
         {hasData && !lifetime.indexed_complete && (
           <div className="stats-notice">
-            Older Hands Are Still Being Indexed. These Totals Will Grow.
+            Mode-Specific Totals Cover Recorded Hands With Known Game Type. Older Unclassified
+            Totals Are Excluded.
           </div>
         )}
         {hasData && overall.cash_hands > 0 && overall.cash_hands < 1000 && (

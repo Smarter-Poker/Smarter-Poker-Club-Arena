@@ -329,22 +329,22 @@ describe('scope tags match the SQL (defect 4: one grid, two populations)', () =>
   ])('every %s row carries the scope its SQL computes', async (_name, ui) => {
     const container = await mounted(ui());
     const all = rows(container);
-    expect(all.length).toBeGreaterThanOrEqual(8);
+    expect(all.length).toBeGreaterThanOrEqual(7);
     for (const r of all) {
       expect(r.tag, `scope tag on ${r.label}`).toBe(expectedTag(r.label));
     }
   });
 
-  it('marks the cash money rows Cash and the tendencies All Games, by name', async () => {
+  it('marks cash money and cash tendencies with the same explicit sample', async () => {
     const perf = await mounted(performance(OVERALL));
     for (const label of ['BB/100', 'Total Won', 'Total Invested', 'Biggest Pot Won']) {
       expect(row(perf, label).tag).toBe('Cash');
     }
     expect(row(perf, 'Biggest Hand Loss').tag).toBe('Cash');
     for (const label of ['VPIP', 'PFR', 'WTSD', 'Aggression Factor', 'Hands Won', 'Hands Lost']) {
-      expect(row(perf, label).tag).toBe('All Games');
+      expect(row(perf, label).tag).toBe('Cash');
     }
-    expect(row(perf, 'Showdown Win %').tag).toBe('All Games');
+    expect(row(perf, 'Showdown Win %').tag).toBe('Cash');
   });
 });
 

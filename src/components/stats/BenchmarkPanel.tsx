@@ -93,7 +93,7 @@ export default function BenchmarkPanel({
     // mounted-ref this used to carry could not change any outcome.
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getDistribution(`field:${scope}`)
+    StatsFactsService.getDistribution(`field:cash:${scope}`)
       .then((d) => {
         if (cancelled) return;
         setRows(d.rows);

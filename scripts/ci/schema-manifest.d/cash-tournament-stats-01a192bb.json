@@ -1,0 +1,14 @@
+{
+  "_comment": "Scoped declarations from migration 20261031161532; not installation evidence. Protected installation and live readback are recorded in the task checkpoint.",
+  "functions": [
+    "ca_own_hand_history_separated_by_club",
+    "ca_player_hands_separated",
+    "ca_player_hands_separated_by_club",
+    "ca_player_hands_separated_inner",
+    "ca_player_stats_club_comparison_separated",
+    "ca_player_stats_overview_separated",
+    "ca_player_stats_overview_separated_by_club",
+    "ca_player_stats_shared_separated",
+    "ca_public_arena_record_separated"
+  ]
+}

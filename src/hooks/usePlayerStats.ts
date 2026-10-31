@@ -72,7 +72,7 @@ function hydrate(): PlayerStatsMap {
     const saved = localStorage.getItem(STORAGE_KEY);
     const parsed = saved ? JSON.parse(saved) : {};
     if (
-      parsed?.version === 2 &&
+      parsed?.version === 3 &&
       parsed.stats &&
       typeof parsed.stats === 'object' &&
       !Array.isArray(parsed.stats)
@@ -80,7 +80,8 @@ function hydrate(): PlayerStatsMap {
       restorePublicObservedReceiptKeys(parsed.receipts);
       return parsed.stats;
     }
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    // Legacy counters blended game modes and cannot be reliably split.
+    return {};
   } catch {
     return {};
   }
@@ -105,7 +106,7 @@ function flush(): void {
   try {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ version: 2, stats: statsMap, receipts: publicObservedReceiptKeys() })
+      JSON.stringify({ version: 3, stats: statsMap, receipts: publicObservedReceiptKeys() })
     );
   } catch {
     /* quota exceeded — ignore */
@@ -153,10 +154,10 @@ function getSnapshot(): PlayerStatsMap {
   return statsMap;
 }
 
-export function usePlayerStats(observerId?: string) {
+export function usePlayerStats(observerId?: string, gameMode: 'cash' | 'tournament' = 'cash') {
   const playerKey = useCallback(
-    (id: string) => (observerId ? JSON.stringify([observerId, id]) : id),
-    [observerId]
+    (id: string) => JSON.stringify([observerId ?? 'legacy', gameMode, id]),
+    [observerId, gameMode]
   );
   const map = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
@@ -211,7 +212,12 @@ export function usePlayerStats(observerId?: string) {
 
   const observePublicEvent = useCallback(
     (tableId: string, type: string, data: Record<string, unknown>) => {
-      const observed = observePublicHandStats(observerId ?? 'legacy', tableId, type, data);
+      const observed = observePublicHandStats(
+        JSON.stringify([observerId ?? 'legacy', gameMode]),
+        tableId,
+        type,
+        data
+      );
       if (!observed.length) return;
       const next = { ...statsMap };
       for (const row of observed) {
@@ -235,7 +241,7 @@ export function usePlayerStats(observerId?: string) {
       flush();
       emit();
     },
-    [observerId, playerKey]
+    [observerId, gameMode, playerKey]
   );
 
   const clearStats = useCallback(() => {

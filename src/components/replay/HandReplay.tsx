@@ -999,7 +999,8 @@ export default function HandReplay({
     );
   }
 
-  const variant = gameTypeLabel(model.gameVariant) || source.gameType || '';
+  const gameVariant = gameTypeLabel(model.gameVariant) || source.gameType || '';
+  const variant = source.model.tournamentId ? `Tournament · ${gameVariant}` : gameVariant;
   /* The persisted reveal record: who showed, who mucked, in what order. The
      seat strip under the felt reads it so a mucked hand is labelled as one
      (`player-hand-ranking--mucked`) rather than drawn as "no cards". */

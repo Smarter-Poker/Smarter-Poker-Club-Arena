@@ -156,9 +156,11 @@ export const SharedClubStatsService = {
     clubId: string,
     days: number | null,
     timezone: string,
-    asset: string
+    asset: string,
+    gameMode: 'cash' | 'tournament' = 'cash'
   ): Promise<SharedClubStatsPayload> {
-    const { data, error } = await supabase.rpc('ca_player_stats_shared_overview_v1', {
+    const { data, error } = await supabase.rpc('ca_player_stats_shared_separated', {
+      p_game_mode: gameMode,
       p_target_user: targetUserId,
       p_club_id: clubId,
       p_days: days,
@@ -167,6 +169,8 @@ export const SharedClubStatsService = {
     });
     if (error) throw error;
     assertScope(data, targetUserId, asset, { clubId, days, timezone });
+    if (data?.scope?.game_mode !== gameMode)
+      throw new Error('Shared Statistics Game Mode Could Not Be Verified');
     return parseSharedOverview(data);
   },
 };

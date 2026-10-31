@@ -107,6 +107,8 @@ export interface ShareablePlayer {
 }
 
 export interface ShareableHand {
+  /** Recorded event identity. Undefined on older shared links. */
+  tournamentId?: string | null;
   id: string;
   tableName: string;
   /* The live catalogue is nlh, plo4, plo5, plo6, plo8, short_deck,
@@ -525,13 +527,18 @@ export function encodeHand(hand: ShareableHand): string {
   // 16: Crazy Pineapple's discard street (the card itself never travels).
   parts.push(hand.discard ? encodeActions(hand.discard.actions) : '');
   // 17: hand-level flags. 'b' — a bomb pot, which posts antes and NO blinds.
-  parts.push(hand.bombPot ? 'b' : '');
+  parts.push(
+    (hand.bombPot ? 'b' : '') +
+      (hand.tournamentId === undefined ? '' : hand.tournamentId === null ? 'c' : 't')
+  );
   /* 18: the SHOWDOWN street's own rows. The engine writes the returned
      uncalled bet with stage `showdown`, and the wire had no slot for that
      street - so the return never travelled, the recipient's reconstruction
      inferred one of its own and hung it on the river, and the river's pot
      line read the hand 7.70 lighter than it was (production #5087420). */
   parts.push(hand.showdown ? encodeActions(hand.showdown.actions) : '');
+  // Recorded identity is optional; legacy links remain unclassified.
+  parts.push(hand.tournamentId ? b64utf8(clip(hand.tournamentId, 64)) : '');
 
   // Base64 URL-safe encode. Everything above is ASCII by construction (names
   // are base64'd), so btoa cannot throw here.
@@ -686,6 +693,8 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
     if (discardActions.length) hand.discard = { actions: discardActions };
     if (showdownActions.length) hand.showdown = { actions: showdownActions };
     if (handFlags.includes('b')) hand.bombPot = true;
+    if (handFlags.includes('t') && parts[19]) hand.tournamentId = unb64utf8(parts[19]);
+    else if (handFlags.includes('c')) hand.tournamentId = null;
 
     return hand;
   } catch (e) {

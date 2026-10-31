@@ -162,10 +162,10 @@ describe('TablePage takes the saved hand as it lands', () => {
   it('uses the pool session for both history hydration and the lazy replay lookup', () => {
     const hydration = page.slice(page.indexOf('return startHandHistoryHydration({'));
     expect(hydration).toMatch(
-      /getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,/
+      /getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*gameMode: tableHistoryGameMode,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,/
     );
     expect(page).toMatch(
-      /getPlayerHands\(userId, 1, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,/
+      /getPlayerHands\(userId, 1, \{\s*tableId,\s*gameMode: tableHistoryGameMode,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,/
     );
   });
 
@@ -398,4 +398,16 @@ describe('the surfaces', () => {
     });
     expect(document.querySelector('.hdm-sn')?.textContent).toContain('#7');
   });
+});
+
+it('scopes each in-table history reader and live append to the current game mode', () => {
+  const source = readFileSync('src/pages/TablePage.tsx', 'utf8');
+  expect(source).toContain(
+    "const tableHistoryGameMode = tableState.isTournament ? 'tournament' : 'cash'"
+  );
+  expect(source.match(/gameMode: tableHistoryGameMode/g)).toHaveLength(3);
+  expect(source).toContain(
+    "if (Boolean(row.tournament_id) !== (tableHistoryGameMode === 'tournament')) return"
+  );
+  expect(source.match(/\$\{tableHistoryGameMode\}/g)?.length).toBeGreaterThanOrEqual(2);
 });

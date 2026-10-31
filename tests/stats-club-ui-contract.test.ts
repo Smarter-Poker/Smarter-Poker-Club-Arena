@@ -39,7 +39,7 @@ describe('Player Stats authorized club UI contract', () => {
   });
 
   it('loads comparison once with the bounded comparison RPC and exposes every required sort', () => {
-    expect(page).toContain("supabase.rpc('ca_player_stats_club_comparison'");
+    expect(page).toContain("supabase.rpc('ca_player_stats_club_comparison_separated'");
     expect(page).toContain('p_tz: statsTimezone');
     expect(page).toContain("`${user?.id ?? ''}:${targetUserId ?? ''}:${statsScope}");
     expect(page).not.toContain('clubs.map(async (club)');
@@ -61,8 +61,8 @@ describe('Player Stats authorized club UI contract', () => {
   });
 
   it('propagates club scope to overview, facts, notable hands, pulse, and exports', () => {
-    expect(page).toContain("statsRpcName('ca_player_stats_overview_v2', selectedClubId)");
-    expect(page).toContain("statsRpcName('ca_player_hands_v2', selectedClubId)");
+    expect(page).toContain("statsRpcName('ca_player_stats_overview_separated', selectedClubId)");
+    expect(page).toContain("statsRpcName('ca_player_hands_separated', selectedClubId)");
     expect(page).toContain('StatsFactsService, statsScope, windowDays, selectedClubId');
     expect(page).toContain('clubId={selectedClubId}');
     expect(page).toContain("params.set('statsClub', selectedClubId)");

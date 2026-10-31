@@ -24,6 +24,8 @@ import {
 } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
+import { statsGameMode, type StatsGameMode } from '../services/statsGameMode';
+import StatsGameModeControl from './stats/StatsGameModeControl';
 import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { findClubByParam, readClubContextParam } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
@@ -59,6 +61,7 @@ const PositionsTab = lazy(() => import('./stats/PositionsTab'));
 const HandsTab = lazy(() => import('./stats/HandsTab'));
 const TrophiesTab = lazy(() => import('./stats/TrophiesTab'));
 const TournamentsTab = lazy(() => import('./stats/TournamentsTab'));
+const TournamentPlayingStats = lazy(() => import('./stats/TournamentPlayingStats'));
 const AnalysisTab = lazy(() => import('./stats/AnalysisTab'));
 const FinancialReportingPanel = lazy(() => import('../components/stats/FinancialReportingPanel'));
 const ExactCashSessionsPanel = lazy(() => import('../components/stats/ExactCashSessionsPanel'));
@@ -157,6 +160,17 @@ const STATS_TOUR: TutorialStep[] = [
 ];
 
 export default function PlayerStatsPage() {
+  const [params] = useSearchParams();
+  const mode = statsGameMode(params.get('gameMode'));
+  return (
+    <>
+      <StatsGameModeControl />
+      <SeparatedPlayerStatsPage key={mode} gameMode={mode} />
+    </>
+  );
+}
+
+function SeparatedPlayerStatsPage({ gameMode }: { gameMode: StatsGameMode }) {
   usePageTitle('Player Stats');
   const { userId } = useParams();
   const { user } = useAuthUser();
@@ -356,6 +370,7 @@ export default function PlayerStatsPage() {
       import('./stats/HandsTab'),
       import('./stats/TrophiesTab'),
       import('./stats/TournamentsTab'),
+      import('./stats/TournamentPlayingStats'),
       import('./stats/AnalysisTab'),
       import('../components/stats/StatsCharts'),
       import('../components/stats/StatsPositionPiePlot'),
@@ -399,12 +414,13 @@ export default function PlayerStatsPage() {
       targetUserId: targetUserId ?? '',
       clubId: selectedClubId,
       asset: statsScope,
+      gameMode,
       rangeKey: cacheRangeKey,
       rangeDays: cacheRangeDays,
       timezone: statsTimezone,
       visibility: isOwnProfile ? 'owner' : 'shared_club',
     }),
-    [user?.id, targetUserId, selectedClubId, statsScope, statsTimezone, isOwnProfile]
+    [user?.id, targetUserId, selectedClubId, statsScope, statsTimezone, isOwnProfile, gameMode]
   );
   const loadScopeKey = JSON.stringify(cacheIdentityFor(rangeKey, windowDays));
   const [handMode, setHandMode] = useState<HandMode>('biggest_won');
@@ -490,8 +506,11 @@ export default function PlayerStatsPage() {
    * complete printed report, with no duplicated JSX to drift apart.
    */
   const showTab = useCallback(
-    (t: StatCategory) => printing || category === t,
-    [printing, category]
+    (t: StatCategory) =>
+      gameMode === 'tournament'
+        ? t === 'tournaments'
+        : t !== 'tournaments' && (printing || category === t),
+    [printing, category, gameMode]
   );
   // RAKE REPORTING IS AN AGENT PRIVILEGE. A player sees no Rake tab at all
   // until they are promoted; the RPCs refuse them regardless, this just keeps
@@ -505,7 +524,7 @@ export default function PlayerStatsPage() {
   useEffect(() => {
     setAgentRolesError(false);
     // The Diamond Arena has no agents (ruling 16): no downline on its page.
-    if (!isOwnProfile || !user?.id || statsScope !== CHIP_STATS) {
+    if (gameMode !== 'cash' || !isOwnProfile || !user?.id || statsScope !== CHIP_STATS) {
       setAgentRoles([]);
       return;
     }
@@ -536,7 +555,7 @@ export default function PlayerStatsPage() {
   const [liveRevision, setLiveRevision] = useState(0);
   useEffect(() => {
     setRakeError(false);
-    if (!isOwnProfile || !user?.id) {
+    if (gameMode !== 'cash' || !isOwnProfile || !user?.id) {
       setRakeStats(null);
       setRakeLoading(false);
       return;
@@ -578,7 +597,7 @@ export default function PlayerStatsPage() {
   const [cashOpportunityError, setCashOpportunityError] = useState<string | null>(null);
   const [cashOpportunityReload, setCashOpportunityReload] = useState(0);
   useEffect(() => {
-    if (!isOwnProfile || !targetUserId) {
+    if (gameMode !== 'cash' || !isOwnProfile || !targetUserId) {
       setCashOpportunityStats(null);
       setCashOpportunityLoading(false);
       setCashOpportunityError(null);
@@ -652,10 +671,12 @@ export default function PlayerStatsPage() {
   );
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
   const TABS = useMemo<StatCategory[]>(() => {
+    if (gameMode === 'tournament') return ['tournaments'];
     // Owner-only tabs are spliced in next to the tab they belong with, so the
     // order still derives from BASE_TABS and the two cannot drift.
     const out: StatCategory[] = [];
     for (const t of BASE_TABS) {
+      if (t === 'tournaments') continue;
       out.push(t);
       if (isOwnProfile && t === 'positions') out.push('hands');
       if (isOwnProfile && t === 'analysis') out.push('trophies');
@@ -664,7 +685,7 @@ export default function PlayerStatsPage() {
     const available: StatCategory[] = canSeeRake || isOwnProfile ? [...out, 'rake'] : out;
     if (!isOwnProfile || dashboardLayout.length === 0) return available;
     return normalizeDashboardLayout(dashboardLayout, available);
-  }, [canSeeRake, dashboardLayout, isOwnProfile]);
+  }, [canSeeRake, dashboardLayout, isOwnProfile, gameMode]);
   // If the tab disappears (role revoked, or navigating to another profile),
   // do not strand the view on a tab that no longer exists.
   useEffect(() => {
@@ -790,7 +811,7 @@ export default function PlayerStatsPage() {
   const loadRef = useRef<((opts?: { fresh?: boolean }) => Promise<void>) | null>(null);
   const openHandEvidence = useCallback(
     (filters: { variant?: string; position?: string; bigBlind?: number } = {}) => {
-      const params = new URLSearchParams({ source: 'stats' });
+      const params = new URLSearchParams({ source: 'stats', gameMode, statsAsset: statsScope });
       if (filters.variant) params.set('variant', filters.variant);
       if (filters.position) params.set('position', filters.position);
       if (filters.bigBlind) params.set('bigBlind', String(filters.bigBlind));
@@ -804,7 +825,7 @@ export default function PlayerStatsPage() {
       }
       navigate(`/hand-history?${params.toString()}`);
     },
-    [navigate, windowDays, selectedClubId]
+    [navigate, windowDays, selectedClubId, gameMode, statsScope]
   );
   // The index refresh is a WRITE. Un-throttled it fired on every bus refresh and
   // every tab-visibility change, i.e. repeatedly during active play.
@@ -849,9 +870,10 @@ export default function PlayerStatsPage() {
         const { data, error } = await retryFetch(
           () =>
             supabase
-              .rpc(statsRpcName('ca_player_stats_overview_v2', selectedClubId), {
+              .rpc(statsRpcName('ca_player_stats_overview_separated', selectedClubId), {
                 // One asset per read, never summed (src/services/statsScope.ts).
                 ...statsScopeArgs(statsScope, selectedClubId),
+                p_game_mode: gameMode,
                 p_user: targetUserId,
                 p_days: windowDays,
                 // Day buckets are cut in the player's zone, server-side
@@ -882,6 +904,7 @@ export default function PlayerStatsPage() {
           rangeDays: windowDays,
           timezone: statsTimezone,
           visibility: 'owner',
+          gameMode,
         });
         const payloadMatches = isFullStatsPayload(data);
         if (!error && scopeMatches && payloadMatches) {
@@ -1007,14 +1030,15 @@ export default function PlayerStatsPage() {
   // Notable hands. Loaded only when the Analysis tab is actually open — the
   // 'biggest' modes score the whole analysis window, so this is not free.
   useEffect(() => {
-    if (!targetUserId || !isOwnProfile || category !== 'analysis') return;
+    if (gameMode !== 'cash' || !targetUserId || !isOwnProfile || category !== 'analysis') return;
     let alive = true;
     setHandsLoading(true);
     setHandsError(false);
     Promise.all([
       supabase
-        .rpc(statsRpcName('ca_player_hands_v2', selectedClubId), {
+        .rpc(statsRpcName('ca_player_hands_separated', selectedClubId), {
           ...statsScopeArgs(statsScope, selectedClubId),
+          p_game_mode: gameMode,
           p_user: targetUserId,
           p_mode: handMode,
           p_limit: 10,
@@ -1038,6 +1062,7 @@ export default function PlayerStatsPage() {
             clubId: selectedClubId,
             asset: statsScope,
             visibility: 'owner',
+            gameMode,
           });
           if (verifiedHands === null) {
             reportError(
@@ -1204,7 +1229,8 @@ export default function PlayerStatsPage() {
   const [allTimeError, setAllTimeError] = useState(false);
   const [allTimeReload, setAllTimeReload] = useState(0);
   // The share card's style badge is a lifetime reading too (Overview tab).
-  const wantsAllTime = category === 'trophies' || category === 'overview' || printing;
+  const wantsAllTime =
+    gameMode === 'cash' && (category === 'trophies' || category === 'overview' || printing);
   useEffect(() => {
     if (!targetUserId || !isOwnProfile || !wantsAllTime || rangeKey === 'all') return;
     const memoPayload = readStatsRangeMemo(cacheIdentityFor('all', null));
@@ -1217,9 +1243,10 @@ export default function PlayerStatsPage() {
     let cancelled = false;
     setAllTimeError(false);
     supabase
-      .rpc(statsRpcName('ca_player_stats_overview_v2', selectedClubId), {
+      .rpc(statsRpcName('ca_player_stats_overview_separated', selectedClubId), {
         /* Scoped: see the note on the windowed read above. */
         ...statsScopeArgs(statsScope, selectedClubId),
+        p_game_mode: gameMode,
         p_user: targetUserId,
         p_days: null,
         p_tz: statsTimezone,
@@ -1235,6 +1262,7 @@ export default function PlayerStatsPage() {
             rangeDays: null,
             timezone: statsTimezone,
             visibility: 'owner',
+            gameMode,
           });
           const payloadMatches = isFullStatsPayload(data);
           if (error || !scopeMatches || !payloadMatches) {
@@ -1289,7 +1317,8 @@ export default function PlayerStatsPage() {
     setComparisonLoading(true);
     setComparisonError(false);
     try {
-      const { data, error } = await supabase.rpc('ca_player_stats_club_comparison', {
+      const { data, error } = await supabase.rpc('ca_player_stats_club_comparison_separated', {
+        p_game_mode: gameMode,
         p_user: targetUserId,
         p_days: windowDays,
         p_asset: statsScope,
@@ -1344,11 +1373,19 @@ export default function PlayerStatsPage() {
   useEffect(() => {
     if (comparisonOpen && comparisonLoadedKey !== comparisonKey) void loadClubComparison();
   }, [comparisonOpen, comparisonLoadedKey, comparisonKey, loadClubComparison]);
+  const effectiveComparisonSort =
+    gameMode === 'tournament'
+      ? ['profit', 'bb100', 'rake'].includes(comparisonSort)
+        ? 'hands'
+        : comparisonSort
+      : comparisonSort === 'tournaments'
+        ? 'hands'
+        : comparisonSort;
   const sortedComparisonRows = useMemo(() => {
     const rows = [...(comparisonRows ?? [])];
     const lastPlay = (row: ClubComparisonRow) => Date.parse(row.lastPlayedAt || '') || 0;
     rows.sort((a, b) => {
-      if (comparisonSort === 'club') return a.club.name.localeCompare(b.club.name);
+      if (effectiveComparisonSort === 'club') return a.club.name.localeCompare(b.club.name);
       const values: Record<
         Exclude<ClubComparisonSort, 'club'>,
         (row: ClubComparisonRow) => number
@@ -1362,10 +1399,10 @@ export default function PlayerStatsPage() {
         tournaments: (row) => row.tournamentEntries,
         lastPlay,
       };
-      return values[comparisonSort](b) - values[comparisonSort](a);
+      return values[effectiveComparisonSort](b) - values[effectiveComparisonSort](a);
     });
     return rows;
-  }, [comparisonRows, comparisonSort]);
+  }, [comparisonRows, effectiveComparisonSort]);
   const changeComparisonSort = useCallback(
     (nextSort: ClubComparisonSort) => {
       setComparisonSort(nextSort);
@@ -1387,7 +1424,7 @@ export default function PlayerStatsPage() {
   const tourn = full?.tournaments ?? EMPTY_FULL.tournaments;
   const statsContract = full?.contract ?? EMPTY_FULL.contract;
   useEffect(() => {
-    if (!isOwnProfile || !statsContract.valid || !lastUpdatedAt) return;
+    if (gameMode !== 'cash' || !isOwnProfile || !statsContract.valid || !lastUpdatedAt) return;
     void import('../services/StatsWorkspaceService').then(({ statsWorkspaceService }) =>
       statsWorkspaceService.evaluateAlerts({
         vpip: overall.vpip * 100,
@@ -1469,6 +1506,7 @@ export default function PlayerStatsPage() {
     targetUserId && isOwnProfile ? (
       <Suspense fallback={<div className="stats-section-loading">Opening Financial Ledger...</div>}>
         <FinancialReportingPanel
+          tournamentOnly={gameMode === 'tournament'}
           userId={targetUserId}
           clubId={selectedClubId}
           clubLabel={clubLabel}
@@ -1501,6 +1539,7 @@ export default function PlayerStatsPage() {
         <SharedClubStatsView
           targetUserId={targetUserId!}
           asset={statsScope}
+          gameMode={gameMode}
           timezone={statsTimezone}
           rangeKey={rangeKey}
           windowDays={windowDays}
@@ -1573,7 +1612,7 @@ export default function PlayerStatsPage() {
       </div>
     );
   }
-  const hasData = overall.total_hands > 0 || tourn.entries > 0;
+  const hasData = overall.total_hands > 0 || (gameMode === 'tournament' && tourn.entries > 0);
   const emptyState = (
     <div className="stats-empty-state">
       <span className="empty-status">Awaiting Hand Ledger</span>
@@ -1604,7 +1643,13 @@ export default function PlayerStatsPage() {
         status={statsScope === DIAMOND_STATS ? 'Figures In Diamonds' : undefined}
         steps={STATS_TOUR}
       />
+      <div className="stats-notice" role="status">
+        {gameMode === 'cash'
+          ? 'Cash Games Only. Tournament Hands And Stacks Are Excluded.'
+          : 'Tournament Hands And Results Only. Tournament Stacks Are Not Cash Profit.'}
+      </div>
       <ClubScopeConsole
+        gameMode={gameMode}
         statsScope={statsScope}
         clubLabel={clubLabel}
         selectedClub={selectedClub}
@@ -1617,29 +1662,31 @@ export default function PlayerStatsPage() {
         comparisonOpen={comparisonOpen}
         setComparisonOpen={setComparisonOpen}
         onRetryComparison={() => void loadClubComparison()}
-        comparisonSort={comparisonSort}
+        comparisonSort={effectiveComparisonSort}
         changeComparisonSort={changeComparisonSort}
         comparisonLoading={comparisonLoading}
         comparisonError={comparisonError}
         sortedComparisonRows={sortedComparisonRows}
       />
-      <StatsHeadlineDeck
-        refreshing={refreshing}
-        statsContract={statsContract}
-        rangeKey={rangeKey}
-        changeRange={changeRange}
-        lastUpdatedAt={lastUpdatedAt}
-        statsDataSource={statsDataSource}
-        overall={overall}
-        lifetime={lifetime}
-        handsWonPct={handsWonPct}
-        privacyPresentationMode={privacyPresentationMode}
-        category={category}
-        hasData={hasData}
-        selectedClubId={selectedClubId}
-        servingCache={servingCache}
-      />
-      {hasData && (
+      {gameMode === 'cash' && (
+        <StatsHeadlineDeck
+          refreshing={refreshing}
+          statsContract={statsContract}
+          rangeKey={rangeKey}
+          changeRange={changeRange}
+          lastUpdatedAt={lastUpdatedAt}
+          statsDataSource={statsDataSource}
+          overall={overall}
+          lifetime={lifetime}
+          handsWonPct={handsWonPct}
+          privacyPresentationMode={privacyPresentationMode}
+          category={category}
+          hasData={hasData}
+          selectedClubId={selectedClubId}
+          servingCache={servingCache}
+        />
+      )}
+      {hasData && gameMode === 'cash' && (
         <section className="stats-intelligence-brief" aria-labelledby="stats-brief-title">
           <div className="stats-brief-head">
             <div>
@@ -1668,6 +1715,21 @@ export default function PlayerStatsPage() {
             </button>
           </div>
         </section>
+      )}
+      {gameMode === 'tournament' && (
+        <div className="stats-range-row" role="group" aria-label="Tournament Analysis Range">
+          {RANGES.map((range) => (
+            <button
+              key={range.key}
+              type="button"
+              aria-pressed={rangeKey === range.key}
+              className={rangeKey === range.key ? 'active' : ''}
+              onClick={() => changeRange(range.key)}
+            >
+              {range.label}
+            </button>
+          ))}
+        </div>
       )}
       {/* ── PILL TABS ── */}
       {/* A real tablist. This was eight buttons whose active state lived only in
@@ -1841,12 +1903,19 @@ export default function PlayerStatsPage() {
                   />
                 )}
                 {showTab('tournaments') && hasData && (
-                  <TournamentsTab
-                    tourn={tourn}
-                    overall={overall}
-                    full={full}
-                    financialPanel={financialPanel}
-                  />
+                  <>
+                    <TournamentPlayingStats
+                      overall={overall}
+                      full={full}
+                      onOpenHands={() => openHandEvidence()}
+                    />
+                    <TournamentsTab
+                      tourn={tourn}
+                      overall={overall}
+                      full={full}
+                      financialPanel={financialPanel}
+                    />
+                  </>
                 )}
                 {showTab('analysis') && hasData && (
                   <AnalysisTab

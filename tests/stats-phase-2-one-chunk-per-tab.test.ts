@@ -71,7 +71,7 @@ describe('one lazy chunk per tab', () => {
     expect(PAGE).toMatch(/showTab\('trophies'\) && isOwnProfile && hasData && \(\s*<TrophiesTab/);
     expect(PAGE).toMatch(/showTab\('rake'\) && \(\s*<RakeTab/);
     expect(PAGE).toMatch(
-      /const showTab = useCallback\(\s*\(t: StatCategory\) => printing \|\| category === t/
+      /const showTab = useCallback\(\s*\(t: StatCategory\) =>\s*gameMode === 'tournament'\s*\? t === 'tournaments'\s*:\s*t !== 'tournaments' && \(printing \|\| category === t\)/
     );
   });
 

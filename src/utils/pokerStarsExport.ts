@@ -194,6 +194,10 @@ function streetHeaderLine(street: ReplayStreet, previousBoard: DeckCard[]): stri
 
 export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): PokerStarsResult {
   const reasons: string[] = [];
+  if (meta.isTournament)
+    reasons.push(
+      'the tracker format requires original tournament entry and level metadata, which this hand record does not retain'
+    );
   const money = (n: number): string => {
     const v = Math.abs(Number(n) || 0);
     return meta.isTournament ? String(Math.round(v)) : `${meta.currency ?? '$'}${v.toFixed(2)}`;

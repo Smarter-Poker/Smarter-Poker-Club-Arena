@@ -59,7 +59,7 @@ describe("LAW: the arena's Stats door reads its own hands", () => {
       );
     }
     expect(PAGE).toMatch(
-      /statsRpcName\('ca_player_hands_v2', selectedClubId\)[\s\S]*?\.\.\.statsScopeArgs\(statsScope, selectedClubId\)/
+      /statsRpcName\('ca_player_hands_separated', selectedClubId\)[\s\S]*?\.\.\.statsScopeArgs\(statsScope, selectedClubId\)/
     );
   });
 
@@ -73,7 +73,9 @@ describe("LAW: the arena's Stats door reads its own hands", () => {
   });
 
   it('the arena page shows no agent downline', () => {
-    expect(PAGE).toContain('if (!isOwnProfile || !user?.id || statsScope !== CHIP_STATS) {');
+    expect(PAGE).toContain(
+      "if (gameMode !== 'cash' || !isOwnProfile || !user?.id || statsScope !== CHIP_STATS) {"
+    );
   });
 
   it('the panels and the pulse read the asset they are handed', () => {

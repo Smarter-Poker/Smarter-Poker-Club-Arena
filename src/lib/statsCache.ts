@@ -8,7 +8,7 @@
 /** localStorage prefix retained for sign-out's user-cache purge. */
 export const STATS_CACHE_PREFIX = 'ps_stats_v5_scope_';
 export const STATS_CACHE_CONTRACT_VERSION = 2 as const;
-const STATS_CALCULATION_REVISION = 'recorded-opportunities-20261027';
+const STATS_CALCULATION_REVISION = 'separated-game-modes-20261031';
 export const RANGE_MEMO_TTL_MS = 60_000;
 
 export type StatsCacheVisibility = 'owner' | 'shared_club';
@@ -19,6 +19,7 @@ export interface StatsCacheIdentity {
   targetUserId: string;
   clubId: string | null;
   asset: string;
+  gameMode?: 'cash' | 'tournament';
   rangeKey: string;
   rangeDays: number | null;
   timezone: string;
@@ -41,6 +42,7 @@ export function statsCacheIdentityKey(identity: StatsCacheIdentity): string {
     identity.targetUserId,
     identity.clubId,
     identity.asset,
+    identity.gameMode ?? null,
     identity.rangeKey,
     identity.rangeDays,
     identity.timezone,
@@ -69,6 +71,7 @@ export function statsPayloadMatchesIdentity(
   const declared = scope as Record<string, unknown>;
   if (root.contract_version !== identity.contractVersion) return false;
   if (declared.target_user_id !== identity.targetUserId) return false;
+  if (identity.gameMode && declared.game_mode !== identity.gameMode) return false;
   if ((declared.club_id ?? null) !== identity.clubId) return false;
   if ((declared.range_days ?? null) !== identity.rangeDays) return false;
   if (declared.visibility !== identity.visibility) return false;

@@ -39,8 +39,8 @@ function sqlFunctionBody(sql: string, signature: string): string {
 
 describe('Stats contract v2 security boundary', () => {
   it('makes the browser use only owner-asserting versioned RPCs', () => {
-    expect(PAGE).toContain("statsRpcName('ca_player_stats_overview_v2', selectedClubId)");
-    expect(PAGE).toContain("statsRpcName('ca_player_hands_v2', selectedClubId)");
+    expect(PAGE).toContain("statsRpcName('ca_player_stats_overview_separated', selectedClubId)");
+    expect(PAGE).toContain("statsRpcName('ca_player_hands_separated', selectedClubId)");
     expect(PAGE).not.toContain("rpc('ca_player_stats_full'");
     expect(PAGE).not.toContain("rpc('ca_player_hands'");
 
@@ -68,7 +68,7 @@ describe('Stats contract v2 security boundary', () => {
     expect(SHARED).toContain(
       'No All-Clubs, Private Financial, Hand, Note, Or Opponent Data Is Exposed.'
     );
-    expect(SHARED_SERVICE).toContain("supabase.rpc('ca_player_stats_shared_overview_v1'");
+    expect(SHARED_SERVICE).toContain("supabase.rpc('ca_player_stats_shared_separated'");
     expect(SHARED_SERVICE).not.toMatch(/hand_history|hole_cards|notes|opponents/);
     expect(PUBLIC_PROFILE).not.toContain('profileService.getStats');
     expect(PUBLIC_PROFILE).not.toContain('ProfileStats');
@@ -91,7 +91,10 @@ describe('Stats contract v2 security boundary', () => {
   it('contains no retained fake Stats dashboard stub', () => {
     expect(existsSync(resolve(ROOT, 'src/components/stats/PlayerStatsDashboard.tsx'))).toBe(false);
     expect(existsSync(resolve(ROOT, 'src/components/stats/PlayerStatsDashboard.css'))).toBe(false);
-    expect(PROFILE).toContain("rpc('ca_player_stats_overview_v2'");
+    expect(PROFILE).toContain('readSeparatedProfileStats(requestedUserId)');
+    expect(readFileSync(resolve(ROOT, 'src/services/ProfileStatsRead.ts'), 'utf8')).toContain(
+      "rpc('ca_player_stats_overview_separated'"
+    );
     expect(PROFILE).toContain('statsAvailable ?');
     expect(PROFILE).toContain('Stats Snapshot Unavailable');
   });

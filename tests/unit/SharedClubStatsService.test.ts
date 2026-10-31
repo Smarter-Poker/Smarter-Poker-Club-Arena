@@ -12,6 +12,7 @@ const overviewPayload = (overrides: Record<string, unknown> = {}) => ({
     target_user_id: 'target',
     club_id: 'c1',
     asset: 'chips',
+    game_mode: 'cash',
     range_days: 30,
     range_tz: 'America/Chicago',
     visibility: 'shared_club',
@@ -73,7 +74,8 @@ describe('SharedClubStatsService', () => {
       error: null,
     });
     await SharedClubStatsService.getOverview('target', 'c1', 30, 'America/Chicago', 'chips');
-    expect(rpc).toHaveBeenCalledWith('ca_player_stats_shared_overview_v1', {
+    expect(rpc).toHaveBeenCalledWith('ca_player_stats_shared_separated', {
+      p_game_mode: 'cash',
       p_target_user: 'target',
       p_club_id: 'c1',
       p_days: 30,

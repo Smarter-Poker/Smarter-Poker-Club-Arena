@@ -38,6 +38,10 @@ export default function TournamentsTab({
           <h3>Tournament Results</h3>
         </div>
         <div className="stats-notice" role="status">
+          Results Cover Finalized Events In This Window. Playing Statistics Use Recorded Tournament
+          Hands.
+        </div>
+        <div className="stats-notice" role="status">
           Accounting Coverage: Reconstructed From Tournament Records. Registration, Rebuy, Add-On,
           Refund, Ticket, Prize, And Bounty Ledgers Are Not Yet Reconciled Into This Readout.
         </div>

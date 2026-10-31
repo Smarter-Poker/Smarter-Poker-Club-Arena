@@ -279,7 +279,9 @@ def loaded_stop_contract(unit, key, allow_masked=False):
     require(set(result) == set(fields))
     require(result['KillMode'] == 'control-group' and result['DropInPaths'] == '')
     require(all(result[field] == '' for field in ['ExecStop', 'RequiredBy', 'RequisiteOf', 'BoundBy', 'ConsistsOf', 'PropagatesStopTo']))
-    if allow_masked and result['FragmentPath'] == '/dev/null':
+    if allow_masked and result['FragmentPath'] in {'/dev/null', str(SYSTEMD / unit)}:
+        # systemd retains the mask link source as FragmentPath when loading it.
+        require(masked([unit]))
         require(all(result[field] == '' for field in ['ExecStart', 'ExecStop', 'ExecStopPost']))
         return {'maskedEmpty': True}
     require(result['FragmentPath'] == str(SYSTEMD / 'club-arena-engine-release-v1@.service'))

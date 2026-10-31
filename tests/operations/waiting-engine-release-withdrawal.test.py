@@ -511,10 +511,15 @@ class AnnouncedCancellation(unittest.TestCase):
             bad = config | {field: 'foreign'}
             with self.subTest(field=field), patch.object(module, 'command', return_value=render(bad)), self.assertRaises(ValueError):
                 module.loaded_stop_contract(unit, key)
-        empty = config | {'FragmentPath': '/dev/null', 'ExecStart': '', 'ExecStopPost': ''}
-        with patch.object(module, 'command', return_value=render(empty)):
-            self.assertEqual(module.loaded_stop_contract(unit, key, allow_masked=True), {'maskedEmpty': True})
-            with self.assertRaises(ValueError): module.loaded_stop_contract(unit, key)
+        for fragment in ['/dev/null', str(module.SYSTEMD / unit), '/etc/systemd/system/foreign.service']:
+            empty = config | {'FragmentPath': fragment, 'ExecStart': '', 'ExecStopPost': ''}
+            for positive_mask in [True, False]:
+                with self.subTest(fragment=fragment, mask=positive_mask), patch.object(module, 'command', return_value=render(empty)), patch.object(module, 'masked', return_value=positive_mask):
+                    if positive_mask and fragment != '/etc/systemd/system/foreign.service':
+                        self.assertEqual(module.loaded_stop_contract(unit, key, allow_masked=True), {'maskedEmpty': True})
+                    else:
+                        with self.assertRaises(ValueError): module.loaded_stop_contract(unit, key, allow_masked=True)
+                    with self.assertRaises(ValueError): module.loaded_stop_contract(unit, key)
         with patch.object(module, 'command', return_value=render(config | {'ExecStopPost': config['ExecStopPost'] + config['ExecStopPost']})), self.assertRaises(ValueError):
             module.loaded_stop_contract(unit, key)
 

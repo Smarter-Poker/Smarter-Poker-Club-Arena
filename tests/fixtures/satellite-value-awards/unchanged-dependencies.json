@@ -1,0 +1,56 @@
+[
+  {
+    "proname": "fn_ca_assert_satellite_asset",
+    "args": "p_satellite_id uuid, p_target_id uuid",
+    "source_md5": "dcb51a8b883a786bd86fe6d07d40ea16",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_assert_satellite_asset(p_satellite_id uuid, p_target_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_source boolean; v_target boolean;\nBEGIN\n  IF p_satellite_id IS NULL OR p_target_id IS NULL THEN\n    RAISE EXCEPTION 'a satellite asset check requires the satellite and its target' USING ERRCODE='22004';\n  END IF;\n  v_source := public.fn_poker_diamond_tournament(p_satellite_id);\n  v_target := public.fn_poker_diamond_tournament(p_target_id);\n  IF v_source AND NOT v_target THEN\n    RAISE EXCEPTION 'diamond_satellite_cannot_seat_a_chip_target: satellite % target %',\n      p_satellite_id, p_target_id USING ERRCODE='22023';\n  ELSIF v_target AND NOT v_source THEN\n    RAISE EXCEPTION 'chip_satellite_cannot_seat_a_diamond_target: satellite % target %',\n      p_satellite_id, p_target_id USING ERRCODE='22023';\n  END IF;\n  RETURN v_source;\nEND $function$\n"
+  },
+  {
+    "proname": "fn_ca_assert_satellite_cohort_standings",
+    "args": "p_tournament_id uuid",
+    "source_md5": "82492c4a960d8be1db60cea8c4d320ba",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_assert_satellite_cohort_standings(p_tournament_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE h public.tournament_satellite_settlements%ROWTYPE; n integer;\nBEGIN\n SELECT * INTO STRICT h FROM public.tournament_satellite_settlements WHERE tournament_id=p_tournament_id;\n n:=cardinality(h.qualifier_ids);\n IF h.receipt_version<>3 OR h.winner_id IS NOT NULL OR n IS NULL OR n<1\n    OR n>h.ticket_award_count OR h.qualifier_ids IS DISTINCT FROM\n       (SELECT array_agg(DISTINCT u ORDER BY u) FROM unnest(h.qualifier_ids) u)\n    OR (SELECT t.format_contract='mtt-v2' OR (t.format_contract='sng-v1'\n         AND public.fn_ca_is_fixed_sng_satellite(to_jsonb(t)))\n         FROM public.tournaments t WHERE id=p_tournament_id) IS NOT TRUE\n    OR (SELECT count(*) FROM public.tournament_players WHERE tournament_id=p_tournament_id)<>h.field_size\n    OR EXISTS(SELECT 1 FROM unnest(h.qualifier_ids) u WHERE NOT EXISTS(\n       SELECT 1 FROM public.tournament_players tp WHERE tp.tournament_id=p_tournament_id\n        AND tp.user_id=u AND tp.status='winner' AND tp.position IS NULL\n        AND tp.elimination_sequence IS NULL AND tp.eliminated_at IS NULL AND tp.chips>0))\n    OR EXISTS(SELECT 1 FROM public.tournament_players tp WHERE tp.tournament_id=p_tournament_id\n      AND NOT(tp.user_id=ANY(h.qualifier_ids))\n      AND (tp.status IS DISTINCT FROM 'eliminated' OR tp.elimination_sequence IS NULL\n           OR tp.position IS NULL OR tp.position<=n OR tp.position>h.field_size))\n    OR (SELECT count(DISTINCT position) FROM public.tournament_players WHERE tournament_id=p_tournament_id)<>h.field_size-n\n    OR (SELECT count(DISTINCT elimination_sequence) FROM public.tournament_players WHERE tournament_id=p_tournament_id)<>h.field_size-n\n    OR EXISTS(SELECT 1 FROM (SELECT position,n+row_number() OVER(ORDER BY COALESCE(public.fn_ca_tournament_bust_at(tournament_id, user_id), eliminated_at) DESC NULLS LAST, elimination_sequence DESC) expected\n        FROM public.tournament_players WHERE tournament_id=p_tournament_id AND status='eliminated') r\n       WHERE r.position<>r.expected) THEN\n  RAISE EXCEPTION 'satellite cohort has no exact unranked survivors and causal eliminated standings' USING ERRCODE='P0404';\n END IF;\nEND $function$\n"
+  },
+  {
+    "proname": "fn_ca_diamond_engine_spent",
+    "args": "p_period text, p_engine text",
+    "source_md5": "a7ac0f53d42ddedb94071c3aeb456f2a",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_diamond_engine_spent(p_period text, p_engine text)\n RETURNS bigint\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  -- The frozen baseline plus everything appended since. One number, one definition, read by the\n  -- rule and by the report alike.\n  SELECT COALESCE((SELECT b.spent_diamonds FROM public.diamond_reward_budgets b\n                    WHERE b.period = p_period AND b.engine = p_engine), 0)\n       + COALESCE((SELECT SUM(s.amount) FROM public.ca_diamond_engine_spend s\n                    WHERE s.period = p_period AND s.engine = p_engine), 0);\n$function$\n"
+  },
+  {
+    "proname": "fn_ca_is_fixed_sng_satellite",
+    "args": "p_row jsonb",
+    "source_md5": "a75cdcb6007d6abbfeba57d8e5c2066f",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_is_fixed_sng_satellite(p_row jsonb)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n SELECT COALESCE(jsonb_typeof(p_row)='object'\n   AND upper(p_row->>'tournament_type')='SNG' AND lower(p_row->>'variant')='sng'\n   AND p_row->>'max_players' IN ('6','9')\n   AND p_row->>'min_players'=p_row->>'max_players'\n   AND p_row->>'table_size'=p_row->>'max_players'\n   AND p_row->>'satellite_seats'='2'\n   AND COALESCE(NULLIF(p_row->>'satellite_target_id',''),NULLIF(p_row->>'satellite_target','')) IS NOT NULL\n   AND (NULLIF(p_row->>'satellite_target_id','') IS NULL OR NULLIF(p_row->>'satellite_target','') IS NULL\n     OR p_row->>'satellite_target_id'=p_row->>'satellite_target'),false);\n$function$\n"
+  },
+  {
+    "proname": "fn_ca_lock_mtt_admission_contract",
+    "args": "",
+    "source_md5": "2d06ee6affeed8412ee453e12212e88c",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_mtt_admission_contract()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE v_abi text;\nBEGIN\n  SELECT abi INTO v_abi FROM public.ca_mtt_admission_contract WHERE singleton FOR SHARE;\n  IF NOT FOUND OR v_abi NOT IN ('legacy-capacity-v1','unlimited-mtt-v2') THEN\n    RAISE EXCEPTION 'MTT_ADMISSION_CONTRACT_MISSING_OR_UNKNOWN' USING ERRCODE='55000';\n  END IF;\n  RETURN v_abi;\nEND $function$\n"
+  },
+  {
+    "proname": "fn_ca_satellite_ticket_target_is_closed",
+    "args": "p_target_id uuid",
+    "source_md5": "89c08a933f402c5e36f4fc1e8a1d9026",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_satellite_ticket_target_is_closed(p_target_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  /* A direct satellite ticket admits its holder to ONE target, and only while\n     that target still takes entries. Once the target has finalized its pool,\n     or is finishing, finished or cancelled, no door can ever admit the ticket\n     again: the entry door refuses a finalized pool and every terminal state.\n     Both facts only ever move one way, so a closed answer is permanent. */\n  SELECT COALESCE((\n    SELECT upper(COALESCE(t.status::text,'')) IN\n             ('COMPLETING','COMPLETED','CANCELLED','CANCELED')\n        OR COALESCE(t.prize_pool_finalized,false)\n      FROM public.tournaments t\n     WHERE t.id=p_target_id),false);\n$function$\n"
+  },
+  {
+    "proname": "fn_ca_tournament_bust_at",
+    "args": "p_tournament_id uuid, p_user_id uuid",
+    "source_md5": "c5b7ee34f9105658870eaa3c874c314d",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_bust_at(p_tournament_id uuid, p_user_id uuid)\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT COALESCE(a.committed_at,\n                  (SELECT min(g.created_at)\n                     FROM public.tournament_knockout_candidates g\n                    WHERE g.tournament_id = c.tournament_id\n                      AND g.table_id = c.table_id\n                      AND g.hand_number = c.hand_number\n                      AND g.hand_id = c.hand_id))\n         + (SELECT count(*)\n              FROM public.tournament_knockout_candidates s\n             WHERE s.tournament_id = c.tournament_id\n               AND s.table_id = c.table_id\n               AND s.hand_number = c.hand_number\n               AND s.hand_id = c.hand_id\n               AND (s.stack_before, s.eliminated_user_id)\n                   < (c.stack_before, c.eliminated_user_id))::integer\n           * interval '1 microsecond'\n    FROM (SELECT k.tournament_id, k.table_id, k.hand_number,\n                 k.hand_id, k.stack_before, k.eliminated_user_id\n            FROM public.tournament_knockout_candidates k\n           WHERE k.tournament_id = p_tournament_id\n             AND k.eliminated_user_id = p_user_id\n             AND k.state = 'eliminated'\n           ORDER BY k.hand_number DESC, k.id DESC\n           LIMIT 1) c\n    LEFT JOIN public.hand_atomic_commits a\n      ON a.table_id = c.table_id\n     AND a.hand_number = c.hand_number\n     AND a.hand_id = c.hand_id\n$function$\n"
+  },
+  {
+    "proname": "fn_ca_tournament_is_unlimited",
+    "args": "p_tournament_id uuid",
+    "source_md5": "d44fd7f56e1f68110fd67e84c7392cd1",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_is_unlimited(p_tournament_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE v_abi text;\nBEGIN\n v_abi:=public.fn_ca_lock_mtt_admission_contract();\n IF v_abi='legacy-capacity-v1' THEN RETURN false; END IF;\n RETURN public.fn_ca_tournament_recorded_format(p_tournament_id) IN ('mtt-v1','mtt-v2');\nEND $function$\n"
+  },
+  {
+    "proname": "fn_diamond_lifetime_totals",
+    "args": "p_user_id uuid",
+    "source_md5": "8ff3bff4d73c3f4d2cfad4464cc8dcb1",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_diamond_lifetime_totals(p_user_id uuid DEFAULT auth.uid())\n RETURNS TABLE(lifetime_earned bigint, lifetime_spent bigint, credits bigint, debits bigint)\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n    v_user uuid := COALESCE(p_user_id, auth.uid());\n    v_role text := COALESCE(auth.jwt() ->> 'role', current_user);\nBEGIN\n    -- The siblings' two refusals, word for word, with this function's own name.\n    -- Never a zero for a question this function cannot answer (10.86).\n    IF v_user IS NULL THEN\n        RAISE EXCEPTION 'authentication_required' USING ERRCODE = '42501';\n    END IF;\n    IF v_role <> 'service_role' AND v_user IS DISTINCT FROM auth.uid() THEN\n        RAISE EXCEPTION 'lifetime_totals_is_own_only' USING ERRCODE = '42501';\n    END IF;\n\n    RETURN QUERY\n    SELECT\n        COALESCE(SUM(CASE WHEN t.amount > 0 THEN t.amount END), 0)::bigint,\n        COALESCE(SUM(CASE WHEN t.amount < 0 THEN -t.amount END), 0)::bigint,\n        COUNT(*) FILTER (WHERE t.amount > 0)::bigint,\n        COUNT(*) FILTER (WHERE t.amount < 0)::bigint\n    FROM public.diamond_transactions t\n    WHERE t.user_id = v_user;\nEND;\n$function$\n"
+  }
+]

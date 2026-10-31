@@ -1,0 +1,92 @@
+[
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "user_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "type",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "amount",
+    "type": "integer"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "balance_after",
+    "type": "integer"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "description",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "reference_id",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "created_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "transaction_type",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "source",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "metadata",
+    "type": "jsonb"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "counterparty",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "issuance_class",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "archived_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "deleted_profile_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "deletion_reason",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "archived_by_role",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_journal_archive",
+    "column_name": "archived_app",
+    "type": "text"
+  }
+]

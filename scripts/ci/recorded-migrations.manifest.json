@@ -1842,6 +1842,30 @@
       "recoveredFrom": "Exact full-file single history statement independently read after one successful active-outage installation; MD5 matches the maintained source including final newline.",
       "refusedBy": [],
       "liveVerdict": "Active production tournament freeze outage. Owner ordered finishing all current tournaments and no new starts. Installed singleton blocked=true and atomic replacements of existing tournament admission guards, preserving existing started-event evidence and original floor policy. Real isolated PG17 proved blocked creation/first starts and existing-event completion, recovery, missing-control refusal, ACL boundaries, cash unchanged, and visibility from an existing transaction holding its shared admission lane. No cancellation, refund, hand, seat, wallet or engine restart operation. Installation success follows two completely rolled-back 1-second global-admission-lock refusals; corrected candidate avoids that unnecessary global exclusive lock. Protected recording and live behavior proof remain separately tracked; no claim the underlying engine recurrence is fixed."
+    },
+    {
+      "version": "20261031032915",
+      "name": "diamond_arena_owner_boundary_closure_without_refunds",
+      "file": "supabase/migrations/20261031032915_diamond_arena_owner_boundary_closure_without_refunds.sql",
+      "md5": "67dc5d14cce06e5410520c232b840ca3",
+      "appliedToProductionAt": "2026-10-31T03:29:15.709103Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "Owner incident cpu-freeze-01a18fed: ongoing 99% CPU, freezing MTTs and explicit immediate safe Diamond closure without refunds. PUBLISHING.md active production outage exception.",
+      "refusedBy": [],
+      "liveVerdict": "Read back exact six function postimage hashes, postgres owner, SECURITY DEFINER, pinned search_path and unchanged private ACLs; all matched. Closure row closed=true for Diamond only, operation01a18fed-2211-7a62-9416-611dd6e4d96d, requested_at2026-10-31T03:29:15.709103Z. No financial mutations added. Explicit PUBLIC/anon/authenticated revokes preserve original private grants. Installation followed private PostgreSQL boundary, replay, funding-refusal and ACL-drift qualification. Normal protected source integration remains required; no migration replay."
+    },
+    {
+      "version": "20261031034048",
+      "name": "diamond_closure_parks_retained_originals_without_disposing_t",
+      "file": "supabase/migrations/20261031034048_diamond_closure_parks_retained_originals_without_disposing_t.sql",
+      "md5": "fa6f8191cbaab28b12272e894f0ca42b",
+      "appliedToProductionAt": "2026-10-31T03:40:48Z",
+      "recoveredOn": "2026-10-31",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte",
+      "issue": "Owner cpu-freeze-01a18fed urgent full Diamond shutdown before resize; active-outage exception PUBLISHING.md.",
+      "refusedBy": [],
+      "liveVerdict": "Exact floor-state function postimage hash2b435ae83349dd87fa926caf79ff8236, postgres owner, private postgres/service_role ACL and search_pathpublic,pg_temp verified. Diamond cash_games_enabled=false and tournaments_enabled=false. All98still-running table records return the explicit owner hold. No money, seat, snapshot, permit, continuation or result was deleted or mutated. Private PG17 native test confirms all original state and wallets unchanged. No replay."
     }
   ]
 }

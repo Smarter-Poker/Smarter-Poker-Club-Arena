@@ -1,3 +1,13 @@
+import PlayerFollowSubscription, {
+  type FollowDestination,
+} from '../components/table/PlayerFollowSubscription';
+import {
+  movePlayerFollow,
+  readPlayerFollow,
+  samePlayerFollow,
+  writePlayerFollow,
+  type FollowTournamentPlayer,
+} from '../utils/followTournamentPlayer';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { setVisiblePokerTable } from '../lib/visiblePokerTable';
@@ -149,6 +159,7 @@ const TournamentDetails = lazyWithRetry(() => import('./tournament/TournamentDet
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface TableInstance {
+  followPlayer?: FollowTournamentPlayer;
   id: string;
   name: string;
   stakes: string;
@@ -430,6 +441,7 @@ const tableQuery = (t: TableInstance): string => {
   if (t.name && !/^Table \d+$/.test(t.name)) p.set('name', t.name);
   if (t.stakes) p.set('stakes', t.stakes);
   if (t.gameCode) p.set('code', t.gameCode);
+  writePlayerFollow(p, t.followPlayer);
   const qs = p.toString();
   return qs ? `?${qs}` : '';
 };
@@ -830,6 +842,7 @@ export default function MultiTablePage() {
           isMyTurn: false,
           pot: 0,
           kind: 'table' as const,
+          followPlayer: readPlayerFollow(searchParams),
           // `seated` and `isTournament` stay unset on purpose: a URL proves
           // neither. TABLE_SEATED sets the first, TablePage reports the second.
         },
@@ -1804,7 +1817,12 @@ export default function MultiTablePage() {
    */
   useMasterBusSubscription(
     'OPEN_OBSERVE_TABLE',
-    (payload: { tableId: string; tableName?: string; stakes?: string }) => {
+    (payload: {
+      tableId: string;
+      tableName?: string;
+      stakes?: string;
+      followPlayer?: FollowTournamentPlayer;
+    }) => {
       if (!payload?.tableId) return;
       const prev = tablesRef.current;
 
@@ -1820,6 +1838,12 @@ export default function MultiTablePage() {
       const slot = pickObserveSlot(prev, activeIndexRef.current, payload.tableId, MAX_TABLES);
 
       if (slot.action === 'focus') {
+        const next = prev.map((t, i) =>
+          i === slot.index ? { ...t, followPlayer: payload.followPlayer } : t
+        );
+        tablesRef.current = next;
+        setTables(next);
+        activeIndexRef.current = slot.index;
         setActiveIndex(slot.index);
         return;
       }
@@ -1831,6 +1855,7 @@ export default function MultiTablePage() {
 
       const observerTab: TableInstance = {
         id: payload.tableId,
+        followPlayer: payload.followPlayer,
         name: formatGameTitle(payload.tableName) || `Table ${prev.length + 1}`,
         stakes: payload.stakes || '',
         isMyTurn: false,
@@ -1847,10 +1872,81 @@ export default function MultiTablePage() {
          law (10.6.2) — nothing here moves on its own. */
       const next = [...prev];
       next[slot.index] = observerTab;
+      tablesRef.current = next;
+      activeIndexRef.current = slot.index;
       setTables(next);
       setActiveIndex(slot.index);
     }
   );
+
+  // Owner October 30: a player-specific Watch gesture follows that player's seat.
+  // Background follows update their own tab without stealing the current view.
+  const stopPlayerFollow = useCallback(
+    (sourceId: string, target: FollowTournamentPlayer) => {
+      const prev = tablesRef.current;
+      const next = prev.map((t) =>
+        t.id === sourceId && samePlayerFollow(t.followPlayer, target)
+          ? { ...t, followPlayer: undefined }
+          : t
+      );
+      tablesRef.current = next;
+      setTables(next);
+      const active = next[activeIndexRef.current];
+      if (!hidden && active?.id === sourceId)
+        navigate(`/table/${active.id}${tableQuery(active)}`, { replace: true });
+    },
+    [hidden, navigate]
+  );
+  const onFollowEnded = useCallback(
+    (sourceId: string, target: FollowTournamentPlayer) => {
+      stopPlayerFollow(sourceId, target);
+      toast.info(`${target.username} Is No Longer Playing. Following Stopped.`);
+    },
+    [stopPlayerFollow, toast]
+  );
+  const onFollowMove = useCallback(
+    (
+      sourceId: string,
+      target: FollowTournamentPlayer,
+      destination: FollowDestination,
+      sourceSeated: boolean
+    ) => {
+      const result = movePlayerFollow(
+        tablesRef.current.map((t) =>
+          sourceSeated && t.id === sourceId ? { ...t, seated: true } : t
+        ),
+        activeIndexRef.current,
+        sourceId,
+        target,
+        {
+          id: destination.id,
+          name: destination.name,
+          stakes: '',
+          isMyTurn: false,
+          pot: 0,
+          kind: 'table',
+          isTournament: true,
+        } as TableInstance,
+        MAX_TABLES
+      );
+      if (!result) return;
+      const wasActive = tablesRef.current[activeIndexRef.current]?.id === sourceId;
+      tablesRef.current = result.tabs;
+      activeIndexRef.current = result.activeIndex;
+      setTables(result.tabs);
+      setActiveIndex(result.activeIndex);
+      if (wasActive && !hidden) {
+        const active = result.tabs[result.activeIndex];
+        navigate(`/table/${active.id}${tableQuery(active)}`, { replace: true });
+      }
+      if (result.full) toast.warning('Following Stopped. Close A Tab To Watch The New Table.');
+      else toast.info(`Following ${target.username} To ${destination.name}`);
+    },
+    [hidden, navigate, toast]
+  );
+  const onFollowUnavailable = useCallback(() => {
+    toast.warning('Player Location Unavailable. Reopen The Rankings To Check Their Table.');
+  }, [toast]);
 
   // A leave queued behind its hand has now closed the seat: recount the cap.
   useMasterBusSubscription('SEAT_CASHED_OUT', () => {
@@ -4581,6 +4677,7 @@ export default function MultiTablePage() {
     const nameFromUrl = searchParams.get('name') || `Table ${prev.length + 1}`;
     const fromUrl: TableInstance = {
       id: routeTableId,
+      followPlayer: readPlayerFollow(searchParams),
       name: nameFromUrl,
       stakes: searchParams.get('stakes') || '',
       gameCode: searchParams.get('code') || gameCodeFromName(nameFromUrl),
@@ -4960,6 +5057,20 @@ export default function MultiTablePage() {
      * /tournaments/:id.
      */
     <InTabLobbyContext.Provider value={inTabLobbyNav}>
+      {user?.id &&
+        tables
+          .filter((t) => t.followPlayer)
+          .map((t) => (
+            <PlayerFollowSubscription
+              key={`${user.id}:${t.id}:${t.followPlayer!.tournamentId}:${t.followPlayer!.userId}`}
+              tableId={t.id}
+              accountId={user.id}
+              target={t.followPlayer!}
+              onMove={onFollowMove}
+              onEnd={onFollowEnded}
+              onUnavailable={onFollowUnavailable}
+            />
+          ))}
       {/**
        * ─── THE BAR IS PINNED OFF-ROUTE (Dan 2026-08-28 round 3) ─────────────
        *
@@ -5186,6 +5297,19 @@ export default function MultiTablePage() {
           </div>
         )}
 
+        {tables[activeIndex]?.followPlayer && (
+          <div className="mtp-player-follow" role="status">
+            <span>Following {tables[activeIndex].followPlayer!.username}</span>
+            <button
+              type="button"
+              onClick={() =>
+                stopPlayerFollow(tables[activeIndex].id, tables[activeIndex].followPlayer!)
+              }
+            >
+              Stop Following
+            </button>
+          </div>
+        )}
         {/* Batch 5: aggregated session popover */}
         {showSessionAgg && sessionAgg && (
           <>
@@ -5409,6 +5533,7 @@ export default function MultiTablePage() {
                         <TablePage
                           key={table.id}
                           embeddedTableId={table.id}
+                          followingPlayer={!!table.followPlayer}
                           openBuyInOnArrival={table.buyInRequested}
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           isMultiTable={true}
@@ -5676,6 +5801,7 @@ export default function MultiTablePage() {
                         <TablePage
                           key={table.id}
                           embeddedTableId={table.id}
+                          followingPlayer={!!table.followPlayer}
                           openBuyInOnArrival={table.buyInRequested}
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           muted={mutedIds.includes(table.id)}

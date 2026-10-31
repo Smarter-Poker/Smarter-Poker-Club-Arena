@@ -174,7 +174,7 @@ describe('DEFECT 3 - a tournament that ends on a break still comes off it', () =
 });
 
 describe('DEFECT 4 - a break countdown is started once, never restarted', () => {
-  const countdown = methodBody(BASE, 'async beginBreakCountdown(');
+  const countdown = methodBody(BASE, 'async persistBreakCountdown(');
   const pause = methodBody(BASE, 'async pauseForBreak(');
 
   it('refuses a second countdown for the same break', () => {

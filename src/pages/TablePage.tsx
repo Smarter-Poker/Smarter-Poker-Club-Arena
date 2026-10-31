@@ -1,3 +1,4 @@
+import { tournamentTableLabel } from '../utils/tournamentTableLabel';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { useGameSessionLifecycle } from '../hooks/useGameSessionLifecycle';
 import {
@@ -1116,6 +1117,8 @@ const NO_SEATED_IDS: readonly (string | undefined)[] = [];
 
 // Props for embedded multi-table mode
 interface TablePageProps {
+  /** Explicit player watching must not reopen an earlier personal bust report. */
+  followingPlayer?: boolean;
   /** When set, overrides the URL :tableId param (used by MultiTablePage) */
   embeddedTableId?: string;
   /** Explicit chair acceptance follows the tab to its buy-in sheet. */
@@ -1542,6 +1545,7 @@ export default function TablePage(props: TablePageProps = {}) {
 
 function LiveTablePage({
   embeddedTableId,
+  followingPlayer = false,
   openBuyInOnArrival = false,
   onTableInfoUpdate,
   isMultiTable = false,
@@ -1550,6 +1554,8 @@ function LiveTablePage({
   arrivedByMoveAtMs,
   muted = false,
 }: TablePageProps = {}) {
+  const followingPlayerRef = useRef(followingPlayer);
+  followingPlayerRef.current = followingPlayer;
   const addScreenIcon = useButtonImage('icon-addscreen');
   const timebankIconPage = useTimebankIcon();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
@@ -15639,7 +15645,10 @@ function LiveTablePage({
             scheduleDurableCompletionRetry();
           }
 
-          if (loadedTournamentStatus === 'COMPLETED' || loadedFinishedReportReady) {
+          if (
+            loadedTournamentStatus === 'COMPLETED' ||
+            (loadedFinishedReportReady && !followingPlayerRef.current)
+          ) {
             void exitFromDurableCompletion();
           }
 
@@ -27081,6 +27090,14 @@ function LiveTablePage({
                                         </>
                                       )}
                                   </span>
+                                  {tournamentTableLabel(tableState.tableName) && (
+                                    <span
+                                      className="table-brand__line"
+                                      data-testid="tournament-table-number"
+                                    >
+                                      {tournamentTableLabel(tableState.tableName)}
+                                    </span>
+                                  )}
                                   {(tableState.handNumber ?? 0) > 0 && (
                                     <span className="table-brand__hand">
                                       Hand #{tableState.handNumber}

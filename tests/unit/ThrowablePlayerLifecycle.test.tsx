@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
+import { ThrowAnimationContainer } from '../../src/components/table/ThrowAnimation';
 import { ThrowablePlayer } from '../../src/components/table/ThrowablePlayer';
 import type { ThrowEvent } from '../../src/services/ThrowableService';
 import type { ThrowableSpec } from '../../src/throwables/spec';
@@ -49,6 +50,9 @@ const rig = {
   Projectile: () => <svg data-testid="projectile" />,
   Payload: () => <svg data-testid="payload" />,
 };
+vi.mock('../../src/throwables/registry', () => ({
+  riggedThrowable: () => ({ spec, rig }),
+}));
 const event = { id: 'test-event', fromSeat: 1, toSeat: 2 } as ThrowEvent;
 const positions = new Map([
   [1, { x: 100, y: 100 }],
@@ -262,4 +266,38 @@ describe('cold artwork playback', () => {
     expect(state.schedule).not.toHaveBeenCalled();
     expect(done).not.toHaveBeenCalled();
   });
+});
+
+it('starts from an empty container, preserves an owed throw across rerenders, then releases it', () => {
+  state.speed = 1;
+  const done = vi.fn();
+  const throwEvent = { ...event, throwable: { id: 'test' } } as ThrowEvent;
+  const view = render(
+    <ThrowAnimationContainer events={[]} seatPositions={positions} onEventComplete={done} />
+  );
+  expect(view.container.childElementCount).toBe(0);
+  const active = () => (
+    <ThrowAnimationContainer
+      events={[throwEvent]}
+      seatPositions={positions}
+      onEventComplete={(id) => done(id)}
+    />
+  );
+  view.rerender(active());
+  expect(view.queryByTestId('projectile')).not.toBeNull();
+  act(() => vi.advanceTimersByTime(300));
+  view.rerender(active());
+  expect(view.queryByTestId('payload')).not.toBeNull();
+  act(() => vi.advanceTimersByTime(999));
+  expect(done).not.toHaveBeenCalled();
+  act(() => vi.advanceTimersByTime(1));
+  expect(done).toHaveBeenCalledExactlyOnceWith('test-event');
+  expect(state.schedule).toHaveBeenCalledOnce();
+  view.rerender(
+    <ThrowAnimationContainer events={[]} seatPositions={positions} onEventComplete={done} />
+  );
+  expect(view.container.childElementCount).toBe(0);
+  view.rerender(active());
+  expect(view.queryByTestId('projectile')).not.toBeNull();
+  expect(state.schedule).toHaveBeenCalledTimes(2);
 });

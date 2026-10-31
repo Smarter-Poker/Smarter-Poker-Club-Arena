@@ -6,6 +6,7 @@ import {
   openFreshPreferenceDevice,
 } from './support/accountPreferenceSession';
 import {
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
   cleanupTemporaryCustomizationAccount,
   requireCustomizationCertificationEnvironment,
@@ -651,7 +652,8 @@ const preferenceLifecycleTest = test.extend<{ preferenceAccount: TemporaryCustom
         });
       }
     },
-    { timeout: 120_000 },
+    // The guarded cleanup can wait on a real freeze; preserve its existing allowance.
+    { timeout: 120_000 + CLEANUP_FREEZE_ALLOWANCE_MS },
   ],
   page: [
     async ({ browser, baseURL, preferenceAccount }, provide, testInfo) => {

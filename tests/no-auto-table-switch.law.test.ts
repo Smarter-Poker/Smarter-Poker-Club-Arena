@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  NO AUTO TABLE SWITCHING — LAW (Dan 2026-08-28, binding, NO EXCEPTIONS)
+ *  NO AUTO TABLE SWITCHING — LAW (Dan 2026-08-28, binding, turn-clock and action-queue switching)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Verbatim: "SOMETIMES WHEN YOU ARE RUNNING OUT OF TIME ON A TABLE, IT AUTO
@@ -14,6 +14,9 @@
  * the moment the hero acted). Every SIGNAL survives — the background-urgency
  * bell, the tab flash and haptics, the browser-tab retitle. Only the MOVE is
  * forbidden.
+ *
+ * Owner October 30: an explicit player-watch follows that player across tables.
+ * It does not authorize urgency switching or taking focus from background tabs.
  *
  * If you are reading this because a pin below went red: you are re-adding
  * behaviour Dan explicitly banned. Do not. A player's view moves when the

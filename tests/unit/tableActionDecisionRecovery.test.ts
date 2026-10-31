@@ -29,7 +29,7 @@ describe('Mongo missing decision recovery', () => {
   });
   it('checks missing-token input before optimistic paint can hide its refreshed turn', () => {
     const panel = page.slice(page.indexOf('const handleActionPanelAction = useCallback('));
-    const guard = panel.indexOf('if (!tableDecisionIsReady({');
+    const guard = panel.search(/if\s*\(\s*!tableDecisionIsReady\(\{/);
     expect(guard).toBeGreaterThan(0);
     expect(panel.indexOf('finally {', guard)).toBeLessThan(panel.indexOf('setTimeout('));
     expect(panel.indexOf('actionLockRef.current = false;', guard)).toBeLessThan(

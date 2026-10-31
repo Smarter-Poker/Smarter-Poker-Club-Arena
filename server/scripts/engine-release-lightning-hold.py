@@ -176,8 +176,21 @@ def https_transport(service_key: str, timeout_seconds: float) -> Transport:
     return call
 
 
-def request_id(run_id: str, action: str, cluster_id: str) -> str:
-    return str(uuid.uuid5(REQUEST_NAMESPACE, f"{run_id}:{action}:{cluster_id}"))
+# THE HOLD GENERATION (2026-10-31). The door answers a repeated request id with
+# its FIRST answer and does nothing again, so one id can pause a Cluster once
+# per release. A release that waits through more than one qualifying break
+# (its first break passed without a cutover, Lightning was given back) must
+# hold again under ids the door has not seen: the transaction passes
+# --generation N with a per-generation journal file, and every pause, resume
+# and resolve of that generation carries the suffix. Generation 1 keeps the
+# original ids, so an existing journal keeps resolving.
+GENERATION = 1
+
+
+def request_id(run_id: str, action: str, cluster_id: str, generation: int | None = None) -> str:
+    generation = GENERATION if generation is None else generation
+    suffix = "" if generation == 1 else f":g{generation}"
+    return str(uuid.uuid5(REQUEST_NAMESPACE, f"{run_id}:{action}:{cluster_id}{suffix}"))
 
 
 def hold_reason(run_id: str, action: str) -> str:
@@ -478,7 +491,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--hold-file", required=True)
     parser.add_argument("--timeout-seconds", type=float, default=8.0)
+    parser.add_argument("--generation", type=int, default=1,
+                        help="hold generation within this run; request ids carry it from 2 on")
     args = parser.parse_args(argv)
+    if not 1 <= args.generation <= 999:
+        print(f"{LOG} UNKNOWN: invalid hold generation", file=sys.stderr)
+        return EXIT_UNKNOWN
+    global GENERATION
+    GENERATION = args.generation
+    # A later generation lives in its own journal; the transaction names it.
+    if args.generation > 1 and f".g{args.generation}." not in Path(args.hold_file).name:
+        print(f"{LOG} UNKNOWN: generation {args.generation} needs its own journal file", file=sys.stderr)
+        return EXIT_UNKNOWN
 
     hold_file = Path(args.hold_file)
     if args.action == "status":

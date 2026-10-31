@@ -456,6 +456,47 @@ h.pause('https://kuklfnapbkmacvwxktbh.supabase.co',door,'123-1',Path(sys.argv[2]
             hold.pause(BASE, door, "123-1", self.hold_file)
         self.assertFalse(self.hold_file.exists())
 
+    def test_a_second_hold_in_the_same_run_is_a_new_generation_with_new_request_ids(self):
+        # The door replays a repeated request id with its first answer, so a
+        # release that holds again at a later qualifying break (its first hold
+        # released) must send ids the door has not seen. The transaction names
+        # a per-generation journal and passes --generation; every pause, resume
+        # and expected-pause binding of that generation carries the suffix.
+        hold.pause(BASE, FakeDoor([C1]), "123-1", self.hold_file)
+        hold.resume(BASE, FakeDoor([C1]), "123-1", self.hold_file)
+        self.assertFalse(self.hold_file.exists())
+        first = hold.request_id("123-1", "pause", C1, 1)
+        second = hold.request_id("123-1", "pause", C1, 2)
+        self.assertNotEqual(first, second)
+        self.assertEqual(hold.request_id("123-1", "pause", C1), first)
+        gen2 = self.hold_file.with_name("123-1.lightning-hold.g2.json")
+
+        class Gen2Door(FakeDoor):
+            def __call__(self, url, payload):
+                if payload is not None and payload["p_action"] == "resume":
+                    assert payload["p_args"]["expected_pause_request_id"] == second, payload
+                    identity = {"action": "resume", "cluster_id": C1, "request_id": payload["p_args"]["request_id"]}
+                    self.calls.append((url, payload))
+                    return {**identity, "ok": True, "idempotent": False}
+                return super().__call__(url, payload)
+
+        previous = hold.GENERATION
+        hold.GENERATION = 2
+        try:
+            door = Gen2Door([C1])
+            self.assertEqual(hold.pause(BASE, door, "123-1", gen2), hold.EXIT_DONE)
+            pauses = [p for _, p in door.calls if p is not None and p["p_action"] == "pause"]
+            self.assertEqual(pauses[0]["p_args"]["request_id"], second)
+            self.assertEqual(hold.resume(BASE, Gen2Door([C1]), "123-1", gen2), hold.EXIT_DONE)
+            self.assertTrue(gen2.with_name(gen2.name + ".released").exists())
+        finally:
+            hold.GENERATION = previous
+        # The CLI refuses a later generation without its own journal name, and
+        # any generation outside 1..999.
+        self.assertEqual(hold.main(["status", "--env-file", "/dev/null", "--run-id", "123-1", "--hold-file", str(self.hold_file), "--generation", "2"]), hold.EXIT_UNKNOWN)
+        self.assertEqual(hold.main(["status", "--env-file", "/dev/null", "--run-id", "123-1", "--hold-file", str(gen2), "--generation", "0"]), hold.EXIT_UNKNOWN)
+        self.assertEqual(hold.main(["status", "--env-file", "/dev/null", "--run-id", "123-1", "--hold-file", str(gen2), "--generation", "2"]), hold.EXIT_DONE)
+
     def test_the_helper_never_reads_a_horse_flag(self):
         source = SCRIPT.read_text()
         self.assertNotIn("is_horse", source)

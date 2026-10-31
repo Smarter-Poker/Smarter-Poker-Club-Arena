@@ -53,3 +53,13 @@ permission; the test change pins that ceiling and the protected private-capture
 route. All financial source inputs, oracles, assertions and historical audit
 values remain unchanged. The cheap maintained binding verifier checks all1814
 pins; this identity repair is not financial recertification.
+
+Three older workflow source contracts initially refused the optional mode. In
+`tests/unit/browserDeliveryParallel.test.ts:68` and
+`tests/unit/requiredCiRunnerRecovery.test.ts:111,166`, the reviewed current
+fingerprints now include the read-only caller permission and protected manual
+branch. The tests independently execute the actual mode expression: false or
+absent stays55minutes, true is120minutes; the exact eight original default stages
+and cleanup, Ubuntu24.04 and no-error-suppression assertions remain. Every other
+CI job and non-job fingerprint is unchanged. The three affected cases pass;
+these are source contracts, not native qualification. TypeScript passes.

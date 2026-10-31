@@ -20,7 +20,10 @@ const LightningSessionSummaryHost = lazy(() =>
   }))
 );
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
-import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
+// Seating starts on mount without putting tournament stage parsing in first paint.
+const TournamentAutoSeat = lazyWithRetry(
+  () => import('./components/tournament/TournamentAutoSeat')
+);
 import { MEDIA_BASE } from './utils/mediaBase';
 import { supabase } from './lib/supabase';
 import { installPlayerSessionRevocationEvents } from './lib/sessionRevoked';
@@ -665,7 +668,9 @@ function FullApp() {
           <TournamentStartingTicker />
         </Suspense>
         {/* Dan 2026-08-21: when an MTT starts, the player's seat opens itself. */}
-        <TournamentAutoSeat />
+        <Suspense fallback={null}>
+          <TournamentAutoSeat />
+        </Suspense>
         <MilestoneToast />
         <ConnectionStatusBar />
         {/* Accessibility: Skip to main content link */}

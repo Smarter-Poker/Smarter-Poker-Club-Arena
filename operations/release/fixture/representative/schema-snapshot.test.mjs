@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES, connectionFailureCode } from '../schema-snapshot.mjs';
+import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES, connectionFailureCode, dumpFailureKind, safeDumpDiagnostic } from '../schema-snapshot.mjs';
 import { assertSchemaOnly, composeSchema, dumpObjects, schemaHash } from '../schema-compose.mjs';
 import { schemaCatalogue, schemaCataloguePayload } from '../../native/component-semantic-observations.mjs';
 import { APPLICATION_TRIGGER_WITNESSES } from '../schema-application-hooks.mjs';
@@ -35,6 +35,16 @@ test('connection diagnostics retain only fixed codes across causes and aggregate
   assert.equal(connectionFailureCode(cycle), 'UNKNOWN');
   let deep = privateError; for (let i=0;i<20;i++) deep = {cause:deep};
   assert.equal(connectionFailureCode(deep), 'UNKNOWN');
+});
+
+test('dump diagnostics classify only fixed categories and bounded scalar facts', () => {
+  assert.equal(dumpFailureKind('pg_dump: query failed: permission denied for private-source'), 'PERMISSION_DENIED');
+  assert.equal(dumpFailureKind('certificate verify failed at private-host'), 'TLS_VERIFICATION');
+  assert.equal(dumpFailureKind('canceling statement due to statement timeout'), 'STATEMENT_TIMEOUT');
+  assert.equal(dumpFailureKind('private-provider-secret'), 'UNKNOWN');
+  const result=safeDumpDiagnostic({kind:'private-secret',exit_code:999,signal:'private-host',elapsed_ms:-1,
+    stdout_bytes:Infinity,stderr_bytes:NaN,message:'private-provider-secret'});
+  assert.deepEqual(result,{kind:'UNKNOWN',exit_code:null,signal:'UNKNOWN',elapsed_ms:null,stdout_bytes:null,stderr_bytes:null});
 });
 
 test('only the exact canonical manual main caller can capture', () => {
@@ -217,6 +227,39 @@ test('pg_dump uses fixed no-data imported snapshot and no credential argv or inh
   assert.ok(!('DATABASE_URL' in observed.options.env));assert.equal(observed.options.env.PGSSLMODE,'verify-full');
   assert.equal(observed.options.env.PGSSLROOTCERT, path.resolve('scripts/ci/certificates/supabase-prod-ca-2021.crt'));
   assert.equal(schemaHash(await readFile(observed.options.env.PGSSLROOTCERT)), schemaHash(config.ssl.ca));
+});
+
+test('dump failure preserves no private stderr, schema bytes or nested error', async () => {
+  const spawnProcess=()=>{
+    const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>{};
+    queueMicrotask(()=>{child.stdout.end('private-schema');child.stderr.end('pg_dump: query failed: permission denied for private-relation');child.emit('close',1,null);});
+    return child;
+  };
+  await assert.rejects(dumpSnapshot(databaseConfiguration(fixtureURL),'00000003-0000001B-1',{spawnProcess}),error=>{
+    assert.equal(error.message,'ISOLATED_SCHEMA_DUMP_FAILED');
+    assert.equal(error.dumpDiagnostic.kind,'PERMISSION_DENIED');
+    assert.equal(error.dumpDiagnostic.exit_code,1);assert.equal(error.dumpDiagnostic.signal,'NONE');
+    assert.ok(error.dumpDiagnostic.stdout_bytes>0);assert.ok(error.dumpDiagnostic.stderr_bytes>0);
+    assert.ok(!JSON.stringify(error).includes('private-'));assert.equal(error.cause,undefined);return true;
+  });
+});
+
+test('dump deadline and stderr overflow remain distinct terminal refusals', async () => {
+  for (const mode of ['DEADLINE','STDERR_LIMIT','SPAWN']) {
+    const spawnProcess=()=>{
+      const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();
+      child.kill=()=>child.emit('close',null,'SIGKILL');
+      queueMicrotask(()=>{
+        if(mode==='STDERR_LIMIT')child.stderr.end(Buffer.alloc(65537,65));
+        if(mode==='SPAWN')child.emit('error',Error('private-host-secret'));
+      });return child;
+    };
+    await assert.rejects(dumpSnapshot(databaseConfiguration(fixtureURL),'00000003-0000001B-1',
+      {spawnProcess,deadlineMs:mode==='DEADLINE'?1:1000}),error=>{
+        assert.equal(error.dumpDiagnostic.kind,mode);assert.equal(error.dumpDiagnostic.exit_code,null);
+        assert.ok(!JSON.stringify(error).includes('private'));return true;
+      });
+  }
 });
 
 test('the original catalogue digest and private complete payload use the exact same canonical encoding', async () => {

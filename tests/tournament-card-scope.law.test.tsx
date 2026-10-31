@@ -40,6 +40,9 @@ vi.mock('../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: { id: '
 vi.mock('../src/hooks/useMasterBusSubscription', () => ({ useMasterBusSubscription: vi.fn() }));
 vi.mock('../src/services/tableWarmup', () => ({ warmTable: vi.fn() }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: mocks.report }));
+vi.mock('../src/hooks/usePlatformCapability', () => ({
+  usePlatformCapability: () => 'unavailable',
+}));
 import TournamentAutoSeat from '../src/components/tournament/TournamentAutoSeat';
 
 const now = Date.parse('2026-10-18T18:00:00Z');

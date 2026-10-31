@@ -34,6 +34,15 @@ export function totalPayout(r: Pick<PayoutRow, 'prize' | 'bounty_winnings'>): nu
 
 export type ResultSort = 'finish' | 'total';
 
+/** Unknown places follow every real finish, including unlimited fields above 999. */
+function compareFinish(a: PayoutRow, b: PayoutRow): number {
+  const aPlaced = Number.isSafeInteger(a.position) && (a.position ?? 0) > 0;
+  const bPlaced = Number.isSafeInteger(b.position) && (b.position ?? 0) > 0;
+  if (!aPlaced) return bPlaced ? 1 : 0;
+  if (!bPlaced) return -1;
+  return a.position! - b.position!;
+}
+
 /**
  * The finishers in the requested order.
  *
@@ -47,11 +56,9 @@ export type ResultSort = 'finish' | 'total';
 export function sortResults<T extends PayoutRow>(rows: readonly T[], sort: ResultSort): T[] {
   const out = [...rows];
   if (sort === 'total') {
-    return out.sort(
-      (a, b) => totalPayout(b) - totalPayout(a) || (a.position || 999) - (b.position || 999)
-    );
+    return out.sort((a, b) => totalPayout(b) - totalPayout(a) || compareFinish(a, b));
   }
-  return out.sort((a, b) => (a.position || 999) - (b.position || 999));
+  return out.sort(compareFinish);
 }
 
 /** Whoever took the most money out of the event. Null for an empty field. */

@@ -18,6 +18,9 @@
  * Owner October 30: an explicit player-watch follows that player across tables.
  * It does not authorize urgency switching or taking focus from background tabs.
  *
+ * Owner October 31: registration authorizes entering the assigned tournament
+ * game automatically when its seat arrives, rather than only opening a tab.
+ *
  * If you are reading this because a pin below went red: you are re-adding
  * behaviour Dan explicitly banned. Do not. A player's view moves when the
  * player moves it.

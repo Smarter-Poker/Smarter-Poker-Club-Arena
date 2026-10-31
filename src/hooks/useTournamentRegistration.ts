@@ -11,6 +11,7 @@ import { masterBus } from '../core/MasterBus';
 import { signUpDialog } from '../components/tournament/signUpDialog';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
+import { markTournamentEntered } from '../utils/tournamentEntryNavigation';
 
 /**
  * How hard we look for the seat the server was meant to give us.
@@ -331,6 +332,7 @@ export function useTournamentRegistration() {
         if (aliveRef.current) {
           if (lookup.state === 'seated') {
             const seatTableId = lookup.tableId;
+            markTournamentEntered(currentUserId, t.id);
             navigate(`/table/${seatTableId}`);
           } else if (lookup.state === 'pending') {
             toast.info('You Are Registered. Your Seat Is Being Assigned.');

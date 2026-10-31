@@ -6,7 +6,9 @@ Owner, 2026-10-31: "REMOVE THE LIGHTNING INTERNAL PILOT, AND ANY AND ALL TRACES 
 
 - `LightningPilotSeatScope` is gone. The horse fleet read the pilot assignment every cycle, refused an assigned horse new seats outside the pilot club, and loosened the bankroll bar at a pilot seat. The assignment has been inactive since 2026-10-24, so every one of those branches already answered "no opinion"; every seat now uses the horse's own temperament policy (`bankrollPolicyFor`), which is what it was getting.
 
-## Database (migration `20261031190132`)
+## Database (migration `20261031202247`)
+
+This is `20261031202247`. The first file, `20261031190132`, was refused whole by the database (a CHECK constraint on the assignment table calls one of the doors, so the doors cannot be dropped before the table); nothing committed, and it is marked superseded.
 
 - `lightning_pilot_assignment`, `lightning_pilot_assignment_receipts` and their seven doors are dropped.
 - `fn_register_horse_for_tournament` and `fn_seat_horse_in_seat_first_game` lose the `fn_lightning_pilot_assignment_blocks` gate. With no active assignment it was always false, so no outcome changes; horse registration stops taking that shared advisory lock.

@@ -41,3 +41,32 @@ export function collectVisibleCashCandidates(cards: Element[], actionPattern: st
     .sort((a, b) => b.players - a.players)
     .map(({ id, name, players }) => ({ id, name, players }));
 }
+
+/** A classic diagnostic needs an exact, positively identified ordinary-mode catalogue row. */
+export function selectClassicCashCandidate<T extends { id: string }>(
+  candidates: readonly T[],
+  catalogue: readonly unknown[]
+): T | undefined {
+  const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+  const rows = new Map<string, Record<string, unknown>>();
+  for (const value of catalogue) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const row = value as Record<string, unknown>;
+    if (typeof row.id !== 'string') continue;
+    if (rows.has(row.id)) throw new Error('Duplicate cash catalogue identity');
+    rows.set(row.id, row);
+  }
+  return candidates.find((candidate) => {
+    const row = rows.get(candidate.id);
+    const cluster = row?.cluster;
+    return (
+      uuid.test(candidate.id) &&
+      typeof row?.cluster_id === 'string' &&
+      uuid.test(row.cluster_id) &&
+      cluster !== null &&
+      typeof cluster === 'object' &&
+      !Array.isArray(cluster) &&
+      (cluster as Record<string, unknown>).cluster_mode === 'must_move'
+    );
+  });
+}

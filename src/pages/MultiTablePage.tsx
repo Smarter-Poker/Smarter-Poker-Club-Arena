@@ -4714,7 +4714,9 @@ export default function MultiTablePage() {
       if (current && isTableTab(current))
         navigate(`/table/${current.id}${tableQuery(current)}`, { replace: true });
     }
-  }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // An embedded lobby may borrow this very table URL. A new navigation to
+    // the same URL still means enter the game, so consume each route arrival.
+  }, [routeTableId, location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * ─── THE BACKSTOP: A TOURNAMENT ROUTE CANNOT STRAND OPEN TABLES ──────────

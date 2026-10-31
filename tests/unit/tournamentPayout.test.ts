@@ -133,3 +133,23 @@ describe('44. the sort handles it correctly', () => {
     expect(sortResults(withUnplaced, 'finish').at(-1)!.username).toBe('Unplaced');
   });
 });
+
+describe('unlimited tournament fields', () => {
+  it.each(['finish', 'total'] as const)(
+    'keeps unplaced entries after ranks above 999 when sorting by %s',
+    (sort) => {
+      const rows: PayoutRow[] = [
+        { user_id: 'unplaced', position: null, prize: 0, bounty_winnings: 0 },
+        { user_id: 'last', position: 1500, prize: 0, bounty_winnings: 0 },
+        { user_id: 'earlier', position: 999, prize: 0, bounty_winnings: 0 },
+        { user_id: 'also-unplaced', position: null, prize: 0, bounty_winnings: 0 },
+      ];
+      expect(sortResults(rows, sort).map((row) => row.user_id)).toEqual([
+        'earlier',
+        'last',
+        'unplaced',
+        'also-unplaced',
+      ]);
+    }
+  );
+});

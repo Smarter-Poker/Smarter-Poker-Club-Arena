@@ -11,6 +11,10 @@
  *     npx tsx scripts/holdem-live-measure.ts report --samples /tmp/health.jsonl \
  *         --since-hours 24 --out /tmp/holdem-live-measure
  *
+ *     # on engine-01, Prometheus already holds 15 s heap/RSS history per
+ *     # instance (poker_engine_* series): no sampler loop needed
+ *     ... report --prometheus http://127.0.0.1:9090 --since-hours 24 --out /tmp/holdem-live-measure
+ *
  * `report` writes <out>.json and <out>.md and prints the markdown. The
  * arithmetic lives in src/benchmark/HoldemLiveMeasure.ts (pure, unit-tested);
  * this file only fetches. Every query is a bounded SELECT over an indexed
@@ -28,11 +32,14 @@ import {
   receiptCounts,
   renderMarkdown,
   riverOnePairCalls,
+  riverOnePairFromRpc,
+  samplesFromPrometheus,
   threeBetShares,
   RECEIPT_FEATURES,
   type HealthSample,
   type LiveMeasureReport,
   type PlayRow,
+  type PrometheusRange,
   type ReviewRow,
   type TelemetryRow,
 } from '../src/benchmark/HoldemLiveMeasure.js';
@@ -78,12 +85,51 @@ function readSamples(path: string | undefined): HealthSample[] {
     .filter((s): s is HealthSample => s !== null);
 }
 
+/** Three query_range reads over the window from a local Prometheus (engine-01). */
+async function prometheusSamples(base: string, since: Date): Promise<HealthSample[]> {
+  const root = base.replace(/\/$/, '');
+  if (!/^https?:\/\//.test(root)) throw new Error('--prometheus must be an http(s) URL');
+  const start = Math.floor(since.getTime() / 1000);
+  const end = Math.floor(Date.now() / 1000);
+  const range = async (query: string): Promise<PrometheusRange> => {
+    const q = new URLSearchParams({ query, start: String(start), end: String(end), step: '60' });
+    const res = await fetch(`${root}/api/v1/query_range?${q}`, { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(`prometheus answered HTTP ${res.status} for ${query}`);
+    return (await res.json()) as PrometheusRange;
+  };
+  const [heap, rss, info] = await Promise.all([
+    range('poker_engine_heap_used_bytes'),
+    range('poker_engine_process_rss_bytes'),
+    range('poker_engine_info'),
+  ]);
+  return samplesFromPrometheus(heap, rss, info);
+}
+
 function database(): { url: string; key: string } {
   const url = (process.env.SUPABASE_URL ?? '').replace(/\/$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
   if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for the report');
   if (!/^https:\/\//.test(url)) throw new Error('SUPABASE_URL must be https');
   return { url, key };
+}
+
+/** POST an RPC; returns { status, body } so the caller can tell absent from refused. */
+async function rpc(name: string, args: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  const { url, key } = database();
+  const res = await fetch(`${url}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: { apikey: key, authorization: `Bearer ${key}`, accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify(args),
+    redirect: 'error',
+    signal: AbortSignal.timeout(120000),
+  });
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  return { status: res.status, body };
 }
 
 async function select<T>(table: string, query: string): Promise<T[]> {
@@ -110,6 +156,8 @@ async function report(): Promise<void> {
 
   const live = await fetchHealth().catch(() => null);
   const samples = readSamples(arg('--samples'));
+  const prometheus = arg('--prometheus');
+  if (prometheus) samples.push(...(await prometheusSamples(prometheus, since)));
   if (live) samples.push(live);
 
   // Unfloored tables only, as the tuner and fn_horse_frequency_leaks read
@@ -119,9 +167,20 @@ async function report(): Promise<void> {
     'horse_daily_play',
     `select=horse_user_id,day,format,hands,three_bets,three_bet_opps,faced_3bets,fold_to_3bets&day=gte.${sinceDay}&floored=eq.false&limit=20000`
   );
+  // River one-pair cells: the database function first (one bounded scan, no
+  // hand data exported). Only an ABSENT function (404 / PGRST202) falls back
+  // to fetching rows; any other refusal is reported, never guessed around.
+  let riverOnePair = null as ReturnType<typeof riverOnePairFromRpc>;
+  const answer = await rpc('fn_horse_river_one_pair_calls', { p_since: since.toISOString(), p_limit: REVIEW_ROW_CAP });
+  if (answer.status === 200) {
+    riverOnePair = riverOnePairFromRpc(answer.body);
+    if (!riverOnePair) throw new Error('fn_horse_river_one_pair_calls answered outside its contract');
+  } else if (!(answer.status === 404 || (answer.body as { code?: string } | null)?.code === 'PGRST202')) {
+    throw new Error(`fn_horse_river_one_pair_calls answered HTTP ${answer.status}`);
+  }
   const reviews: ReviewRow[] = [];
   let before: string | null = null;
-  while (reviews.length < REVIEW_ROW_CAP) {
+  while (!riverOnePair && reviews.length < REVIEW_ROW_CAP) {
     const cursor: string = before ? `&played_at=lt.${encodeURIComponent(before)}` : '';
     const page: Array<ReviewRow & { played_at: string }> = await select<ReviewRow & { played_at: string }>(
       'horse_hand_reviews',
@@ -141,10 +200,10 @@ async function report(): Promise<void> {
     servingReleaseSha: live?.releaseSha ?? null,
     heap: heapSlopes(samples),
     threeBet: threeBetShares(play),
-    riverOnePair: riverOnePairCalls(reviews),
+    riverOnePair: riverOnePair ?? riverOnePairCalls(reviews),
     receipts: receiptCounts(telemetry),
   };
-  if (reviews.length >= REVIEW_ROW_CAP) {
+  if (!riverOnePair && reviews.length >= REVIEW_ROW_CAP) {
     result.riverOnePair.caveat += `; the review window hit its ${REVIEW_ROW_CAP}-row cap, so only the newest rows are counted`;
   }
   result.threeBetCaveat = 'horse_daily_play carries no variant: every variant, unfloored tables only, as the tuner reads them';
@@ -169,7 +228,7 @@ async function main(): Promise<void> {
     await report();
     return;
   }
-  throw new Error('usage: holdem-live-measure.ts sample-health --samples FILE | report [--samples FILE] [--since-hours N] [--out PATH]');
+  throw new Error('usage: holdem-live-measure.ts sample-health --samples FILE | report [--samples FILE] [--prometheus URL] [--since-hours N] [--out PATH]');
 }
 
 main().catch((err: unknown) => {

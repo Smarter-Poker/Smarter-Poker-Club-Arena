@@ -518,7 +518,9 @@ describe('Item 9 - the level shown is the level being played', () => {
     expect(src).not.toMatch(/POLL_MS/);
     expect(src).toMatch(/const SAFETY_READ_MS = 300_000;/);
     // A failed read must reach the HUD as a failure, not as a null row.
-    expect(src).toMatch(/getTournament\(this\.tournamentId, \{ throwOnError: true \}\)/);
+    expect(src).toMatch(
+      /getTournament\(this\.tournamentId, \{\s*throwOnError: true,\s*signal: controller\.signal,?\s*\}\)/
+    );
     // The level arrives on both carriers, through the bus, not a private binding.
     expect(src).toMatch(/masterBus\.subscribe\('BLIND_LEVEL_CHANGE'/);
     expect(src).toMatch(/masterBus\.subscribe\('TOURNAMENT_LEVEL_UP'/);

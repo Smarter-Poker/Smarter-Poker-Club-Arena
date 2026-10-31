@@ -332,6 +332,10 @@ export class DeadlineScheduler {
 
   /** Retain the original callback and residual clock under exact pause ownership. */
   pauseForWeeklyPayout(tableId: string, owner: string, prefix: string): void {
+    this.holdDecisionClocks(tableId, owner, prefix);
+  }
+
+  holdDecisionClocks(tableId: string, owner: string, prefix: string): void {
     if (!owner) throw new Error('Weekly payout pause requires an owner');
     const key = JSON.stringify([owner, prefix]);
     let scopes = this.weeklyScopes.get(tableId);
@@ -350,6 +354,10 @@ export class DeadlineScheduler {
   }
 
   resumeFromWeeklyPayout(tableId: string, owner: string, prefix: string): void {
+    this.releaseDecisionClocks(tableId, owner, prefix);
+  }
+
+  releaseDecisionClocks(tableId: string, owner: string, prefix: string): void {
     const scopes = this.weeklyScopes.get(tableId);
     if (!scopes?.delete(JSON.stringify([owner, prefix]))) return;
     if (scopes.size === 0) this.weeklyScopes.delete(tableId);

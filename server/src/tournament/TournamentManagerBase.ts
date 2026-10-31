@@ -3225,7 +3225,7 @@ export abstract class TournamentManagerBase {
    */
   protected urgentRedrivesRequested = 0;
   /** What this manager last told the scheduler about its consolidation work. */
-  private consolidationDeclared = false;
+  protected consolidationDeclared = false;
 
   /**
    * A HELD LEVEL ON A SPREAD FIELD ASKS FOR ITS BALANCE PASS (2026-09-29).
@@ -3975,6 +3975,11 @@ export abstract class TournamentManagerBase {
     // the synchronized break becomes the pause owner until one of them ends.
     const addOnBreakAlreadyOwnsLevelClock = this.addOnBreakActive && this.addOnBreakOwnsLevelClock;
     const acceptedBreakGeneration = ++this.synchronizedBreakStartGeneration;
+    const proposedBreakStartedAt = new Date().toISOString();
+    this.breakCountdownAnchor = {
+      generation: acceptedBreakGeneration,
+      startedAt: proposedBreakStartedAt,
+    };
     this.onBreak = true;
     if (this.addOnBreakActive) this.addOnBreakOwnsPause = false;
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
@@ -4025,7 +4030,7 @@ export abstract class TournamentManagerBase {
         .from('tournaments')
         .update({
           on_break: true,
-          break_started_at: new Date().toISOString(),
+          break_started_at: proposedBreakStartedAt,
           break_ends_at: null,
         })
         .eq('id', this.tournamentId);
@@ -4170,7 +4175,28 @@ export abstract class TournamentManagerBase {
    * tournament. Writes the real end time so the countdown players see reflects
    * when the break ACTUALLY started, not when the last hand was announced.
    */
+  private breakCountdownAnchor: { generation: number; startedAt: string } | null = null;
+  private breakCountdownOperation: { generation: number; promise: Promise<void> } | null = null;
+
   async beginBreakCountdown(
+    breakDurationMs: number,
+    deadlineMs = Date.now() + breakDurationMs
+  ): Promise<void> {
+    const generation = this.synchronizedBreakStartGeneration;
+    if (this.breakCountdownOperation?.generation === generation)
+      return this.breakCountdownOperation.promise;
+    const operation = {
+      generation,
+      promise: Promise.resolve() as Promise<void>,
+    };
+    this.breakCountdownOperation = operation;
+    operation.promise = this.persistBreakCountdown(breakDurationMs, deadlineMs).finally(() => {
+      if (this.breakCountdownOperation === operation) this.breakCountdownOperation = null;
+    });
+    return operation.promise;
+  }
+
+  private async persistBreakCountdown(
     breakDurationMs: number,
     deadlineMs = Date.now() + breakDurationMs
   ): Promise<void> {
@@ -4191,17 +4217,101 @@ export abstract class TournamentManagerBase {
      */
     if (this.breakCountdownStarted) return;
     const breakGeneration = this.synchronizedBreakStartGeneration;
-    this.breakCountdownStarted = true;
-    this.synchronizedBreakEndsAtMs = deadlineMs;
-    const endsAt = new Date(deadlineMs).toISOString();
+    // A refused/unknown write keeps this same proposal; another caller must
+    // never buy a later deadline by retrying the original break request.
+    if (this.synchronizedBreakEndsAtMs === 0) this.synchronizedBreakEndsAtMs = deadlineMs;
+    const endsAt = new Date(this.synchronizedBreakEndsAtMs).toISOString();
+    const projection = 'id,on_break,break_started_at,break_ends_at';
+    const anchorRead = await supabase
+      .from('tournaments')
+      .select(projection)
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
+    const anchor = anchorRead.data;
+    if (
+      anchorRead.error ||
+      anchor?.id !== this.tournamentId ||
+      anchor.on_break !== true ||
+      typeof anchor.break_started_at !== 'string' ||
+      !Number.isFinite(Date.parse(anchor.break_started_at))
+    )
+      throw anchorRead.error ?? new Error('Tournament Break Anchor Is Unproven');
+    if (
+      this.breakCountdownAnchor?.generation !== breakGeneration ||
+      Date.parse(this.breakCountdownAnchor.startedAt) !== Date.parse(anchor.break_started_at)
+    )
+      throw new Error('Tournament Break Anchor Changed');
+    this.breakCountdownAnchor = { generation: breakGeneration, startedAt: anchor.break_started_at };
+    let receipt: {
+      id?: string;
+      on_break?: boolean;
+      break_started_at?: string;
+      break_ends_at?: string | null;
+    } | null = null;
+    let writeError: unknown;
+    if (
+      anchor.break_ends_at !== null &&
+      Date.parse(anchor.break_ends_at) !== this.synchronizedBreakEndsAtMs
+    )
+      throw new Error('Tournament Break Deadline Changed');
+    if (Date.parse(anchor.break_ends_at ?? '') === this.synchronizedBreakEndsAtMs) receipt = anchor;
     try {
-      await supabase
-        .from('tournaments')
-        .update({ break_ends_at: endsAt })
-        .eq('id', this.tournamentId);
+      if (!receipt) {
+        const result = await supabase
+          .from('tournaments')
+          .update({ break_ends_at: endsAt })
+          .eq('id', this.tournamentId)
+          .eq('on_break', true)
+          .eq('break_started_at', anchor.break_started_at)
+          .is('break_ends_at', null)
+          .select(projection)
+          .maybeSingle();
+        receipt = result.error ? null : result.data;
+        writeError = result.error;
+      }
     } catch (err) {
-      reportError(err, 'TournamentManagerBase.beginBreakCountdown_persist');
+      writeError = err;
     }
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
+    if (!receipt) {
+      // A lost acknowledgement is not permission for another write. Read the
+      // exact durable result once inside this original operation.
+      const result = await supabase
+        .from('tournaments')
+        .select(projection)
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (!result.error) receipt = result.data;
+      else writeError = result.error;
+    }
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
+    if (
+      receipt?.id !== this.tournamentId ||
+      receipt.on_break !== true ||
+      receipt.break_started_at !== anchor.break_started_at ||
+      Date.parse(receipt.break_ends_at ?? '') !== this.synchronizedBreakEndsAtMs
+    ) {
+      const error = writeError ?? new Error('Tournament Break Countdown Is Not Durably Proven');
+      reportError(error, 'TournamentManagerBase.beginBreakCountdown_persist');
+      throw error;
+    }
+    this.breakCountdownStarted = true;
     // The database write began while this manager owned the generation. If its
     // response crosses the stop fence, do not announce a countdown from a
     // manager that no longer owns the tournament.

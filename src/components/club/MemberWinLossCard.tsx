@@ -34,7 +34,8 @@ const WINDOWS: ReadonlyArray<{ key: keyof Omit<MemberWinLoss, 'as_of'>; label: s
   { key: 'overall', label: 'Overall' },
 ];
 
-function tone(value: number): string {
+function tone(value: number | null): string {
+  if (value === null) return '';
   if (value > 0) return ' mm-stat--up';
   if (value < 0) return ' mm-stat--down';
   return '';
@@ -44,10 +45,12 @@ function WinLossRow({ label, figure }: { label: string; figure: WinLossFigure })
   return (
     <div className={`mm-stat mm-winloss__row${tone(figure.net)}`}>
       <span className="mm-stat__label">{label}</span>
-      <span className="mm-stat__value">{playerRecordMoney(figure.net, true)}</span>
+      <span className="mm-stat__value">
+        {figure.net === null ? 'Unavailable' : playerRecordMoney(figure.net, true)}
+      </span>
       <span className="mm-winloss__split">
-        Cash {playerRecordMoney(figure.cash, true)} / Tournaments{' '}
-        {playerRecordMoney(figure.mtt, true)}
+        Cash {figure.cash === null ? 'Unavailable' : playerRecordMoney(figure.cash, true)} /
+        Tournaments {playerRecordMoney(figure.mtt, true)}
       </span>
     </div>
   );
@@ -128,6 +131,11 @@ export default function MemberWinLossCard({
           {WINDOWS.map((window) => (
             <WinLossRow key={window.key} label={window.label} figure={data[window.key]} />
           ))}
+          {WINDOWS.some((window) => data[window.key].net === null) && (
+            <p className="mm-winloss__note" role="status">
+              Some Historical Jackpot Club Records Are Missing. Affected Totals Are Unavailable.
+            </p>
+          )}
           {stale && (
             <p className="mm-winloss__note mm-winloss__note--stale" role="status">
               Could Not Refresh Win And Loss. Showing The Previous Successful Read.

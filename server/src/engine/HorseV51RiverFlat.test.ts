@@ -219,6 +219,9 @@ describe('V51 river flat, ablated', () => {
           raisedOnCommittedRiver(QJ_TOP_PAIR, seed, {
             v51RiverFlat: false,
             committedRaiseDiscipline: false,
+            // V67 prices this raised river one pair and takes the call/fold
+            // exit before the jam, so the historical re-jam needs it off too.
+            v67RiverBetRaisedOnePair: false,
           })
         ).toBe('all_in');
       }

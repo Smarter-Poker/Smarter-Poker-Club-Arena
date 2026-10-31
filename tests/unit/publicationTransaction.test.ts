@@ -128,7 +128,24 @@ describe('one publication transaction follows parallel preparation', () => {
       const body = { ...job };
       delete body.if;
       delete body.needs;
-      // Assert only the approved paid client routes and hardware-bounded client worker cap, then
+      // These independent gateway jobs retain their original snapshots too.
+      if (
+        [
+          'build-record-gateway',
+          'publish-record-gateway',
+          'bootstrap-record-gateway',
+          'install-record-gateway-credentials',
+          'inspect-record-gateway-host',
+        ].includes(key)
+      ) {
+        expect(body['runs-on']).toBe('ubuntu-latest');
+        const label = key === 'build-record-gateway' ? 'ca-linux-8core' : 'ca-linux-4core';
+        body['runs-on'] =
+          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+          label +
+          "' || 'ubuntu-latest' }}";
+      }
+      // Assert only the standard hosted client routes and hardware-bounded client worker cap, then
       // retain the complete original command/permission/secret snapshot.
       if (
         [
@@ -140,9 +157,7 @@ describe('one publication transaction follows parallel preparation', () => {
           'publish-to-origin',
         ].includes(key)
       ) {
-        expect(body['runs-on']).toBe(
-          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}"
-        );
+        expect(body['runs-on']).toBe('ubuntu-latest');
         const label = key === 'publish-needed' ? 'ca-linux-4core' : 'ca-linux-8core';
         body['runs-on'] =
           "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
@@ -173,7 +188,7 @@ describe('one publication transaction follows parallel preparation', () => {
                 }
               : step
           );
-          expect(body.env.VITEST_MAX_THREADS).toBe(4);
+          expect(body.env.VITEST_MAX_THREADS).toBe(8);
           body.env = {
             ...body.env,
             VITEST_MAX_THREADS:

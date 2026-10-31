@@ -49,3 +49,30 @@ test('existing required V31 gate executes native before/after transition and sec
     assert.ok(updated.includes(value), value);
   }
 });
+
+test('compactor authority aligns exactly both ingress owners and stays in the native required gate', () => {
+  const candidate = read('supabase/migrations/20261031135616_v31_compactor_may_read_frozen_model_authority.sql');
+  for (const digest of ['d2e67eb56feb819478c725888a2b906f', '8fe624a3f070e1b8b8515d14f421a4a9',
+    '051c172d4ae8cf8856bcbd320a1b3e28', 'd9930cbff758f7d4f5fef9a614c2eb47']) {
+    assert.ok(candidate.includes(digest), digest);
+  }
+  assert.ok(candidate.includes("principal IN ('M2','COMPACTOR') AND operation='model_freeze_authority'"));
+  assert.ok(candidate.includes("(p_operation=''model_freeze_authority'' AND p_principal<>''M2'')"));
+  assert.ok(candidate.includes("(p_operation=''model_freeze_authority'' AND p_principal NOT IN (''M2'',''COMPACTOR''))"));
+  assert.equal((candidate.match(/EXECUTE replace\(/g) ?? []).length, 1);
+  assert.equal((candidate.match(/ADD CONSTRAINT/g) ?? []).length, 1);
+  assert.ok(candidate.includes("principal='COMPACTOR' AND operation IN ('prepare_model','freeze_model')"));
+  assert.ok(candidate.includes("v_before IS DISTINCT FROM (SELECT to_jsonb(p)-'prosrc'"));
+  assert.ok(candidate.includes('v_table_before IS DISTINCT FROM (SELECT to_jsonb(c)'));
+  assert.doesNotMatch(candidate, /NOT VALID|DISABLE TRIGGER|GRANT |REVOKE |SET ROLE|UPDATE public\.|DELETE FROM|statement_timeout = '(?!5s)|lock_timeout = '(?!1s)/i);
+  assert.equal((candidate.match(/^BEGIN;/gm) ?? []).length, 1);
+  assert.equal((candidate.match(/^COMMIT;/gm) ?? []).length, 1);
+  const harness = read(`${probe}run-pg17.sh`);
+  assert.ok(harness.includes('PG17_BIN="$PG_BIN" python3 -B "$HERE/test-compactor-freeze-authority-ingress.py"'));
+  const native = read(`${probe}test-compactor-freeze-authority-ingress.py`);
+  for (const marker of ['20261031135616_v31_compactor_may_read_frozen_model_authority.sql',
+    'matrix(False)', 'matrix(True)', 'solver ingress nonce was replayed',
+    "interval '301 seconds'", "repeat('B',64)", "role='fixture_owner'", 'table owner/ACL/RLS changed']) {
+    assert.ok(native.includes(marker), marker);
+  }
+});

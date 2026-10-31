@@ -879,6 +879,29 @@ function cellDepthIsPrimary(cell: string, stackBB: number, certifiedDepth?: numb
   return d === snapDepthBucket(stackBB);
 }
 
+/** The last opponent wager that increased this street's price. Controller
+ * all-in calls have no raise marker; false and true mark short/full raises.
+ * Keep its index so tempo reads the actual wager, not an earlier bet by the
+ * same actor or a subsequent caller. */
+function currentOpponentWager(
+  history: readonly ActionRecord[] | undefined,
+  heroUserId: string,
+  stage: HandStage
+): { record: ActionRecord; index: number } | null {
+  if (!history) return null;
+  for (let index = history.length - 1; index >= 0; index--) {
+    const record = history[index];
+    if (record.stage !== stage || record.userId === heroUserId) continue;
+    if (
+      record.action === 'bet' ||
+      record.action === 'raise' ||
+      (record.action === 'all_in' && typeof record.isFullRaise === 'boolean')
+    )
+      return { record, index };
+  }
+  return null;
+}
+
 function readInitiative(
   history: ActionRecord[] | undefined,
   heroUserId: string,
@@ -2053,6 +2076,40 @@ export interface HorseDecideOpts {
    * points against the price unless the bettor's read says they over-bluff.
    * Default on; explicit false keeps the unshaded V38 verdict. */
   v61RiverOnePairShade?: boolean;
+  /** V66 (2026-10-31): a hold'em one-pair (or air with no real draw) hand
+   * that bet the flop or turn and was raised no longer counts its own wager
+   * toward commitment, and its call is priced with a raise shade of up to
+   * ten equity points scaled by the raise size; it calls or folds at that
+   * price and never jams. Default on; explicit false keeps today's
+   * committed-branch pricing. */
+  v66BetRaisedOnePair?: boolean;
+  /** V67 (2026-10-31): a hold'em one-pair (or board-paired two pair) hand
+   * that bet the river and was raised is priced against the raise: the V63
+   * shade plus a raise-specific V67_RIVER_RAISE_SHADE (capped at
+   * V67_RIVER_RAISE_SHADE_CAP), not withheld for a V62 polar read, and the
+   * class calls or folds at that price (no 0.42 floor, no jam). Inside
+   * V61's gates. Default on; explicit false keeps today's pricing. */
+  v67RiverBetRaisedOnePair?: boolean;
+  /** League-only override of the V67 extra raise shade; production never
+   * sets it. */
+  v67RiverRaiseShadeOverride?: number;
+  /** V64 (2026-10-31): on a single-board hold'em river, a hand in the
+   * bluff-catch class (one pair, high card, or two pair that shares the
+   * board's pair) never raises a wager; it falls through to the V38 call
+   * verdict with the V61 shade. Measured over the latest 10,973 NLH review
+   * hands: horse river raises holding one pair were called 85-95% of the
+   * time and won 34% (-4,184bb cash), air raises won 7% (-1,696bb cash),
+   * while raises with two pair or better earned about +16,000bb. Default
+   * on; explicit false keeps the old value-raise and blocker bluff-raise. */
+  v64RiverRaiseNeedsTwoPair?: boolean;
+  /** V63 (2026-10-31): past a half-pot wager the V61 one-pair river shade
+   * steepens and caps at 20 points from a pot-sized wager, so a medium or
+   * large river wager demands more from a bluff-catcher. Default on;
+   * explicit false keeps the V61 shape. Inside V61's gates: off when V61 is
+   * off. */
+  v63LargeRiverBetShade?: boolean;
+  /** League-only override of the V63 shape; production never sets it. */
+  v63RiverShadeShapeOverride?: RiverOnePairShadeShape;
   /** V55: river Omaha sets/trips on a board permitting stronger hands do
    * not turn a qualified call into a raise. Opt-in until the separate
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
@@ -2070,6 +2127,29 @@ export interface HorseDecideOpts {
   v57TournamentAggression?: boolean;
   /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
   v60CashPressure?: boolean;
+  /** V65 (2026-10-31): Hold'em one-pair TURN calls of a wager hero did not
+   *  initiate are shaded by the price, zero at a quarter-pot wager and
+   *  12 points from a pot-sized one, before the call test. Draws, the
+   *  committed / raised-after-own-bet branch and a measured over-bluffer
+   *  read are untouched. Default on; explicit false keeps today's call bar. */
+  v65TurnOnePairShade?: boolean;
+  /** V65 league-only cap override (0.12 shipped; 0.08 is the fallback cut).
+   *  Production never sets it. */
+  v65TurnShadeCapOverride?: number;
+  /** V68 (2026-10-31): Hold'em no-pair (high card) TURN calls of a wager
+   *  hero did not initiate. (a) The 0.04 implied-odds bonus is withheld when
+   *  the wager is 0.7 pot or more and the effective stack behind after the
+   *  call is under 1.5x the pot after the call (no room to be paid on the
+   *  river). (b) High card without a real draw (no flush draw, no
+   *  open-ended or double-gutter straight draw) that V65 left unshaded
+   *  because a gutshot or a board-only shape read as a draw carries the V65
+   *  price shade, unless the bettor reads as a measured over-bluffer. Real
+   *  draws keep their equity. Default on; explicit false keeps today's
+   *  price. */
+  v68TurnAirDrawCalls?: boolean;
+  /** V68 league-only scale on the (b) air shade (1 shipped; 0.5 is the
+   *  half-strength fallback). Production never sets it. */
+  v68AirShadeScaleOverride?: number;
   /** V62 (2026-10-30) Hold'em river bettor polarity: a river wager's sampled
    *  hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum
    *  by bet size (HorseEval V62_BLUFF_SHARE / V62_VALUE_MIX), placed exactly
@@ -3743,6 +3823,72 @@ export function hasStrongPressureDraw(
 }
 
 /**
+ * The hold'em draw read the V38 barrel continuation has always used: four
+ * cards to a suit, or four distinct ranks inside one five-rank window (an
+ * open-ender or a gutshot), across hole and board together. Shared with V65
+ * so a one-pair hand that also draws is priced as a draw, not a bluff-catch.
+ */
+export function holdemDrawPresent(hole: Card[], board: Card[]): boolean {
+  const suits = new Map<string, number>();
+  for (const c of [...hole, ...board]) suits.set(c.suit, (suits.get(c.suit) ?? 0) + 1);
+  const ranks = [...new Set([...hole, ...board].map((c) => RANK_VALUES[c.rank] ?? 0))];
+  if (ranks.includes(14)) ranks.push(1);
+  return (
+    [...suits.values()].some((n) => n >= 4) ||
+    Array.from({ length: 10 }, (_, i) => i + 1).some(
+      (lo) => ranks.filter((r) => r >= lo && r <= lo + 4).length >= 4
+    )
+  );
+}
+
+/**
+ * ═══ V65 ONE-PAIR TURN CALL SHADE (2026-10-31) ═══
+ * How far a hold'em one-pair turn call of a wager hero did not initiate is
+ * priced below its raw read, by the price faced: r = toCall over the pot it
+ * is called into (`pot` inside decide already holds the wager, so a
+ * quarter-pot wager is r = 0.2, a 0.4-pot wager 0.29, a 0.7-pot wager 0.41,
+ * a pot-sized wager 0.5). Measured over 7 days of NLH review hands (12%
+ * sample, |net| >= 20bb): cash top-pair turn calls won 50% under 0.4 pot
+ * (break-even), 44% at 0.4-0.7, 29% at 0.7-1.05 and 23% from 1.05 up,
+ * against the ~29/41/50% the price demands; under pair 36/31/21/19%; the
+ * tournament table has the same shape. The horse folded the turn to a second
+ * barrel 3% (top pair) / 9% (under pair) of the time. Zero at a quarter-pot
+ * wager, 12 points from a pot-sized wager, which leaves the break-even small
+ * class nearly untouched (3.6 points at 0.4 pot) and takes 8.4 at 0.7 pot.
+ */
+export const V65_TURN_SHADE_CAP = 0.12;
+export const V65_TURN_SHADE_SLOPE = 0.4;
+export function v65TurnOnePairShade(
+  toCall: number,
+  pot: number,
+  cap: number = V65_TURN_SHADE_CAP
+): number {
+  if (!(toCall > 0) || !(pot > 0) || !(cap > 0)) return 0;
+  return Math.min(cap, Math.max(0, (toCall / pot - 0.2) * V65_TURN_SHADE_SLOPE));
+}
+
+/**
+ * ═══ V68 NO ROOM TO BE PAID (2026-10-31) ═══
+ * The implied-odds allowance assumes the river bet gets paid when the draw
+ * comes in. Against a wager of 0.7 pot or more (`potFrac`, the wager over the
+ * pot before it), with an effective stack behind after the call under 1.5x
+ * the pot after the call, there is at most one sub-pot bet left to win: the
+ * allowance is credit the stacks cannot pay. Measured over 7 days of NLH
+ * review hands (12% sample, |net| >= 20bb): turn draws facing a bet of 0.7
+ * pot or more won 31-35% (cash n=164, -2,961bb sampled).
+ */
+export const V68_IMPLIED_MIN_POT_FRAC = 0.7;
+export const V68_IMPLIED_MIN_SPR = 1.5;
+export function v68NoRoomToBePaid(
+  potFrac: number,
+  behindAfterCall: number,
+  potAfterCall: number
+): boolean {
+  if (!(potAfterCall > 0) || !(potFrac >= V68_IMPLIED_MIN_POT_FRAC)) return false;
+  return Math.max(0, behindAfterCall) < V68_IMPLIED_MIN_SPR * potAfterCall;
+}
+
+/**
  * ═══ V54 RIVER BLUFF ARITHMETIC (2026-10-24) ═══
  * At a bet of s times the pot, the caller risks s to win 1 + s, so a
  * balanced betting range is s/(1+2s) bluffs: 1/3 at pot, 0.3 at three
@@ -3811,9 +3957,136 @@ function v54OpponentProfile(
  * a quarter to a half they won 21-22% against ~29%, and at a half to a full
  * pot 14% against ~40%. Zero below a fifth, twelve points from half a pot.
  */
-export function v61RiverOnePairShade(toCall: number, pot: number): number {
+/** The V61 shade is a function of the price r = toCall / (pot after the
+ * wager), the same figure the pot odds read. A pot-sized wager is r = 0.5, a
+ * 0.7-pot wager r = 0.41, a half-pot wager r = 0.33, a 0.4-pot wager r = 0.29
+ * and a 2x overbet r = 0.67. */
+export interface RiverOnePairShadeShape {
+  /** Points per unit of r above 0.2 (a quarter-pot wager). */
+  slope: number;
+  /** The most the shade reaches. */
+  cap: number;
+  /** Optional knee: from this r the slope steepens to kneeSlope. */
+  kneeR?: number;
+  kneeSlope?: number;
+}
+/** V61: zero at r = 0.2, slope 0.4, cap 0.12 reached at a pot-sized wager. */
+export const V61_RIVER_SHADE_SHAPE: RiverOnePairShadeShape = { slope: 0.4, cap: 0.12 };
+export const V61_RIVER_SHADE_CAP = V61_RIVER_SHADE_SHAPE.cap;
+/** V63 (2026-10-31): V61's slope up to a half-pot wager (r = 1/3, 5.3
+ * points), then 0.88 per unit of r, so a 0.7-pot wager is shaded 12 points
+ * (V61: 8) and a pot-sized wager or larger 20 (V61: 12). Measured over the
+ * most recent 19,933 NLH review hands (`fn_horse_river_one_pair_calls`,
+ * 14-day window, |net| >= 20bb; classes are wager / pot BEFORE the wager):
+ * one-pair calls of a wager at or above 0.7 pot won 119 of 897 (13.3%)
+ * against the 41%+ the price demands, 0.4-0.7 pot won 99 of 479 (20.7%)
+ * against 29-41%, and under 0.4 pot won 64 of 197 (32.5%) against 20-29%,
+ * so wagers up to half the pot keep V61's shade: those calls already beat
+ * their price, and a short stack's call of a covering jam reads as a
+ * small price in r and stays callable. */
+export const V63_RIVER_SHADE_SHAPE: RiverOnePairShadeShape = {
+  slope: 0.4,
+  cap: 0.2,
+  kneeR: 1 / 3,
+  kneeSlope: 0.88,
+};
+export const V63_RIVER_SHADE_CAP = V63_RIVER_SHADE_SHAPE.cap;
+export function v61RiverOnePairShade(
+  toCall: number,
+  pot: number,
+  shape: RiverOnePairShadeShape = V61_RIVER_SHADE_SHAPE
+): number {
   if (!(toCall > 0) || !(pot > 0)) return 0;
-  return Math.min(0.12, Math.max(0, (toCall / pot - 0.2) * 0.4));
+  const r = toCall / pot;
+  let shade = Math.max(0, (r - 0.2) * shape.slope);
+  if (shape.kneeR != null && shape.kneeSlope != null && r > shape.kneeR) {
+    shade = Math.max(0, (shape.kneeR - 0.2) * shape.slope) + (r - shape.kneeR) * shape.kneeSlope;
+  }
+  return Math.min(shape.cap, shade);
+}
+/** V63 (2026-10-31): the shade shape the options select. Default on;
+ * explicit false keeps the V61 shape. */
+export function riverOnePairShadeShape(opts: HorseDecideOpts): RiverOnePairShadeShape {
+  if ((opts.v63LargeRiverBetShade ?? true) === false) return V61_RIVER_SHADE_SHAPE;
+  return opts.v63RiverShadeShapeOverride ?? V63_RIVER_SHADE_SHAPE;
+}
+
+/** V67 (2026-10-31): the raise-specific shade, in equity points, added on
+ * top of the V63 river shape for a hold'em one-pair hand that bet the river
+ * and was raised. Measured over 7 days of NLH review hands (12% sample,
+ * |net| >= 20bb): after a one-pair river bet was raised the horse folded
+ * 1.4-17% and its calls or jams won 11.9% in cash (n=226, about -129,000bb a
+ * week scaled) and 19.2% in tournaments (n=125, about -47,000bb) at an
+ * average raise of 0.72 pot; calls of a raise under 0.7 pot won 0-5% (cash
+ * n=90). A raise over a value bet is far more value-heavy than a river bet,
+ * so the bet-fitted V61/V63 shade under-prices it. */
+export const V67_RIVER_RAISE_SHADE = 0.1;
+/** V67: the most the combined river shade reaches for the raised class. */
+export const V67_RIVER_RAISE_SHADE_CAP = 0.25;
+/** V67: the full shade a raised river one-pair call carries. */
+export function v67RiverBetRaisedShade(
+  toCall: number,
+  pot: number,
+  shape: RiverOnePairShadeShape = V63_RIVER_SHADE_SHAPE,
+  extra = V67_RIVER_RAISE_SHADE
+): number {
+  if (!(toCall > 0) || !(pot > 0)) return 0;
+  return Math.min(V67_RIVER_RAISE_SHADE_CAP, v61RiverOnePairShade(toCall, pot, shape) + extra);
+}
+
+/** V66 (2026-10-31): the full raise shade, in equity points, for a hold'em
+ * one-pair or no-pair hand that bet the flop or turn and was raised. */
+export const V66_RAISE_SHADE = 0.1;
+
+/**
+ * V66 (2026-10-31): how far a hold'em one-pair (or air) flop/turn call of a
+ * RAISE over hero's own bet is priced below its raw read, by the price faced
+ * (toCall over the pot after the raise). Measured over 7 days of NLH review
+ * hands (12% sample, |net| >= 20bb): after betting the flop and being raised,
+ * one-pair and air calls won 33-34% (top pair 43%, under pair 22%, air 13%)
+ * at an average raise of 0.86 pot, and the horse folded 15 of 1,196 such
+ * decisions; the same line on the turn won 33-36%. Zero below a quarter of
+ * the pot, the full shade from 0.45.
+ */
+export function v66BetRaisedShade(toCall: number, pot: number, full = V66_RAISE_SHADE): number {
+  if (!(toCall > 0) || !(pot > 0)) return 0;
+  const r = toCall / pot;
+  return full * Math.min(1, Math.max(0, (r - 0.25) / 0.2));
+}
+
+/**
+ * V66: a REAL single-board hold'em draw on the flop or turn - a flush draw
+ * that uses a hole card, or eight-plus straight outs (open-ended or double
+ * gutter) that a hole card is part of. A gutshot or a backdoor is not one.
+ * Pure shape classification from the acting holding and the public board;
+ * it never adds equity.
+ */
+export function holdemRealDraw(hole: Card[], board: Card[]): boolean {
+  if (hole.length !== 2 || board.length < 3 || board.length > 4) return false;
+  if ([...hole, ...board].some((c) => !RANKS.includes(c.rank) || !SUITS.includes(c.suit)))
+    return false;
+  for (const suit of SUITS) {
+    const onBoard = board.filter((c) => c.suit === suit).length;
+    const inHand = hole.filter((c) => c.suit === suit).length;
+    if (inHand >= 1 && onBoard + inHand === 4) return true;
+  }
+  const known = new Set([...hole, ...board].map((c) => c.rank + ':' + c.suit));
+  const mask = (cards: Card[]) => cards.reduce((m, c) => m | (1 << RANK_VALUES[c.rank]), 0);
+  const boardMask = mask(board);
+  const fullMask = mask([...hole, ...board]);
+  if (straightTop(fullMask, false) > 0) return false;
+  let outRanks = 0;
+  for (const rank of RANKS) {
+    const bit = 1 << RANK_VALUES[rank];
+    if (fullMask & bit) continue;
+    let live = 0;
+    for (const suit of SUITS) if (!known.has(rank + ':' + suit)) live++;
+    if (live === 0) continue;
+    const top = straightTop(fullMask | bit, false);
+    const boardTop = straightTop(boardMask | bit, false);
+    if (top > 0 && top > boardTop) outRanks++;
+  }
+  return outRanks >= 2;
 }
 
 export class HorseLogic {
@@ -6710,6 +6983,97 @@ export class HorseLogic {
       polar62 = true;
       if (tele15) noteFire('v62_river_bettor_polarity');
     }
+    // ═══ V66 FLOP/TURN RAISE STRATUM (2026-10-31) ═══ Single-board Hold'em,
+    // flop or turn, hero bet (or raised) this street and an opponent raised
+    // over it, hero holding the bluff-catch class (one pair, two pair
+    // through the board's pair) or air with no real draw: that raiser's
+    // sampled hand is drawn from the raise stratum (HorseEval
+    // V66_RAISE_BLUFF_SHARE / V66_RAISE_VALUE_MIX) instead of the
+    // any-contact read, which priced top pair at 70-87% against a raise it
+    // won 43% of the time. The exploit read keeps the full contact range for
+    // a measured over-aggressor. The hand-class gate matches the V66 call
+    // branch below so hands outside the class keep their reads exactly.
+    let raisePolar66 = false;
+    if (
+      (opts.v66BetRaisedOnePair ?? true) !== false &&
+      (street === 'flop' || street === 'turn') &&
+      facingBet &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      player.cards.length === 2 &&
+      !vi.isFixedLimit &&
+      extraBoards.length === 0 &&
+      gs.bombPot !== true &&
+      exploit.callDownMod <= 1 &&
+      oppReads &&
+      oppReads.some((read) => read?.raised === true && read.lastStage === street) &&
+      (gs.actionHistory ?? []).some(
+        (a) =>
+          a.stage === street &&
+          a.userId === player.user_id &&
+          (a.action === 'bet' || a.action === 'raise')
+      ) &&
+      !holdemRealDraw(player.cards, gs.communityCards)
+    ) {
+      const cat66 = bestTwoCardCategory(player.cards, gs.communityCards, vi);
+      const counts66: Record<string, number> = {};
+      for (const c of gs.communityCards) counts66[c.rank] = (counts66[c.rank] ?? 0) + 1;
+      const paired66 = Object.values(counts66).some((n) => n >= 2);
+      if (cat66 > 0 && (cat66 <= 2 || (cat66 === 3 && paired66))) {
+        oppReads = oppReads.map((read) =>
+          read && read.raised === true && read.lastStage === street
+            ? { ...read, raisePolar66: true }
+            : read
+        );
+        raisePolar66 = true;
+        if (tele15) noteFire('v66_raise_stratum');
+      }
+    }
+    // ═══ V67 RIVER RAISE STRATUM (2026-10-31) ═══ the river twin of the
+    // V66 stratum: hero bet (or raised) the river and an opponent raised
+    // over it, hero holding the bluff-catch class, no measured
+    // over-aggressor read. That raiser's sampled hand is drawn from the
+    // river raise stratum (HorseEval V67_RIVER_RAISE_BLUFF_SHARE /
+    // V67_RIVER_RAISE_VALUE_MIX) instead of the any-contact read, which
+    // priced second pair at 52-58% against a 3x raise that one-pair calls
+    // won 12-19% of the time live. It replaces a V62 polar read for that
+    // raiser. Same hand-class gate as the V67 call branch below.
+    if (
+      (opts.v67RiverBetRaisedOnePair ?? true) !== false &&
+      (opts.v61RiverOnePairShade ?? true) !== false &&
+      isRiver &&
+      facingBet &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      player.cards.length === 2 &&
+      !vi.isFixedLimit &&
+      extraBoards.length === 0 &&
+      gs.bombPot !== true &&
+      exploit.callDownMod <= 1 &&
+      oppReads &&
+      oppReads.some((read) => read?.raised === true && read.lastStage === 'river') &&
+      (gs.actionHistory ?? []).some(
+        (a) =>
+          a.stage === 'river' &&
+          a.userId === player.user_id &&
+          (a.action === 'bet' || a.action === 'raise')
+      )
+    ) {
+      const cat67 = bestTwoCardCategory(player.cards, gs.communityCards, vi);
+      const counts67: Record<string, number> = {};
+      for (const c of gs.communityCards) counts67[c.rank] = (counts67[c.rank] ?? 0) + 1;
+      const paired67 = Object.values(counts67).some((n) => n >= 2);
+      if (cat67 > 0 && (cat67 <= 2 || (cat67 === 3 && paired67))) {
+        oppReads = oppReads.map((read) =>
+          read && read.raised === true && read.lastStage === 'river'
+            ? { ...read, riverPolar: false, raisePolar67: true }
+            : read
+        );
+        if (tele15) noteFire('v67_river_raise_stratum');
+      }
+    }
     let equity: number;
     /**
      * ═══ V36 BOMB POTS (Dan 2026-09-02) ═══════════════════════════════════
@@ -7245,12 +7609,8 @@ export class HorseLogic {
     // have it" signal in pot-limit Omaha, and it needs its own count.
     let barrels40 = 0;
     if (useV40 && facingBet && gs.actionHistory) {
-      let bettor40: string | null = null;
-      for (const a of gs.actionHistory) {
-        if (a.stage !== street || a.userId === player.user_id) continue;
-        if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-          bettor40 = a.userId;
-      }
+      const bettor40 = currentOpponentWager(gs.actionHistory, player.user_id, street)?.record
+        .userId;
       if (bettor40) {
         const seen40 = new Set<string>();
         for (const a of gs.actionHistory) {
@@ -9623,10 +9983,96 @@ export class HorseLogic {
     // Covering chips cannot change the existing cash HU commitment policy.
     // Physical stack still owns survival and legality. The same qualified
     // exposure prices retained-plan commitment and supplies a bounded wager.
-    const committed =
+    const committedLegacy =
       spr < 1.2 ||
       toCall >= stack ||
       (investedNow > 0 && investedNow / (commitmentStack + investedNow) >= 0.3);
+    // ═══ V66 BET, RAISED, ONE PAIR (2026-10-31) ═══ single-board hold'em,
+    // flop or turn: hero bet (or raised) this street and now faces a raise,
+    // holding the V61 bluff-catch class (one pair, or two pair through the
+    // board's pair) or air with no real draw. Measured over 7 days of NLH
+    // review hands (12% sample, |net| >= 20bb): the flop line called the
+    // raise with one pair or air 1,040 times in cash (won 32.8%, about
+    // -241,000bb a week scaled) and 805 times in tournaments (33.8%,
+    // -163,000bb), folding 15 of 1,196 decisions at an average raise of
+    // 0.86 pot; the turn line won 33.1% / 36.0% (-179,000 / -111,000bb).
+    // Two causes, both here: hero's own wager this street counted toward
+    // the invested ratio and the SPR, so a c-bet plus a raise read as
+    // "committed" and the call was priced at pot odds plus two points; and
+    // nothing priced the RAISE itself - raisedAfterAggr fed only the V21
+    // and V23 discipline, never the call bar. Now (a) hero's wager this
+    // street is excluded from the commitment test, which keeps only the
+    // post-call SPR under 1 (and prior-street investment); (b) the call is
+    // priced with a raise shade of up to V66_RAISE_SHADE scaled by the raise
+    // size; (c) the class calls or folds at that price - the 0.42 floor and
+    // the jam are gone for it. Real draws keep today's path.
+    const v66Class =
+      (opts.v66BetRaisedOnePair ?? true) !== false &&
+      raisedAfterAggr &&
+      (street === 'flop' || street === 'turn') &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      player.cards.length === 2 &&
+      !multiBoard36 &&
+      !gs.bombPot &&
+      exploit.callDownMod <= 1 &&
+      cat > 0 &&
+      (cat <= 2 || (cat === 3 && pairedBoard)) &&
+      !holdemRealDraw(player.cards, board) &&
+      toCall > 0 &&
+      pot > 0;
+    const shade66 = v66Class ? v66BetRaisedShade(toCall, pot) : 0;
+    // ═══ V67 RIVER BET, RAISED, ONE PAIR (2026-10-31) ═══ the river twin of
+    // V66, inside V61's gates: hero bet (or raised) the river and now faces
+    // a raise, holding the bluff-catch class (one pair, or two pair through
+    // the board's pair), with no measured over-bluffer read on the raiser.
+    // Measured over 7 days of NLH review hands (12% sample, |net| >= 20bb):
+    // those calls or jams won 11.9% in cash (n=226, about -129,000bb a week)
+    // and 19.2% in tournaments (n=125, about -47,000bb) at an average raise
+    // of 0.72 pot, folding 1.4-17%; calls of a raise under 0.7 pot won 0-5%.
+    // The call is priced with the V63 shape plus V67_RIVER_RAISE_SHADE (not
+    // withheld for a V62 polar read, whose bluff share was fitted to river
+    // BETS), in the committed branch and the V38 river verdict alike, and
+    // the class calls or folds at that price: no 0.42 floor, no jam.
+    const v67Class =
+      (opts.v67RiverBetRaisedOnePair ?? true) !== false &&
+      (opts.v61RiverOnePairShade ?? true) !== false &&
+      raisedAfterAggr &&
+      isRiver &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      player.cards.length === 2 &&
+      !multiBoard36 &&
+      !gs.bombPot &&
+      exploit.callDownMod <= 1 &&
+      cat > 0 &&
+      (cat <= 2 || (cat === 3 && pairedBoard)) &&
+      toCall > 0 &&
+      pot > 0;
+    const shade67 = v67Class
+      ? v67RiverBetRaisedShade(
+          toCall,
+          pot,
+          riverOnePairShadeShape(opts),
+          opts.v67RiverRaiseShadeOverride ?? V67_RIVER_RAISE_SHADE
+        )
+      : 0;
+    if (v67Class && tele15) noteFire('v67_river_bet_raised_one_pair');
+    let committed = committedLegacy;
+    if (v66Class) {
+      const heroWager66 = Math.max(0, isFinite(player.bet) ? player.bet : 0);
+      const investedBefore66 = Math.max(0, investedNow - heroWager66);
+      const callable66 = Math.min(toCall, commitmentStack);
+      const postCallSpr66 = (commitmentStack - callable66) / (pot + callable66);
+      committed =
+        toCall >= stack ||
+        postCallSpr66 < 1 ||
+        (investedBefore66 > 0 && investedBefore66 / (commitmentStack + investedNow) >= 0.3);
+      if (tele15 && (shade66 > 0 || committed !== committedLegacy))
+        noteFire('v66_bet_raised_one_pair');
+    }
     if (committed) {
       // V20: the flat-call bar here was potOdds + 0.02 regardless of how many
       // players were in or how many of them were ALL IN — the exact door the
@@ -9721,7 +10167,9 @@ export class HorseLogic {
         (opts.v61RiverOnePairShade ?? true) !== false &&
         // V62 sampled this bettor polar: the model carries what the shade
         // corrected for, so the price shade is not stacked on top of it.
-        !polar62 &&
+        // V67: except over hero's own raised river bet, where V62's
+        // bet-fitted bluff share is the error.
+        (!polar62 || v67Class) &&
         isRiver &&
         !vi.isOmaha &&
         !vi.isShortDeck &&
@@ -9734,11 +10182,36 @@ export class HorseLogic {
         toCall > 0 &&
         pot > 0
       ) {
-        shade61c = v61RiverOnePairShade(toCall, pot);
+        {
+          shade61c = v61RiverOnePairShade(toCall, pot, riverOnePairShadeShape(opts));
+        }
         if (shade61c > 0 && tele15) noteFire('v61_river_one_pair_shade');
+        if (shade61c > v61RiverOnePairShade(toCall, pot) && tele15) noteFire('v63_large_river_bet_shade');
       }
       const required =
-        potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23 + shade61c;
+        potOdds +
+        0.02 +
+        dominationPenalty * 0.5 +
+        commit20 +
+        scare21 -
+        bounty23 +
+        (v67Class ? shade67 : shade61c) +
+        shade66;
+      // V66: the bet-raised one-pair class calls or folds at the shaded
+      // price; it never jams over the raise and the 0.42 floor (which read
+      // a 40bb call as cheap) does not apply to it. V67 does the same for
+      // the river twin.
+      if (v66Class || v67Class) {
+        if (eq15 >= required || solverCall32)
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        return {
+          action: 'fold',
+          thinkTime: 0,
+          ...(useV20 && pressure20 >= 2
+            ? { continuationGuard: 'multiway_commitment_floor' as const }
+            : {}),
+        };
+      }
       if (eq15 >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
         // V15: a dominated flush/straight that still clears the (penalized)
         // bar CALLS rather than jams — shoving it has zero fold equity
@@ -9844,6 +10317,37 @@ export class HorseLogic {
     // raises for value, and the domination premium gates the raise band too
     // (QQ on AKx was sailing straight into this branch off inflated
     // no-reads equity and calling/raising the barrel off).
+    // ═══ V64 RIVER RAISE NEEDS TWO PAIR (2026-10-31) ═══ Hold'em, one
+    // board, river, facing a wager: a hand in V61's bluff-catch class (one
+    // pair, high card, or two pair that shares the board's pair) does not
+    // raise. eq15 for one pair against a river bettor reads 0.72+ because
+    // the range read is too bluff-heavy, the same cause V61 corrected on
+    // the call side, so second pair was raising a 0.7-pot wager 3-4x in 16
+    // of 20 seeds while third pair called. Live (latest 10,973 NLH review
+    // hands, |net| >= 20bb): horse river raises with one pair were called
+    // 85-95% of the time and won 34% (cash n=109, -4,184bb); with air they
+    // won 7% (cash n=42, -1,696bb, called 35 of 37 in the 0.4-0.85 pot
+    // class); MTT one-pair and air raises were negative too. Raises with
+    // two pair or better earned about +16,000bb. The class falls through to
+    // the V38 call verdict with the V61 shade; two pair of both hole cards
+    // and better keep raising exactly as before. Flop and turn, Omaha,
+    // short deck, multi-board and bomb pots are untouched. The read is of
+    // hero's own hand and the board only, never of who is betting.
+    const bluffCatch64 =
+      (opts.v64RiverRaiseNeedsTwoPair ?? true) !== false &&
+      isRiver &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !multiBoard36 &&
+      !gs.bombPot &&
+      cat > 0 &&
+      (cat <= 2 || (cat === 3 && pairedBoard));
+    // The one read that keeps a river bluff-raise alive: the opponent's
+    // measured fold-to-aggression rate is high enough that HorseMind already
+    // scales bluffs up into them (bluffMod > 1 needs 8+ observed spots at a
+    // 62%+ fold rate). It is a read of public play, never of a label.
+    const overFolder64 = exploit.bluffMod > 1.05;
     const valueRaiseThresh =
       0.68 +
       mw +
@@ -9855,7 +10359,9 @@ export class HorseLogic {
       // bluff-catcher that calls and lets them keep firing (the trap and
       // call-down reads own it); raising it only folds out their air.
       (pressure53 && cat >= 3 ? pressure53.valueBarDrop : 0);
-    if (eq15 >= valueRaiseThresh) {
+    if (bluffCatch64 && eq15 >= valueRaiseThresh) {
+      if (tele15) noteFire('v64_river_raise_needs_two_pair');
+    } else if (eq15 >= valueRaiseThresh) {
       // V8 O8: never raise into a likely quarter — flat and see the split.
       if (quartered) return { action: 'call', amount: toCall, thinkTime: 0 };
       // V8 PLO: raising the river without a nut-class hand is the classic
@@ -9954,6 +10460,9 @@ export class HorseLogic {
     // V8: Omaha raise semi-bluffs demand draw QUALITY too.
     if (
       !planCallOnly23 &&
+      // V66: a one-pair or air hand whose own bet was just raised is priced
+      // as a call or a fold; it does not re-raise as a semi-bluff.
+      !v66Class &&
       drawsLive &&
       equity >= 0.33 &&
       equity < (pressure53 ? pressure53.semiBluffTop : 0.52) &&
@@ -9993,6 +10502,7 @@ export class HorseLogic {
     // bet/(pot+bet) intent — on the bet/pot scale the equivalent is 1.5.
     if (
       !planCallOnly23 &&
+      !v66Class &&
       useNlhX &&
       !ip &&
       scare.any &&
@@ -10003,10 +10513,17 @@ export class HorseLogic {
       betRatio <= (opts.v16Ratio === true ? 1.5 : 0.6) &&
       fastRandom() < params.bluffFreq * params.aggression * 0.25 * Math.min(1.2, bluffScale)
     ) {
-      // V13: same as above — a check-raise bluff is the start of a story.
-      planBarrel(equity);
-      const raiseToAmt = currentBet + (pot + toCall) * (0.85 + fastRandom() * 0.25);
-      return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      // V64: on the river this is a bluff-raise with a bluff-catcher or
+      // air, and those are called 85-95% of the time live. The roll above
+      // is consumed either way so the seeds of every other street agree.
+      if (bluffCatch64 && !overFolder64) {
+        if (tele15) noteFire('v64_river_raise_needs_two_pair');
+      } else {
+        // V13: same as above — a check-raise bluff is the start of a story.
+        planBarrel(equity);
+        const raiseToAmt = currentBet + (pot + toCall) * (0.85 + fastRandom() * 0.25);
+        return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      }
     }
     // V8 NLH: river blocker raise-bluff — polarizing raise with air that
     // blocks the nuts. Low frequency; makes the value raises unexploitable.
@@ -10028,8 +10545,17 @@ export class HorseLogic {
       potFrac <= 0.75 &&
       fastRandom() < params.bluffFreq * 0.35 * Math.min(1.2, bluffScale)
     ) {
-      const raiseToAmt = currentBet + (pot + toCall) * (1.0 + fastRandom() * 0.3);
-      return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      // V64: live, air raises on the river were called 35 of 37 times in
+      // this sizing class and won 7%. The blocker bluff-raise survives only
+      // against a measured over-folder (the fold-to-aggression read that
+      // already scales bluffScale); every other bettor is bluff-caught or
+      // folded to by the call verdict below.
+      if (bluffCatch64 && !overFolder64) {
+        if (tele15) noteFire('v64_river_raise_needs_two_pair');
+      } else {
+        const raiseToAmt = currentBet + (pot + toCall) * (1.0 + fastRandom() * 0.3);
+        return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      }
     }
 
     // V34: every raise gate above has had its roll. The solver's range said
@@ -10065,17 +10591,9 @@ export class HorseLogic {
     if (useMind && opts.v12 !== false) {
       try {
         const hist = gs.actionHistory || [];
-        let bettorId: string | null = null;
-        for (const a of hist) {
-          if (a.stage !== street) continue;
-          if (
-            a.userId !== player.user_id &&
-            (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-          ) {
-            bettorId = a.userId;
-          }
-        }
-        if (bettorId) {
+        const currentWager = currentOpponentWager(hist, player.user_id, street);
+        if (currentWager?.record.userId) {
+          const bettorId = currentWager.record.userId;
           const hunted = HorseMind.targetingOf(player.user_id, bettorId);
           if (hunted > 0) respect -= 0.25 * hunted;
           // 2026-10-16 OPPONENT EXPLOIT: the CURRENT bettor's read decides
@@ -10108,21 +10626,15 @@ export class HorseLogic {
           // randomised (V14), so the read learns nothing from the fleet and
           // everything from a person.
           if ((opts.v43Tempo ?? true) !== false && isRiver && potFrac >= 0.75) {
-            let betTs: number | null = null;
-            let prevTs: number | null = null;
-            for (const a of hist) {
-              const ts =
-                typeof a.timestamp === 'number' && isFinite(a.timestamp) ? a.timestamp : null;
-              if (
-                a.stage === street &&
-                a.userId === bettorId &&
-                (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-              ) {
-                betTs = ts;
-                break;
-              }
-              if (ts !== null) prevTs = ts;
-            }
+            const wagerTs = currentWager.record.timestamp;
+            const betTs = typeof wagerTs === 'number' && isFinite(wagerTs) ? wagerTs : null;
+            // Tempo is measured from the immediately preceding action. An
+            // unknown adjacent clock cannot borrow an older known timestamp.
+            const previousTimestamp = hist[currentWager.index - 1]?.timestamp;
+            const prevTs =
+              typeof previousTimestamp === 'number' && isFinite(previousTimestamp)
+                ? previousTimestamp
+                : null;
             const gap = betTs !== null && prevTs !== null ? betTs - prevTs : null;
             if (gap !== null && gap >= 0) {
               const tendency =
@@ -10248,31 +10760,7 @@ export class HorseLogic {
     ) {
       const opp = opponents[0];
       const read = HorseMind.opponentRead(opp.user_id)?.stats.betCheckedTo;
-      const suits = new Map<string, number>();
-      for (const c of [...player.cards, ...board]) suits.set(c.suit, (suits.get(c.suit) ?? 0) + 1);
-      const ranks = [
-        ...new Set(
-          [...player.cards, ...board].map((c) =>
-            c.rank === 'A'
-              ? 14
-              : c.rank === 'K'
-                ? 13
-                : c.rank === 'Q'
-                  ? 12
-                  : c.rank === 'J'
-                    ? 11
-                    : c.rank === 'T'
-                      ? 10
-                      : Number(c.rank)
-          )
-        ),
-      ];
-      if (ranks.includes(14)) ranks.push(1);
-      const nlhDraw =
-        [...suits.values()].some((n) => n >= 4) ||
-        Array.from({ length: 10 }, (_, i) => i + 1).some(
-          (lo) => ranks.filter((r) => r >= lo && r <= lo + 4).length >= 4
-        );
+      const nlhDraw = holdemDrawPresent(player.cards, board);
       const omahaDraw = vi.isOmaha ? drawInfo40() : null;
       const drawing = vi.isOmaha
         ? !!omahaDraw &&
@@ -10330,12 +10818,113 @@ export class HorseLogic {
       gs.maxRaiseTo >= gs.minRaiseTo &&
       gs.minRaiseTo > currentBet &&
       hasStrongPressureDraw(player.cards, board, gs.gameVariant, vi.isOmaha ? drawInfo40() : null);
+    // ═══ V65 ONE-PAIR TURN CALL SHADE (2026-10-31) ═══ Hold'em, one board:
+    // a one-pair hand (or two pair sharing the board's pair) with no draw,
+    // calling a turn wager it did not initiate, is a bluff-catcher priced
+    // against the same bluff-heavy range read V61 corrected on the river.
+    // The heuristic line below charged a pot-sized barrel six points above
+    // pot odds (sizingPenalty caps at 0.06) and an overbet no more. Measured
+    // over 7 days of NLH review hands (12% sample, |net| >= 20bb): turn
+    // one-pair calls of a bet hero did not make were cash n=1,727, 33% won,
+    // about -308,000bb a week, tournament n=1,542, 37% won, about -185,000bb;
+    // by size (cash, top pair) 50% won under 0.4 pot, 44% at 0.4-0.7, 29% at
+    // 0.7-1.05, 23% from 1.05 up; the >= 0.7-pot cells alone were -302,000bb.
+    // The shade scales with the price from zero at a quarter-pot wager to its
+    // cap at a pot-sized one and is subtracted from the equity handed to the
+    // call test, so the call bar, not a hard fold, decides. Withheld when the
+    // bettor reads as a measured over-bluffer (callDownMod above 1), for a
+    // hand with a flush or straight draw (that is a draw, priced as one), and
+    // after hero's own wager was raised (the committed branch above owns
+    // that line). Omaha, short deck, multiple boards and bomb pots keep
+    // their own pricing; the river keeps V61.
+    let shade65 = 0;
+    if (
+      (opts.v65TurnOnePairShade ?? true) !== false &&
+      street === 'turn' &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !multiBoard36 &&
+      !gs.bombPot &&
+      !raisedAfterAggr &&
+      exploit.callDownMod <= 1 &&
+      cat > 0 &&
+      (cat <= 2 || (cat === 3 && pairedBoard)) &&
+      toCall > 0 &&
+      pot > 0 &&
+      !holdemDrawPresent(player.cards, board)
+    ) {
+      shade65 = v65TurnOnePairShade(
+        toCall,
+        pot,
+        opts.v65TurnShadeCapOverride ?? V65_TURN_SHADE_CAP
+      );
+      if (shade65 > 0 && tele15) noteFire('v65_turn_one_pair_shade');
+    }
+    // ═══ V68 NO-PAIR TURN CALLS (2026-10-31) ═══ Hold'em, one board: a
+    // high-card hand (cat 1; cat 0 is "unknown") calling a turn wager it did
+    // not initiate. Measured over 7 days of NLH review hands (12% sample,
+    // |net| >= 20bb): cash n=494 won 29.6% (about -62,000bb a week, avg 0.72
+    // pot, 16bb), tournament n=383 won 36.8% (about -25,000bb a week); air
+    // won 19-20% at every size and draws 31-35% against 0.7 pot or more.
+    // (a) The implied-odds allowance is withheld when the stacks behind
+    // cannot pay it (v68NoRoomToBePaid). (b) High card with no real draw
+    // (holdemRealDraw: a flush draw using a hole card, or an open-ended /
+    // double-gutter straight draw) is a bluff-catch: V65 already shades it
+    // unless a gutshot or a board-only shape made holdemDrawPresent read a
+    // draw, and those get the same V65 shade here, so the two never stack.
+    // The over-bluffer read withholds (b) as it withholds V65; real draws
+    // keep their equity apart from (a).
+    let impliedBonus68 = impliedBonus;
+    let shade68 = 0;
+    if (
+      (opts.v68TurnAirDrawCalls ?? true) !== false &&
+      useIQ &&
+      street === 'turn' &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !multiBoard36 &&
+      !gs.bombPot &&
+      !raisedAfterAggr &&
+      cat === 1 &&
+      toCall > 0 &&
+      pot > 0
+    ) {
+      if (impliedBonus > 0) {
+        let oppBehind68 = 0;
+        for (const o of opponents) {
+          const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+          oppBehind68 = Math.max(oppBehind68, os - currentBet);
+        }
+        const behind68 = Math.min(stack - toCall, oppBehind68);
+        if (v68NoRoomToBePaid(potFrac, behind68, pot + toCall)) impliedBonus68 = 0;
+      }
+      if (
+        exploit.callDownMod <= 1 &&
+        holdemDrawPresent(player.cards, board) &&
+        !holdemRealDraw(player.cards, board)
+      ) {
+        shade68 =
+          v65TurnOnePairShade(toCall, pot, V65_TURN_SHADE_CAP) *
+          Math.max(0, opts.v68AirShadeScaleOverride ?? 1);
+      }
+      if (tele15 && (shade68 > 0 || impliedBonus68 !== impliedBonus))
+        noteFire('v68_turn_air_draw_calls');
+    }
     const solverless38 = vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit;
-    if (useEv38 && (isRiver || solverless38 || continuation38 || comboRaise38) && !solverCall32) {
+    // V66: the bet-raised one-pair class is priced by the realized-equity
+    // arithmetic (street, position) rather than the flat heuristic line,
+    // with the raise shade subtracted the way V61 subtracts shade61.
+    if (
+      useEv38 &&
+      (isRiver || solverless38 || continuation38 || comboRaise38 || v66Class) &&
+      !solverCall32
+    ) {
       // the exploit reads, as an equity shift instead of a margin
       const readShift38 = -(respect - 1) * 0.08;
       const eqRead38 = clamp01(
-        eq15 + impliedBonus + readShift38 - dominationPenalty - (loOnly23 ? 0.03 : 0)
+        eq15 + impliedBonus68 + readShift38 - dominationPenalty - (loOnly23 ? 0.03 : 0)
       );
       const risk38 = risk > 0 && stack > 0 ? risk : 0;
       if (isRiver) {
@@ -10356,7 +10945,7 @@ export class HorseLogic {
         let shade61 = 0;
         if (
           (opts.v61RiverOnePairShade ?? true) !== false &&
-          !polar62 &&
+          (!polar62 || v67Class) &&
           !vi.isOmaha &&
           !vi.isShortDeck &&
           vi.holeCount === 2 &&
@@ -10372,9 +10961,14 @@ export class HorseLogic {
           toCall > 0 &&
           pot > 0
         ) {
-          shade61 = v61RiverOnePairShade(toCall, pot);
-          if (shade61 > 0 && tele15) noteFire('v61_river_one_pair_shade');
+          {
+          shade61 = v61RiverOnePairShade(toCall, pot, riverOnePairShadeShape(opts));
         }
+          if (shade61 > 0 && tele15) noteFire('v61_river_one_pair_shade');
+          if (shade61 > v61RiverOnePairShade(toCall, pot) && tele15) noteFire('v63_large_river_bet_shade');
+        }
+        // V67: over hero's own raised river bet the raise shade replaces it.
+        if (v67Class) shade61 = shade67;
         const v = riverCallVerdict({
           equity: clamp01(eqRead38 - shade61),
           pot,
@@ -10415,7 +11009,12 @@ export class HorseLogic {
         if (tele15) noteFire('combo_draw_pressure_evaluated');
       }
       const verdict38 = evaluateSpot({
-        equity: eqRead38,
+        // V65 (turn call facing a wager hero did not make) and V66 (hero bet
+        // this street and was raised) are exclusive by their gates; each
+        // shade is subtracted from the equity handed to the flop/turn
+        // verdict, as V61 subtracts shade61 on the river. A draw carries
+        // neither, so comboRaise38 is not affected.
+        equity: clamp01(eqRead38 - shade65 - shade66 - shade68),
         pot,
         toCall,
         stack,
@@ -10483,7 +11082,10 @@ export class HorseLogic {
       };
     }
     if (
-      eq15 + impliedBonus >=
+      // V65 / V66 / V68: each shade comes off the equity, not onto the bar,
+      // so the same line that always decided this call still decides it;
+      // the three are exclusive by their gates.
+      eq15 + impliedBonus68 - shade65 - shade66 - shade68 >=
       potOdds + 0.03 * respect + sizingPenalty + posEdge + dominationPenalty
     ) {
       return { action: 'call', amount: toCall, thinkTime: 0 };

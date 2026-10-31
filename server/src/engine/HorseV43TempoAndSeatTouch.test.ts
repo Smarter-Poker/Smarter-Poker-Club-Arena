@@ -125,6 +125,25 @@ describe('V43 tempo counters', () => {
     expect(HorseMind.getStats('p-3')!.snapBetSD).toBe(4);
     expect(HorseMind.getStats('p-3')!.bigBetSD).toBe(5);
   });
+
+  it.each([
+    ['missing', undefined, 0],
+    ['invalid', NaN, 0],
+    ['known', 1_700_000_016_000, 1],
+  ] as const)(
+    'preserves the %s immediate predecessor clock when learning a big river bet',
+    (_reason, previousTimestamp, tanks) => {
+      const h = riverBigBetHand(TANK_MS + 500, 'two pair');
+      h.actions[8] = { ...h.actions[8], timestamp: previousTimestamp as number };
+      HorseMind.observeHandComplete('t:adjacent-clock', h.actions, 2, h.showdown);
+      const stats = HorseMind.getStats('p-3')!;
+      expect(stats.bigBetSD).toBe(1);
+      expect(stats.bigBetSDStrong).toBe(1);
+      expect(stats.snapBetSD).toBe(0);
+      expect(stats.tankBetSD).toBe(tanks);
+      expect(stats.tankBetSDStrong).toBe(tanks);
+    }
+  );
 });
 
 /** Hero (p-2) faces p-3's pot-sized river bet made `gapMs` after hero's check. */

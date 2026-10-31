@@ -75,7 +75,24 @@ def qualify(e,root,hand,db):
    if not code or 'lock timeout' not in err:raise RuntimeError('terminal bypassed retained save')
   e.sql(case,'BEGIN;'+auth+call+call+'ROLLBACK;',label='retain-identical-duplicate')
   e.sql(case,"DO $$BEGIN IF pg_get_functiondef('"+b.SIG+"'::regprocedure) IS DISTINCT FROM $post$"+after+"$post$ THEN RAISE EXCEPTION 'retain unexpected bytes';END IF;END$$;",label='retain-exact-postimage')
+  reader=module(root/'scripts/ci/fixtures/hand-continuation/build-permit-reader-lock.py','permit_reader_builder')
+  reader_sql,reader_before,reader_after=reader.render()
+  if reader_sql!=(root/reader.MIGRATION).read_text():raise RuntimeError('permit reader composition drift')
+  dispatch="SELECT smarter_private.f06_hand_dispatch_guard("+table+",8600001);"
+  state=hand.private_snapshot(e,case,'permit-fk-before')
+  with holder(case,dispatch):
+   code,_,err=e.sql(case,request,label='permit-fk-old-retain-blocks',check=False)
+   if not code or 'lock timeout' not in err or 'f06_hand_permits' not in err:raise RuntimeError('permit FK lock regression not reproduced:'+err)
+  if state!=hand.private_snapshot(e,case,'permit-fk-after'):raise RuntimeError('failed retain or rolled-back dispatch changed original')
+  e.sql(case,reader_sql,label='permit-reader-exact-install')
+  with holder(case,dispatch):e.sql(case,request,label='permit-fk-new-retain-progress')
+  # SHARE still excludes a state writer, unlike KEY SHARE.
+  with holder(case,"SELECT 1 FROM smarter_private.f06_hand_permits WHERE table_id="+table+" FOR NO KEY UPDATE;"):
+   code,_,err=e.sql(case,request,label='permit-state-writer-still-excludes',check=False)
+   if not code or 'lock timeout' not in err:raise RuntimeError('permit state writer exclusion lost')
+  e.report['permit_reader_lock']={'old_real_dispatch_fk_blocks_retention':True,'new_retention_progresses':True,'state_writer_excluded':True,'no_original_changed_by_failed_attempt':True}
   e.sql(clean,file=root/MIGRATION,label='retain-full-boundaries-install')
+  e.sql(clean,reader_sql,label='permit-reader-full-boundaries-install')
   state=snapshot(clean,'retain-native-before');code,out,err=e.sql(clean,'BEGIN;'+(e.output/'opening.sql').read_text()+probe+'ROLLBACK;',label='retain-full-original-financial-boundaries',check=False)
   if code or err.count('CONTINUATION PASS:')!=37 or 'HAND_CONTINUATION_NATIVE_PASS' not in out:raise RuntimeError('retain full native failed:'+err)
   if state!=snapshot(clean,'retain-native-after'):raise RuntimeError('retain native rollback differs')

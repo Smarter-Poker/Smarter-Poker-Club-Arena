@@ -321,7 +321,7 @@ export default function MemberManagementPage() {
         authorityRefreshRef.current();
     },
     onSubscriptionStatus: (status) => {
-      if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
+      if (status === 'SUBSCRIBED') authorityRefreshRef.current(true);
     },
     onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
   });
@@ -336,7 +336,7 @@ export default function MemberManagementPage() {
         walletUpdates.refresh(userId);
     },
     onSubscriptionStatus: (status) => {
-      if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
+      if (status === 'SUBSCRIBED') authorityRefreshRef.current(true);
     },
     onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
   });
@@ -607,6 +607,7 @@ export default function MemberManagementPage() {
       void (async () => {
         try {
           const accessRevision = accessDenialRef.current.revision;
+          const walletSnapshot = walletUpdatesRef.current.snapshot();
           const authority = await ClubRosterService.getMemberDetail(
             resolvedClubId,
             userId,
@@ -647,7 +648,14 @@ export default function MemberManagementPage() {
             const avatarUrl = authority.identity.avatar_url;
             setDetail((previous) => {
               if (!previous) return previous;
-              const refreshed = applyAccessDenial(previous, restricted);
+              // Lifecycle catchups share this read owner instead of opening
+              // an independent overall wallet read. Preserve absolute balances
+              // received after this snapshot and the authoritative denial fence.
+              const wallets = walletUpdatesRef.current.reconcile(
+                toWalletRow(authority),
+                walletSnapshot
+              );
+              const refreshed = applyAccessDenial(applyWalletRow(previous, wallets[0]), restricted);
               return {
                 ...refreshed,
                 // The read-only portrait follows the verified record; notes retain their owner.
@@ -1152,7 +1160,11 @@ export default function MemberManagementPage() {
             <StatRow label="Sent Out" value={playerRecordMoney(stats.sent_out)} />
             <StatRow
               label="Total Winnings"
-              value={playerRecordMoney(stats.total_winnings, true)}
+              value={
+                stats.total_winnings === null
+                  ? 'Unavailable'
+                  : playerRecordMoney(stats.total_winnings, true)
+              }
               signed={stats.total_winnings}
             />
             <StatRow
@@ -2193,9 +2205,16 @@ function InfoLine({ label, value }: { label: string; value: string }) {
  * --danger-red; there is no green in this product, so "up" is the primary colour
  * rather than a second hue nobody else uses.
  */
-function StatRow({ label, value, signed }: { label: string; value: string; signed?: number }) {
-  const tone =
-    signed === undefined || signed === 0 ? '' : signed > 0 ? ' mm-stat--up' : ' mm-stat--down';
+function StatRow({
+  label,
+  value,
+  signed,
+}: {
+  label: string;
+  value: string;
+  signed?: number | null;
+}) {
+  const tone = signed == null || signed === 0 ? '' : signed > 0 ? ' mm-stat--up' : ' mm-stat--down';
 
   return (
     <div className={`mm-stat${tone}`}>

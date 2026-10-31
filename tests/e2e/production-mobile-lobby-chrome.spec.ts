@@ -6,6 +6,7 @@ import {
   openFreshPreferenceDevice,
 } from './support/accountPreferenceSession';
 import {
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
   cleanupTemporaryCustomizationAccount,
   requireCustomizationCertificationEnvironment,
@@ -160,7 +161,7 @@ test.describe('the mobile lobby chrome on production', () => {
     const certificateOwner = await openPreferenceLobby(page, 'original-open');
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
-    const target = ['MTT', 'SPINS', 'HEADS UP'].includes(original) ? 'PLO' : 'MTT';
+    const target = ["MTT'S", 'SPINS', 'HEADS UP'].includes(original) ? 'PLO' : "MTT'S";
     let returningPage: Page | undefined;
     let returningReady = false;
     const failures: unknown[] = [];
@@ -298,7 +299,7 @@ test.describe('the mobile lobby chrome on production', () => {
 
   test('compact rows open details and filters stay at their original position', async ({
     page,
-  }) => {
+  }, testInfo) => {
     await openLobby(page);
     await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
@@ -350,6 +351,59 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toBeVisible();
     await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toHaveCount(0);
+
+    const cashDoor = page.getByRole('button', { name: 'Cash Games', exact: true });
+    const tournamentDoor = page.getByRole('button', { name: 'Tournaments', exact: true });
+    await tournamentDoor.click();
+    await expect(tournamentDoor).toHaveAttribute('aria-expanded', 'true');
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'false');
+    const gameTypes = page.getByRole('tablist', { name: 'Game Type', exact: true });
+    await expect(gameTypes.getByRole('tab')).toHaveText([
+      "MTT'S",
+      'SPINS',
+      "SIT N GO'S",
+      'SATELLITES',
+    ]);
+    await gameTypes.getByRole('tab', { name: "MTT'S", exact: true }).click();
+    await expect(gameTypes.getByRole('tab', { name: "MTT'S", exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await page.evaluate(() => document.fonts.ready);
+    const labels = page.locator('#lobby-game-section-controls .lobby-filter-label__text');
+    expect(await labels.count()).toBeGreaterThanOrEqual(4);
+    for (const label of await labels.all()) {
+      const fits = await label.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const ink = range.getBoundingClientRect();
+        const face = el.parentElement!.getBoundingClientRect();
+        return (
+          ink.left >= face.left - 1 &&
+          ink.right <= face.right + 1 &&
+          ink.top >= face.top - 1 &&
+          ink.bottom <= face.bottom + 1
+        );
+      });
+      expect(fits, `${await label.textContent()} must fit its painted face`).toBe(true);
+    }
+    await testInfo.attach('live-tournament-filters.png', {
+      body: await page.locator('.lobby-controls').screenshot(),
+      contentType: 'image/png',
+    });
+    await tournamentDoor.click();
+    await expect(gameTypes).toHaveCount(0);
+    await cashDoor.click();
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'true');
+    await expect(gameTypes.getByRole('tab')).toHaveText(['ALL', 'NLH', 'PLO', 'LIMIT']);
+    await testInfo.attach('live-cash-filters.png', {
+      body: await page.locator('.lobby-controls').screenshot(),
+      contentType: 'image/png',
+    });
+    await cashDoor.click();
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'false');
+    await expect(tournamentDoor).toHaveAttribute('aria-expanded', 'false');
+    await expect(gameTypes).toHaveCount(0);
   });
 
   test('tournament Details stays inside the spectator table lobby tab', async ({
@@ -407,7 +461,7 @@ test.describe('the mobile lobby chrome on production', () => {
       const lobby = page.locator('.multi-table-page__lobby-tab .club-home:visible');
       await expect(lobby).toBeVisible({ timeout: 30_000 });
       await openLobbyGameSection(lobby, 'MTT');
-      await lobby.getByRole('tab', { name: 'MTT', exact: true }).click();
+      await lobby.getByRole('tab', { name: "MTT'S", exact: true }).click();
       const tournament = lobby
         .locator('[data-testid="lobby-game-row"][data-kind="mtt"]:visible')
         .first();
@@ -430,11 +484,64 @@ test.describe('the mobile lobby chrome on production', () => {
         timeout: 20_000,
       });
       await expect(actionBar).toBeVisible();
+      const lobbyTab = actionBar.locator('[data-tabid^="lobby:"]');
+      await expect(lobbyTab).toHaveCount(1);
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      // The former restore only stole focus when the remembered table index
+      // was greater than zero. Put that observer behind the active lobby
+      // through the real tab menu so this case exercises that exact branch.
+      const lobbyId = await lobbyTab.getAttribute('data-tabid');
+      const observerId = new URL(tableUrl).pathname.split('/').pop()!;
+      await lobbyTab.click({ button: 'right' });
+      await page.getByRole('button', { name: 'Move Left', exact: true }).click();
+      await expect(actionBar.locator('[data-tabid]').nth(0)).toHaveAttribute(
+        'data-tabid',
+        lobbyId!
+      );
+      await expect(actionBar.locator('[data-tabid]').nth(1)).toHaveAttribute(
+        'data-tabid',
+        observerId
+      );
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      const ownerId = await readLobbyPreferenceOwner(page);
+      const seatRefresh = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname.endsWith('/table_seats') &&
+          url.searchParams.get('select') === 'table_id' &&
+          url.searchParams.get('user_id') === `eq.${ownerId}`
+        );
+      });
+      // Exercise the real visibility recovery read, without a seat or purchase.
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      const refreshed = await seatRefresh;
+      expect(refreshed.ok(), 'the owned seat refresh failed').toBe(true);
+      expect(await refreshed.json(), 'the certificate identity must stay an observer').toEqual([]);
+      // The former focus theft ran 250ms after this authoritative response.
+      // Observe past that known deadline, then require the same details page.
+      await page.waitForTimeout(500);
+      await expect(lobbyTab).toHaveAttribute('aria-current', 'true');
+      await expect(
+        page.locator('.tournament-details[data-lobby-tab="true"]:visible')
+      ).toBeVisible();
+      await testInfo.attach('plus-page-after-seat-refresh', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
       expect(page.url()).toBe(tableUrl);
       expect(
         routeTrace.every((url) => url === tableUrl),
         'Details left the running table route'
       ).toBe(true);
+      // Only the player's explicit Close Lobby gesture removes this page.
+      await lobbyTab.click({ button: 'right' });
+      await page.getByRole('button', { name: 'Close Lobby', exact: true }).click();
+      await expect(actionBar.locator('[data-tabid^="lobby:"]')).toHaveCount(0);
+      await expect(actionBar.locator(`[data-tabid="${observerId}"]`)).toHaveAttribute(
+        'aria-current',
+        'true'
+      );
       expect(participation, 'spectator navigation attempted participation').toEqual([]);
     } finally {
       page.off('framenavigated', observeRoute);
@@ -651,7 +758,8 @@ const preferenceLifecycleTest = test.extend<{ preferenceAccount: TemporaryCustom
         });
       }
     },
-    { timeout: 120_000 },
+    // The guarded cleanup can wait on a real freeze; preserve its existing allowance.
+    { timeout: 120_000 + CLEANUP_FREEZE_ALLOWANCE_MS },
   ],
   page: [
     async ({ browser, baseURL, preferenceAccount }, provide, testInfo) => {

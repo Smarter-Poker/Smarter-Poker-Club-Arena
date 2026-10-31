@@ -418,7 +418,10 @@ AWAITING_CERTIFICATE_FILE="$REQUEST_ROOT/$RUN_ID.awaiting-certificate"
 # process: recover_on_exit releases it on every exit path, and
 # engine-release-recover.sh --mode terminal is its second reader.
 LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
+# A retried transaction (systemd Restart after a signalled exit) inherits the
+# hold its predecessor could not release: seed from the file, never from 0.
 LIGHTNING_HOLD_PLACED=0
+[ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1
 [[ "$AWAITING_CERTIFICATE_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.awaiting-certificate$ ]] \
   || die 'unsafe awaiting-certificate marker path'
 rm -f -- "$AWAITING_CERTIFICATE_FILE"
@@ -437,14 +440,121 @@ if [ -e "$LEGACY_CHECKPOINT_INTENT_FILE" ] || [ -L "$LEGACY_CHECKPOINT_INTENT_FI
   LEGACY_CHECKPOINT_ATTEMPTED=1
 fi
 
-# Place the Lightning hold once the announced break is durably counting down.
+# Prepare Lightning during this exact owner window's durable last-hand lead.
+# Other supported releases retain their existing counting-down admission.
 # Idempotent: the helper replays its own request ids, and a placed hold is
 # never re-sent. An UNKNOWN answer is retried on the next loop pass; it never
 # admits or refuses the checkpoint by itself (the census guard still decides).
 hold_lightning_when_counting_down() {
-  local response http_code body rc
-  [ "$LIGHTNING_HOLD_PLACED" = 0 ] || return 0
+  local response http_code body rc early_stamp=0
+  if [ "$LIGHTNING_HOLD_PLACED" = 1 ]; then
+    # Continue only an incomplete pausing journal using its exact original IDs.
+    # Cleanup is irreversible; a partial or unknown resume cannot re-pause.
+    [ -e "$LIGHTNING_HOLD_FILE" ] && python3 -c '
+import json, sys
+try: d = json.load(open(sys.argv[1]))
+except Exception: raise SystemExit(1)
+raise SystemExit(0 if d.get("phase") == "pausing" else 1)
+' "$LIGHTNING_HOLD_FILE" 2>/dev/null || return 0
+  fi
   [ -z "${DRILL_MODE:-}" ] || return 0
+  response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+    http://127.0.0.1:8080/health 2>/dev/null)" || return 0
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in 200|503) ;; *) return 0 ;; esac
+  # Synchronous operator calls at countdown spent the headroom before
+  # the unchanged 285s entry reserve. Prepare only an exact owned announcement
+  # during its two-minute lead; this pauses formation, never an active hand.
+  if printf '%s' "$body" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit(1)
+m=d.get("maintenance") if isinstance(d,dict) else None
+raise SystemExit(0 if isinstance(m,dict) and m.get("phase")=="last_hand" else 1)
+' 2>/dev/null; then
+    [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ] || return 0
+    early_stamp="$(floor_reservation_stamp)" || return 0
+    "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --weekly-payout-only >&2 || return 0
+    # Re-read after authoritative ownership: a stale announcement cannot be
+    # turned into a pause by slow policy/database reads.
+    response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+      http://127.0.0.1:8080/health 2>/dev/null)" || return 0
+    http_code="${response##*$'\n'}"
+    body="${response%$'\n'*}"
+    case "$http_code" in 200|503) ;; *) return 0 ;; esac
+  fi
+  # Only a break this release may actually use. The serving original still
+  # announces an hourly :55 break it cannot consume (the countdown refuses
+  # everything but the daily 04:00 certificate, a Deployment Recovery window
+  # or the one transition break), and a hold placed on those would park
+  # Lightning for hours while the release waits. Same predicate as the
+  # countdown, evaluated at the announcement instead of at admission.
+  printf '%s' "$body" | EARLY_HOLD_STAMP="$early_stamp" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" python3 -c '
+import json, os, sys, time
+from datetime import datetime
+from zoneinfo import ZoneInfo
+try: d = json.load(sys.stdin)
+except Exception: raise SystemExit(1)
+m = d.get("maintenance") if isinstance(d, dict) else None
+if not isinstance(m, dict): raise SystemExit(1)
+# An early preparation read cannot fall through to a different countdown.
+if int(os.environ.get("EARLY_HOLD_STAMP", "0")) > 0 and m.get("phase") != "last_hand":
+    raise SystemExit(1)
+if m.get("phase") == "last_hand":
+    stamp=int(os.environ.get("EARLY_HOLD_STAMP", "0"))
+    floor_end=int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
+    p=m.get("presentation")
+    if not (os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW") and stamp>0
+            and d.get("running") is True and "weeklyPayout" in d and d["weeklyPayout"] is None
+            and m.get("active") is True and m.get("durableConfirmed") is True
+            and m.get("reason")=="Deployment Recovery" and isinstance(p,dict)
+            and p.get("active") is True and p.get("phase")=="last_hand"
+            and p.get("reason")=="Deployment Recovery"
+            and type(p.get("break_id")) is int and p["break_id"]==stamp
+            and type(p.get("break_ends_at")) is int and p["break_ends_at"]==stamp+420000
+            and type(p.get("scheduled_ends_at")) is int and p["scheduled_ends_at"]==stamp+420000
+            and stamp/1000 <= time.time() < stamp/1000+120
+            and stamp/1000+420 <= floor_end):
+        raise SystemExit(1)
+    raise SystemExit(0)
+if not (m.get("active") is True and m.get("phase") == "counting_down" and m.get("durableConfirmed") is True): raise SystemExit(1)
+local = datetime.now(ZoneInfo("America/Chicago"))
+daily = (local.hour == 3 and local.minute >= 58) or (local.hour == 4 and local.minute < 5)
+emergency = m.get("reason") == "Deployment Recovery"
+transition = os.environ.get("DAILY_TRANSITION") == "1" and m.get("schedule") is None and local.minute >= 55 and m.get("reason") == "Scheduled Engine Maintenance"
+floor_end = int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
+if os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW"):
+    # An owner-window release is admitted only on its Deployment Recovery break.
+    ok = emergency
+elif floor_end:
+    # A daily-floor release is admitted only on the daily break inside its floor.
+    ok = daily and m.get("reason") == "Scheduled Engine Maintenance" and floor_end - 300 <= time.time() < floor_end
+else:
+    ok = daily or emergency or transition
+raise SystemExit(0 if ok else 1)
+' 2>/dev/null || return 0
+  # The helper writes its hold file after every answered Cluster and lists
+  # paused Clusters on a retry, so a kill here never strands a paused Cluster;
+  # 5 s per call keeps twelve round trips inside the outer budget.
+  rc=0
+  timeout --signal=TERM --kill-after=2s 90s \
+    "$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5 || rc=$?
+  case "$rc" in
+    0|1) LIGHTNING_HOLD_PLACED=1 ;;
+    126|127) echo "[engine-release-transaction] WARN: the Lightning hold helper could not run (exit $rc); Lightning was NEVER ASKED to pause this pass and the census guard decides on its own" >&2 ;;
+    *) echo "[engine-release-transaction] WARN: the Lightning hold answered UNKNOWN (exit $rc); it is retried on the next pass" >&2 ;;
+  esac
+  # A hold file written before a kill is a placed hold, whatever the exit code.
+  [ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1
+  return 0
+}
+
+# A qualifying break that passed without a cutover: give Lightning back now,
+# and let the next qualifying break place a fresh hold (new request ids).
+release_lightning_hold_if_break_over() {
+  local response http_code body
+  [ "$LIGHTNING_HOLD_PLACED" = 1 ] || return 0
   response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 0
   http_code="${response##*$'\n'}"
@@ -455,36 +565,44 @@ import json, sys
 try: d = json.load(sys.stdin)
 except Exception: raise SystemExit(1)
 m = d.get("maintenance") if isinstance(d, dict) else None
-if not isinstance(m, dict): raise SystemExit(1)
-ok = m.get("active") is True and m.get("phase") == "counting_down" and m.get("durableConfirmed") is True
-raise SystemExit(0 if ok else 1)
+raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get("active") is not True else 1)
 ' 2>/dev/null || return 0
-  set +e
-  timeout --signal=TERM --kill-after=2s 60s \
-    "$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"
-  rc=$?
-  set -e
-  case "$rc" in
-    0|1) LIGHTNING_HOLD_PLACED=1 ;;
-    126|127) echo "[engine-release-transaction] WARN: the Lightning hold helper could not run (exit $rc); Lightning was NEVER ASKED to pause and the census guard decides on its own" >&2; LIGHTNING_HOLD_PLACED=1 ;;
-    *) echo "[engine-release-transaction] WARN: the Lightning hold answered UNKNOWN (exit $rc); it is retried on the next pass" >&2 ;;
-  esac
+  release_lightning_hold 0 0 1
+  # Released means the file is gone. A hold that could not be released keeps
+  # LIGHTNING_HOLD_PLACED=1 so this pass runs again and again until it is.
+  [ -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=0
   return 0
 }
 
-# Release the hold after the thaw, on every exit path. Resuming while the
-# platform is still frozen would only be refused, so this waits for the
-# serving engine to report the break over, bounded by the latest known break
-# end plus ninety seconds and never more than ten minutes. The resume itself
-# is retried three times; a hold that still cannot be released stays on disk
-# for engine-release-recover.sh, and says so.
+# Release the hold after the thaw, on every exit path and whenever a
+# qualifying break has passed. The wait is for the SERVING ENGINE to report the
+# break over (the operator door itself is not behind the Postgres freeze), so a
+# resume lands on a live floor rather than racing the cutover; it is bounded by
+# the latest known break end plus ninety seconds and never more than ten
+# minutes. Callable under set -e: every non-zero answer is caught. A hold that
+# still cannot be released stays on disk for the next pass or the fence, and
+# says so. The second argument is a hard stop epoch for signalled exits.
 release_lightning_hold() {
-  local break_end wait_until response http_code body attempt rc
+  local exit_code="${1:-0}" stop_epoch="${2:-0}" attempts="${3:-3}" break_end wait_until response http_code body attempt rc budget=60
   [ -e "$LIGHTNING_HOLD_FILE" ] || return 0
   break_end="${BREAK_END_EPOCH:-0}"
   [ "${LEGACY_ENTRY_BREAK_END_EPOCH:-0}" -le "$break_end" ] || break_end="$LEGACY_ENTRY_BREAK_END_EPOCH"
   wait_until=$(( break_end + 90 ))
   [ "$wait_until" -le $(( $(date +%s) + 600 )) ] || wait_until=$(( $(date +%s) + 600 ))
+  case "$exit_code" in
+    75|130)
+      # A signalled exit (systemd stop: TERM/HUP -> 75, INT -> 130) shares the
+      # 330 s stop budget with the seal abort and desired recovery that ran
+      # before this. One attempt, inside what is left; a refusal keeps the hold
+      # on disk for the retried transaction or the fence.
+      attempts=1
+      [ "$stop_epoch" -gt 0 ] || stop_epoch=$(( $(date +%s) + 60 ))
+      budget=$(( stop_epoch - $(date +%s) - 5 ))
+      [ "$budget" -ge 10 ] || { echo "[engine-release-transaction] WARN: no stop budget left to release the Lightning hold; $LIGHTNING_HOLD_FILE stays on disk for the retry or the fence" >&2; return 0; }
+      [ "$budget" -le 60 ] || budget=60
+      [ "$wait_until" -le $(( stop_epoch - budget - 5 )) ] || wait_until=$(( stop_epoch - budget - 5 ))
+      ;;
+  esac
   while [ "$(date +%s)" -lt "$wait_until" ]; do
     response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
       http://127.0.0.1:8080/health 2>/dev/null)" || { sleep 5; continue; }
@@ -502,21 +620,23 @@ raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get
     fi
     sleep 5
   done
-  for attempt in 1 2 3; do
-    timeout --signal=TERM --kill-after=2s 60s \
-      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"
-    rc=$?
+  rc=0
+  for attempt in $(seq 1 "$attempts"); do
+    rc=0
+    timeout --signal=TERM --kill-after=2s "${budget}s" \
+      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5 || rc=$?
     [ "$rc" -ne 0 ] || return 0
-    [ "$attempt" -lt 3 ] && sleep 15
+    [ "$attempt" -lt "$attempts" ] && sleep 15
   done
-  echo "[engine-release-transaction] FATAL: the Lightning hold for run $RUN_ID could not be released (exit $rc); $LIGHTNING_HOLD_FILE stays on disk for engine-release-recover.sh" >&2
+  echo "[engine-release-transaction] FATAL: the Lightning hold for run $RUN_ID could not be released (exit $rc); $LIGHTNING_HOLD_FILE stays on disk and is retried on the next pass or by engine-release-recover.sh" >&2
   return 0
 }
 
 recover_on_exit() {
-  local rc=$? recovery_deadline recovery_remaining non_break_deadline
+  local rc=$? recovery_deadline recovery_remaining non_break_deadline exit_started
   trap - EXIT HUP INT TERM
   set +e
+  exit_started="$(date +%s)"
   # A run that is leaving no longer waits at the certificate; an older target
   # must not keep standing aside for it while systemd schedules a retry.
   rm -f -- "$AWAITING_CERTIFICATE_FILE"
@@ -557,10 +677,13 @@ recover_on_exit() {
   elif [ "$rc" -ne 0 ] && [ "$MUTATION_STARTED" = 1 ]; then
     echo '[engine-release-transaction] WARN: deferred recovery to ExecStopPost because the engine lock is not held' >&2
   fi
-  release_lightning_hold
   if [ "$LOCK_HELD" = 1 ]; then
     flock -u 9
+    LOCK_HELD=0
   fi
+  # After the engine lock is released: waiting for the thaw must not keep the
+  # supervisor or a successor release out of the lock for minutes.
+  release_lightning_hold "$rc" $(( exit_started + 300 ))
   exit "$rc"
 }
 trap recover_on_exit EXIT
@@ -2157,7 +2280,14 @@ if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announce
   ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" admit \
     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
     --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
-  ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expiresEpoch"])')"
+  # An announced owner whose window has since expired reads 'legacy' from a
+  # fresh admit (an expired floor is no floor, 2026-10-30). Its announcement
+  # was made under that window, so it ends here by name rather than carrying
+  # on as a routine release that never announced.
+  if [ "$FLOOR_DISPOSITION" = announced ] && [ "$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("schema",""))')" = legacy-no-activation-floor ]; then
+    die 'this run announced inside an owner window that has since expired; its runtime entry is refused'
+  fi
+  ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("expiresEpoch", 0))')"
   ACTIVATION_FLOOR_OWNER_WINDOW="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerWindowId") or "")')"
 fi
 
@@ -2355,6 +2485,8 @@ while :; do
   # The legacy ladder is derived from the strict figure and keeps it. The
   # ordinary one is admitted by the first certificate the engine can actually
   # present, which is never at t=0: see BREAK_CERTIFICATE_LAG_SECONDS.
+  # A hold outlives neither a passed break nor the legacy path that placed it.
+  release_lightning_hold_if_break_over
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
     hold_lightning_when_counting_down
     ENTRY_STARTED_MS="$(date +%s%3N)"

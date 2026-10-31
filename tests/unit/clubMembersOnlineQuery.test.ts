@@ -252,7 +252,8 @@ describe('Players tab operational continuity', () => {
     expect(WORKSPACE).toContain('sessionStorage.getItem(rosterWorkspaceKey(viewer, club))');
     expect(WORKSPACE).toContain('sessionStorage.getItem(rosterSearchKey(viewer, club))');
     expect(WORKSPACE).not.toContain('localStorage');
-    expect(PAGE_CODE).toContain('setSearchParams(next, { replace: true })');
+    expect(PAGE_CODE).toContain('const canonicalWorkspaceQuery = useMemo(() => {');
+    expect(PAGE_CODE).toContain('setSearchParams(canonicalWorkspaceQuery, { replace: true })');
   });
 
   it('distinguishes members at tables from members who are merely online', () => {

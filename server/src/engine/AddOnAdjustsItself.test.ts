@@ -31,6 +31,8 @@ afterEach(() => {
 
 function engineWith(stack: number, pending: number, midHand: boolean) {
   const engine = new ServerTableEngine(TABLE) as any;
+  engine.readCashAddonReceipt = vi.fn(async () => null);
+  engine.lifecycleCanMutate = () => true;
   engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack, is_horse: false }];
   engine.getMaxBuyIn = () => 50;
   engine.handController = midHand ? {} : null;

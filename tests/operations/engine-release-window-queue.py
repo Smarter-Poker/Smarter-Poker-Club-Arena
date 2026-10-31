@@ -109,6 +109,7 @@ legacy_checkpoint_countdown() {{ event "COUNTDOWN:$LOCK_HELD"; printf '%s\\n' $(
 # The Lightning hold (2026-10-30) is placed on every legacy pass before the
 # entry clock; here it only records that it was asked, unlocked.
 hold_lightning_when_counting_down() {{ event "LIGHTNING_HOLD:$LOCK_HELD"; }}
+release_lightning_hold_if_break_over() {{ :; }}
 timeout() {{ printf '%s\\n' "$CHECKPOINT_8825_SHA"; }}
 prove_rollback_readiness() {{ event "ROLLBACK_PROOF:$LOCK_HELD:$BREAK_END_EPOCH"; }}
 # The helper's exit code per invocation: 0 ran, 75 deferred above its durable

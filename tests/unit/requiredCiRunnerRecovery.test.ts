@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
@@ -17,44 +16,61 @@ const jobs = [
   ['native-smoke', native.jobs['native-smoke'], 'ubuntu-24.04'],
 ] as const;
 
+const frameCoverSteps = [
+  {
+    name: 'Weekly cash boundaries keep original rows and use the frame cover',
+    if: 'matrix.shard == 2',
+    env: { PG_BIN: '/usr/lib/postgresql/17/bin' },
+    run: 'python3 -B scripts/ci/test-weekly-pending-funding-index-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --candidate supabase/migrations/20261031081522_cover_original_cash_boundary_transaction_frames.sql --output "${{ runner.temp }}/weekly-pending-funding-index.json"',
+  },
+  {
+    name: 'Retain weekly pending funding index qualification',
+    if: 'always() && matrix.shard == 2',
+    uses: 'actions/upload-artifact@v4',
+    with: {
+      name: 'weekly-pending-funding-index-${{ github.run_id }}-${{ github.run_attempt }}',
+      path: '${{ runner.temp }}/weekly-pending-funding-index.json',
+      'if-no-files-found': 'error',
+    },
+  },
+];
+
+const normalizeFrameCoverAddition = (job: { steps: Array<Record<string, unknown>> }) => {
+  const start = job.steps.findIndex((step) => step.name === frameCoverSteps[0].name);
+  for (const step of frameCoverSteps) {
+    expect(job.steps.filter((actual) => actual.name === step.name)).toHaveLength(1);
+  }
+  expect(job.steps[start - 1]?.name).toBe(
+    'Weekly linked proofs preserve original windows and paid books'
+  );
+  expect(job.steps.slice(start, start + 2)).toStrictEqual(frameCoverSteps);
+  expect(job.steps[start + 2]?.name).toBe(
+    'Cash horses use bankroll eligibility and table closure preserves seats'
+  );
+  // Strip only the exact, separately enforced addition; retain every prior pin.
+  job.steps.splice(start, 2);
+};
+
 describe('required CI uses a closed standard hosted capacity recovery', () => {
   for (const [name, job, standard] of jobs) {
-    it(name + ' accepts only its declared standard OS or the fixed large profile', () => {
-      expect(job['runs-on']).toBe(expression(standard));
-      for (const [owner, id, value, expected] of [
-        ['Smarter-Software-PIQ', '1132369872', '', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'false', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'standard', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'large', 'ca-linux-8core'],
-        ['Smarter-Software-PIQ', '1132369872', 'self-hosted', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'custom-runner', standard],
-        ['other-org', '1132369872', 'large', standard],
-        ['Smarter-Software-PIQ', '42', 'large', standard],
-        ['other-org', '42', 'self-hosted', standard],
-      ]) {
-        const body = job['runs-on'].slice(3, -2).trim();
-        expect(
-          runInNewContext(body, {
-            github: { repository_owner: owner, repository_id: id },
-            vars: { CA_REQUIRED_NATIVE_PROFILE: value },
-          })
-        ).toBe(expected);
-      }
+    it(name + ' permits only its fixed standard hosted OS', () => {
+      expect(job['runs-on']).toBe(standard);
+      expect(job['runs-on']).not.toMatch(/ca-linux|self-hosted|vars\./);
     });
   }
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
+    normalizeFrameCoverAddition(normalized.jobs.accounting_postgres);
     const formerClientRoute = '$' + '{{ ' + trusted + " && 'ca-linux-4core' || 'ubuntu-latest' }}";
-    const browserRoute = '$' + '{{ ' + trusted + " && 'ca-linux-delivery' || 'ubuntu-latest' }}";
     const intendedRoutes = {
       typecheck: 'ubuntu-latest',
       unit: 'ubuntu-latest',
       server: 'ubuntu-latest',
       verdict: 'ubuntu-latest',
       'css-beats-gate': 'ubuntu-latest',
-      'css-beats-e2e': browserRoute,
-      'diamond-playfield-e2e': browserRoute,
+      'css-beats-e2e': 'ubuntu-latest',
+      'diamond-playfield-e2e': 'ubuntu-latest',
     };
     // Assert each authorized route before normalizing just that field. The
     // exhaustive sectional fingerprints protect every command and financial gate.
@@ -62,6 +78,24 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       expect(normalized.jobs[name]['runs-on'], name).toBe(route);
       normalized.jobs[name]['runs-on'] = formerClientRoute;
     }
+    for (const name of ['typecheck_compile', 'unit_shards', 'build']) {
+      expect(normalized.jobs[name]['runs-on']).toBe('ubuntu-latest');
+      normalized.jobs[name]['runs-on'] = formerClientRoute;
+    }
+    for (const name of ['changes', 'source_windows', 'stub_gate']) {
+      expect(normalized.jobs[name]['runs-on']).toBe('ubuntu-latest');
+      normalized.jobs[name]['runs-on'] = formerClientRoute;
+    }
+    for (const name of ['live-e2e', 'post-deploy-check']) {
+      expect(normalized.jobs[name]['runs-on']).toBe('ubuntu-latest');
+      normalized.jobs[name]['runs-on'] = formerClientRoute.replace('4core', '8core');
+    }
+    for (const name of ['accounting_postgres', 'server_shards']) {
+      expect(normalized.jobs[name]['runs-on']).toBe('ubuntu-latest');
+      normalized.jobs[name]['runs-on'] = expression('ubuntu-latest');
+    }
+    expect(normalized.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(8);
+    normalized.jobs.unit_shards.env.VITEST_MAX_THREADS = 4;
     // Ordered inventories plus all non-job fields and every whole job cover the
     // complete reviewed workflow. Unrelated job edits update only their own pin.
     const fingerprint = (value: unknown) =>
@@ -79,8 +113,10 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       typecheck_compile: '88a03bf85dc749608900101f598720ad93c957e5b5bf75791c589c9e25228168',
       unit_shards: 'a694772adb1e9b9c9cf9e8ff24d9a655deb26d18b5d1f191b120ac3b4516c474',
       unit: '69c8c0e64dddf305dd3336a22d977be302c177d26adb4f19a9928efd40fe42a0',
-      accounting_postgres: '92254f3f8e2638c8d3729c82eedad4a91135a507ca1f27d9a61c03d8c7c92cdb',
-      server_shards: 'bc1fd50307204678e389933752de1d0f012468ff40c63235f0024e8a469f2a5b',
+      // Retain both original top-up receipt and funded satellite qualifications.
+      // Every other normalized job and prior accounting command is unchanged.
+      accounting_postgres: '8fe0309bc5f9c00d2987d02020e9ef6aa0a13eb2dcbcd16ae69e21274d5735a3',
+      server_shards: '9b89b7ee75080d4d8b5aafd55d35adf888bd49c30720aa96ad2225bad240ee41',
       server: '086cab96ac6e24b0ced5ab9407a2c406eddfa451de33d6b614953b1f9f94bd1d',
       verdict: 'cbcc5b069cdc625a6fb5a5c23b6a5c6a4ed2c3669f37bf74163c3eea6c5fbd0f',
       build: '1b0ed1fea04c1e6ef74fcde68387787cf36b0fe589539caf71cdfe7e314fa76b',
@@ -97,8 +133,37 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       )
     ).toEqual(expectedJobs);
   });
+  it('rejects missing, duplicate, displaced or weakened frame cover qualification steps', () => {
+    const mutations = [
+      (steps: Array<Record<string, unknown>>, start: number) => steps.splice(start, 1),
+      (steps: Array<Record<string, unknown>>, start: number) =>
+        steps.push(structuredClone(steps[start])),
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        [steps[start - 1], steps[start]] = [steps[start], steps[start - 1]];
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start].if = 'matrix.shard == 1';
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        steps[start].run = String(steps[start].run) + ' || true';
+      },
+      (steps: Array<Record<string, unknown>>, start: number) => {
+        (steps[start + 1].with as Record<string, unknown>)['if-no-files-found'] = 'ignore';
+      },
+    ];
+    for (const mutate of mutations) {
+      const job = structuredClone(ci.jobs.accounting_postgres);
+      const start = job.steps.findIndex(
+        (step: Record<string, unknown>) => step.name === frameCoverSteps[0].name
+      );
+      mutate(job.steps, start);
+      expect(() => normalizeFrameCoverAddition(job)).toThrow();
+    }
+  });
   it('preserves every native qualification stage and cleanup requirement', () => {
     const normalized = structuredClone(native);
+    expect(normalized.jobs['native-smoke']['runs-on']).toBe('ubuntu-24.04');
+    normalized.jobs['native-smoke']['runs-on'] = expression('ubuntu-24.04');
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
       '9d89b70e835f0476c8b3d4abf5d5c11c07e7b77a83b5bd95aacfae472153c457'
     );

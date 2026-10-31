@@ -2566,7 +2566,6 @@ export class TournamentManager extends TournamentManagerEliminations {
       state.state !== 'park_requested' ||
       state.terminal_handoff_required ||
       state.members.length ||
-      !state.custody_id ||
       !refusal?.startsWith('destinations_full:')
     ) {
       this.unplaceableParkSince.delete(state.break_id);
@@ -2583,6 +2582,8 @@ export class TournamentManager extends TournamentManagerEliminations {
     // database counts differently from this board; decide after it settles.
     for (const other of this.durableTournamentBreaks.values())
       if (other.break_id !== state.break_id && other.state !== 'park_requested') return false;
+    // A newly requested park has no custodian yet. The owned withdrawal path
+    // claims its exact revision before the database can authorize withdrawal.
     if (!(await this.withdrawUnbegunPark(state, 'unplaceable'))) return false;
     this.unplaceableParkSince.delete(state.break_id);
     console.log(
@@ -2627,7 +2628,6 @@ export class TournamentManager extends TournamentManagerEliminations {
       state.state !== 'park_requested' ||
       state.terminal_handoff_required ||
       state.members.length ||
-      !state.custody_id ||
       !(
         refusal?.startsWith('movement_unproven:F06_MOVEMENT_') ||
         refusal?.startsWith('begin_refused:F06_MOVEMENT_')

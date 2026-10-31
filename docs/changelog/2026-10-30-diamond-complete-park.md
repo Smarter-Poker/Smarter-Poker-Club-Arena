@@ -1,0 +1,7 @@
+# Complete Diamond park before compute resize
+
+The first stop allowed old interrupted hands to enter recovery. Fifteen Diamond tables retained originals, mostly from October 29, despite new hand production reaching zero. The owner requires the entire arena parked before any resize. The existing floor-state boundary now holds those tables too, preserving all records, and both Diamond master game switches are disabled. No cancellation, refund, cash-out or financial write occurs. Existing in-progress controllers finish through their ordinary hand boundary; startup recovery stays parked. A future reopening is a separate authorization.
+
+The exact change passed private PostgreSQL qualification: all Diamond boundaries remain held even with reserved permits and incomplete snapshots; other clubs stay unchanged; original permit replay still returns its existing receipt; permits, snapshots, wallets and movements are byte-equivalent before and after. Existing required hand-continuation CI includes the qualification.
+
+Installed once under the active-outage exception at2026-10-31T03:40:48Z, provider version20261031034048. The4367installedbytes were recovered from migration history, MD5fa6f8191cbaab28b12272e894f0ca42b, and recorded immediately. Exact live function/ACL/master-switch proof passed; all98running Diamond table records returned the owner hold. No financial or hand records were removed by this park. The later owner request to delete Diamond hand data requires separately scoped dependency inspection and deletion; this migration is only the safe park.

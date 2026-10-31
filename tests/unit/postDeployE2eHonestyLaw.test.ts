@@ -57,13 +57,14 @@ function step(workflow: string, name: string): string {
   return next < 0 ? workflow.slice(at) : workflow.slice(at, next);
 }
 
-describe('live-table certification observes the assigned live Diamond club', () => {
+describe('live-table certification observes an active chip-game club', () => {
   it('binds public membership setup, spectator discovery and engine scope to one target', () => {
     const continuity = step(
       TABLE_WORKFLOW,
       'Certify live-table continuity against the exact serving engine'
     );
-    expect(continuity).toContain('E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81');
+    expect(continuity).toContain('E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4');
+    expect(continuity).not.toContain('E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81');
     expect(GLOBAL_SETUP).toContain(
       'ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID)'
     );

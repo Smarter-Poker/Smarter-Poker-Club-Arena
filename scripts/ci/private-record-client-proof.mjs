@@ -7,6 +7,21 @@ import { pathToFileURL } from 'node:url';
 import { readStatsClientPin as readClientPin } from './stats-pagination-proof.mjs';
 export const PRIVATE_RECORD_CLIENT_TITLE =
   'published private record client survives its isolated engine channel outage';
+// The owner requires 180 seconds between automatic roster reads. Allow the
+// real cadence plus the existing 45-second request budget, twice per case.
+export const PRIVATE_RECORD_ROSTER_READ_MS = 180_000 + 45_000;
+export const PRIVATE_RECORD_CASE_MS = 2 * PRIVATE_RECORD_ROSTER_READ_MS + 150_000;
+// The live club emitted 127 records/minute in the measured case. Bound the
+// retained observations with headroom for the full ten-minute case.
+export const PRIVATE_RECORD_OBSERVATION_LIMIT = 2048;
+// Full observations remain in memory for assertions. The certificate keeps a
+// diagnostic tail and total count within its unchanged 32 KiB attachment cap.
+export function summarizePrivateRecordObservations(frames) {
+  return {
+    observedRecordFrames: frames.slice(-64),
+    observedRecordFrameCount: frames.length,
+  };
+}
 const REPO = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
 const SHA = /^[0-9a-f]{40}$/;
 const ROOT = 'e2e-report/private-record-client';
@@ -14,6 +29,50 @@ class ProofRefusal extends Error {}
 const requireProof = (condition, message) => {
   if (!condition) throw new ProofRefusal(message);
 };
+// Optional display aliases never establish the reserved actor or roster row.
+export function snapshotPrivateRecordFixtureProfile(rows, userId) {
+  requireProof(
+    Array.isArray(rows) &&
+      rows.length === 1 &&
+      rows[0]?.id === userId &&
+      ['avatar_url', 'arena_avatar_url'].every(
+        (key) =>
+          rows[0][key] === null || (typeof rows[0][key] === 'string' && rows[0][key].length <= 2048)
+      ),
+    'Exact own profile and cosmetic restoration fields are required'
+  );
+  return {
+    id: rows[0].id,
+    avatar_url: rows[0].avatar_url,
+    arena_avatar_url: rows[0].arena_avatar_url,
+  };
+}
+export function readPrivateRecordFixturePlayerNumber(detail, userId) {
+  const number = detail?.identity?.player_number;
+  requireProof(
+    detail?.identity?.user_id === userId &&
+      typeof number === 'string' &&
+      /^[0-9]{1,20}$/.test(number),
+    'Authorized member identity and bounded player number are required'
+  );
+  return number;
+}
+export function assertPrivateRecordFixtureRoster(body, userId, playerNumber) {
+  requireProof(
+    typeof playerNumber === 'string' && /^[0-9]{1,20}$/.test(playerNumber),
+    'The authoritative player number is required'
+  );
+  const rows = body?.items;
+  requireProof(Array.isArray(rows), 'The actual roster response is required');
+  const matches = rows.filter((row) => row?.player_number === playerNumber);
+  requireProof(
+    matches.length === 1 &&
+      matches[0].user_id === userId &&
+      rows.filter((row) => row?.user_id === userId).length === 1,
+    'The actual roster must contain one exact reserved actor and player number'
+  );
+  return matches[0];
+}
 export function admitPrivateRecordClientProof(payload, environment = process.env) {
   requireProof(
     environment.GITHUB_EVENT_NAME === 'repository_dispatch' &&
@@ -196,6 +255,8 @@ export function assertPrivateRecordClientProof(
       proof.gatewaySha === input.gatewaySha &&
       [
         'actualPublishedClient',
+        'authoritativeFixtureIdentity',
+        'rosterIdentityVerified',
         'genuineSession',
         'engineReadyBefore',
         'isolatedEngineChannelFault',
@@ -204,9 +265,16 @@ export function assertPrivateRecordClientProof(
         'readerReadback',
         'visibleAvatarReadback',
         'engineReadyAfterRestore',
-        'engineRecordChangedAfterRestore',
+        'gatewayRecordChangedAfterRestore',
         'secondVisibleAvatarReadback',
         'faultRestored',
+        'rosterGatewayVerified',
+        'rosterPaidVerified',
+        'memberPaidVerified',
+        'bothPreferredPathsInterrupted',
+        'allFaultsRestored',
+        'preferredReadyAfterPaid',
+        'cosmeticRestoreVerified',
       ].every((key) => proof[key] === true) &&
       proof.paidIsolation?.activeAtStart === 0 &&
       proof.paidIsolation?.activeAtEnd === 0 &&
@@ -214,11 +282,21 @@ export function assertPrivateRecordClientProof(
       proof.paidIsolation?.matchingChangedFrames === 0 &&
       Number.isInteger(proof.paidIsolation?.observedFrames) &&
       proof.paidIsolation.observedFrames >= 0 &&
-      proof.gatewayRetirement?.openSocketsBeforeSecondWrite === 0 &&
-      proof.gatewayRetirement?.openSocketsAfterSecondWrite === 0 &&
-      proof.gatewayRetirement?.matchingSignalsAfterRetirement === 0 &&
+      Number.isInteger(proof.gatewayRetention?.openSocketsBeforeSecondWrite) &&
+      proof.gatewayRetention.openSocketsBeforeSecondWrite > 0 &&
+      Number.isInteger(proof.gatewayRetention?.openSocketsAfterSecondWrite) &&
+      proof.gatewayRetention.openSocketsAfterSecondWrite > 0 &&
+      Number.isInteger(proof.gatewayRetention?.matchingChangesAfterRecovery) &&
+      proof.gatewayRetention.matchingChangesAfterRecovery > 0 &&
+      ['member', 'roster'].every(
+        (topic) =>
+          Number.isInteger(proof.paidFallback?.[topic]?.confirmedJoins) &&
+          proof.paidFallback[topic].confirmedJoins > 0 &&
+          Number.isInteger(proof.paidFallback?.[topic]?.receivedChanges) &&
+          proof.paidFallback[topic].receivedChanges > 0
+      ) &&
       proof.observationsOverflow === false &&
-      proof.cosmeticWrites === 2 &&
+      proof.cosmeticWrites === 5 &&
       proof.syntheticFrames === 0 &&
       proof.paidRetirementQualified === false,
     'Published SDK outage, genuine event, reader/UI or recovery evidence is incomplete'

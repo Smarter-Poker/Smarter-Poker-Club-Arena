@@ -1,0 +1,242 @@
+[
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "id",
+    "type": "bigint"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "table_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "hand_number",
+    "type": "bigint"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "arena_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "user_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "kind",
+    "type": "text"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "amount",
+    "type": "bigint"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "swept_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "sweep_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "ca_diamond_rake_accrual",
+    "column_name": "created_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "id",
+    "type": "bigint"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "taken_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "profile_diamonds",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "wallet_diamonds",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "cert_diamonds",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "total",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "journaled_delta",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "delta_vs_prev",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "unexplained",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "register_supply",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "house_balance",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "fixture_diamonds",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "register_fixture",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "arena_diamonds",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "arena_fixture_diamonds",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "house_register",
+    "type": "numeric"
+  },
+  {
+    "table_name": "ca_diamond_snapshots",
+    "column_name": "house_ledger_total",
+    "type": "numeric"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "owner_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "day",
+    "type": "date"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "status",
+    "type": "text"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "pending_diamonds",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "entry_diamonds",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "bonus_diamonds",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "mint_entry_diamonds",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "diamond_prizes",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "throwables",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "time_banks",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "rabbit_hunts",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "other_expenses",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "movement_count",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "settled_net",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "wallet_transaction_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "notification_id",
+    "type": "uuid"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "created_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "settled_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "profit_burn_bps",
+    "type": "integer"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "profit_burn",
+    "type": "bigint"
+  },
+  {
+    "table_name": "diamond_spin_days",
+    "column_name": "credited_net",
+    "type": "bigint"
+  }
+]

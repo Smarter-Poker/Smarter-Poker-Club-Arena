@@ -132,6 +132,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - name: Qualify exact selection, refusal and terminal signal boundaries
         run: python3 -B tests/operations/waiting-engine-release-withdrawal.test.py
@@ -141,11 +142,14 @@ jobs:
           HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
         run: python3 -B scripts/ci/withdraw-waiting-engine-release.py
-      - name: Retain the exact original terminal retirement receipt
+      - name: Retain the exact original receipt or bounded diagnostic
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: engine-withdrawal-${{ github.run_id }}
-          path: artifacts/engine-withdrawal/receipt.json
+          path: |
+            artifacts/engine-withdrawal/receipt.json
+            artifacts/engine-withdrawal/diagnostic.json
           if-no-files-found: error
           retention-days: 7
 

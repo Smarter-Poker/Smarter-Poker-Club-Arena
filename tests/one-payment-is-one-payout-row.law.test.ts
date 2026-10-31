@@ -140,7 +140,45 @@ function withoutSeparatedSatelliteDelivery(sql: string): string {
       ticket.includes("'tournament_entry_only'") &&
       cash.includes("p_payout_source => 'satellite_ticket'") &&
       definition.includes('v_paid IS DISTINCT FROM v_pool');
-    if (separated) {
+    // Prospective value awards have only two noncash delivery branches.
+    // The sole wallet credit is the independently bounded bubble remainder.
+    const valueElse = definition.indexOf(
+      "\n    ELSE\n      RAISE EXCEPTION 'satellite % has unknown delivery kind",
+      ticketStart
+    );
+    const deliveryEnd = definition.indexOf('\n  END LOOP;', valueElse);
+    const bubbleStart = definition.indexOf('\n  IF v_remainder > 0 THEN', deliveryEnd);
+    const bubbleEnd = definition.indexOf('\n  END IF;', bubbleStart);
+    const valueTicket = definition.slice(ticketStart, valueElse);
+    const bubble = definition.slice(bubbleStart, bubbleEnd);
+    const outsideBubble = definition.slice(0, bubbleStart) + definition.slice(bubbleEnd);
+    const valueSeparated =
+      /FUNCTION\s+public\.fn_ca_settle_satellite_cohort\s*\(/i.test(definition) &&
+      cashStart < 0 &&
+      seatStart >= 0 &&
+      ticketStart > seatStart &&
+      valueElse > ticketStart &&
+      deliveryEnd > valueElse &&
+      bubbleStart > deliveryEnd &&
+      bubbleEnd > bubbleStart &&
+      directPayoutWrites.length === 2 &&
+      HAND_WRITES.test(seat) &&
+      !CREDIT_PATHS.test(seat) &&
+      HAND_WRITES.test(valueTicket) &&
+      !CREDIT_PATHS.test(valueTicket) &&
+      !CREDIT_PATHS.test(outsideBubble) &&
+      CREDIT_PATHS.test(bubble) &&
+      (bubble.match(new RegExp(CREDIT_PATHS.source, 'gi')) ?? []).length === 1 &&
+      !HAND_WRITES.test(bubble) &&
+      seat.includes("'satellite_seat'") &&
+      valueTicket.includes("'satellite_ticket'") &&
+      valueTicket.includes("'tournament_entry_only'") &&
+      valueTicket.includes("'same_value_entry_v1'") &&
+      bubble.includes('p_user_id => v_bubble_user_id') &&
+      bubble.includes('p_amount => v_remainder') &&
+      bubble.includes("p_payout_source => 'satellite_remainder'") &&
+      definition.includes('v_paid IS DISTINCT FROM v_pool');
+    if (separated || valueSeparated) {
       result = result.slice(0, start) + result.slice(end);
       signature.lastIndex = 0;
       start = signature.exec(result)?.index ?? -1;
@@ -214,6 +252,62 @@ describe('one payment is one payout row', () => {
     // the final delivery branch that actually owns the payout-evidence write.
     const at = cohortDefinition.lastIndexOf(from);
     const unsafe = cohortDefinition.slice(0, at) + to + cohortDefinition.slice(at + from.length);
+    expect(withoutSeparatedSatelliteDelivery(unsafe)).toBe(unsafe);
+  });
+
+  const valueMigration = readFileSync(
+    join(
+      MIGRATIONS,
+      files.find((f) => f.endsWith('_satellite_fallback_awards_are_reusable_value_tickets.sql'))!
+    ),
+    'utf8'
+  );
+  const valueStart = valueMigration.indexOf(
+    'CREATE OR REPLACE FUNCTION public.fn_ca_settle_satellite_cohort('
+  );
+  const valueDefinition = valueMigration.slice(
+    valueStart,
+    functionDefinitionEnd(valueMigration, valueStart)
+  );
+
+  it('proves the prospective noncash awards separately from the one bubble credit', () => {
+    expect(valueStart).toBeGreaterThan(0);
+    expect(valueDefinition).toContain("p_payout_source => 'satellite_remainder'");
+    expect(withoutSeparatedSatelliteDelivery(valueDefinition + '\nSELECT unrelated();')).toBe(
+      '\nSELECT unrelated();'
+    );
+  });
+
+  it.each([
+    [
+      "IF v_delivery_kind = 'seat' THEN\n",
+      "IF v_delivery_kind = 'seat' THEN\n PERFORM public.fn_credit_and_log();\n",
+    ],
+    [
+      "ELSIF v_delivery_kind = 'ticket' THEN\n",
+      "ELSIF v_delivery_kind = 'ticket' THEN\n PERFORM public.fn_credit_and_log();\n",
+    ],
+    [
+      '  IF v_remainder > 0 THEN\n',
+      '  INSERT INTO public.tournament_payouts DEFAULT VALUES;\n  IF v_remainder > 0 THEN\n',
+    ],
+    [
+      '  IF v_remainder > 0 THEN\n',
+      '  PERFORM public.fn_credit_and_log();\n  IF v_remainder > 0 THEN\n',
+    ],
+    [
+      '    v_credited := public.fn_credit_and_log(',
+      '    PERFORM public.fn_credit_and_log();\n    v_credited := public.fn_credit_and_log(',
+    ],
+    ['p_user_id => v_bubble_user_id', 'p_user_id => v_finisher.user_id'],
+    ['p_amount => v_remainder', 'p_amount => v_ticket_cost'],
+    ["p_payout_source => 'satellite_remainder'", "p_payout_source => 'satellite_ticket'"],
+    ['v_paid IS DISTINCT FROM v_pool', 'false'],
+    ['public.fn_ca_settle_satellite_cohort(', 'public.unknown_value_owner('],
+  ])('does not exempt an unsafe value-ticket authority mutation %s', (from, to) => {
+    const at = valueDefinition.lastIndexOf(from);
+    expect(at).toBeGreaterThanOrEqual(0);
+    const unsafe = valueDefinition.slice(0, at) + to + valueDefinition.slice(at + from.length);
     expect(withoutSeparatedSatelliteDelivery(unsafe)).toBe(unsafe);
   });
 

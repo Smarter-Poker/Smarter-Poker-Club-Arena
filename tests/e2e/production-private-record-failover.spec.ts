@@ -1,6 +1,19 @@
 import { expect, test } from '@playwright/test';
-import { PRIVATE_RECORD_CLIENT_TITLE } from '../../scripts/ci/private-record-client-proof.mjs';
+import {
+  PRIVATE_RECORD_CLIENT_TITLE,
+  PRIVATE_RECORD_ROSTER_READ_MS,
+  PRIVATE_RECORD_CASE_MS,
+  PRIVATE_RECORD_OBSERVATION_LIMIT,
+  summarizePrivateRecordObservations,
+  snapshotPrivateRecordFixtureProfile,
+  readPrivateRecordFixturePlayerNumber,
+  assertPrivateRecordFixtureRoster,
+} from '../../scripts/ci/private-record-client-proof.mjs';
 import { installPrivateRecordEngineInterruption } from './support/privateRecordEngineInterruption';
+import {
+  hasLiveGatewayReady,
+  type PrivateRecordObservation,
+} from './support/privateRecordObservation';
 
 const API = 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
@@ -10,7 +23,7 @@ const ENGINE = 'wss://engine.smarter.poker/ws/channel';
 const images = ['/avatars/table/free_ninja@2x.webp', '/avatars/table/free_shark@2x.webp'];
 
 test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
-  test.setTimeout(240_000);
+  test.setTimeout(PRIVATE_RECORD_CASE_MS);
   expect(
     process.env.E2E_PRIVATE_RECORD_CLIENT_PROOF,
     'Explicit admitted provider proof required'
@@ -26,13 +39,15 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     syntheticFrames: 0,
     paidRetirementQualified: false,
   };
-  type Frame = { endpoint: 'engine' | 'gateway'; topic: string; type: string; ready?: boolean };
-  const frames: Frame[] = [];
+  const frames: PrivateRecordObservation[] = [];
   const paid: { topic: string; event: string; direction: string; socket: number }[] = [];
   const paidOpen = new Set<number>();
   const gatewayOpen = new Set<number>();
   let socketId = 0;
   let observationsOverflow = false;
+  let originalProfile:
+    | { id: string; avatar_url: string | null; arena_avatar_url: string | null }
+    | undefined;
   page.on('websocket', (socket) => {
     const url = new URL(socket.url());
     const endpoint = `${url.protocol}//${url.host}${url.pathname}`;
@@ -44,19 +59,31 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       paidOpen.add(id);
       socket.on('close', () => paidOpen.delete(id));
       const leaving = new Map<string, string>();
+      const joining = new Map<string, string>();
       const observe = (direction: string, payload: string | Buffer) => {
         try {
           const raw = JSON.parse(String(payload));
           const frame = Array.isArray(raw)
             ? { ref: raw[1], topic: raw[2], event: raw[3], payload: raw[4] }
             : raw;
-          if (typeof frame.topic !== 'string' || !frame.topic.includes('member-record:')) return;
-          if (paid.length >= 512) {
+          if (
+            typeof frame.topic !== 'string' ||
+            !/^(?:realtime:)?(?:member-record:|club-roster:)/.test(frame.topic)
+          )
+            return;
+          if (paid.length >= PRIVATE_RECORD_OBSERVATION_LIMIT) {
             observationsOverflow = true;
             return;
           }
           if (direction === 'sent' && frame.event === 'phx_leave' && frame.ref != null)
             leaving.set(String(frame.ref), frame.topic);
+          if (direction === 'sent' && frame.event === 'phx_join' && frame.ref != null)
+            joining.set(String(frame.ref), frame.topic);
+          const confirmedJoin =
+            direction === 'received' &&
+            frame.event === 'phx_reply' &&
+            frame.payload?.status === 'ok' &&
+            joining.get(String(frame.ref)) === frame.topic;
           const confirmedLeave =
             direction === 'received' &&
             frame.event === 'phx_reply' &&
@@ -64,11 +91,13 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
             leaving.get(String(frame.ref)) === frame.topic;
           paid.push({
             topic: frame.topic.replace(/^realtime:/, ''),
-            event: confirmedLeave
-              ? 'confirmed_leave'
-              : frame.event === 'broadcast'
-                ? frame.payload?.event
-                : frame.event,
+            event: confirmedJoin
+              ? 'confirmed_join'
+              : confirmedLeave
+                ? 'confirmed_leave'
+                : frame.event === 'broadcast'
+                  ? frame.payload?.event
+                  : frame.event,
             direction,
             socket: id,
           });
@@ -88,13 +117,14 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     socket.on('framereceived', ({ payload }) => {
       try {
         const frame = JSON.parse(String(payload));
-        if (frames.length >= 512) observationsOverflow = true;
+        if (frames.length >= PRIVATE_RECORD_OBSERVATION_LIMIT) observationsOverflow = true;
         if (
           ['PRIVATE_RECORD_STATUS', 'PRIVATE_RECORD_CHANGED'].includes(frame.type) &&
           typeof frame.topic === 'string' &&
-          frames.length < 512
+          frames.length < PRIVATE_RECORD_OBSERVATION_LIMIT
         )
           frames.push({
+            socket: id,
             endpoint: endpoint === ENGINE ? 'engine' : 'gateway',
             topic: frame.topic,
             type: frame.type,
@@ -106,6 +136,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     });
   });
   const fault = await installPrivateRecordEngineInterruption(context);
+  const gatewayFault = await installPrivateRecordEngineInterruption(context, 'gateway');
   const pin = async () => {
     for (const origin of [
       'https://ca-static.smarter.poker',
@@ -154,6 +185,45 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       { api: API, key: KEY, email: process.env.SP_EMAIL }
     );
     expect(userId).toMatch(/^[0-9a-f-]{36}$/);
+    const profileRows = await page.evaluate(
+      async ({ api, key, id }) => {
+        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || '{}');
+        if (session.user?.id !== id || !session.access_token) throw Error('Reserved actor changed');
+        const response = await fetch(
+          `${api}/rest/v1/profiles?id=eq.${id}&select=id,avatar_url,arena_avatar_url`,
+          {
+            headers: { apikey: key, Authorization: `Bearer ${session.access_token}` },
+            signal: AbortSignal.timeout(10_000),
+          }
+        );
+        if (!response.ok) throw Error('Own profile snapshot unavailable');
+        return response.json();
+      },
+      { api: API, key: KEY, id: userId }
+    );
+    originalProfile = snapshotPrivateRecordFixtureProfile(profileRows, userId);
+    const fixtureDetail = await page.evaluate(
+      async ({ api, key, id, club }) => {
+        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || '{}');
+        if (session.user?.id !== id || !session.access_token) throw Error('Reserved actor changed');
+        const response = await fetch(`${api}/rest/v1/rpc/ca_club_member_detail`, {
+          method: 'POST',
+          headers: {
+            apikey: key,
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            'x-client-info': 'club-arena-member-results/2',
+          },
+          body: JSON.stringify({ p_club_id: club, p_user_id: id, p_from: null, p_to: null }),
+          signal: AbortSignal.timeout(40_000),
+        });
+        if (!response.ok) throw Error('Authorized fixture member identity unavailable');
+        return response.json();
+      },
+      { api: API, key: KEY, id: userId, club: CLUB }
+    );
+    const playerNumber = readPrivateRecordFixturePlayerNumber(fixtureDetail, userId);
+    proof.authoritativeFixtureIdentity = true;
     proof.genuineSession = true;
     const topic = `member-record:${CLUB}:${userId}`;
     await page.goto(`clubs/kings-club/members/${userId}`, { waitUntil: 'domcontentloaded' });
@@ -175,27 +245,14 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     proof.engineReadyBefore = true;
     const initial = await avatar.getAttribute('src');
     const selected = initial?.includes('free_ninja') ? [...images].reverse() : images;
-    const afterFault = frames.length;
     await fault.block();
     proof.isolatedEngineChannelFault = true;
     await expect
-      .poll(
-        () =>
-          frames
-            .slice(afterFault)
-            .some(
-              (f) =>
-                f.endpoint === 'gateway' &&
-                f.topic === topic &&
-                f.type === 'PRIVATE_RECORD_STATUS' &&
-                f.ready === true
-            ),
-        {
-          timeout: 60_000,
-          message:
-            'Published client did not reach its independent gateway; an empty fallback build cannot qualify',
-        }
-      )
+      .poll(() => hasLiveGatewayReady(frames, gatewayOpen, topic), {
+        timeout: 60_000,
+        message:
+          'Published client did not reach its independent gateway; an empty fallback build cannot qualify',
+      })
       .toBe(true);
     proof.gatewayReadyAfterFault = true;
     const paidActive = () => {
@@ -312,40 +369,331 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       )
       .toBe(true);
     proof.engineReadyAfterRestore = true;
-    await expect.poll(() => gatewayOpen.size, { timeout: 15_000 }).toBe(0);
+    await expect.poll(() => gatewayOpen.size, { timeout: 15_000 }).toBeGreaterThan(0);
     const gatewayOpenBeforeSecondWrite = gatewayOpen.size;
-    const gatewayAfterRetirement = frames.length;
-    const paidAfterRetirement = paid.length;
-    await changeOwnAvatar(selected[1], 'engine');
-    proof.engineRecordChangedAfterRestore = true;
+    const gatewayAfterRecovery = frames.length;
+    const paidAfterRecovery = paid.length;
+    await changeOwnAvatar(selected[1], 'gateway');
+    proof.gatewayRecordChangedAfterRestore = true;
     proof.secondVisibleAvatarReadback = true;
     const gatewaySignals = frames
-      .slice(gatewayAfterRetirement)
+      .slice(gatewayAfterRecovery)
       .filter((f) => f.endpoint === 'gateway' && f.topic === topic);
-    expect(gatewaySignals).toHaveLength(0);
-    expect(gatewayOpen.size).toBe(0);
+    expect(gatewaySignals.some((frame) => frame.type === 'PRIVATE_RECORD_CHANGED')).toBe(true);
+    expect(gatewayOpen.size).toBeGreaterThan(0);
     expect(paidActive()).toBe(0);
     expect(
       paid
-        .slice(paidAfterRetirement)
+        .slice(paidAfterRecovery)
         .filter(
           (f) => f.topic === topic && (f.event === 'phx_join' || f.event === 'record_changed')
         )
     ).toHaveLength(0);
     expect(observationsOverflow).toBe(false);
-    proof.gatewayRetirement = {
+    proof.gatewayRetention = {
       openSocketsBeforeSecondWrite: gatewayOpenBeforeSecondWrite,
       openSocketsAfterSecondWrite: gatewayOpen.size,
-      matchingSignalsAfterRetirement: gatewaySignals.length,
+      matchingChangesAfterRecovery: gatewaySignals.filter(
+        (frame) => frame.type === 'PRIVATE_RECORD_CHANGED'
+      ).length,
     };
+    // The same reserved account now exercises the actual roster consumer. No second runner.
+    const rosterTopic = `club-roster:${CLUB}`;
+    await fault.block();
+    const rosterStart = frames.length;
+    await page.goto('clubs/kings-club/members?view=all', { waitUntil: 'domcontentloaded' });
+    const initialRosterRead = page.waitForResponse(
+      (response) => {
+        if (!response.ok() || !response.url().includes('/rest/v1/rpc/ca_club_members_page'))
+          return false;
+        const args = response.request().postDataJSON();
+        return args?.p_club_id === CLUB && args?.p_search === playerNumber;
+      },
+      { timeout: 45_000 }
+    );
+    void initialRosterRead.catch(() => {});
+    await page
+      .getByRole('searchbox', { name: 'Search Club Members' })
+      .fill(playerNumber, { timeout: 45_000 });
+    assertPrivateRecordFixtureRoster(await (await initialRosterRead).json(), userId, playerNumber);
+    const rosterRow = page.getByRole('listitem').filter({
+      has: page
+        .locator('.member-number')
+        .filter({ hasText: new RegExp(`^PlayerID: ${playerNumber}$`) }),
+    });
+    await expect(rosterRow).toHaveCount(1, { timeout: 45_000 });
+    const rosterAvatar = rosterRow.locator('.member-avatar img');
+    await expect(rosterAvatar).toHaveCount(1, { timeout: 45_000 });
+    proof.rosterIdentityVerified = true;
+    await expect
+      .poll(
+        () =>
+          frames
+            .slice(rosterStart)
+            .some((f) => f.endpoint === 'gateway' && f.topic === rosterTopic && f.ready === true),
+        { timeout: 60_000 }
+      )
+      .toBe(true);
+    const paidForTopic = (target: string) => {
+      const active = new Set<number>();
+      for (const f of paid) {
+        if (f.topic !== target) continue;
+        if (f.direction === 'sent' && f.event === 'phx_join') active.add(f.socket);
+        if (f.direction === 'received' && f.event === 'confirmed_leave') active.delete(f.socket);
+      }
+      return [...active].filter((id) => paidOpen.has(id)).length;
+    };
+    await expect.poll(() => paidForTopic(rosterTopic), { timeout: 15_000 }).toBe(0);
+    const changeAndRead = async (
+      target: string,
+      image: string,
+      endpoint: 'gateway' | 'paid',
+      roster: boolean
+    ) => {
+      const deliveryStartedAt = Date.now();
+      let readbackObservedAt: number | undefined;
+      const frameFrom = frames.length;
+      const paidFrom = paid.length;
+      const responseRead = page.waitForResponse(
+        async (response) => {
+          if (
+            !response.ok() ||
+            !response
+              .url()
+              .includes(`/rest/v1/rpc/${roster ? 'ca_club_members_page' : 'ca_club_member_detail'}`)
+          )
+            return false;
+          const args = response.request().postDataJSON();
+          if (
+            args?.p_club_id !== CLUB ||
+            (roster ? args?.p_search !== playerNumber : args?.p_user_id !== userId)
+          )
+            return false;
+          try {
+            const body = await response.json();
+            const row = roster
+              ? assertPrivateRecordFixtureRoster(body, userId, playerNumber)
+              : body?.identity;
+            const matches = row?.user_id === userId && String(row.avatar_url).includes(image);
+            if (matches) readbackObservedAt = Date.now();
+            return matches;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: roster ? PRIVATE_RECORD_ROSTER_READ_MS : 45_000 }
+      );
+      void responseRead.catch(() => {});
+      await page.evaluate(
+        async ({ api, key, id, email, image }) => {
+          const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || '{}');
+          if (session.user?.id !== id || session.user?.email !== email || !session.access_token)
+            throw Error('Reserved cosmetic actor changed');
+          const response = await fetch(`${api}/rest/v1/profiles?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: {
+              apikey: key,
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify({ avatar_url: image, arena_avatar_url: image }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!response.ok) throw Error('Own reserved cosmetic update refused');
+        },
+        { api: API, key: KEY, id: userId, email: process.env.SP_EMAIL, image }
+      );
+      proof.cosmeticWrites = Number(proof.cosmeticWrites) + 1;
+      await expect
+        .poll(
+          () =>
+            endpoint === 'paid'
+              ? paid
+                  .slice(paidFrom)
+                  .some(
+                    (f) =>
+                      f.topic === target &&
+                      f.direction === 'received' &&
+                      f.event === 'record_changed'
+                  )
+              : frames
+                  .slice(frameFrom)
+                  .some(
+                    (f) =>
+                      f.endpoint === 'gateway' &&
+                      f.topic === target &&
+                      f.type === 'PRIVATE_RECORD_CHANGED'
+                  ),
+          { timeout: 30_000 }
+        )
+        .toBe(true);
+      const eventObservedAt = Date.now();
+      await responseRead;
+      const visible = roster ? rosterAvatar : avatar;
+      await expect.poll(() => visible.getAttribute('src'), { timeout: 45_000 }).toContain(image);
+      await expect(visible).toBeVisible();
+      await expect
+        .poll(
+          () =>
+            visible.evaluate(
+              (element) =>
+                element instanceof HTMLImageElement && element.complete && element.naturalWidth > 0
+            ),
+          { timeout: 30_000 }
+        )
+        .toBe(true);
+      const timings = (proof.deliveryTimings ??= []) as Record<string, unknown>[];
+      timings.push({
+        consumer: roster ? 'roster' : 'member',
+        endpoint,
+        eventObservedMs: eventObservedAt - deliveryStartedAt,
+        readbackObservedMs: readbackObservedAt! - deliveryStartedAt,
+        visibleObservedMs: Date.now() - deliveryStartedAt,
+      });
+    };
+    await changeAndRead(rosterTopic, selected[0], 'gateway', true);
+    expect(paidForTopic(rosterTopic)).toBe(0);
+    proof.rosterGatewayVerified = true;
+    let bothFaultFrom = frames.length;
+    const rosterPaidFrom = paid.length;
+    await gatewayFault.block();
+    proof.bothPreferredPathsInterrupted = true;
+    await expect
+      .poll(
+        () =>
+          paid
+            .slice(rosterPaidFrom)
+            .some(
+              (f) =>
+                f.topic === rosterTopic &&
+                f.direction === 'received' &&
+                f.event === 'confirmed_join'
+            ),
+        { timeout: 60_000 }
+      )
+      .toBe(true);
+    bothFaultFrom = frames.length;
+    await changeAndRead(rosterTopic, selected[1], 'paid', true);
+    proof.rosterPaidVerified = true;
+    const memberPaidFrom = paid.length;
+    await page.goto(`clubs/kings-club/members/${userId}`, { waitUntil: 'domcontentloaded' });
+    await expect(avatar).toHaveCount(1, { timeout: 45_000 });
+    await expect
+      .poll(
+        () =>
+          paid
+            .slice(memberPaidFrom)
+            .some(
+              (f) => f.topic === topic && f.direction === 'received' && f.event === 'confirmed_join'
+            ),
+        { timeout: 60_000 }
+      )
+      .toBe(true);
+    await changeAndRead(topic, selected[0], 'paid', false);
+    proof.memberPaidVerified = true;
+    expect(
+      frames
+        .slice(bothFaultFrom)
+        .filter((f) => f.ready === true || f.type === 'PRIVATE_RECORD_CHANGED')
+    ).toHaveLength(0);
+    proof.paidFallback = Object.fromEntries(
+      [
+        ['member', topic, memberPaidFrom],
+        ['roster', rosterTopic, rosterPaidFrom],
+      ].map(([name, target, from]) => [
+        name,
+        {
+          confirmedJoins: paid
+            .slice(Number(from))
+            .filter(
+              (f) =>
+                f.topic === target && f.direction === 'received' && f.event === 'confirmed_join'
+            ).length,
+          receivedChanges: paid
+            .slice(Number(from))
+            .filter(
+              (f) =>
+                f.topic === target && f.direction === 'received' && f.event === 'record_changed'
+            ).length,
+        },
+      ])
+    );
+    const finalRecoveryFrom = frames.length;
+    fault.restore();
+    gatewayFault.restore();
+    await expect
+      .poll(
+        () =>
+          frames
+            .slice(finalRecoveryFrom)
+            .some(
+              (f) => f.topic === topic && f.type === 'PRIVATE_RECORD_STATUS' && f.ready === true
+            ),
+        { timeout: 60_000 }
+      )
+      .toBe(true);
+    await expect.poll(() => paidForTopic(topic), { timeout: 15_000 }).toBe(0);
+    proof.preferredReadyAfterPaid = true;
     proof.observationsOverflow = observationsOverflow;
+    expect(observationsOverflow).toBe(false);
     await pin();
   } finally {
     fault.restore();
+    gatewayFault.restore();
     proof.faultRestored = true;
-    await testInfo.attach('published-private-record-failover', {
-      body: JSON.stringify(proof),
-      contentType: 'application/json',
-    });
+    Object.assign(proof, summarizePrivateRecordObservations(frames));
+    proof.openGatewaySockets = [...gatewayOpen];
+    proof.allFaultsRestored = true;
+    try {
+      if (originalProfile) {
+        const restored = await page.evaluate(
+          async ({ api, key, email, profile }) => {
+            const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || '{}');
+            if (
+              session.user?.id !== profile.id ||
+              session.user?.email !== email ||
+              !session.access_token
+            )
+              throw Error('Reserved restore actor changed');
+            const headers = {
+              apikey: key,
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            };
+            const response = await fetch(`${api}/rest/v1/profiles?id=eq.${profile.id}`, {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify({
+                avatar_url: profile.avatar_url,
+                arena_avatar_url: profile.arena_avatar_url,
+              }),
+              signal: AbortSignal.timeout(10_000),
+            });
+            if (!response.ok) throw Error('Reserved cosmetic restoration refused');
+            const read = await fetch(
+              `${api}/rest/v1/profiles?id=eq.${profile.id}&select=id,avatar_url,arena_avatar_url`,
+              { headers, signal: AbortSignal.timeout(10_000) }
+            );
+            if (!read.ok) throw Error('Reserved cosmetic restoration readback refused');
+            const rows = await read.json();
+            return (
+              rows.length === 1 &&
+              rows[0].id === profile.id &&
+              rows[0].avatar_url === profile.avatar_url &&
+              rows[0].arena_avatar_url === profile.arena_avatar_url
+            );
+          },
+          { api: API, key: KEY, email: process.env.SP_EMAIL, profile: originalProfile }
+        );
+        expect(restored).toBe(true);
+        proof.cosmeticRestoreVerified = true;
+      }
+    } finally {
+      await testInfo.attach('published-private-record-failover', {
+        body: JSON.stringify(proof),
+        contentType: 'application/json',
+      });
+    }
   }
 });

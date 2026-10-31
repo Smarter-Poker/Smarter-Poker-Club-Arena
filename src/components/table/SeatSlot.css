@@ -237,7 +237,8 @@
   transition:
     opacity 0.3s ease,
     filter 0.3s ease;
-  will-change: transform, opacity;
+  /* Let actual transitions promote the seat only while they run; a permanent
+     hint retained a layer even for empty seats on Android Chrome. */
   /* iPhone mobile energy: isolate seat updates (stack changes, VIP rings,
      decision timers) so changes within a seat do not trigger whole-table
      style and layout recalculation across the remaining 8 seats or the felt. */
@@ -4689,8 +4690,11 @@
    shorter felt draws proportionally smaller players instead of stacking them.
    The plate keeps the readable name and stack at a slightly smaller size.
    tableGeometry.ts `seatPodPx(..., { seats, canvasHeightPx })` mirrors these
-   numbers for chip and button clearance; change both together. */
-@media (max-width: 480px) and (orientation: portrait) {
+   numbers for chip and button clearance; change both together.
+   Production phones use a desktop-reference viewport near 600px. This same
+   portrait card-lane boundary must include them: the old 480px cutoff left
+   full-size normalized bust art over the community cards. */
+@media (max-width: 768px) and (orientation: portrait) {
   .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
     .seat-wrapper:not(.seat-wrapper--hero)
     .seat {

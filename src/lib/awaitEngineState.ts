@@ -16,20 +16,21 @@ export function awaitEngineState(
   waiters: Set<() => void>,
   requestSnapshot: () => void,
   budgetMs: number = ACTION_OUTCOME_STATE_BUDGET_MS
-): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const release = () => {
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const finish = (observed: boolean) => {
       clearTimeout(timer);
       waiters.delete(release);
-      resolve();
+      resolve(observed);
     };
-    // Declared before anything can call release (the request runs below).
-    const timer = setTimeout(release, budgetMs);
+    const release = () => finish(true);
+    // A timeout is not a snapshot and cannot authorize an optimistic undo.
+    const timer = setTimeout(() => finish(false), budgetMs);
     waiters.add(release);
     try {
       requestSnapshot();
     } catch {
-      release();
+      finish(false);
     }
   });
 }

@@ -273,13 +273,13 @@ class SessionStatsServiceClass {
   /**
    * Record a top-up / rebuy during session
    */
-  recordRebuy(tableId: string, amount: number): void {
+  recordRebuy(tableId: string, amount: number, reflectStack = true): void {
     const session = this.sessions.get(tableId);
     if (!session) return;
 
     session.buyInTotal = cents(session.buyInTotal + amount);
-    session.currentStack += amount;
-    session.profitLoss = session.currentStack - session.buyInTotal;
+    if (reflectStack) session.currentStack = cents(session.currentStack + amount);
+    session.profitLoss = cents(session.currentStack - session.buyInTotal);
     session.bigBlindsWon =
       session.bigBlind > 0 ? Math.round((session.profitLoss / session.bigBlind) * 100) / 100 : 0;
     session.trajectory.push([Date.now(), session.currentStack]);
@@ -298,6 +298,19 @@ class SessionStatsServiceClass {
     if (!session || !Number.isFinite(total) || total <= 0) return;
     session.buyInTotal = cents(total);
     session.profitLoss = cents(session.currentStack - session.buyInTotal);
+    session.bigBlindsWon =
+      session.bigBlind > 0 ? Math.round((session.profitLoss / session.bigBlind) * 100) / 100 : 0;
+    this.debouncedEmit(tableId, session);
+  }
+
+  /** A table snapshot changes the stack, without inventing another played hand. */
+  updateStack(tableId: string, stack: number): void {
+    const session = this.sessions.get(tableId);
+    if (!session || !Number.isFinite(stack) || stack < 0) return;
+    const current = cents(stack);
+    if (session.currentStack === current) return;
+    session.currentStack = current;
+    session.profitLoss = cents(current - session.buyInTotal);
     session.bigBlindsWon =
       session.bigBlind > 0 ? Math.round((session.profitLoss / session.bigBlind) * 100) / 100 : 0;
     this.debouncedEmit(tableId, session);

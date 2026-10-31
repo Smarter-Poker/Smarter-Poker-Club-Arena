@@ -78,7 +78,9 @@ jobs:
   # Explicit one-client transport proof. This never publishes or changes source flags.
   private-record-client-proof:
     needs: certification-cleanup-safety
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
+    # The focused event skips publication-gate; require successful cleanup
+    # explicitly so that skipped ancestor cannot suppress the actual proof.
+    if: always() && !cancelled() && needs.certification-cleanup-safety.result == 'success' && github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
     name: Exact published private record client failover proof
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -865,7 +867,9 @@ jobs:
             # then silently regain the signed-out fallback it just lost, on
             # exactly the runs where production is behind. A fix that disables
             # itself under the condition it was written for is worse than none.
-            git checkout "$LIVE" -- tests/e2e
+            # Local CSS/component/art fixtures execute with these assertions.
+            # Retarget their inputs too; a later spec can import new source.
+            git checkout "$LIVE" -- tests/e2e src public
             # Authentication and support are harness authority, not page-version
             # assertions. Never let deploy lag
             # roll either guard back to an older, weaker implementation.
@@ -892,7 +896,9 @@ jobs:
             # one, and restoring $HERE's harness over it would be exactly the
             # roll-back-to-a-weaker-guard that the ancestor branch above exists
             # to prevent, pointed the other way.
-            git checkout "$LIVE" -- tests/e2e
+            # Local CSS/component/art fixtures execute with these assertions.
+            # Retarget their inputs too; a later spec can import new source.
+            git checkout "$LIVE" -- tests/e2e src public
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, a later commit than this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
             echo "The whole suite was re-targeted onto \`$LIVE\` so the assertions match the bundle the browser loads." >> $GITHUB_STEP_SUMMARY
@@ -2042,9 +2048,10 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           E2E_REQUIRE_AUTH: '1'
-          # Observe the assigned live Diamond club; setup joins this same target
-          # through the public player door before the spectator cases run.
-          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          # Observe chip cash games through the prepared Midway member club.
+          # Diamond Arena disables play and cannot supply the cash witness
+          # (run 41168425572). Setup joins this same public player door.
+          E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
           # The SPIN and SNG subjects are hosted only by the fixture union, and
           # public.tables carries a RESTRICTIVE policy (poker_arena_table_access)
           # that hides a union table from an account with no membership inside

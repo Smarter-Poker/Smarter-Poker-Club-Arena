@@ -174,6 +174,8 @@ const FIELD_READ_DELAY_MS = 10_000;
  * offsets after it passed, then stop: four reads, not a poll.
  */
 const DEADLINE_CATCH_UP_MS = [5_000, 15_000, 45_000, 120_000];
+/** A hung original cannot consume the interval between the first two catch-ups. */
+const ROW_READ_TIMEOUT_MS = DEADLINE_CATCH_UP_MS[1] - DEADLINE_CATCH_UP_MS[0];
 const TICK_MS = 1_000;
 
 const isTerminal = (status: unknown) => TERMINAL.includes(String(status ?? '').toUpperCase());
@@ -382,6 +384,7 @@ class HudFeed {
   private lastGoodAt = 0;
   // The row reader: one read in flight, plus one trailing.
   private inFlight = false;
+  private rowRead: AbortController | null = null;
   private pending = false;
   private failures = 0;
   private readTimer: ReturnType<typeof setTimeout> | null = null;
@@ -536,6 +539,7 @@ class HudFeed {
 
   retire(): void {
     this.active = false;
+    this.rowRead?.abort();
     this.patches = null;
     this.stopTimers();
   }
@@ -582,10 +586,36 @@ class HudFeed {
     this.patches = [];
     let row: Tournament | null = null;
     let failure: unknown = null;
+    const controller = new AbortController();
+    this.rowRead = controller;
+    let rejectBoundary!: (reason: Error) => void;
+    const boundary = new Promise<never>((_, reject) => {
+      rejectBoundary = reject;
+    });
+    const onAbort = () => rejectBoundary(new Error('Tournament Row Read Interrupted'));
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+    const timer = setTimeout(() => controller.abort(), ROW_READ_TIMEOUT_MS);
     try {
-      row = await tournamentService.getTournament(this.tournamentId, { throwOnError: true });
+      // Abort the transport and independently settle even if it ignores cancellation.
+      // The abandoned promise cannot paint a late row or retain this feed's reader.
+      row = await Promise.race([
+        tournamentService.getTournament(this.tournamentId, {
+          throwOnError: true,
+          signal: controller.signal,
+        }),
+        boundary,
+      ]);
+      const index = wholeNumberOf(row?.current_level);
+      if (row && this.levelAsked >= 0 && (index === null || index < this.levelAsked)) {
+        row = null;
+        failure = new Error('Tournament Row Predates Committed Level');
+      }
     } catch (error) {
       failure = error;
+    } finally {
+      clearTimeout(timer);
+      controller.signal.removeEventListener('abort', onAbort);
+      if (this.rowRead === controller) this.rowRead = null;
     }
     const patches = this.patches ?? [];
     this.patches = null;

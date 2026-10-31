@@ -7,6 +7,8 @@
  * seat.
  */
 import { describe, expect, it } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { useTopUpAccounting } from '../../src/hooks/useTopUpAccounting';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
@@ -33,6 +35,7 @@ function restoreOccupiedSeat(stack: number, delayed = false, carriedHands = 0) {
     ts.ScriptKind.TSX
   );
   let effect: ts.Expression | undefined;
+  let fundingCallback: ts.Expression | undefined;
   const visit = (node: ts.Node) => {
     if (
       ts.isCallExpression(node) &&
@@ -40,6 +43,15 @@ function restoreOccupiedSeat(stack: number, delayed = false, carriedHands = 0) {
       node.arguments[0]?.getText(ast).includes("supabase.rpc('fn_my_table_session_facts'")
     ) {
       effect = node.arguments[0];
+    }
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === 'useTopUpAccounting') {
+      const options = node.arguments[0];
+      if (options && ts.isObjectLiteralExpression(options)) {
+        const prop = options.properties.find(
+          (p) => ts.isPropertyAssignment(p) && p.name.getText(ast) === 'onFunding'
+        );
+        if (prop && ts.isPropertyAssignment(prop)) fundingCallback = prop.initializer;
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -52,7 +64,7 @@ function restoreOccupiedSeat(stack: number, delayed = false, carriedHands = 0) {
     handsPlayedRef: ref(0),
     handsWonRef: ref(0),
     peakStackRef: ref(stack),
-    sessionBuyInSeedRef: ref(0),
+    totalRebuysRef: ref(0),
   };
   let deliver!: () => void;
   const ready = delayed
@@ -65,6 +77,13 @@ function restoreOccupiedSeat(stack: number, delayed = false, carriedHands = 0) {
     ...refs,
     sessionCarryRef: { current: { handsPlayed: carriedHands, handsWon: 0, fundingAdjustment: 0 } },
     tableId: 'table',
+    userId: 'player',
+    sessionStatsService: { getStats: () => ({}), restoreFunding: () => {}, updateStack: () => {} },
+    tableStateRef: { current: { players: [], heroSeat: 1 } },
+    readBalanceRevision: () => 0,
+    readTableFundingBalance: async () => ({ balance: null }),
+    setBalanceIfCurrent: () => {},
+    reportError: () => {},
     sessionRestoreKey: 'table:player',
     tableState: { heroSeat: 1, players: [] },
     heroRowStack: stack,
@@ -93,7 +112,46 @@ function restoreOccupiedSeat(stack: number, delayed = false, carriedHands = 0) {
   const cleanup = new Function(...Object.keys(context), `return (${effect.getText(ast)})();`)(
     ...Object.values(context)
   ) as () => void;
-  return { refs, cleanup, currentKey, deliver: () => deliver?.() };
+  if (!fundingCallback) throw new Error('the recorded funding callback is missing');
+  const onFunding = new Function(
+    ...Object.keys(context),
+    ts.transpileModule(`const callback = ${fundingCallback.getText(ast)};`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText + '\nreturn callback;'
+  )(...Object.values(context));
+  let recordedTotal = 4000;
+  const read = async () => {
+    const totalBuyIn = recordedTotal;
+    await ready;
+    return { totalBuyIn };
+  };
+  const props = {
+    tableId: 'table',
+    userId: 'player',
+    asset: 'chips' as const,
+    seat: 1,
+    enabled: true,
+    connected: true,
+    revision: 0,
+    event: null,
+    tableEvent: null,
+    read,
+    onFunding,
+  };
+  const funding = renderHook((p) => useTopUpAccounting(p), { initialProps: props });
+  return {
+    refs,
+    cleanup: () => {
+      cleanup();
+      funding.unmount();
+    },
+    currentKey,
+    deliver: () => deliver?.(),
+    refreshFunding: (total: number) => {
+      recordedTotal = total;
+      funding.rerender({ ...props, revision: 1 });
+    },
+  };
 }
 
 describe('the Session Complete card reads the whole session', () => {
@@ -127,11 +185,12 @@ describe('the Session Complete card reads the whole session', () => {
   });
 
   it('does not count a late snapshot placeholder as another buy-in', async () => {
-    const { refs, deliver } = restoreOccupiedSeat(0, true);
+    const { refs, deliver, refreshFunding } = restoreOccupiedSeat(0, true);
     // The roster arrives after seat ownership. Its 976 is a placeholder;
     // only the real 100 top-up that follows belongs on top of the read.
     refs.totalBuyInRef.current = 1076;
-    refs.sessionBuyInSeedRef.current = 976;
+    // The original stale read is superseded by the acknowledged purchase.
+    refreshFunding(4100);
     deliver();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(refs.totalBuyInRef.current).toBe(4100);

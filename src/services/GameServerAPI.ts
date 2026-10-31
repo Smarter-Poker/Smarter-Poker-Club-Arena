@@ -328,18 +328,43 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
  * idempotency key - is retried on it.
  */
 export const ENGINE_CLOCKED_CALL_TIMEOUT_MS = 4_000;
-async function engineFetchWithin(
+async function engineFetchWithin<T = Response>(
   url: string,
   init: RequestInit,
-  timeoutMs: number = ENGINE_CLOCKED_CALL_TIMEOUT_MS
-): Promise<Response> {
+  timeoutMs: number = ENGINE_CLOCKED_CALL_TIMEOUT_MS,
+  consumeResponse?: (response: Response) => Promise<T>
+): Promise<T> {
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
-  if (!controller) return engineFetch(url, init);
-  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
+  const startedAt = Date.now();
+  const timer = controller
+    ? setTimeout(() => controller.abort(), Math.max(1, timeoutMs))
+    : undefined;
+  let bodyTimer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await engineFetch(url, { ...init, signal: controller.signal });
+    // Preserve the authenticated fetch's definitive 401/refresh ownership.
+    // Its refusal must not be converted into a lost request and replayed.
+    const response = await engineFetch(url, {
+      ...init,
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (!consumeResponse) return response as T;
+    // Headers alone do not acknowledge a bet. Bound body consumption by the
+    // remaining request budget, even when a body reader ignores an abort.
+    return await Promise.race([
+      consumeResponse(response),
+      new Promise<never>((_resolve, reject) => {
+        bodyTimer = setTimeout(
+          () => {
+            controller?.abort();
+            reject(new DOMException('Engine response deadline exceeded', 'AbortError'));
+          },
+          Math.max(1, timeoutMs - (Date.now() - startedAt))
+        );
+      }),
+    ]);
   } finally {
     clearTimeout(timer);
+    clearTimeout(bodyTimer);
   }
 }
 
@@ -440,8 +465,8 @@ export interface ActionResult {
    * Set by the engine when this answer came from its duplicate guard rather
    * than from applying the action a second time (Phase 3, 2026-09-05). The
    * verdict itself is identical to the first answer, so nothing in the UI
-   * needs to branch on it - it exists so a replay is legible in a log and in
-   * a test.
+   * needs to submit it again. Paid top-up consumers use it to recover the
+   * absolute wallet balance rather than subtracting an already committed debit.
    */
   replayed?: boolean;
   /**
@@ -657,20 +682,41 @@ export async function submitAction(
          moved on. So the same body goes again, inside a budget short enough
          to finish within the turn it is answering. */
       let response: Response;
+      let receipt: ActionResult | undefined;
+      let observedRefusal = false;
       try {
         const budgetLeft = ACTION_DELIVERY_BUDGET_MS - (Date.now() - startedAt);
-        response = await engineFetchWithin(
+        const answered = await engineFetchWithin(
           `${GAME_SERVER_URL}/action`,
           {
             method: 'POST',
             headers,
             body: JSON.stringify({ tableId, action, amount, idempotencyKey, actionContext }),
           },
-          Math.min(ENGINE_CLOCKED_CALL_TIMEOUT_MS, Math.max(500, budgetLeft))
+          Math.min(ENGINE_CLOCKED_CALL_TIMEOUT_MS, Math.max(500, budgetLeft)),
+          async (answer) => {
+            observedRefusal = answer.status === 400;
+            const payload = answer.ok || answer.status === 400 ? await answer.json() : undefined;
+            if (answer.ok && (!payload || typeof payload.success !== 'boolean')) {
+              throw new Error('Invalid action acknowledgement');
+            }
+            if (
+              answer.status === 400 &&
+              (!payload || typeof payload !== 'object' || Array.isArray(payload))
+            ) {
+              throw new Error('Invalid action refusal');
+            }
+            return { response: answer, receipt: payload as ActionResult | undefined };
+          }
         );
+        response = answered.response;
+        receipt = answered.receipt;
       } catch (err) {
         // A changed login is a refusal by this client, never a lost request.
         if (err instanceof Error && err.message === 'Engine request login changed') throw err;
+        // A complete refusal status is authoritative even if its explanatory
+        // body is lost. Do not replay a refused bet just to recover its text.
+        if (observedRefusal) return undelivered > 0 ? actionNotDelivered() : actionNotAccepted();
         if (canResend && (await waitToResendUndelivered(undelivered++, startedAt))) {
           attempt--;
           continue;
@@ -687,8 +733,7 @@ export async function submitAction(
       }
 
       if (response.ok) {
-        const result = await response.json();
-        return result as ActionResult;
+        return receipt!;
       }
 
       if (response.status === 429 && attempt < BACKOFFS_MS.length) {
@@ -697,12 +742,18 @@ export async function submitAction(
       }
 
       if (response.status === 429) {
+        // A prior unanswered attempt may already have committed. A later
+        // throttle cannot prove that original intent was refused.
+        if (undelivered > 0) return actionNotDelivered();
         // Every retry exhausted. Never show the number.
-        return { success: false, error: 'The table is busy - please try again' };
+        return actionNotAccepted();
       }
 
       if (response.status === 400) {
-        const rejected = await response.json();
+        // A later refusal does not settle an earlier unanswered attempt:
+        // the serving process may have lost its in-memory receipt cache.
+        if (undelivered > 0) return actionNotDelivered();
+        const rejected = receipt!;
         return {
           success: false,
           error: typeof rejected.error === 'string' ? rejected.error : 'Action rejected',
@@ -723,7 +774,7 @@ export async function submitAction(
       return { success: false, error: `Server error (${response.status})` };
     }
     // Unreachable: the loop returns on every path.
-    return { success: false, error: 'The table is busy - please try again' };
+    return actionNotAccepted();
   } catch (err: unknown) {
     // Reached only when the action was never sent: no sign-in to send it
     // with, or the login changed underneath it.
@@ -761,7 +812,14 @@ async function waitToResendUndelivered(undelivered: number, startedAt: number): 
  * the action landed.
  */
 export const ACTION_NOT_DELIVERED_MESSAGE =
-  'Your Action Did Not Reach The Table. Check The Table And Try Again';
+  'Your Action Could Not Be Confirmed. Review The Table Before Acting Again';
+function actionNotAccepted(): ActionResult {
+  return {
+    success: false,
+    code: 'ACTION_NOT_ACCEPTED',
+    error: 'Your Action Was Not Accepted. Please Review The Table And Try Again.',
+  };
+}
 function actionNotDelivered(): ActionResult {
   return { success: false, error: ACTION_NOT_DELIVERED_MESSAGE, code: 'ACTION_NOT_DELIVERED' };
 }
@@ -1174,6 +1232,7 @@ export async function addChips(
       error: data.error,
       applied: typeof data.applied === 'number' ? data.applied : undefined,
       queued: data.queued === true,
+      replayed: data.replayed === true,
       charged: typeof data.charged === 'boolean' ? data.charged : undefined,
       requested: typeof data.requested === 'number' ? data.requested : undefined,
       request_id: typeof data.request_id === 'string' ? data.request_id : undefined,

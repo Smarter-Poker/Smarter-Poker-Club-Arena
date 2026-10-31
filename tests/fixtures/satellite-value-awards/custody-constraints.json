@@ -1,0 +1,16 @@
+[
+  {
+    "relation": "poker_diamond_movements",
+    "conname": "poker_diamond_movements_amount_check",
+    "contype": "c",
+    "convalidated": true,
+    "definition": "CHECK ((((amount >= 1) AND (amount <= 2147483647) AND (wallet_journal_id IS NOT NULL)) OR ((action = 'release'::text) AND (amount = 0) AND (wallet_journal_id IS NULL)) OR ((amount >= 1) AND (amount <= 2147483647) AND (wallet_journal_id IS NULL) AND (((action = 'release'::text) AND (source_account ~~ 'arena_custody:%'::text) AND (destination_account = 'house'::text) AND ((request ->> 'action'::text) = 'tournament_drain'::text)) OR ((action = 'reserve'::text) AND (source_account ~~ 'house:%'::text) AND (destination_account ~~ 'arena_custody:%'::text) AND ((request ->> 'action'::text) = ANY (ARRAY['spin_underwrite'::text, 'guarantee_overlay'::text])))))))"
+  },
+  {
+    "relation": "poker_diamond_tournament_ledger",
+    "conname": "poker_diamond_tournament_ledger_inflow",
+    "contype": "c",
+    "convalidated": true,
+    "definition": "CHECK (((kind <> ALL (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text])) OR ((user_id IS NOT NULL) AND (custody_id IS NOT NULL) AND (wallet_journal_id IS NOT NULL))))"
+  }
+]

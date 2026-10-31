@@ -1,3 +1,4 @@
+import type { FollowTournamentPlayer } from '../utils/followTournamentPlayer';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * MASTER BUS -- Centralized State & Event Management Layer (v2.0)
@@ -430,7 +431,12 @@ export interface BusPayloadMap {
    * at the cap this is refused with the standard cap notice, never silently
    * dropped, and never by closing a screen the player is using.
    */
-  OPEN_OBSERVE_TABLE: { tableId: string; tableName?: string; stakes?: string };
+  OPEN_OBSERVE_TABLE: {
+    tableId: string;
+    tableName?: string;
+    stakes?: string;
+    followPlayer?: FollowTournamentPlayer;
+  };
   /**
    * Ask the TablePage showing `tableId` to open its Must Move Lobby. Emitted by
    * the LOBBY button in the multi-table action strip, which sits beside the
@@ -565,7 +571,7 @@ export interface BusPayloadMap {
     playersMoved?: number;
   };
   // Cashier events
-  CHIPS_ADDED: { tableId: string; userId: string; amount: number; newStack: number };
+  CHIPS_ADDED: { tableId: string; userId: string; amount: number; newStack?: number };
   CHIPS_WITHDRAWN: { tableId: string; userId: string; amount: number; newStack: number };
   // Settlement cron lifecycle
   SETTLEMENT_CYCLE_STARTED: { periodId: string; startedAt: string };

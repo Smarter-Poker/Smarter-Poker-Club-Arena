@@ -1,3 +1,4 @@
+import { withTournamentRegistrationReadBoundary } from './TournamentRegistrationReadBoundary';
 import { validateMttBlindStructure } from '../../server/src/domain/tournamentBlindContract';
 import {
   isUnlimitedMtt,
@@ -974,16 +975,17 @@ class TournamentService {
    */
   async getTournament(
     tournamentId: string,
-    options?: { throwOnError?: boolean }
+    options?: { throwOnError?: boolean; signal?: AbortSignal }
   ): Promise<TournamentWithArena | null> {
-    const { data, error } = await supabase
+    let query = supabase
       .from('tournaments')
       .select(
         'id, name, club_id, union_id, game_type, variant, tournament_type, format_contract, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, payout_depth_percent, payout_percent, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, bounty_pool, bounty_pool_paid, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target, ' +
           TOURNAMENT_ARENA_EMBED
       )
-      .eq('id', tournamentId)
-      .maybeSingle();
+      .eq('id', tournamentId);
+    if (options?.signal) query = query.abortSignal(options.signal);
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       if (options?.throwOnError) throw error;
@@ -1532,24 +1534,33 @@ class TournamentService {
     // the entry FEE to the rake_records fee ledger (what the finalize
     // settlement actually credits to the club/union), and bumps
     // current_players + prize_pool.
-    const invokeAdmission = async (requestId?: string) => {
+    const invokeAdmission = async (requestId: string | undefined, signal: AbortSignal) => {
       try {
         return usesTournamentTicket
-          ? await supabase.rpc('fn_register_for_tournament_with_ticket', {
-              p_tournament_id: tournamentId,
-              p_ticket_id: tournamentTicketId,
-            })
-          : await supabase.rpc('fn_register_for_tournament_request', {
-              p_tournament_id: tournamentId,
-              p_request_id: requestId,
-            });
+          ? await supabase
+              .rpc('fn_register_for_tournament_with_ticket', {
+                p_tournament_id: tournamentId,
+                p_ticket_id: tournamentTicketId,
+              })
+              .abortSignal(signal)
+          : await supabase
+              .rpc('fn_register_for_tournament_request', {
+                p_tournament_id: tournamentId,
+                p_request_id: requestId,
+              })
+              .abortSignal(signal);
       } catch (error) {
         return { data: null, error };
       }
     };
     const performRegistration = async (requestId?: string): Promise<TournamentPlayer> => {
-      let rpcCall = await invokeAdmission(requestId);
-      if (rpcCall.error) rpcCall = await invokeAdmission(requestId);
+      let rpcCall = await withTournamentRegistrationReadBoundary((signal) =>
+        invokeAdmission(requestId, signal)
+      );
+      if (rpcCall.error)
+        rpcCall = await withTournamentRegistrationReadBoundary((signal) =>
+          invokeAdmission(requestId, signal)
+        );
       const { data: rpcResult, error: rpcError } = rpcCall;
       const res = rpcResult as {
         ok: boolean;
@@ -1609,13 +1620,16 @@ class TournamentService {
       }
 
       // Re-fetch the player row the server created (the RPC returns only ids)
-      const { data, error } = await supabase
-        .from('tournament_players')
-        .select(
-          'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
-        )
-        .eq('id', registrationId)
-        .maybeSingle();
+      const { data, error } = await withTournamentRegistrationReadBoundary((signal) =>
+        supabase
+          .from('tournament_players')
+          .select(
+            'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
+          )
+          .eq('id', registrationId)
+          .abortSignal(signal)
+          .maybeSingle()
+      );
       if (error || !data) {
         reportError(error, 'TournamentService.Could_not_refetch_registered_player');
         throw new Error('Registration succeeded but player data could not be retrieved');
@@ -1640,58 +1654,68 @@ class TournamentService {
 
       // ── SNG/SPIN AUTO-START nudge (unchanged behavior): when full, pull
       // start_time to now so the server discovery loop starts it immediately.
-      const { data: freshTournament, error: freshErr } = await supabase
-        .from('tournaments')
-        .select(
-          'current_players, max_players, tournament_type, format_contract, variant, satellite_target_id, satellite_target'
-        )
-        .eq('id', tournamentId)
-        .maybeSingle();
-      // ROUND 8 (2026-08-29): reported, not thrown - the player IS registered,
-      // and the server discovery loop still starts a full game on its own
-      // schedule. But a silently skipped nudge is a slower start with no trace.
-      if (freshErr) {
-        reportError(freshErr, 'TournamentService.SNG_autostart_freshness_read_failed', {
-          tournamentId,
-        });
-      }
-      const freshFormat = freshTournament ? readTournamentFormat(freshTournament) : null;
-      if (!freshErr && freshTournament && freshFormat === null) {
-        // Registration is already committed. A missing projection must not
-        // turn that receipt into a false failure or permit a format guess.
-        reportError(
-          new Error('Tournament format is unavailable'),
-          'TournamentService.SNG_autostart_format_unavailable',
-          { tournamentId }
-        );
-      }
-      if (
-        !freshErr &&
-        freshTournament?.max_players &&
-        (freshFormat === 'sng-v1' ||
-          freshFormat === 'spin-v1' ||
-          freshFormat === 'seat-first-satellite-v1') &&
-        (freshTournament.current_players ?? 0) >= freshTournament.max_players
-      ) {
-        // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
-        // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
-        // catch could only ever have caught a transport failure - an RLS denial
-        // on this client-side write (the likely outcome, since `tournaments` is
-        // not player-writable) resolved normally and was discarded. The nudge
-        // silently did nothing and the SNG/Spin sat waiting for a start that the
-        // discovery loop had not been told to bring forward.
-        const { error: autoStartError } = await supabase
-          .from('tournaments')
-          .update({ start_time: new Date().toISOString() })
-          .eq('id', tournamentId);
-        if (autoStartError) {
-          // Reported, not thrown: the player IS registered and paid, and the
-          // server discovery loop still starts the game on its own schedule.
-          // Failing the registration here would be a worse lie than the old one.
-          reportError(autoStartError, 'TournamentService.SNG_autostart_failed', { tournamentId });
+      try {
+        const { data: freshTournament, error: freshErr } =
+          await withTournamentRegistrationReadBoundary((signal) =>
+            supabase
+              .from('tournaments')
+              .select(
+                'current_players, max_players, tournament_type, format_contract, variant, satellite_target_id, satellite_target'
+              )
+              .eq('id', tournamentId)
+              .abortSignal(signal)
+              .maybeSingle()
+          );
+        // ROUND 8 (2026-08-29): reported, not thrown - the player IS registered,
+        // and the server discovery loop still starts a full game on its own
+        // schedule. But a silently skipped nudge is a slower start with no trace.
+        if (freshErr) {
+          reportError(freshErr, 'TournamentService.SNG_autostart_freshness_read_failed', {
+            tournamentId,
+          });
         }
+        const freshFormat = freshTournament ? readTournamentFormat(freshTournament) : null;
+        if (!freshErr && freshTournament && freshFormat === null) {
+          // Registration is already committed. A missing projection must not
+          // turn that receipt into a false failure or permit a format guess.
+          reportError(
+            new Error('Tournament format is unavailable'),
+            'TournamentService.SNG_autostart_format_unavailable',
+            { tournamentId }
+          );
+        }
+        if (
+          !freshErr &&
+          freshTournament?.max_players &&
+          (freshFormat === 'sng-v1' ||
+            freshFormat === 'spin-v1' ||
+            freshFormat === 'seat-first-satellite-v1') &&
+          (freshTournament.current_players ?? 0) >= freshTournament.max_players
+        ) {
+          // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
+          // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
+          // catch could only ever have caught a transport failure - an RLS denial
+          // on this client-side write (the likely outcome, since `tournaments` is
+          // not player-writable) resolved normally and was discarded. The nudge
+          // silently did nothing and the SNG/Spin sat waiting for a start that the
+          // discovery loop had not been told to bring forward.
+          const { error: autoStartError } = await withTournamentRegistrationReadBoundary((signal) =>
+            supabase
+              .from('tournaments')
+              .update({ start_time: new Date().toISOString() })
+              .eq('id', tournamentId)
+              .abortSignal(signal)
+          );
+          if (autoStartError) {
+            // Reported, not thrown: the player IS registered and paid, and the
+            // server discovery loop still starts the game on its own schedule.
+            // Failing the registration here would be a worse lie than the old one.
+            reportError(autoStartError, 'TournamentService.SNG_autostart_failed', { tournamentId });
+          }
+        }
+      } catch (error) {
+        reportError(error, 'TournamentService.SNG_autostart_unconfirmed', { tournamentId });
       }
-
       return data;
     };
     // Keep the original operation pending until its receipt and roster are both

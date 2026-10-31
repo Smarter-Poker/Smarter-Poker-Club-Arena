@@ -133,7 +133,7 @@ def selection(value):
             raise ValueError('Exact current serving identity required')
         return dict(value)
     if (not isinstance(value, dict) or set(value) not in ({'runKey', 'releaseSha'}, {'runKey', 'releaseSha', 'mode'})
-            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector', 'main_inspector_retirement'})):
+            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector', 'main_inspector_retirement', 'cancellation_records'})):
         raise ValueError('Exact existing release identity required')
     if not isinstance(value['runKey'], str) or not RUN.fullmatch(value['runKey']):
         raise ValueError('Invalid run key')
@@ -157,7 +157,7 @@ def unique_object(pairs):
     return result
 
 
-def read_json(directory_fd, name, private=False):
+def read_json(directory_fd, name, private=False, with_bytes=False):
     """Fixed relative file, no links, bounded bytes, unchanged inode/time/size."""
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
     try:
@@ -178,7 +178,7 @@ def read_json(directory_fd, name, private=False):
         value = json.loads(raw, object_pairs_hook=unique_object)
         if not isinstance(value, dict):
             raise ValueError('Persisted evidence is not an object')
-        return value
+        return (value, raw) if with_bytes else value
     finally:
         os.close(fd)
 
@@ -379,19 +379,23 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v6'
+PENDING_SCHEMA = 'existing-release-pending-observation/v7'
 PENDING_RECOVERY_STATUSES = ('accepted', 'active', 'pending', 'busy', 'expired',
                              'use_hourly', 'unavailable', 'unknown')
 PENDING_RECOVERY_CATEGORIES = {
     'recovery_newer_owner', 'recovery_inspector_unproved',
     'recovery_reservation_unestablished', 'recovery_rate_limited',
 } | {'recovery_announcement_' + status for status in PENDING_RECOVERY_STATUSES}
+PENDING_ENTRY_CATEGORIES = {'lightning_hold_recorded', 'lightning_hold_released', 'lightning_hold_unknown', 'lightning_hold_timeout', 'lightning_hold_helper_unavailable',
+    'legacy_entry_admitted', 'legacy_entry_locked', 'legacy_entry_checkpoint',
+    'legacy_entry_completed', 'legacy_entry_countdown_refused', 'legacy_entry_checkpoint_refused'}
 PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
                       'locked_budget_missed', 'legacy_entry_deferred',
                       'certificate_also_shut', 'rollback_readiness_completed',
                       'rollback_certificate_lost', 'weekly_owner_active',
                       'inflight_evidence_unavailable', 'mutation_lock_unavailable',
-                      'mutation_lock_deadline', 'hands_in_air'} | PENDING_RECOVERY_CATEGORIES
+                      'mutation_lock_deadline', 'hands_in_air', 'expired_announced_runtime_refused',
+                      'announcement_only_recovery_retained', 'immutable_request_expired'} | PENDING_RECOVERY_CATEGORIES | PENDING_ENTRY_CATEGORIES
 # Compact, closed v3 certificate tuple: [remainingMs, unparkedTables,
 # handsInFlightTotal, reasonCounts]. reasonCounts follows this order, with
 # one final count of UNRECOGNIZED KEYS; private/future names never leave host.
@@ -473,6 +477,31 @@ def pending_recovery_category(message):
         except ValueError:
             return None
         return 'recovery_announcement_' + match.group(2)
+    return None
+
+
+def pending_entry_category(message):
+    # Existing producers only. Numeric values and transport errors stay private;
+    # the exact invocation-bound journal timestamp is the ordering witness.
+    if re.fullmatch(r'\[engine-release-lightning-hold\] Lightning hold recorded: [0-9]+ owned, [0-9]+ foreign, [0-9]+ refused', message):
+        return 'lightning_hold_recorded'
+    if re.fullmatch(r'\[engine-release-lightning-hold\] Lightning hold released: [0-9]+ owned Cluster\(s\)', message):
+        return 'lightning_hold_released'
+    if message.startswith('[engine-release-lightning-hold] UNKNOWN: '):
+        return 'lightning_hold_unknown'
+    if re.fullmatch(r'\[engine-release-transaction\] WARN: the Lightning hold answered UNKNOWN \(exit (124|137)\); it is retried on the next pass', message):
+        return 'lightning_hold_timeout'
+    if re.fullmatch(r'\[engine-release-transaction\] WARN: the Lightning hold answered UNKNOWN \(exit [0-9]+\); it is retried on the next pass', message):
+        return 'lightning_hold_unknown'
+    if re.fullmatch(r'\[engine-release-transaction\] WARN: the Lightning hold helper could not run \(exit (126|127)\); Lightning was NEVER ASKED to pause this pass and the census guard decides on its own', message):
+        return 'lightning_hold_helper_unavailable'
+    match = re.fullmatch(r'\[engine-release-transaction\] legacy entry phase=(admitted|locked|checkpoint|completed|refused) reason=(verified|countdown_refused|checkpoint_refused) elapsedEntryMs=[0-9]+ remainingEntryMs=-?[0-9]+ remainingWindowMs=-?[0-9]+', message)
+    if match:
+        phase, reason = match.groups()
+        if phase == 'refused' and reason in {'countdown_refused', 'checkpoint_refused'}:
+            return 'legacy_entry_' + reason
+        if phase != 'refused' and reason == 'verified':
+            return 'legacy_entry_' + phase
     return None
 
 
@@ -575,6 +604,63 @@ def validate_pending_unit(value):
         raise ValueError('Pending unit identity refused')
 
 
+def validate_pending_child(value):
+    if (not isinstance(value, dict) or set(value) != {'status', 'processClass', 'argvSha256'}
+            or value['status'] not in {'matched', 'unproven'}
+            or (value['status'] == 'matched' and (value['processClass'] not in
+                {'pinned_transaction', 'pinned_announcement_recovery'}
+                or not isinstance(value['argvSha256'], str)
+                or not re.fullmatch(r'[0-9a-f]{64}', value['argvSha256'])))
+            or (value['status'] == 'unproven' and (value['processClass'] != 'unknown' or value['argvSha256'] is not None))):
+        raise ValueError('Pending child export refused')
+
+
+def pending_child(request, unit, control):
+    """Bounded procfs identity read; no signal, command-line or path export."""
+    unknown = {'status': 'unproven', 'processClass': 'unknown', 'argvSha256': None}
+    try:
+        deadline = time.monotonic() + 2
+        name = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
+        reply = inspector_command(['systemctl', 'show', name, '--no-pager',
+            '--property=MainPID,ControlGroup,InvocationID'], deadline)
+        values = unique_object([line.split('=', 1) for line in reply.decode('ascii').splitlines()])
+        if set(values) != {'MainPID', 'ControlGroup', 'InvocationID'} or values['InvocationID'] != unit['invocationId']:
+            return unknown
+        pid = values['MainPID']; group = values['ControlGroup']
+        if (not re.fullmatch(r'[1-9][0-9]{0,9}', pid) or int(pid) <= 1
+                or not group.startswith('/system.slice/') or not group.endswith('/'+name)):
+            return unknown
+        def read(selected, field, limit=8192):
+            return _kernel_read(KERNEL_PROC_ROOT / selected / field, limit, deadline)
+        def identity(selected):
+            text = read(selected, 'stat', 4096).decode('ascii')
+            tail = text[text.rfind(')')+2:].split()
+            return tail[1], tail[19]
+        def argv(selected):
+            raw = read(selected, 'cmdline')
+            return raw, raw.rstrip(b'\0').decode('utf8').split('\0')
+        def bash(args, wanted):
+            return len(args) == len(wanted)+1 and args[0] in {'bash', '/bin/bash', '/usr/bin/bash'} and args[1:] == wanted
+        parent_before = identity(pid)
+        _, parent_args = argv(pid)
+        if (not bash(parent_args, ['/usr/local/lib/club-arena/engine-release-unit-wrapper-v1.sh', 'start', request['runKey']])
+                or read(pid, 'cgroup').decode().strip() != '0::'+group):
+            return unknown
+        children = read(pid, 'task/'+pid+'/children').decode('ascii').split()
+        if len(children) != 1 or not re.fullmatch(r'[1-9][0-9]{0,9}', children[0]): return unknown
+        child = children[0]; child_before = identity(child); raw, args = argv(child)
+        if child_before[0] != pid or read(child, 'cgroup').decode().strip() != '0::'+group: return unknown
+        generation = '/usr/local/lib/club-arena/engine-control-generations/'+control
+        role = ('pinned_transaction' if bash(args, [generation+'/engine-release-transaction.sh', '--run-id', request['runKey']])
+                else 'pinned_announcement_recovery' if bash(args, [generation+'/engine-release-recover.sh', '--run-id', request['runKey'], '--mode', 'retryable']) else None)
+        if (not role or identity(pid) != parent_before or identity(child) != child_before
+                or argv(child)[0] != raw or argv(pid)[1] != parent_args
+                or read(pid, 'task/'+pid+'/children').decode('ascii').split() != children): return unknown
+        return {'status': 'matched', 'processClass': role, 'argvSha256': hashlib.sha256(raw).hexdigest()}
+    except (OSError, ValueError, IndexError, UnicodeError, subprocess.SubprocessError):
+        return unknown
+
+
 def pending_journal(request, unit):
     invocation = unit['invocationId']
     name = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
@@ -582,7 +668,7 @@ def pending_journal(request, unit):
         '--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID,_SYSTEMD_UNIT,__REALTIME_TIMESTAMP',
         # Below-budget "also shut" chatter must not evict the early causal
         # refusal from the existing twelve-row selection. Absence stays unknown.
-        '--grep=^(\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|newer release [0-9a-f]{40} \\(run [1-9][0-9]*(-[1-9][0-9]*)?\\) is in flight and owns any off-cycle window; |legacy inspector absence is not proved; |recovery announcement reservation could not be established; |off-cycle window wanted \\(|fixed recovery announcement [1-9][0-9]{12}: |prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
+        '--grep=^(\\[engine-release-recover\\] announcement-only owner retained; no runtime restoration or terminal certification$|\\[engine-release-transaction\\] FATAL: (this run announced inside an owner window that has since expired; its runtime entry is refused|immutable release not-after epoch expired before new release mutation)$|\\[engine-release-lightning-hold\\] (Lightning hold recorded: |Lightning hold released: |UNKNOWN: )|\\[engine-release-transaction\\] (WARN: the Lightning hold |legacy entry phase=|the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|newer release [0-9a-f]{40} \\(run [1-9][0-9]*(-[1-9][0-9]*)?\\) is in flight and owns any off-cycle window; |legacy inspector absence is not proved; |recovery announcement reservation could not be established; |off-cycle window wanted \\(|fixed recovery announcement [1-9][0-9]{12}: |prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
         '_SYSTEMD_INVOCATION_ID=' + invocation, '_SYSTEMD_UNIT=' + name])
     if reply.returncode:
         raise ValueError('Pending journal unavailable')
@@ -597,7 +683,9 @@ def pending_journal(request, unit):
         if (not isinstance(stamp, str) or not re.fullmatch(r'[0-9]{16}', stamp)
                 or not isinstance(message, str) or len(message) > 2048):
             raise ValueError('Pending journal shape refused')
-        category = pending_recovery_category(message)
+        category = {'[engine-release-recover] announcement-only owner retained; no runtime restoration or terminal certification': 'announcement_only_recovery_retained',
+                    '[engine-release-transaction] FATAL: this run announced inside an owner window that has since expired; its runtime entry is refused': 'expired_announced_runtime_refused',
+                    '[engine-release-transaction] FATAL: immutable release not-after epoch expired before new release mutation': 'immutable_request_expired'}.get(message) or pending_recovery_category(message) or pending_entry_category(message)
         details = None
         # Literal producer prefixes in engine-release-transaction.sh. Unknown
         # messages remain unknown; their text never leaves the host.
@@ -708,7 +796,7 @@ def validate_kernel_owner_evidence(value, owner, *, allow_not_observed=False):
     return value
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None, inspector_owner=None, inspector_owner_evidence=None):
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None, inspector_owner=None, inspector_owner_evidence=None, child=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
     validate_pending_journal(signs, journal_failure)
@@ -721,10 +809,12 @@ def pending_observation(request, rows, intent, marker, deadline, unit, signs, jo
     inspector_owner_evidence = (inspector_owner_evidence if inspector_owner_evidence is not None
                                else {'stage': 'not_observed', 'code': 'not_read'})
     validate_kernel_owner_evidence(inspector_owner_evidence, inspector_owner, allow_not_observed=True)
+    child = child or {'status': 'unproven', 'processClass': 'unknown', 'argvSha256': None}
+    validate_pending_child(child)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
-        'unit': unit, 'journalSigns': signs,
+        'unit': unit, 'child': child, 'journalSigns': signs,
         'legacyIntent': legacy_intent,
         'inspectorTcp': inspector_tcp,
         'inspectorOwner': inspector_owner,
@@ -788,6 +878,7 @@ def pending_remote(request, root_fd):
         pending_stage('request_binding', lambda: pending_metadata(request, *before))
         unit = pending_stage('unit', lambda: pending_unit(request))
         legacy_intent, legacy_binding = pending_legacy_intent(request, directory, before[0][4])
+        child = pending_child(request, unit, before[0][4])
         journal_failure = None
         try:
             signs = pending_stage('journal', lambda: pending_journal(request, unit))
@@ -813,7 +904,7 @@ def pending_remote(request, root_fd):
             raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
         if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
             raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
-        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp, inspector_owner, inspector_owner_evidence)
+        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp, inspector_owner, inspector_owner_evidence, child)
     finally:
         os.close(directory)
 
@@ -1757,6 +1848,106 @@ def validate_retirement_records(value, request):
     return value
 
 
+CANCELLATION_SCHEMA = 'existing-release-cancellation-records/v1'
+CANCELLATION_RECORD_SCHEMAS = {'expired-announcement-cancellation/v1', 'expired-announcement-cancellation/empty-retry-v1'}
+CANCELLATION_LIMITATION = 'Historical durable files only; no current admission, quiescence, retry or mutation authority.'
+
+
+def cancellation_records(request, root_fd):
+    if request['runKey'] != '41177442979-1' or request['releaseSha'] != 'bd11ad35ca27843fd2f4910e5a8fc6a76d8c9d4e':
+        raise ValueError('Exact original cancellation reader required')
+    deadline = time.monotonic() + 3
+    def snapshot():
+        result = {}
+        try:
+            directory = os.open('engine-release-cancellations', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=root_fd)
+        except FileNotFoundError:
+            return {name:('absent_at_read',None) for name in ('intent','stop-issued','quiescent','receipt')}
+        except OSError:
+            return {name:('unknown',None) for name in ('intent','stop-issued','quiescent','receipt')}
+        try:
+            for name in ('intent','stop-issued','quiescent','receipt'):
+                if time.monotonic() >= deadline: raise ValueError('Cancellation read deadline')
+                try:
+                    value, raw = read_json(directory,request['runKey']+'.'+name+'.json',private=True,with_bytes=True)
+                    canonical = (json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()
+                    if raw != canonical: raise ValueError('Noncanonical cancellation record')
+                    result[name] = ('present_at_read', value)
+                except FileNotFoundError: result[name] = ('absent_at_read',None)
+                except (OSError,ValueError): result[name] = ('unknown',None)
+        finally: os.close(directory)
+        return result
+    before = snapshot()
+    answer = {'schema':CANCELLATION_SCHEMA,'readOnly':True,**request,'records':{},'bindingStatus':'unknown',
+              'stopDisposition':None,'receiptResult':None,'retryAllowed':False,'limitation':CANCELLATION_LIMITATION}
+    for name,(status,value) in before.items():
+        answer['records'][name] = {'status':status,'sha256':None}
+        if status == 'present_at_read':
+            raw = json.dumps(value,sort_keys=True,separators=(',',':'))+'\n'
+            answer['records'][name]['sha256'] = hashlib.sha256(raw.encode()).hexdigest()
+    try:
+        intent = before['intent'][1]
+        if not isinstance(intent,dict) or intent.get('schema') not in CANCELLATION_RECORD_SCHEMAS: raise ValueError('Intent unbound')
+        bound = intent.get('request')
+        if (not isinstance(bound,dict) or set(bound) != {'mode','runKey','releaseSha','controlSha','desiredSha','instanceId'}
+                or bound['mode'] != 'cancel_expired_announcement' or bound['runKey'] != request['runKey']
+                or bound['releaseSha'] != request['releaseSha'] or bound['controlSha'] != request['releaseSha']
+                or not SHA.fullmatch(bound['desiredSha']) or not re.fullmatch(r'[1-9][0-9]*-[0-9a-f]{8}',bound['instanceId'])):
+            raise ValueError('Intent request unbound')
+        for name in ('stop-issued','quiescent','receipt'):
+            status,value = before[name]
+            if status == 'unknown': raise ValueError('Unknown record')
+            if status == 'present_at_read' and value.get('schema') != intent['schema']: raise ValueError('Schema differs')
+        issued = before['stop-issued'][1]
+        if issued is not None:
+            if (set(issued) != {'schema','intentHash','stopDisposition'} or issued['intentHash'] != answer['records']['intent']['sha256']
+                    or issued['stopDisposition'] not in {'requested','not-needed-already-quiescent'}): raise ValueError('Issued unbound')
+            answer['stopDisposition'] = issued['stopDisposition']
+        receipt = before['receipt'][1]
+        if receipt is not None:
+            quiet = before['quiescent'][1]
+            states = quiet.get('actualUnitStates') if isinstance(quiet,dict) else None
+            if (not isinstance(states,list) or len(states)!=3
+                    or not all(isinstance(row,dict) and row.get('ActiveState') in {'inactive','failed'}
+                        and (row.get('MainPID')=='0' or index==2 and row.get('unitType')=='path' and row.get('MainPID') is None)
+                        for index,row in enumerate(states))
+                    or receipt.get('actualUnitStates')!=states
+                    or not isinstance(intent.get('container'),dict) or receipt.get('container')!=intent['container']):
+                raise ValueError('Receipt quiet/container unbound')
+            if (receipt.get('request') != bound or receipt.get('result') != 'cancelled-expired-announcement'
+                    or any(receipt.get(key) is not True for key in ('servingInstanceUnchanged','originalTerminalEdgesRetired','quiescent'))
+                    or issued is None or receipt.get('stopDisposition') != issued['stopDisposition']): raise ValueError('Receipt unbound')
+            answer['receiptResult'] = 'cancelled-expired-announcement'
+        answer['bindingStatus'] = 'bound_original_records'
+    except (ValueError,TypeError,KeyError):
+        answer['stopDisposition'] = answer['receiptResult'] = None
+    if before != snapshot():
+        answer['records'] = {name:{'status':'unknown','sha256':None} for name in before}
+        answer['bindingStatus'] = 'changed_during_read'
+        answer['stopDisposition'] = answer['receiptResult'] = None
+    return validate_cancellation_records(answer, request)
+
+
+def validate_cancellation_records(value, request):
+    fields={'schema','readOnly','mode','runKey','releaseSha','records','bindingStatus','stopDisposition','receiptResult','retryAllowed','limitation'}
+    if (not isinstance(value,dict) or set(value)!=fields or value['schema']!=CANCELLATION_SCHEMA
+            or value['readOnly'] is not True or value['retryAllowed'] is not False
+            or any(value.get(k)!=v for k,v in request.items()) or value['limitation']!=CANCELLATION_LIMITATION
+            or value['bindingStatus'] not in {'unknown','bound_original_records','changed_during_read'}
+            or value['stopDisposition'] not in {None,'requested','not-needed-already-quiescent'}
+            or value['receiptResult'] not in {None,'cancelled-expired-announcement'}
+            or not isinstance(value['records'],dict) or set(value['records'])!={'intent','stop-issued','quiescent','receipt'}):
+        raise ValueError('Cancellation export refused')
+    for record in value['records'].values():
+        if (not isinstance(record,dict) or set(record)!={'status','sha256'} or record['status'] not in {'present_at_read','absent_at_read','unknown'}
+                or (record['status']=='present_at_read' and (not isinstance(record['sha256'],str) or not re.fullmatch('[0-9a-f]{64}',record['sha256'])))
+                or (record['status']!='present_at_read' and record['sha256'] is not None)):
+            raise ValueError('Cancellation record export refused')
+    if value['bindingStatus']!='bound_original_records' and (value['stopDisposition'] is not None or value['receiptResult'] is not None):
+        raise ValueError('Cancellation unbound export refused')
+    return value
+
+
 def remote(request):
     request = selection(request)
     if request.get('mode') == 'current_serving_inspector_role':
@@ -1764,6 +1955,8 @@ def remote(request):
     # All production paths are fixed. No environment/caller path override.
     root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        if request.get('mode') == 'cancellation_records':
+            return cancellation_records(request, root_fd)
         if request.get('mode') == 'main_inspector_retirement':
             return retirement_records(request, root_fd)
         if request.get('mode') == 'legacy_checkpoint_inspector':
@@ -1790,6 +1983,8 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'cancellation_records':
+        return validate_cancellation_records(value, request)
     if request.get('mode') == 'main_inspector_retirement':
         return validate_retirement_records(value, request)
     if request.get('mode') == 'current_serving_inspector_role':
@@ -1797,7 +1992,7 @@ def validate_reply(value, request):
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'inspectorOwner', 'inspectorOwnerEvidence', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'child', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'inspectorOwner', 'inspectorOwnerEvidence', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -1811,6 +2006,7 @@ def validate_reply(value, request):
                 raise ValueError('Pending exported deadline refused')
             timestamp(value[key] * 1000)
         validate_pending_unit(value['unit'])
+        validate_pending_child(value['child'])
         validate_pending_intent(value['legacyIntent'])
         validate_pending_tcp(value['inspectorTcp'])
         validate_pending_owner(value['inspectorOwner'], value['inspectorTcp'])

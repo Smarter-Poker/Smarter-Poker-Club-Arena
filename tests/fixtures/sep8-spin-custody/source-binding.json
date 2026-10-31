@@ -42,7 +42,7 @@
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
-    "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
+    "server/src/tournament/completionSettlementReceipt.ts": "894e0791ae65d3231082e898ece646b49969a99006a128898bc861935a16f018",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
     "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8",
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
@@ -603,6 +603,13 @@
       "from": "d69d33790e066bca1376c9f3c8c18d65fcc3448ca4e2f0bb5c389f39c5050fe2",
       "to": "dad2ba8bd2918bbb473a637c512777dc4c507946d2ba726c4d228238e374b525",
       "why": "CI40937402453 Accounting2 held-fee Spin plan chose a real unscoped sequential scan after one-hot30k background over five table identities; retain strict original/successor plan oracles and30k histories, distribute across64 real disjoint closed-cash table parents, and verify all5original documents while populated and after exact cleanup. Focused genuine PostgreSQL qualification required; matching hashes alone are not proof."
+    },
+    {
+      "on": "2026-10-31",
+      "file": "server/src/tournament/completionSettlementReceipt.ts",
+      "from": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
+      "to": "894e0791ae65d3231082e898ece646b49969a99006a128898bc861935a16f018",
+      "why": "Independent four-format audit: reviewed exact parser diff rejecting nonnumeric receipt versions and blank/whitespace integer counts. Five malformed receipt regressions fail before repair; 135 completion receipt and terminal recovery tests pass after, including actual native receipt captures; server compiler passes. No SQL, money path, historical receipt, qualification status or assertion is changed. This source binding is not native execution or production certification."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",

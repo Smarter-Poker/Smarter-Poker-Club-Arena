@@ -1182,7 +1182,7 @@ export class ScheduledTournamentService {
             t.prize_pool_finalized !== true &&
             startMs - nowMs > CONFORM_MIN_LEAD_MS;
           if (!movable) continue;
-          const { error: moveErr } = await supabase
+          const { data: moved, error: moveErr } = await supabase
             .from('tournaments')
             .update({
               start_time: plan.newStart.toISOString(),
@@ -1190,7 +1190,10 @@ export class ScheduledTournamentService {
             })
             .eq('id', t.id)
             .eq('start_time', t.start_time)
-            .in('status', ['ANNOUNCED', 'REGISTERING']);
+            .in('status', ['ANNOUNCED', 'REGISTERING'])
+            .is('prize_pool_finalized', t.prize_pool_finalized ?? null)
+            .select('id, start_time')
+            .maybeSingle();
           if (moveErr) {
             reportError(
               new Error(
@@ -1200,12 +1203,22 @@ export class ScheduledTournamentService {
             );
             continue;
           }
+          // A successful HTTP response can still mean the compare-and-set lost.
+          if (
+            !moved ||
+            moved.id !== t.id ||
+            Date.parse(String(moved.start_time)) !== plan.newStart.getTime()
+          )
+            continue;
         }
         // The key follows the event it spent — strictly after the move.
-        const { error: renameErr } = await supabase
+        const { data: renamed, error: renameErr } = await supabase
           .from('tournament_schedule_spawns')
           .update({ spawn_key: plan.newKey })
-          .eq('spawn_key', plan.oldKey);
+          .eq('spawn_key', plan.oldKey)
+          .eq('tournament_id', t.id)
+          .select('spawn_key, tournament_id')
+          .maybeSingle();
         if (renameErr) {
           reportError(
             new Error(
@@ -1215,6 +1228,8 @@ export class ScheduledTournamentService {
           );
           continue;
         }
+        if (!renamed || renamed.spawn_key !== plan.newKey || renamed.tournament_id !== t.id)
+          continue;
         claimedSet.delete(plan.oldKey);
         claimedSet.add(plan.newKey);
         console.log(

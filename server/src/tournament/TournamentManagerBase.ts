@@ -6697,6 +6697,14 @@ export abstract class TournamentManagerBase {
       await this.readTournamentClub(tournament.club_id, lifecycle);
       this.assertLifecycleCurrent(lifecycle);
 
+      // Establish the stage boundary before launch recovery, seating or dealers.
+      // An unreadable plan cannot authorize play past a possibly sealed day end.
+      await this.loadMultiDayPlan(tournament, lifecycle);
+      if (this.multiDayPlan?.kind === 'unknown') {
+        this.running = false;
+        return;
+      }
+
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
       this.tournamentEntryCloseAnnounced = false;
@@ -7823,9 +7831,6 @@ export abstract class TournamentManagerBase {
       }
       await this.drainTableEngineStartJobs();
       this.assertLifecycleCurrent(lifecycle);
-      // Multi-day: learn the stage plan before the level clock can reach a
-      // day's last level. No I/O for any format a plan cannot be sealed on.
-      await this.loadMultiDayPlan(tournament, lifecycle);
 
       /**
        * Start blind timer — AT THE ADVERTISED START, not at seating.
@@ -8205,6 +8210,10 @@ export abstract class TournamentManagerBase {
        * and the level clock below is never armed.
        */
       await this.loadMultiDayPlan(tournament, lifecycle);
+      if (this.multiDayPlan?.kind === 'unknown') {
+        this.running = false;
+        return;
+      }
       this.rearmStageEndPauseFromPlan();
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
@@ -8218,16 +8227,29 @@ export abstract class TournamentManagerBase {
       // Find existing tables. `first_button_seat` comes along so a Spin whose
       // button was drawn but never dealt keeps the seat it drew — see
       // restoreDrawnFirstButtons.
-      const { data: tables, error: tablesError } = await supabase
-        .from('tables')
-        .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['running', 'waiting']);
+      const { rows: tables, complete: tablesComplete } = await fetchAllRows(
+        (cursor, limit) => {
+          let query = supabase
+            .from('tables')
+            .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
+            .eq('tournament_id', this.tournamentId)
+            .in('status', ['running', 'waiting'])
+            .order('id', { ascending: true })
+            .limit(limit);
+          if (cursor) query = query.gt('id', cursor);
+          return query;
+        },
+        {
+          label: 'Tournament.resume_table_inventory',
+          shouldContinue: () => {
+            this.assertLifecycleCurrent(lifecycle);
+            return true;
+          },
+        }
+      );
       this.assertLifecycleCurrent(lifecycle);
-      if (tablesError)
-        throw new Error(`Tournament resume table inventory read failed: ${tablesError.message}`);
-      if (!Array.isArray(tables))
-        throw new Error('Tournament resume table inventory was unreadable');
+      if (!tablesComplete)
+        throw new Error('Tournament resume table inventory could not be read completely');
 
       /**
        * A DEAD GENERATION'S HAND IS DECIDED BEFORE THIS ONE ADOPTS THE CLOCK
@@ -10191,16 +10213,16 @@ export abstract class TournamentManagerBase {
           .from('hand_history')
           .select('id', { count: 'exact', head: true })
           .eq('table_id', table.id);
-        if (error) {
+        if (error || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
           // Unreadable history is UNKNOWN, and the safe unknown here is "it may
           // already have dealt" — re-forcing the button on a live table is the
           // damaging direction.
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not check hand history for table ${table.id.slice(0, 8)} (${error.message}) - leaving the drawn button alone`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not check hand history for table ${table.id.slice(0, 8)} (${error?.message ?? 'invalid hand count'}) - leaving the drawn button alone`
           );
           continue;
         }
-        if ((count || 0) > 0) {
+        if (count > 0) {
           await supabase.from('tables').update({ first_button_seat: null }).eq('id', table.id);
           continue;
         }
@@ -12957,8 +12979,15 @@ export abstract class TournamentManagerBase {
     }
 
     if (!alreadyRepriced) {
-      await this.recalculateEliminatedPrizes(finalPool);
+      const repriced = await this.recalculateEliminatedPrizes(finalPool);
       if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;
+      // A partial entitlement pass is not a completed tail. Preserve the
+      // existing bounded continuation and its original finalized pool.
+      if (!repriced) {
+        throw new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Add-on entitlement reprice is incomplete`
+        );
+      }
     }
     const delivered = await this.broadcast('ADDON_PERIOD_END', {});
     if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;

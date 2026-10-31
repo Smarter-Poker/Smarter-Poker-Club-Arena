@@ -5859,6 +5859,7 @@ function LiveTablePage({
      TOURNAMENT"). '' until the tournament row has been read. */
   const [tournamentEventName, setTournamentEventName] = useState('');
   const headsUpAnnouncedRef = useRef<Set<string>>(new Set());
+  const finalTableAnnouncedRef = useRef<Set<string>>(new Set());
   const [spinHeadsUpNote, setSpinHeadsUpNote] = useState(false);
   const spinPlayersRemaining = tableState.players.filter(
     (player) => player && String(player.status) !== 'eliminated'
@@ -15860,6 +15861,11 @@ function LiveTablePage({
                   const fmt = tournamentFormatRef.current;
                   const tid = fmt === 'mtt' ? tableStateRef.current.tournamentId : null;
                   const ftName = tableStateRef.current.tableName || 'Tournament';
+                  // The owner can receive an ambiguous transport reply after
+                  // delivery. Claim presentation before async roster reads so
+                  // replay cannot restart the celebration or duplicate its toast.
+                  if (!tid || finalTableAnnouncedRef.current.has(tid)) return;
+                  finalTableAnnouncedRef.current.add(tid);
                   if (tid) {
                     setTableState((prev) => ({ ...prev, isFinalTable: true }));
                     (async () => {

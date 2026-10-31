@@ -118,6 +118,11 @@ describe('verifyTournamentCompletionReceipt', () => {
   });
 
   it.each([
+    ['boolean version', (value: any) => (value.receipt_version = true)],
+    ['array version', (value: any) => (value.receipt_version = [1])],
+    ['text version', (value: any) => (value.receipt_version = '1')],
+    ['blank attribution count', (value: any) => (value.rake.attributed_users = '')],
+    ['whitespace attribution count', (value: any) => (value.rake.attributed_users = ' ')],
     ['partial result', (value: any) => (value.fully_settled = false)],
     ['wrong terminal status', (value: any) => (value.status = 'COMPLETING')],
     ['wrong mode alias', (value: any) => (value.mode = 'final_table_deal')],

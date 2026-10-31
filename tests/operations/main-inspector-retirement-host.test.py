@@ -387,6 +387,18 @@ sys.exit(0 if ok else 1)
                     self.assertIsNone(result['entryStage'])
                     self.assertIsNone(result['closeRequested']); self.assertIsNone(result['listenerAbsent'])
 
+    def test_kernel_detail_is_a_closed_predicate_not_native_data(self):
+        for step in ['clients', 'socket_rows', 'SECRET /proc/1/fd/3', ['clients'], None]:
+            with self.subTest(step=step):
+                value = {'ok': False, 'retryAllowed': False,
+                         'reason': 'main_inspector_socket_unproved', 'kernelStep': step}
+                result = HOST.bounded_native_facts(value)
+                if step in ('clients', 'socket_rows'):
+                    self.assertEqual(result['kernelStep'], step)
+                else:
+                    self.assertNotIn('kernelStep', result)
+                self.assertNotIn('SECRET', json.dumps(result))
+
     def test_success_requires_durable_claim_before_ack_and_persists_exact_receipt(self):
         self.assertEqual(self.execute(), 0)
         self.assertEqual(len(self.acks), 1)

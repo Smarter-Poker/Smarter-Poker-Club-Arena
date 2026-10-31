@@ -296,6 +296,30 @@ describe('inert unless a sealed plan exists AND the capability is available', ()
     expect(state.multiDayPlan.kind).toBe('unknown');
   });
 
+  it.each(['42P01', 'PGRST205'])(
+    'an enabled sealed plan with unreadable stages (%s) cannot advance past day end',
+    async (code) => {
+      const state = manager({ currentLevel: 2 });
+      state.tableEngines.set('table-a', engine());
+      state.setLifecycleTimeout = vi.fn(() => 0);
+      const db = fakeDb({
+        tables: {
+          tournament_stage_plans: () => ({ data: planRow(), error: null }),
+          tournament_stages: () => ({ data: null, error: { code, message: 'schema unavailable' } }),
+        },
+        rpc: {
+          fn_capability_available: () => ({ data: true, error: null }),
+          fn_publish_tournament_blind_level: publishHandler(state),
+        },
+      });
+      await state.loadMultiDayPlan(state.tournamentCache, state.lifecycleEpoch.current());
+      await state.advanceBlindLevel(structure);
+      expect(state.currentLevel).toBe(2);
+      expect(state.multiDayPlan.kind).toBe('unknown');
+      expect(db.rpc.map(([name]) => name)).not.toContain('fn_publish_tournament_blind_level');
+    }
+  );
+
   it('a live plan with the capability available reads its stages', async () => {
     fakeDb({
       tables: {
@@ -575,6 +599,124 @@ describe('BAGGED readers', () => {
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('restart after the day-end receipt (boundary 1)', () => {
+  it.each(['tournament_stage_plans', 'tournament_stages'])(
+    'asks %s before admitting fresh launch work',
+    async (unreadable) => {
+      const row = {
+        id: T,
+        status: 'RUNNING',
+        format_contract: 'mtt-v1',
+        tournament_type: 'MTT',
+        variant: 'freezeout',
+        blind_structure: structure,
+        current_level: 2,
+        level_started_at: new Date().toISOString(),
+        prize_pool_finalized: true,
+        on_break: false,
+      };
+      fakeDb({
+        tables: {
+          tournaments: () => ({ data: row, error: null }),
+          tables: () => ({
+            data: [
+              { id: 'table-a', small_blind: 100, big_blind: 200, ante: 25, stakes: '100/200' },
+            ],
+            error: null,
+          }),
+          tournament_stage_plans: () =>
+            unreadable === 'tournament_stage_plans'
+              ? { data: null, error: { code: '57014', message: 'Plan unavailable' } }
+              : { data: planRow(), error: null },
+          tournament_stages: () => ({
+            data: null,
+            error: { code: '57014', message: 'Stage unavailable' },
+          }),
+        },
+        rpc: { fn_capability_available: () => ({ data: true, error: null }) },
+      });
+      const replacement = engine();
+      const state = manager({
+        readTournamentClub: vi.fn(async () => {}),
+        resumePlayedMttLaunch: vi.fn(async () => {
+          throw new Error('stop before launch writes');
+        }),
+        createManagedTableEngine: vi.fn(() => replacement),
+        wireEliminationWake: vi.fn(),
+        admitManagedTableEngine: vi.fn(),
+        startManagedTableEngine: vi.fn(),
+        restoreDrawnFirstButtons: vi.fn(async () => {}),
+        drainTableEngineStartJobs: vi.fn(async () => {}),
+        startBlindTimer: vi.fn(),
+        startEliminationChecker: vi.fn(),
+        unregisterEliminationScheduler: vi.fn(),
+      });
+      await state.startLifecycle(state.lifecycleEpoch.current());
+      expect(state.multiDayPlan?.kind).toBe('unknown');
+      expect(state.resumePlayedMttLaunch).not.toHaveBeenCalled();
+      expect(state.createManagedTableEngine).not.toHaveBeenCalled();
+      expect(state.startManagedTableEngine).not.toHaveBeenCalled();
+      expect(state.startBlindTimer).not.toHaveBeenCalled();
+      expect(state.running).toBe(false);
+    }
+  );
+
+  it.each(['tournament_stage_plans', 'tournament_stages'])(
+    'starts no replacement dealer while %s is unreadable',
+    async (unreadable) => {
+      const row = {
+        id: T,
+        status: 'RUNNING',
+        format_contract: 'mtt-v1',
+        tournament_type: 'MTT',
+        variant: 'freezeout',
+        blind_structure: structure,
+        current_level: 2,
+        level_started_at: new Date().toISOString(),
+        prize_pool_finalized: true,
+        on_break: false,
+      };
+      fakeDb({
+        tables: {
+          tournaments: () => ({ data: row, error: null }),
+          tables: () => ({
+            data: [
+              { id: 'table-a', small_blind: 100, big_blind: 200, ante: 25, stakes: '100/200' },
+            ],
+            error: null,
+          }),
+          tournament_stage_plans: () =>
+            unreadable === 'tournament_stage_plans'
+              ? { data: null, error: { code: '57014', message: 'Plan unavailable' } }
+              : { data: planRow(), error: null },
+          tournament_stages: () => ({
+            data: null,
+            error: { code: '57014', message: 'Stage unavailable' },
+          }),
+        },
+        rpc: { fn_capability_available: () => ({ data: true, error: null }) },
+      });
+      const replacement = engine();
+      const state = manager({
+        readTournamentClub: vi.fn(async () => {}),
+        createManagedTableEngine: vi.fn(() => replacement),
+        wireEliminationWake: vi.fn(),
+        admitManagedTableEngine: vi.fn(),
+        startManagedTableEngine: vi.fn(),
+        restoreDrawnFirstButtons: vi.fn(async () => {}),
+        drainTableEngineStartJobs: vi.fn(async () => {}),
+        startBlindTimer: vi.fn(),
+        startEliminationChecker: vi.fn(),
+        unregisterEliminationScheduler: vi.fn(),
+      });
+      await state.resumeLifecycle(state.lifecycleEpoch.current());
+      expect(state.multiDayPlan.kind).toBe('unknown');
+      expect(state.createManagedTableEngine).not.toHaveBeenCalled();
+      expect(state.startManagedTableEngine).not.toHaveBeenCalled();
+      expect(state.startBlindTimer).not.toHaveBeenCalled();
+      expect(state.running).toBe(false);
+    }
+  );
+
   it('re-arms the stage-end pause before any replacement dealer exists, and arms no clock', async () => {
     const row = {
       id: T,
@@ -724,15 +866,35 @@ describe('the stage-end barrier and the bag', () => {
     expect(state.stop).toHaveBeenCalledOnce();
   });
 
-  it('bag committed and response lost (boundary 4): stand down for the durable record, no retry', async () => {
-    const { state, db } = barrier(() => ({ data: null, error: { message: 'socket hang up' } }));
-    state.advanceStageEndBarrier();
-    await flush();
-    expect(state.stop).toHaveBeenCalledOnce();
-    state.advanceStageEndBarrier();
-    await flush();
-    expect(db.rpc).toHaveLength(1);
-  });
+  it.each(['', '08006', '08007', '53300', '57014', '57P01', '58000', 'XX000'])(
+    'bag outcome is uncertain (%s): stand down for the durable record, no retry',
+    async (code) => {
+      const { state, db } = barrier(() => ({
+        data: null,
+        error: { code, message: 'response interrupted' },
+      }));
+      state.advanceStageEndBarrier();
+      await flush();
+      expect(state.stop).toHaveBeenCalledOnce();
+      state.advanceStageEndBarrier();
+      await flush();
+      expect(db.rpc).toHaveLength(1);
+    }
+  );
+
+  it.each(['23514', '42501', 'P0404', '55P03'])(
+    'a proven bag rollback (%s) remains held for its cause',
+    async (code) => {
+      const { state, db } = barrier(() => ({ data: null, error: { code, message: 'refused' } }));
+      state.advanceStageEndBarrier();
+      await flush();
+      expect(state.stop).not.toHaveBeenCalled();
+      expect(state.stageBagHeldReason).toBe('failed');
+      state.advanceStageEndBarrier();
+      await flush();
+      expect(db.rpc).toHaveLength(1);
+    }
+  );
 
   it('a felt not yet at rest is re-driven through the elimination sweep, bounded', async () => {
     const { state, db } = barrier(() => ({

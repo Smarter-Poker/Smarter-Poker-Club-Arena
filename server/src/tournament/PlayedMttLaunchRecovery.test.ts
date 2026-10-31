@@ -76,6 +76,10 @@ function fixture() {
   });
   const receipt: any = { launch_id: null, started_at: FIRST, completed: false };
   from.mockImplementation((name: string) => {
+    if (name === 'tournament_stage_plans')
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+      };
     if (name === 'tournaments')
       return {
         select: () => ({
@@ -164,7 +168,9 @@ describe('a dealt MTT reaches its existing launch authority before the fresh fie
       expect(state.resumeLifecycle).toHaveBeenCalledWith(1);
       expect(state.resume).not.toHaveBeenCalled();
       expect(state.createTablesAndSeatPlayers).not.toHaveBeenCalled();
-      expect(from.mock.calls.map(([name]) => name)).toEqual(['tournaments']);
+      expect(from.mock.calls.map(([name]) => name)).toEqual(
+        type === 'MTT' ? ['tournaments', 'tournament_stage_plans'] : ['tournaments']
+      );
     }
   );
   it('leaves a fresh short field at the existing minimum-player gate', async () => {
@@ -174,7 +180,11 @@ describe('a dealt MTT reaches its existing launch authority before the fresh fie
     expect(rpc).toHaveBeenCalledOnce();
     expect(state.running).toBe(false);
     expect(state.resumeLifecycle).not.toHaveBeenCalled();
-    expect(from.mock.calls.map(([name]) => name)).toEqual(['tournaments', 'tournament_players']);
+    expect(from.mock.calls.map(([name]) => name)).toEqual([
+      'tournaments',
+      'tournament_stage_plans',
+      'tournament_players',
+    ]);
   });
   it.each([
     ['mtt-v1', 4, 4],

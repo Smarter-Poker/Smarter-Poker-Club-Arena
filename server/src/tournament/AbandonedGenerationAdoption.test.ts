@@ -122,20 +122,42 @@ function fixture(reserved: Record<string, string | null>, doorAnswers: DoorAnswe
             error: null,
           };
         },
-        in: async () => {
-          calls.push(`read:${name}`);
-          return name === 'tables'
-            ? {
-                data: tableIds.map((id) => ({
-                  id,
-                  small_blind: 25,
-                  big_blind: 50,
-                  ante: 0,
-                  stakes: '25/50',
-                })),
-                error: null,
-              }
-            : { count: 1, error: null };
+        in: () => {
+          let cursor: string | null = null;
+          let limit = 1000;
+          const query = {
+            order: () => query,
+            limit: (value: number) => {
+              limit = value;
+              return query;
+            },
+            gt: (_column: string, value: string) => {
+              cursor = value;
+              return query;
+            },
+            then: (resolve: (value: unknown) => unknown) => {
+              calls.push(`read:${name}`);
+              return Promise.resolve(
+                name === 'tables'
+                  ? {
+                      data: [...tableIds]
+                        .sort()
+                        .filter((id) => cursor === null || id > cursor)
+                        .slice(0, limit)
+                        .map((id) => ({
+                          id,
+                          small_blind: 25,
+                          big_blind: 50,
+                          ante: 0,
+                          stakes: '25/50',
+                        })),
+                      error: null,
+                    }
+                  : { count: 1, error: null }
+              ).then(resolve);
+            },
+          };
+          return query;
         },
       }),
     }),

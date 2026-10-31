@@ -92,6 +92,10 @@ PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
   python3 -B "$repo/scripts/ci/test-club-data-reads-each-window-once.py"
 
+# Opponent notes menu favorites ranks committed usage without exposing users.
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
+  RUNNER_TEMP="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
+  bash "$repo/scripts/dev/test-player-throwable-favorites-postgres.sh"
 # Paid jackpot awards are player cash results in every member reader.
 PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \

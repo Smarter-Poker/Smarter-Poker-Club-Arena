@@ -290,7 +290,7 @@ describe('the tournament row reviews every lobby-admitted status', () => {
       ];
       await mountLobby();
       fireEvent.click(screen.getByRole('button', { name: 'Tournaments', exact: true }));
-      fireEvent.click(screen.getByRole('tab', { name: 'MTT', exact: true }));
+      fireEvent.click(screen.getByRole('tab', { name: "MTT'S", exact: true }));
       await flush();
       const row = document.querySelector('.lt-row[data-kind="mtt"][data-id="event-a"]');
       expect(row, 'the actual lobby did not render the synthetic admitted event').not.toBeNull();
@@ -382,12 +382,12 @@ describe('Find Your Game starts with two separate sections', () => {
       within(filterTabs)
         .getAllByRole('button')
         .map((t) => t.textContent)
-    ).not.toContain('MTT');
+    ).not.toContain("MTT'S");
     fireEvent.click(screen.getByRole('button', { name: 'Close Game Filters' }));
     await flush();
     fireEvent.click(tournaments);
     await flush();
-    expect(names()).toEqual(['MTT', 'SPINS', "SIT N GO'S", 'SATELLITES']);
+    expect(names()).toEqual(["MTT'S", 'SPINS', "SIT N GO'S", 'SATELLITES']);
     expect(document.querySelector('.lt-row[data-id="event-a"]')).not.toBeNull();
     expect(document.querySelector('.lt-row[data-id="cash-a"]')).toBeNull();
     expect(cash.getAttribute('aria-expanded')).toBe('false');

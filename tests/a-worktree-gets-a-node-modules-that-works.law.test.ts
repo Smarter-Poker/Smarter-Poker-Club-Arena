@@ -43,6 +43,12 @@ describe('pre-push keeps its inherited-main boundary when another task advances 
         const git = (...args: string[]) =>
           execFileSync('git', args, { cwd: temporary, env, encoding: 'utf8' }).trim();
         git('init', '-q', '-b', 'main');
+        git(
+          'remote',
+          'add',
+          'origin',
+          'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git'
+        );
         git('config', 'core.hooksPath', '/dev/null');
         git('config', 'user.name', 'Isolated fixture');
         git('config', 'user.email', 'fixture@example.invalid');
@@ -72,7 +78,10 @@ describe('pre-push keeps its inherited-main boundary when another task advances 
         git('checkout', '-q', 'candidate');
 
         const hook = readFileSync(join(ROOT, '.husky/pre-push'), 'utf8');
-        const begin = hook.indexOf('  if [ -n "$FILES" ] && git rev-parse --verify');
+        const begin = hook.indexOf(
+          '  if [ -n "$FILES" ]; then',
+          hook.indexOf('# A FILE THAT IS IDENTICAL')
+        );
         const end = hook.indexOf('\n  ALL_FILES=', begin);
         expect(begin).toBeGreaterThan(-1);
         expect(end).toBeGreaterThan(begin);
@@ -80,9 +89,18 @@ describe('pre-push keeps its inherited-main boundary when another task advances 
           'bash',
           [
             '-c',
-            `set -eu\nREMOTE=origin\nLOCAL_SHA="$(git rev-parse HEAD)"\nFILES="$(git diff --name-only "$PREVIOUS" HEAD)"\n${hook.slice(begin, end)}\nprintf '\\nSELECTED\\n%s\\n' "$FILES"`,
+            `set -eu\nREMOTE=origin\nPUSH_MAIN_TIP="$(node "$PUSH_MAIN_RESOLVER" origin "$PUSH_URL")"\nLOCAL_SHA="$(git rev-parse HEAD)"\nFILES="$(git diff --name-only "$PREVIOUS" HEAD)"\n${hook.slice(begin, end)}\nprintf '\\nSELECTED\\n%s\\n' "$FILES"`,
           ],
-          { cwd: temporary, env: { ...env, PREVIOUS: previous }, encoding: 'utf8' }
+          {
+            cwd: temporary,
+            env: {
+              ...env,
+              PREVIOUS: previous,
+              PUSH_MAIN_RESOLVER: join(ROOT, 'scripts/ci/resolve-push-main.mjs'),
+              PUSH_URL: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git',
+            },
+            encoding: 'utf8',
+          }
         );
         const selected = output.split('SELECTED\n').at(-1)!.trim().split('\n').filter(Boolean);
         expect(selected).toEqual(

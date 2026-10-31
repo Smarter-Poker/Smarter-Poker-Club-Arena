@@ -1,0 +1,4 @@
+{
+  "_comment": "Qualified source declaration for migration 20261031003808_player_throwable_favorites_ranking.sql; not installation evidence.",
+  "functions": ["fn_player_throwable_favorites"]
+}

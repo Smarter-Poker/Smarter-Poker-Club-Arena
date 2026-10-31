@@ -3,7 +3,7 @@ import type { Page, Request, Response } from '@playwright/test';
 
 const TAB_KEYS: Record<string, string> = {
   ALL: 'ALL',
-  MTT: 'MTT',
+  "MTT'S": 'MTT',
   NLH: 'HOLDEM',
   PLO: 'OMAHA',
   LIMIT: 'LIMIT',

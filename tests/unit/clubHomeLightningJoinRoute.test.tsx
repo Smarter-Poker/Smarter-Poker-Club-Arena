@@ -522,7 +522,7 @@ it('keeps an explicitly opened cash section when a late preference names a tourn
     'aria-selected',
     'true'
   );
-  expect(screen.queryByRole('tab', { name: 'MTT', exact: true })).toBeNull();
+  expect(screen.queryByRole('tab', { name: "MTT'S", exact: true })).toBeNull();
   expect(document.querySelector('.lt-row[data-id="anchor"]')).not.toBeNull();
   expect(h.pushView).not.toHaveBeenCalled();
 });
@@ -546,7 +546,7 @@ it('restores the remote tournament family over an older cached cash preference b
     'aria-expanded',
     'true'
   );
-  expect(screen.getByRole('tab', { name: 'MTT', exact: true })).toHaveAttribute(
+  expect(screen.getByRole('tab', { name: "MTT'S", exact: true })).toHaveAttribute(
     'aria-selected',
     'true'
   );

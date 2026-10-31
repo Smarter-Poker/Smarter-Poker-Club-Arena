@@ -25,15 +25,34 @@ describe('browser qualification parallel delivery', () => {
     const transaction = YAML.parse(
       readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
     );
-    for (const key of [
-      'changes',
-      'source_windows',
-      'stub_gate',
-      'typecheck_compile',
-      'unit_shards',
-      'build',
-    ])
+    for (const key of ['changes', 'source_windows', 'stub_gate'])
       expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
+    for (const key of ['typecheck_compile', 'unit_shards', 'build'])
+      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
+    for (const job of [
+      ci.jobs.typecheck_compile,
+      ci.jobs.unit_shards,
+      ci.jobs.build,
+      client.jobs['client-tests'],
+      client.jobs['build-and-store'],
+    ]) {
+      for (const [owner, id, expected] of [
+        ['Smarter-Software-PIQ', '1132369872', 'ca-linux-8core'],
+        ['other', '1132369872', 'ubuntu-latest'],
+        ['Smarter-Software-PIQ', '42', 'ubuntu-latest'],
+      ]) {
+        expect(
+          runInNewContext(
+            job['runs-on'].slice(3, -2),
+            {
+              github: { repository_owner: owner, repository_id: id },
+            },
+            { timeout: 1000 }
+          )
+        ).toBe(expected);
+      }
+      expect(job['continue-on-error']).toBeUndefined();
+    }
     for (const key of ['typecheck', 'unit', 'server', 'css-beats-gate', 'verdict'])
       expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
     for (const key of ['css-beats-e2e', 'diamond-playfield-e2e']) {
@@ -56,13 +75,14 @@ describe('browser qualification parallel delivery', () => {
         "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
       );
     expect(publishing.jobs['publish-needed']['runs-on']).toBe(paid('ca-linux-4core'));
-    for (const key of ['admit', 'client-tests', 'build-and-store'])
-      expect(client.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
+    expect(client.jobs.admit['runs-on']).toBe(paid('ca-linux-4core'));
+    for (const key of ['client-tests', 'build-and-store'])
+      expect(client.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
     expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
     for (const key of ['retain-runtime', 'publish-to-app', 'publish-to-origin'])
       expect(transaction.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
-    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(4);
-    expect(client.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(4);
+    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(8);
+    expect(client.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(8);
     for (const key of [
       'publish-record-gateway',
       'bootstrap-record-gateway',
@@ -333,7 +353,7 @@ describe('eight client shards retain the required verdict and unchanged safeguar
       matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8] },
     });
     expect(new Set(shards.strategy.matrix.shard).size).toBe(8);
-    expect(shards.env.VITEST_MAX_THREADS).toBe(4);
+    expect(shards.env.VITEST_MAX_THREADS).toBe(8);
     expect(shards['timeout-minutes']).toBe(15);
     expect(
       shards.steps.find((value: { name: string }) => value.name === 'Run Test Suite').run

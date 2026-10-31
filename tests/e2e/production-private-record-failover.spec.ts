@@ -312,31 +312,33 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       )
       .toBe(true);
     proof.engineReadyAfterRestore = true;
-    await expect.poll(() => gatewayOpen.size, { timeout: 15_000 }).toBe(0);
+    await expect.poll(() => gatewayOpen.size, { timeout: 15_000 }).toBeGreaterThan(0);
     const gatewayOpenBeforeSecondWrite = gatewayOpen.size;
-    const gatewayAfterRetirement = frames.length;
-    const paidAfterRetirement = paid.length;
-    await changeOwnAvatar(selected[1], 'engine');
-    proof.engineRecordChangedAfterRestore = true;
+    const gatewayAfterRecovery = frames.length;
+    const paidAfterRecovery = paid.length;
+    await changeOwnAvatar(selected[1], 'gateway');
+    proof.gatewayRecordChangedAfterRestore = true;
     proof.secondVisibleAvatarReadback = true;
     const gatewaySignals = frames
-      .slice(gatewayAfterRetirement)
+      .slice(gatewayAfterRecovery)
       .filter((f) => f.endpoint === 'gateway' && f.topic === topic);
-    expect(gatewaySignals).toHaveLength(0);
-    expect(gatewayOpen.size).toBe(0);
+    expect(gatewaySignals.some((frame) => frame.type === 'PRIVATE_RECORD_CHANGED')).toBe(true);
+    expect(gatewayOpen.size).toBeGreaterThan(0);
     expect(paidActive()).toBe(0);
     expect(
       paid
-        .slice(paidAfterRetirement)
+        .slice(paidAfterRecovery)
         .filter(
           (f) => f.topic === topic && (f.event === 'phx_join' || f.event === 'record_changed')
         )
     ).toHaveLength(0);
     expect(observationsOverflow).toBe(false);
-    proof.gatewayRetirement = {
+    proof.gatewayRetention = {
       openSocketsBeforeSecondWrite: gatewayOpenBeforeSecondWrite,
       openSocketsAfterSecondWrite: gatewayOpen.size,
-      matchingSignalsAfterRetirement: gatewaySignals.length,
+      matchingChangesAfterRecovery: gatewaySignals.filter(
+        (frame) => frame.type === 'PRIVATE_RECORD_CHANGED'
+      ).length,
     };
     proof.observationsOverflow = observationsOverflow;
     await pin();

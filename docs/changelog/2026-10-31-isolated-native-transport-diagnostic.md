@@ -8,9 +8,11 @@ single external activity witness ran near cleanup and established no attribution
 
 Before exporting, the existing capture now uses the installed native psql17
 client once to import the same original snapshot in a read-only repeatable
-transaction. SQL travels on stdin and returns only one boolean covering the
+transaction. SQL travels on stdin and returns exactly six boolean fields covering the
 database, isolation, read-only state, actual five-second statement timeout,
-one-second lock timeout and fixed application-name forwarding. Literal ROLLBACK
+one-second lock timeout and fixed application-name forwarding. Every field must
+be true; a refusal retains only the closed named booleans so a failed timeout
+and failed application-name match remain distinguishable. Literal ROLLBACK
 closes it. The probe has a five-second hard cap, 256-byte stdout cap and64KiB
 private stderr cap. Failure prevents dump; no connection string, password,
 snapshot identifier, SQL, raw error or nested cause is published.

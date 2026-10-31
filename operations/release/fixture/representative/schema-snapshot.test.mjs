@@ -243,7 +243,7 @@ test('native psql imports the original snapshot over strict fixed transport with
     observed={command,args,options};const child=new EventEmitter();
     child.stdin=new PassThrough();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>{};
     child.stdin.on('data',bytes=>sql+=bytes.toString());
-    child.stdin.on('finish',()=>{child.stdout.end('t\n');child.stderr.end();child.emit('close',0,null);});
+    child.stdin.on('finish',()=>{child.stdout.end('t|t|t|t|t|t\n');child.stderr.end();child.emit('close',0,null);});
     return child;
   };
   const result=await verifyNativeSnapshotTransport(databaseConfiguration(fixtureURL),'00000003-0000001B-1',{spawnProcess});
@@ -269,7 +269,7 @@ test('native transport bounds deadline, bytes, stdin, spawn and boolean refusal 
         if(expected==='STDERR_LIMIT')child.stderr.end(Buffer.alloc(65537,65));
         if(expected==='STDIN')child.stdin.emit('error',Error('private-provider-secret'));
         if(expected==='SPAWN'){child.emit('error',Error('private-provider-secret'));child.emit('close',-2,null);}
-        if(expected==='FACTS_REFUSED'){child.stdout.end('f\n');child.emit('close',0,null);}
+        if(expected==='FACTS_REFUSED'){child.stdout.end('f|t|t|t|t|t\n');child.emit('close',0,null);}
         if(expected==='PERMISSION_DENIED'){child.stderr.end('permission denied for private-relation');child.emit('close',1,null);}
       });return child;
     };
@@ -279,6 +279,24 @@ test('native transport bounds deadline, bytes, stdin, spawn and boolean refusal 
     });
   }
   await assert.rejects(verifyNativeSnapshotTransport(databaseConfiguration(fixtureURL),"private'; SELECT 1;",{spawnProcess:()=>{throw Error('must not spawn');}}),/CAPTURE_REFUSED/);
+});
+
+test('native false timeout and false application name remain distinct closed boolean facts', async()=>{
+  for(const [index,name] of [[3,'statement_timeout_5s'],[5,'application_name_matches'],[-1,null]]){
+    const spawnProcess=()=>{
+      const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>true;
+      child.stdin.on('finish',()=>{
+        const values=['t','t','t','t','t','t'];if(index>=0)values[index]='f';
+        child.stdout.end(index>=0?values.join('|')+'\n':'private-provider-value\n');child.emit('close',0,null);
+      });return child;
+    };
+    await assert.rejects(verifyNativeSnapshotTransport(databaseConfiguration(fixtureURL),'00000003-0000001B-1',{spawnProcess}),error=>{
+      assert.equal(error.nativeDiagnostic.kind,'FACTS_REFUSED');
+      if(name){assert.equal(error.nativeFacts[name],false);assert.equal(Object.keys(error.nativeFacts).length,6);assert.ok(Object.values(error.nativeFacts).every(value=>typeof value==='boolean'));}
+      else assert.equal(error.nativeFacts,undefined);
+      assert.ok(!JSON.stringify(error).includes('private-provider-value'));return true;
+    });
+  }
 });
 
 test('pg_dump uses fixed no-data imported snapshot and no credential argv or inherited environment', async () => {

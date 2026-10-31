@@ -226,19 +226,33 @@ function nativeTransportReceipt(elapsed) {
     statement_timeout_ms:5000,lock_timeout_ms:1000,elapsed_ms:elapsed};
 }
 
+const nativeFactNames=Object.freeze(['database_postgres','read_only','repeatable_read',
+  'statement_timeout_5s','lock_timeout_1s','application_name_matches']);
+function safeNativeFacts(value) {
+  if(!value || typeof value!=='object' || Object.keys(value).length!==nativeFactNames.length ||
+    !nativeFactNames.every(key=>Object.hasOwn(value,key) && typeof value[key]==='boolean'))return null;
+  return Object.fromEntries(nativeFactNames.map(key=>[key,value[key]]));
+}
+function parseNativeFacts(text) {
+  if(!/^[tf](?:\|[tf]){5}\n$/.test(text))return null;
+  const fields=text.slice(0,-1).split('|');
+  return Object.fromEntries(nativeFactNames.map((key,index)=>[key,fields[index]==='t']));
+}
+
 export async function verifyNativeSnapshotTransport(config, snapshot, {spawnProcess = spawn, deadlineMs = 5000} = {}) {
   requireCapture(/^[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9]+$/.test(snapshot) &&
     Number.isSafeInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 5000);
   const env = databaseChildEnvironment(config, 'isolated-schema-readonly-native-transport');
   const child = spawnProcess('/usr/lib/postgresql/17/bin/psql',
-    ['--no-psqlrc','--no-password','--quiet','--tuples-only','--no-align','--set=ON_ERROR_STOP=1'],
+    ['--no-psqlrc','--no-password','--quiet','--tuples-only','--no-align','--field-separator=|','--set=ON_ERROR_STOP=1'],
     {env,stdio:['pipe','pipe','pipe']});
   const started = performance.now(), stdout = [], stderr = [];
-  let outputBytes = 0, errorBytes = 0, kind = null;
+  let outputBytes = 0, errorBytes = 0, kind = null, nativeFacts = null;
   const failure = (code, signal) => Object.assign(new Error('ISOLATED_NATIVE_TRANSPORT_FAILED'), {
     nativeDiagnostic: safeDumpDiagnostic({kind:kind ?? dumpFailureKind(Buffer.concat(stderr).toString('utf8')),
       exit_code:code,signal:signal ?? 'NONE',elapsed_ms:Math.round(performance.now()-started),
-      stdout_bytes:outputBytes,stderr_bytes:errorBytes,cancellation:cancellation.facts()})});
+      stdout_bytes:outputBytes,stderr_bytes:errorBytes,cancellation:cancellation.facts()}),
+    ...(nativeFacts ? {nativeFacts:safeNativeFacts(nativeFacts)} : {})});
   const cancellation=nativeCancellation(child,deadlineMs,reason=>{kind ??= reason;});
   try {
     await new Promise((resolve,reject)=>{
@@ -254,7 +268,8 @@ export async function verifyNativeSnapshotTransport(config, snapshot, {spawnProc
       child.once('error',()=>{kind ??= 'SPAWN';});
       child.once('close',(code,signal)=>{
         if(performance.now()-started>deadlineMs)kind ??= 'DEADLINE';
-        if(code===0 && kind===null && Buffer.concat(stdout).toString('utf8').trim()==='t')resolve();
+        nativeFacts=parseNativeFacts(Buffer.concat(stdout).toString('utf8'));
+        if(code===0 && kind===null && nativeFacts && Object.values(nativeFacts).every(value=>value===true))resolve();
         else {if(code===0)kind ??= 'FACTS_REFUSED';reject(failure(code,signal));}
       });
       // Only this validated original snapshot and constant read-only facts go
@@ -263,11 +278,11 @@ export async function verifyNativeSnapshotTransport(config, snapshot, {spawnProc
 SET TRANSACTION SNAPSHOT '${snapshot}';
 SET LOCAL search_path=pg_catalog;
 SELECT current_database()='postgres'
- AND current_setting('transaction_read_only')='on'
- AND current_setting('transaction_isolation')='repeatable read'
- AND current_setting('statement_timeout')='5s'
- AND current_setting('lock_timeout')='1s'
- AND current_setting('application_name')='isolated-schema-readonly-native-transport';
+ , current_setting('transaction_read_only')='on'
+ , current_setting('transaction_isolation')='repeatable read'
+ , current_setting('statement_timeout')='5s'
+ , current_setting('lock_timeout')='1s'
+ , current_setting('application_name')='isolated-schema-readonly-native-transport';
 ROLLBACK;
 `);
     });
@@ -411,6 +426,7 @@ export async function captureSchema({ output, env = process.env, Client, dump = 
     if (stage === 'schema-only-dump') safe.dumpDiagnostic = safeDumpDiagnostic(error?.dumpDiagnostic);
     if (nativeTransport) safe.nativeTransport = nativeTransport;
     if (stage === 'native-snapshot-transport') safe.nativeDiagnostic = safeDumpDiagnostic(error?.nativeDiagnostic);
+    if (stage === 'native-snapshot-transport') safe.nativeFacts = safeNativeFacts(error?.nativeFacts);
     throw safe;
   } finally {
     clearTimeout(timer);
@@ -435,6 +451,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
         ...(error?.captureStage === 'schema-only-dump' ? {dump_diagnostic: safeDumpDiagnostic(error?.dumpDiagnostic)} : {}),
         ...(error?.nativeTransport ? {native_transport: nativeTransportReceipt(error.nativeTransport.elapsed_ms)} : {}),
         ...(error?.captureStage === 'native-snapshot-transport' ? {native_transport_failure: safeDumpDiagnostic(error?.nativeDiagnostic)} : {}),
+        ...(safeNativeFacts(error?.nativeFacts) ? {native_transport_facts:safeNativeFacts(error.nativeFacts)} : {}),
         code:safeFailures.has(error?.message) ? error.message : 'ISOLATED_SCHEMA_CAPTURE_FAILED'}));
       process.exitCode = 1;
     });

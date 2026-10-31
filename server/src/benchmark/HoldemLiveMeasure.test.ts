@@ -90,6 +90,9 @@ describe('one pair on the river', () => {
     expect(isOnePairOnRiver(cards('8s 4d'), cards('8h 7c 6d 5s Jc'))).toBe(false);
     expect(isOnePairOnRiver(cards('As 2d'), cards('Ah 3c 4d 5s Jc'))).toBe(false);
     expect(isOnePairOnRiver(cards('Ks Qd'), cards('Ah 7c 2d 9s Jc'))).toBe(false);
+    // A board flush or board straight plays for everyone: not a one-pair call.
+    expect(isOnePairOnRiver(cards('As Kd'), cards('Ah 7h 2h 9h Jh'))).toBe(false);
+    expect(isOnePairOnRiver(cards('Ts 2d'), cards('6h 7c 8d 9s Tc'))).toBe(false);
   });
 });
 
@@ -151,6 +154,7 @@ describe('river one-pair calls by size class', () => {
       base('As 7d', 'Ah 7c 2d 9s Jc', bet(12), 40), // two pair: not counted
       base('As Kd', 'Ah 7c 2d 9s Jc', bet(12), 40, 'plo4'), // Omaha: skipped
       { horse_user_id: 'h', game_variant: 'nlh', net_bb: 1, hole_cards: null, board: null, actions: null, leak_tags: [] }, // unreadable
+      base('As Kd', 'Ah 7c 2d 9s Jc', bet(12), 40, ''), // no variant named: not assumed Hold em
     ];
     const out = riverOnePairCalls(rows);
     expect(out.unreadableRows).toBe(1);

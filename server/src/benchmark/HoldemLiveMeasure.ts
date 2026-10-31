@@ -287,18 +287,17 @@ export function isOnePairOnRiver(hole: Card[], board: Card[]): boolean {
   const pocket = a.r === b.r;
   if (pocket && hits > 0) return false; // a set
   if (!pocket && hits !== 1) return false; // no pair, or two pair
-  // Flush: five of a suit among the seven, using at least one hole card.
+  // Flush: five of a suit among the seven. A board flush plays for everyone,
+  // so hero's pair is not what the hand is about either way.
   const all = [...hole, ...board];
   for (const suit of 'shdc') {
-    const suited = all.filter((c) => c.s === suit);
-    if (suited.length >= 5 && hole.some((c) => c.s === suit)) return false;
+    if (all.filter((c) => c.s === suit).length >= 5) return false;
   }
-  // Straight using at least one hole card.
+  // Straight among the seven (board straights included, for the same reason).
   const ranks = new Set(all.map((c) => c.r));
   if (ranks.has(12)) ranks.add(-1); // wheel ace
   for (let low = -1; low <= 8; low++) {
-    const run = [0, 1, 2, 3, 4].map((i) => low + i);
-    if (run.every((r) => ranks.has(r)) && hole.some((c) => run.includes(c.r) || (c.r === 12 && low === -1))) return false;
+    if ([0, 1, 2, 3, 4].every((i) => ranks.has(low + i))) return false;
   }
   return true;
 }
@@ -370,8 +369,9 @@ export function riverOnePairCalls(rows: ReviewRow[]): RiverOnePairReport {
   let considered = 0;
   let unreadable = 0;
   for (const row of rows) {
+    // Hold'em only, named: a row with no variant is not assumed to be one.
     const variant = String(row.game_variant ?? '').toLowerCase();
-    if (variant && !/nlh|holdem|hold_em|texas/.test(variant)) continue;
+    if (!/^(nlh|holdem|hold_em|texas_holdem|nl_holdem)$/.test(variant)) continue;
     const hole = parseCards(row.hole_cards);
     const board = parseCards(row.board);
     if (!hole || !board || !Array.isArray(row.actions)) {

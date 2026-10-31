@@ -38,7 +38,9 @@ import {
 } from '../src/benchmark/HoldemLiveMeasure.js';
 
 const HEALTH_URL = process.env.ENGINE_HEALTH_URL ?? 'https://engine.smarter.poker/health';
-const REVIEW_ROW_CAP = 5000;
+// Hold'em review rows only (12,207 of ~62,000 in a day, measured 2026-10-30):
+// the cap would otherwise be spent on Omaha rows the measurement discards.
+const REVIEW_ROW_CAP = 6000;
 
 function arg(name: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -109,7 +111,7 @@ async function report(): Promise<void> {
   );
   const reviews = await select<ReviewRow>(
     'horse_hand_reviews',
-    `select=horse_user_id,game_variant,net_bb,hole_cards,board,actions,leak_tags&played_at=gte.${encodeURIComponent(since.toISOString())}&order=played_at.desc&limit=${REVIEW_ROW_CAP}`
+    `select=horse_user_id,game_variant,net_bb,hole_cards,board,actions,leak_tags&game_variant=eq.nlh&played_at=gte.${encodeURIComponent(since.toISOString())}&order=played_at.desc&limit=${REVIEW_ROW_CAP}`
   );
   const telemetry = await select<TelemetryRow>(
     'horse_brain_telemetry',

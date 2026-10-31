@@ -13,7 +13,7 @@
     "tests/tournament-credit-sum-index-keeps-original-records.law.test.ts": "3d4bf43756ade0bccc92d4b4c9feaae9912efa2d79cfe460a31f72efb843934c",
     "docs/laws.d/tournament-credit-sum-index-keeps-original-records.md": "98f344ce134c5977b73d421b193749bc551de508853cd7b3a75ed0aaa4e5f758",
     "docs/changelog/2026-10-28-tournament-credit-sum-record-cover.md": "05fc97f80559a6166710c8768e7037dce34582fadb0289d7f1f1bb171373d302",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639"
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "61789751ea646f39e5572f7ae7fb6ab84d70e506ba76ab26989c5f160065405d"
   },
   "groupedPrivateSourceWorkflowAudit20261028": {
     "review": "Only adds grouped-source native97 path and lane; every prior command/qualification/input retained. No prior source evidence rerun implied.",
@@ -41,5 +41,14 @@
   "cashLinkUnionHashWorkflowComposition20261028": {
     "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
     "execution_performed": false
+  },
+  "workflowClosingMarginAudit20261031": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639",
+    "currentSHA256": "61789751ea646f39e5572f7ae7fb6ab84d70e506ba76ab26989c5f160065405d",
+    "reviewedWorkflowCommit": "3fe040de1a0d064690bf353119860371c9bf40a0",
+    "change": "Only the existing job cap changes10 to11 minutes plus a measured closing-margin comment. Parsed YAML equality confirms all30 steps, commands, triggers, free Ubuntu, concurrency and failure behavior are identical.",
+    "evidence": "Run41224174509/job124604739907 completed every declared qualification at9m58s and cleanup at9m59s, then explicit10m maximum cancelled its verdict. Prior run41222243369 succeeded in8m42s as a comparable same-workflow baseline; whole hosted merge-input equality is not claimed.",
+    "qualificationBoundary": "Reviewed active workflow-source maintenance only. All other pins, historical audits, source/corpus/runtime/deadline/money identities and old qualification tuples remain unchanged. No new financial/native/production certification; required current-head hosted qualification remains pending."
   }
 }

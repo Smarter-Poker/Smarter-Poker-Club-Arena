@@ -146,6 +146,7 @@ describe('abort certificates retain physical source and lease identity', () => {
 
   function server(state: Record<string, unknown>) {
     const manager = {
+      tournamentAbortActuationAllowed: () => true,
       getTournamentLeaseGeneration: () => generation,
       hasCurrentTournamentLeaseAuthority: () => true,
       retainsTournamentAbortBoundary: () => true,
@@ -284,5 +285,75 @@ describe('abort certificates retain physical source and lease identity', () => {
       f.server.acknowledgeTournamentAbortBoundary(operation, tournament)
     ).rejects.toThrow('release_generation_mismatch');
     expect(io.rpc.mock.calls.map(([name]) => name)).toEqual(['fn_ca_tournament_abort_stop_state']);
+  });
+});
+
+describe('exact original recovery fences abort without restoring an abort owner', () => {
+  function original() {
+    const manager = new TournamentManager(
+      tournament,
+      {} as any,
+      generation,
+      performance.now() + 30_000
+    ) as any;
+    vi.spyOn(manager, 'hasCurrentTournamentLeaseAuthority').mockReturnValue(true);
+    manager.tableEngines.set('original', {});
+    return manager;
+  }
+  it('prepares idempotently without touching the original engines, banks or shutdown fences', () => {
+    const manager = original();
+    const engine = manager.tableEngines.get('original');
+    const beforeFence = manager.stopFenceApplied;
+    const first = manager.prepareTournamentOriginalRecovery(operation, 'nonce');
+    expect(manager.prepareTournamentOriginalRecovery(operation, 'nonce')).toEqual(first);
+    expect(manager.tableEngines.get('original')).toBe(engine);
+    expect(manager.stopFenceApplied).toBe(beforeFence);
+    expect(manager.tournamentAbortActuationAllowed()).toBe(false);
+    expect(() => manager.prepareTournamentOriginalRecovery(operation, 'other')).toThrow(
+      'identity_reused'
+    );
+  });
+  it('refuses cached abort preparation before changing any disposition or fence', () => {
+    const manager = original();
+    const run = vi.fn();
+    manager.tournamentAbortBoundary = { request: { operation_id: operation }, run };
+    expect(() => manager.prepareTournamentOriginalRecovery(operation, 'nonce')).toThrow(
+      'current_unfenced_owner_required'
+    );
+    expect(manager.tournamentAbortActuationAllowed()).toBe(true);
+    expect(run).not.toHaveBeenCalled();
+  });
+  it('rereads canonical recovery before an old cached abort can act', async () => {
+    const manager = original();
+    const run = vi.fn();
+    manager.tournamentAbortBoundary = { request: { operation_id: operation }, run };
+    io.rpc.mockResolvedValue({
+      data: {
+        ok: true,
+        state: 'recovery',
+        operation_id: operation,
+        tournament_id: tournament,
+        current_generation: generation,
+        tables: [],
+      },
+      error: null,
+    });
+    await expect(
+      manager.acknowledgeTournamentAbortBoundary({
+        operation_id: operation,
+        tournament_id: tournament,
+        current_generation: generation,
+        tables: [],
+      })
+    ).rejects.toThrow('withdrawn_for_original_recovery');
+    expect(run).not.toHaveBeenCalled();
+    io.rpc.mockReset();
+  });
+  it('refuses prepare when no current physical manager graph exists', () => {
+    const manager = original();
+    manager.tableEngines.clear();
+    expect(() => manager.prepareTournamentOriginalRecovery(operation, 'nonce')).toThrow(
+      'current_unfenced_owner_required'
+    );
   });
 });

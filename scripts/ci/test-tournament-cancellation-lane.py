@@ -337,6 +337,19 @@ END $started_refusal$;
         case_counts = [len(abort_report.get(key, [])) for key in ('cases', 'chip_union_overlay_cases', 'diamond_abort_cases')]
         assert case_counts == [15, 8, 19] and sum(case_counts) == 42
         e.report['started_abort'] = {'passed': True, 'cases': 42, 'report': 'started-abort/abort-report.json'}
+        recovery_driver = ROOT/'scripts/ci/test-tournament-original-recovery.py'
+        e.report['source_sha256'][str(recovery_driver.relative_to(ROOT))] = hashlib.sha256(recovery_driver.read_bytes()).hexdigest()
+        subprocess.run([
+            sys.executable, '-B', str(recovery_driver),
+            '--evidence', str(out/'original-recovery20'),
+            '--work-root', str(args.work_root.resolve()/'original-recovery20'),
+            '--socket-root', str(args.socket_root.resolve()),
+            '--pg-bin', str(args.pg_bin.resolve()),
+        ], check=True, timeout=660)
+        recovery_report = json.loads((out/'original-recovery20/recovery20-report.json').read_text())
+        assert recovery_report.get('passed') is True and recovery_report.get('status') == 'passed'
+        assert len(recovery_report.get('cases', [])) == 27 and len(recovery_report.get('tool_cases', [])) == 3 and recovery_report.get('manual_control_cases') == 13
+        e.report['original_recovery20'] = {'passed': True, 'cases': 27, 'tool_cases': 3, 'report': 'original-recovery20/recovery20-report.json'}
         e.report['scope']='nonblocking original exclusion, exact entry installation, retained real funded cancellation assertions'
         e.report['status']='passed';e.report['passed']=True
     finally:

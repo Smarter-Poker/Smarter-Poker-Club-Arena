@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/tournament-natural20-01a190a0",
+  "_comment": "Protected candidate declarations only; actual installation and qualified explicit original recovery remain separate.",
+  "functions": [
+    "fn_ca_withdraw_tournament_abort_for_original_recovery",
+    "smarter_private.assert_tournament_abort_not_recovered",
+    "smarter_private.tournament_abort_recovery_immutable",
+    "smarter_private.tournament_recovery_original_custody"
+  ],
+  "tables": ["smarter_private.tournament_abort_recoveries"]
+}

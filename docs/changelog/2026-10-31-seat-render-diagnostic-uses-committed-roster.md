@@ -23,3 +23,15 @@ this diagnostic adds no animation trigger, polling, timeout or snapshot diff.
 Source reread: yes. Focused tests and TypeScript results are retained in the task
 checkpoint. Protected delivery, publication and affected live proof remain
 separate requirements.
+
+The existing production seat-move browser case also qualifies this diagnostic
+against actual served code. After its original spectator assertions, it supplies
+a captured snapshot template with one identity substituted to the reserved
+account, downstream to that browser only. Every upstream socket message and
+nonread HTTP request is refused before the stimulus; harmless PING and static-path
+POST controls prove those refusals. It checks the real hero row, seat and committed
+paint without the false diagnostic, then closes the isolated context while guards
+remain armed. Raw frames, rows, cards and tokens are never retained. The evidence
+explicitly labels synthetic browser input: it is neither an authoritative seat
+receipt, natural seated gameplay nor a financial receipt. The real missing-roster
+alarm remains covered by the mounted local regression.

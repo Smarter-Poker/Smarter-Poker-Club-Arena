@@ -44,8 +44,8 @@ afterEach(() => {
   setMaintenanceFrozen(false);
 });
 
-describe('the real manager persists the configured add-on break', () => {
-  it.each([1, 5, 10])('honors a %s-minute paid add-on break', async (minutes) => {
+describe('the real manager enforces the universal 60-second add-on break', () => {
+  it.each([1, 5, 10])('uses 60 seconds despite a legacy %s-minute setting', async (minutes) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-25T12:00:00Z'));
     setMaintenanceFrozen(false);
@@ -64,10 +64,10 @@ describe('the real manager persists the configured add-on break', () => {
     const m = new Harness(minutes);
     await m.open();
     expect(Date.parse(saved.addon_period_ends_at) - Date.parse(saved.addon_period_started_at)).toBe(
-      minutes * 60000
+      60000
     );
     expect(m.notices.find((n) => n.event === 'ADDON_PERIOD_START')?.payload.durationSeconds).toBe(
-      minutes * 60
+      60
     );
     const end = saved.addon_period_ends_at;
     await m.open();
@@ -75,7 +75,7 @@ describe('the real manager persists the configured add-on break', () => {
     expect(saved.addon_period_ends_at).toBe(end);
   });
 
-  it('retains the early Free Buy hour plus its configured break', async () => {
+  it('retains the early Free Buy hour plus exactly one closing minute', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-25T12:00:00Z'));
     setMaintenanceFrozen(false);
@@ -93,7 +93,7 @@ describe('the real manager persists the configured add-on break', () => {
     vi.spyOn(supabase, 'from').mockReturnValue(chain);
     await new Harness(5, true).open();
     expect(Date.parse(saved.addon_period_ends_at) - Date.parse(saved.addon_period_started_at)).toBe(
-      65 * 60000
+      61 * 60000
     );
   });
 });

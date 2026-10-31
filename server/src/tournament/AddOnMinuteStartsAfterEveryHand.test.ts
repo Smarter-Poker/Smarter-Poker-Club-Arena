@@ -11,7 +11,7 @@ class Harness extends TournamentManagerBase {
     (this as any).lifecycleEpoch.begin();
     this.running = true;
     this.tournamentCache = {
-      addon_break_minutes: 1,
+      addon_break_minutes: 7,
       addon_from_start: fromStart,
       start_time: new Date().toISOString(),
       late_reg_mins: 1,

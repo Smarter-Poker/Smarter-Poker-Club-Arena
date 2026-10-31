@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261031202247 (the database refused this file whole: a CHECK constraint depends on a door it dropped first; nothing committed).
 -- 20261031190132_the_lightning_pilot_assignment_and_its_doors_are_removed.sql
 --
 -- OWNER INSTRUCTION (Dan, 2026-10-31, verbatim): "REMOVE THE LIGHTNING INTERNAL

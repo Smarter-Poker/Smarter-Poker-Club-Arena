@@ -5533,6 +5533,7 @@ export default function MultiTablePage() {
                         <TablePage
                           key={table.id}
                           embeddedTableId={table.id}
+                          followingPlayer={!!table.followPlayer}
                           openBuyInOnArrival={table.buyInRequested}
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           isMultiTable={true}
@@ -5800,6 +5801,7 @@ export default function MultiTablePage() {
                         <TablePage
                           key={table.id}
                           embeddedTableId={table.id}
+                          followingPlayer={!!table.followPlayer}
                           openBuyInOnArrival={table.buyInRequested}
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           muted={mutedIds.includes(table.id)}

@@ -28,7 +28,6 @@ jobs:
       PROBE_EVENT: ${{ inputs.tournament_id }}
       PROBE_MONEY_HASH: ${{ inputs.expected_money_hash }}
       PROBE_ECONOMIC_SHA256: ${{ inputs.expected_economic_sha256 }}
-      PROBE_RECEIPT_DIRECTORY: ${{ runner.temp }}/original69-probe
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,6 +37,8 @@ jobs:
         with:
           node-version: '22'
       - name: Write immutable safe intent before any service request
+        env:
+          PROBE_RECEIPT_DIRECTORY: ${{ runner.temp }}/original69-probe
         run: node .github/scripts/original69-nonpaying-probe.mjs prepare
       - uses: actions/upload-artifact@v4
         with:
@@ -47,6 +48,7 @@ jobs:
           retention-days: 7
       - name: One genuine-service always-aborting call and readback
         env:
+          PROBE_RECEIPT_DIRECTORY: ${{ runner.temp }}/original69-probe
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node .github/scripts/original69-nonpaying-probe.mjs execute

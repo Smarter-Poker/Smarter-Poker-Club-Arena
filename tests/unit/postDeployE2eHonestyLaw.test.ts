@@ -84,6 +84,7 @@ describe('live-table certification observes an active chip-game club', () => {
       'Verify seat-move notices in the served spectator browser'
     );
     expect(seatMove).toContain('E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4');
+    expect(WORKFLOW).toContain('tests/e2e/production-row-channel-owners.spec.ts');
     expect(seatMove).not.toContain('E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81');
 
     expect(GLOBAL_SETUP).toContain(

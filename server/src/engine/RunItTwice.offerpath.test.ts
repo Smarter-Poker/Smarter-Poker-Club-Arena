@@ -21,6 +21,7 @@ import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
+const ownedEngineFixtures: Array<Record<string, any>> = [];
 const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
@@ -69,6 +70,8 @@ function atAllIn(stacks = [500, 500]) {
   expect(runoutEvent, 'the hand must park at ALL_IN_RUNOUT').toBeTruthy();
 
   const e = new ServerTableEngine(TABLE) as unknown as Record<string, any>;
+  expect(e.claimProcessOwnership()).toBe(true);
+  ownedEngineFixtures.push(e);
   e.running = true;
   e.handCount = 1;
   e.handController = hc;
@@ -101,6 +104,12 @@ function atAllIn(stacks = [500, 500]) {
 }
 
 afterEach(() => {
+  // Destroy isolated fixture registration, not a runtime retirement certificate.
+  for (const fixture of ownedEngineFixtures.splice(0)) {
+    fixture.running = false;
+    fixture.weeklyHandTimers.stop();
+    (fixture.constructor as any).releaseCurrentEngine(fixture.tableId, fixture);
+  }
   vi.useRealTimers();
   vi.restoreAllMocks();
 });

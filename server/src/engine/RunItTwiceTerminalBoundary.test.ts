@@ -114,7 +114,9 @@ function harness() {
   return { engine, controller, active, events };
 }
 
-afterEach(() => {
+const ownedFallbackFixtures: Array<Record<string, any>> = [];
+afterEach(async () => {
+  for (const engine of ownedFallbackFixtures.splice(0)) await engine.stop();
   vi.restoreAllMocks();
 });
 
@@ -235,6 +237,32 @@ describe('Run It Twice terminal error boundary', () => {
     }
   });
 
+  it('drops the actual paced-runout catch fallback after stop wakes its sleep', async () => {
+    const { engine, controller, active } = harness();
+    expect(engine.claimProcessOwnership()).toBe(true);
+    const original = controller.serializeRecoveryState();
+    const continuation = vi.spyOn(controller, 'continueRunout');
+    const entered = deferred();
+    const held = deferred();
+    engine.flushSnapshot = vi.fn(async () => {
+      entered.resolve();
+      await held.promise;
+    });
+    const paced = engine.pacedAllInRunout(active, controller.getPot());
+    const stopping = engine.stop();
+    try {
+      await entered.promise;
+      await paced;
+      expect(engine.handController).toBe(controller);
+      expect(continuation).not.toHaveBeenCalled();
+      expect(controller.serializeRecoveryState() === original).toBe(true);
+    } finally {
+      held.resolve();
+      await paced;
+      await stopping;
+    }
+  });
+
   it.each(['rit', 'insurance'] as const)(
     'drops a late %s response while stop retains its controller for snapshot',
     async (kind) => {
@@ -294,6 +322,8 @@ describe('Run It Twice terminal error boundary', () => {
 
   it('falls back once before payout and removes every partial RIT capture', async () => {
     const { engine, controller, active, events } = harness();
+    expect(engine.claimProcessOwnership()).toBe(true);
+    ownedFallbackFixtures.push(engine);
     const restart = vi.fn();
     engine.killForRestart = restart;
     const continuation = vi.spyOn(controller, 'continueRunout');
@@ -320,6 +350,8 @@ describe('Run It Twice terminal error boundary', () => {
 
   it('contains a rollback-snapshot setup fault at a bare fire-and-forget caller', async () => {
     const { engine, controller, active, events } = harness();
+    expect(engine.claimProcessOwnership()).toBe(true);
+    ownedFallbackFixtures.push(engine);
     const restart = vi.fn();
     engine.killForRestart = restart;
     const continuation = vi.spyOn(controller, 'continueRunout');

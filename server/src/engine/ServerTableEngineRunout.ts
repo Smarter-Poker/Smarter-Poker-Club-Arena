@@ -1682,6 +1682,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * criticals, 32 live hands. A stale continuation is dropped, loudly.
    */
   protected safeContinueRunout(reason: string, controller: HandController | null): void {
+    // A stopped owner can retain this exact controller for snapshot/custody.
+    // Identity alone cannot authorize a late async catch to run out its hand.
+    if (!this.lifecycleCanMutate()) return;
     if (this.weeklyHandPause.held()) {
       void this.weeklyHandPause
         .checkpoint()

@@ -32,3 +32,11 @@ the owner stops or is superseded. Retaining a controller for a pending snapshot
 must not allow a late response or its synchronous error fallback to advance that
 hand. The existing terminal-boundary fixture reproduces both stale callbacks
 before the guard and checks the original controller bytes remain unchanged.
+
+The common synchronous runout fallback also checks lifecycle authority before
+any mutation. The actual paced-runout sleep wakes during stop, rejects at the
+existing weekly-pause checkpoint, and reaches this fallback; its regression
+fails before the guard and preserves the original controller after it. Existing
+positive runout, offer, consent, telemetry and weekly-barrier fixtures now claim
+real process ownership and release the exact isolated fixture registration in
+cleanup. Their gameplay and payout assertions remain unchanged.

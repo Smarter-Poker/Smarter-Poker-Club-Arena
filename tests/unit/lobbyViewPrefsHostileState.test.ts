@@ -101,7 +101,7 @@ describe('malformed storage never reaches the lobby', () => {
     expect(prefs.sortByTab).toBeTypeOf('object');
     expect(prefs.favoritesOnly).toBe(false);
     // And the caller can always get a usable sort out of whatever came back.
-    expect(sortForTab(prefs, 'MTT')).toBe('starting_soon');
+    expect(sortForTab(prefs, 'MTT')).toBe('recommended');
   });
 
   it('a __proto__ key cannot poison the returned object', () => {

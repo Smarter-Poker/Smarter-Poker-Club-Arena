@@ -373,7 +373,7 @@ export function saveViewPrefs(
  * a cash tab, so it takes the cash default rather than a coin toss.
  */
 export function defaultSortForTab(tab: LobbyTabKey): LobbySortKey {
-  if (tab === 'HOLDEM' || tab === 'OMAHA' || tab === 'LIMIT' || tab === 'MIXED') {
+  if (tab === 'MTT' || tab === 'HOLDEM' || tab === 'OMAHA' || tab === 'LIMIT' || tab === 'MIXED') {
     return 'recommended';
   }
   return 'starting_soon';

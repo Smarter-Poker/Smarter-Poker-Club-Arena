@@ -997,7 +997,7 @@ function ClubHomePageContent({
   const linkedGameTypeRef = useRef<GameType | undefined>(undefined);
   const onInitialGameTypeConsumedRef = useRef(onInitialGameTypeConsumed);
   onInitialGameTypeConsumedRef.current = onInitialGameTypeConsumed;
-  const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
+  const [sortKey, setSortKey] = useState<SortKey>('recommended');
   const [allStatusFilter, setAllStatusFilter] = usePlayerPreference<AllStatusFilter>(
     'ClubHomePage:allStatusFilter',
     'ALL',
@@ -3797,7 +3797,8 @@ function ClubHomePageContent({
     const variant: TournVariant = TOURN_VARIANT_FOR[gameType] ?? 'ALL';
     const advType = gameType === 'ALL' ? null : (gameType as FilterGameType);
     const advSpec = advType && advType !== 'ALL' ? FILTER_SPECS[advType] : undefined;
-    const advValue = advType ? advFilters[advType] : undefined;
+    const advValue =
+      advType && advSpec ? (advFilters[advType] ?? emptyFilterValue(advSpec)) : undefined;
 
     const stillEnterable = (t: TournamentData) => {
       const status = String(t.status).toUpperCase();
@@ -3862,7 +3863,7 @@ function ClubHomePageContent({
         const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
         if (
           !rowPassesFilter(advSpec, advValue, {
-            variant: t.game_type,
+            variant: t.variant || t.game_type,
             price: total,
             seats: getTournamentEntryCapacity(t) ?? 0,
             // The "Table Size" slider filters on seats at a TABLE, not on the

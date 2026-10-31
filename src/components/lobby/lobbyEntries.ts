@@ -1084,7 +1084,10 @@ export function cashStatus(t: LobbyTableRow, waiting = 0): { key: LobbyStatusKey
   return { key: 'open', label: 'Open' };
 }
 
-export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; label: string } {
+export function tournamentStatus(
+  t: LobbyTournamentRow,
+  now = Date.now()
+): { key: LobbyStatusKey; label: string } {
   const status = String(t.status || '').toUpperCase();
   if (status === 'COMPLETED') return { key: 'completed', label: 'Completed' };
   if (status === 'CANCELLED') return { key: 'closed', label: 'Cancelled' };
@@ -1116,7 +1119,7 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
           started_at: t.started_at,
           current_level: t.current_level,
         },
-        Date.now()
+        now
       )
     )
       return { key: 'late_reg', label: 'Late Reg' };
@@ -1135,7 +1138,7 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
    */
   if (status === 'LATE_REG' || status === 'LATE_REGISTRATION') {
     if (classifyTournament(t) === 'mtt') {
-      return isInLateRegistration(t, Date.now())
+      return isInLateRegistration(t, now)
         ? { key: 'late_reg', label: 'Late Reg' }
         : { key: 'running', label: 'Running' };
     }
@@ -1182,7 +1185,7 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
     // A passed schedule is not evidence of a start. Only started_at or the
     // running lifecycle above can declare an event running.
     const startMs = t.start_time ? new Date(t.start_time).getTime() : NaN;
-    if (Number.isFinite(startMs) && startMs - Date.now() <= STARTING_SOON_MS)
+    if (Number.isFinite(startMs) && startMs - now <= STARTING_SOON_MS)
       return { key: 'starting_soon', label: 'Starting Soon' };
     return { key: 'registering', label: 'Registering' };
   }
@@ -2066,46 +2069,33 @@ export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle:
   };
 }
 
-/**
- * Dan 2026-08-24: "KEEP THE LATE REG CLOCK RUNNING OR THE STARTS IN CLOCK
- * RUNNING AT ALL TIMES. DON'T SWITCH BACK AND FORTH FROM A CLOCK TO 'LATE REG
- * CLOSING SOON'. ALWAYS USE CLOCKS."
- *
- * Every branch here used to fall back to a phrase the moment its number went
- * to zero or its input was briefly missing — so a card that had been counting
- * down for an hour would suddenly read "Late Reg Closing", then go back to
- * counting on the next poll. A clock that disappears at the exact moment it
- * matters most is worse than no clock. Zero is now a legitimate reading, and
- * a running tournament counts its level down instead of saying "Running".
+/** The clock follows the actual lifecycle, never a scheduled start alone.
+ * Owner update2026-10-31: replace frozen zero starts with the live late-reg
+ * countdown once the event starts. Held/overdue events await their start.
  */
 export function mttPhaseText(entry: LobbyEntry, now: number): string | null {
+  if (entry.status === 'completed' || entry.status === 'closed') return entry.statusLabel;
+  const row = entry.raw as LobbyTournamentRow;
+  // The original row can already contain the start while the memoized entry
+  // still carries its pre-start badge. Never derive a start from the clock.
+  const started =
+    !!row.started_at ||
+    ['RUNNING', 'IN_PROGRESS', 'LATE_REG', 'LATE_REGISTRATION'].includes(
+      String(row.status).toUpperCase()
+    );
+  if (started || entry.status === 'late_reg' || entry.status === 'running') {
+    const end = lateRegEndMs(row);
+    if (end != null && end > now) {
+      const seconds = Math.max(0, Math.ceil((end - now) / 1000));
+      return `Late Reg Ends In ${Math.floor(seconds / 60)}:${(seconds % 60).toLocaleString('en-US', { minimumIntegerDigits: 2, useGrouping: false })}`;
+    }
+    return end == null && isInLateRegistration(row, now) ? 'Late Reg Open' : 'Late Reg Closed';
+  }
   if (entry.status === 'registering' || entry.status === 'starting_soon') {
     const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
-    /**
-     * ZERO IS A LEGITIMATE READING; A MISSING CLOCK IS NOT.
-     *
-     * An audit on 2026-08-25 flagged the frozen "Starts In 0:00" on an overdue
-     * MTT as a defect and I changed it to a phrase. That was wrong, and the
-     * suite caught it: this behaviour was RE-PINNED on 2026-08-24 in Dan's own
-     * words — "keep the clock running at all times, don't switch back and
-     * forth from a clock to a phrase". A card that has been counting down must
-     * not flip to prose at the exact moment the number matters most. Only a
-     * start time that cannot be parsed at all has nothing to count.
-     */
-    if (Number.isFinite(startMs)) return `Starts In ${formatClock(Math.max(0, startMs - now))}`;
-    return 'Starting Soon';
+    if (Number.isFinite(startMs) && startMs > now) return `Starts In ${formatClock(startMs - now)}`;
+    return Number.isFinite(startMs) ? 'Start Pending' : 'Starting Soon';
   }
-  if (entry.status === 'late_reg') {
-    const end = lateRegEndMs(entry.raw as LobbyTournamentRow);
-    if (end != null) return `Late Reg ${formatClock(Math.max(0, end - now))} Left`;
-    return 'Late Reg Open';
-  }
-  if (entry.status === 'running') {
-    const end = lateRegEndMs(entry.raw as LobbyTournamentRow);
-    if (end != null) return `Late Reg ${formatClock(Math.max(0, end - now))} Left`;
-    return 'Late Reg Closed';
-  }
-  if (entry.status === 'completed' || entry.status === 'closed') return entry.statusLabel;
   return null;
 }
 

@@ -115,7 +115,7 @@ describe('a tournament row says what makes it worth playing', () => {
 });
 
 describe('a heading the player taps reorders the whole board', () => {
-  it('Players reorders past a featured game instead of leaving it pinned on top', () => {
+  it('Players reorders ordinary events while keeping top events pinned', () => {
     const featured = mtt(
       { id: 'small', name: 'Featured Small', current_players: 5 },
       { featured: true }
@@ -155,6 +155,6 @@ describe('a heading the player taps reorders the whole board', () => {
       .find((b) => b.textContent?.startsWith('Players'))!;
     fireEvent.click(players); // ascending
     fireEvent.click(players); // descending
-    expect(order()).toEqual(['big', 'small']);
+    expect(order()).toEqual(['small', 'big']);
   });
 });

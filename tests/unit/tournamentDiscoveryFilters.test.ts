@@ -186,6 +186,7 @@ const TOURNAMENT_TABS = ['MTT', 'SNG', 'SPIN'] as const;
 const requiring = (keys: string[]): GameFilterValue => ({
   ...emptyFilterValue(MTT),
   mustHave: keys,
+  hide: [],
 });
 const excluding = (keys: string[]): GameFilterValue => ({ ...emptyFilterValue(MTT), hide: keys });
 

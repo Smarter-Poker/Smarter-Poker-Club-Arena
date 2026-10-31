@@ -508,7 +508,11 @@ export function TournamentBreakScreen({
                   {addOnNotice.cost.toLocaleString('en-US')}
                 </span>
                 <span className="break-screen__stat-sub">
-                  {addOnNotice.asset === 'diamonds' ? 'Diamonds' : 'Chips'} Total
+                  {addOnNotice.asset === 'diamonds'
+                    ? 'Diamonds Total'
+                    : addOnNotice.asset === 'chips'
+                      ? 'Chips Total'
+                      : 'Total Cost'}
                 </span>
               </div>
               <div className="break-screen__stat">

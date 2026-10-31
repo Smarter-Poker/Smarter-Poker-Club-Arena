@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 262384,
-      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+      "bytes": 262608,
+      "sha256": "16171791330ca441deead2de61ab57f084a271d8d3a0c1af03b765399e2636b7"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1809,5 +1809,16 @@
     "execution_performed": false,
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false
+  },
+  "highlightedClockQualification20261031": {
+    "reason": "Adds isolated PostgreSQL highlighted-level clock cap regression to required accounting shard 4. Existing financial commands, assertions and historical certificates unchanged. Current source identity only; no financial or live certification.",
+    "previous": {
+      "bytes": 262384,
+      "sha256": "3263b45dcd58224484512a4a627788a08feebeef2504f13a52b0d0e9d8529f56"
+    },
+    "current": {
+      "bytes": 262608,
+      "sha256": "16171791330ca441deead2de61ab57f084a271d8d3a0c1af03b765399e2636b7"
+    }
   }
 }

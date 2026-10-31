@@ -4369,6 +4369,11 @@ export class HandController {
     };
   }
 
+  /** Identity of the hand whose configuration owns the displayed stakes. */
+  public getHandNumber(): number {
+    return this.config.handNumber;
+  }
+
   /** Dealt stakes stay fixed even when the table advances to its next level. */
   public getBlindSnapshot(): {
     smallBlind: number;

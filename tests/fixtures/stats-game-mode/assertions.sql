@@ -53,3 +53,23 @@ DO $$ BEGIN
 END $$;
 ROLLBACK;
 SELECT 'PASS: cash/tournament mode populations, NLH identity, privacy, pagination, heatmap and benchmark separation' result;
+
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','20000000-0000-0000-0000-000000000001',false);
+DO $$ DECLARE v jsonb; BEGIN
+ v:=public.ca_public_arena_record_separated('20000000-0000-0000-0000-000000000001','cash','chips');
+ IF v#>>'{scope,game_mode}'<>'cash' OR EXISTS(SELECT 1 FROM jsonb_array_elements(v->'rows') r WHERE (r->>'tournaments_played')::numeric<>0)
+ OR v::text~'hole_cards|net_profit|club_id|wallet'
+ THEN RAISE EXCEPTION 'Public cash record mixed scope or leaked private fields: %',v; END IF;
+ v:=public.ca_public_arena_record_separated('20000000-0000-0000-0000-000000000001','tournament','chips');
+ IF v#>>'{scope,game_mode}'<>'tournament' OR (SELECT sum((r->>'hands_played')::numeric) FROM jsonb_array_elements(v->'rows')r)<>(SELECT hands FROM separated_expected WHERE NOT cash)
+ THEN RAISE EXCEPTION 'Public tournament record included cash hands: %',v; END IF;
+END $$;
+SELECT set_config('request.jwt.claim.sub','',false);
+DO $$ BEGIN
+ BEGIN
+  PERFORM public.ca_public_arena_record_separated('20000000-0000-0000-0000-000000000001','cash','chips');
+  RAISE EXCEPTION 'Anonymous public record read accepted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;

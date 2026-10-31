@@ -40,7 +40,10 @@ vi.mock('../../src/lib/supabase', () => {
     getAuthUser: async () => ({ data: { user: { id: 'u-1' } }, error: null }),
     supabase: {
       from: () => buildChain(),
-      rpc: mockRpc,
+      rpc: (...args: unknown[]) => {
+        const result = Promise.resolve(mockRpc(...args));
+        return Object.assign(result, { abortSignal: (_signal: AbortSignal) => result });
+      },
     },
   };
 });

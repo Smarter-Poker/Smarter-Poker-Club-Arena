@@ -22,6 +22,9 @@
  *                           so this is the big-pot subset, stated in the report.
  *   4. receipt counts     - horse_brain_telemetry fires per day for
  *                           v61_river_one_pair_shade and v62_river_bettor_polarity.
+ *                           V62 is OPT-IN (default off since #8781), so zero V62
+ *                           fires on a containing revision is the expected
+ *                           state, not a wiring fault; V61 is the live witness.
  *
  * Every function answers "could not tell" distinctly from a number (CLAUDE.md
  * 10.86): a slope over too few samples is null with a reason, never 0.
@@ -250,7 +253,7 @@ function parseCard(value: unknown): Card | null {
   if (value && typeof value === 'object') {
     const o = value as { rank?: unknown; suit?: unknown };
     const rank = typeof o.rank === 'string' ? o.rank.toUpperCase() : typeof o.rank === 'number' ? RANKS[o.rank - 2] : '';
-    const suit = typeof o.suit === 'string' ? o.suit[0].toLowerCase() : '';
+    const suit = typeof o.suit === 'string' && o.suit.length > 0 ? o.suit[0].toLowerCase() : '';
     if (!rank || !RANKS.includes(rank) || !'shdc'.includes(suit)) return null;
     return { r: RANKS.indexOf(rank), s: suit };
   }
@@ -310,15 +313,38 @@ export function sizeClassOf(betFraction: number, raised: boolean): SizeClass {
 }
 
 const STREETS = ['preflop', 'flop', 'turn', 'river'];
+const DEAD = '\u0000dead';
+
+/**
+ * Add one action to a player's contribution for its street, in the engine's
+ * own amount convention (HandController.processAction): a `call` amount is
+ * the INCREMENT just put in; `bet`, `raise`, `all_in` and the forced posts
+ * (`sb`, `bb`) carry the player's street TOTAL; a dead post (`dead: true`,
+ * an ante) is money that never counts toward the street level, so it adds.
+ */
+export function contribute(paid: Map<string, number>, a: ReviewAction & { dead?: boolean }): void {
+  if (typeof a.userId !== 'string') return;
+  const amt = typeof a.amount === 'number' && Number.isFinite(a.amount) ? a.amount : 0;
+  if (amt <= 0) return;
+  if (a.dead === true) {
+    // Dead money is pooled under its own key so a later street total from the
+    // same player (max) cannot swallow it.
+    paid.set(DEAD, (paid.get(DEAD) ?? 0) + amt);
+    return;
+  }
+  const prev = paid.get(a.userId) ?? 0;
+  if (a.action === 'call') paid.set(a.userId, prev + amt);
+  else paid.set(a.userId, Math.max(prev, amt));
+}
+
+const sum = (m: Map<string, number>): number => [...m.values()].reduce((x, y) => x + y, 0);
 
 /**
  * The river call hero made facing a bet, with the bet's pot fraction, or null
- * when hero made no river call. Amounts are street totals per player (the
- * engine's ActionRecord convention), so a street's contribution per player is
- * its maximum amount on that street; the pot before the river bet is every
- * player's preflop/flop/turn contribution. Production review rows carry the
- * forced posts as actions too (`sb` / `bb` with their amounts, read
- * 2026-10-30), so the preflop maximum per player already includes the blind.
+ * when hero made no river call. The pot before the river bet is every
+ * player's preflop/flop/turn contribution (forced posts are actions in the
+ * review rows: `sb` / `bb`, read 2026-10-30), plus whatever had gone in on the
+ * river before that bet.
  */
 export function riverCallFaced(
   actions: ReviewAction[],
@@ -326,21 +352,17 @@ export function riverCallFaced(
 ): { betFraction: number; raised: boolean } | null {
   const perStreet = new Map<string, Map<string, number>>();
   for (const st of STREETS) perStreet.set(st, new Map());
-  const river = actions.filter((a) => a.stage === 'river');
   for (const a of actions) {
-    if (typeof a.userId !== 'string' || typeof a.stage !== 'string' || !perStreet.has(a.stage)) continue;
-    if (a.stage === 'river') continue;
-    const amt = typeof a.amount === 'number' && Number.isFinite(a.amount) ? a.amount : 0;
-    const m = perStreet.get(a.stage)!;
-    m.set(a.userId, Math.max(m.get(a.userId) ?? 0, amt));
+    if (typeof a.stage !== 'string' || !perStreet.has(a.stage) || a.stage === 'river') continue;
+    contribute(perStreet.get(a.stage)!, a);
   }
   let pot = 0;
-  for (const st of ['preflop', 'flop', 'turn']) for (const v of perStreet.get(st)!.values()) pot += v;
-  const riverPaid = new Map<string, number>();
+  for (const st of ['preflop', 'flop', 'turn']) pot += sum(perStreet.get(st)!);
+  const riverPaid = perStreet.get('river')!;
   let aggressions = 0;
   let lastBet = 0;
   let lastBetPotBefore = pot;
-  for (const a of river) {
+  for (const a of actions.filter((x) => x.stage === 'river')) {
     if (typeof a.userId !== 'string') continue;
     const amt = typeof a.amount === 'number' && Number.isFinite(a.amount) ? a.amount : 0;
     const isCall = a.action === 'call' || (a.action === 'all_in' && a.isFullRaise === undefined);
@@ -350,13 +372,11 @@ export function riverCallFaced(
       return { betFraction: Math.round(betFraction * 1000) / 1000, raised: aggressions >= 2 };
     }
     if (isAggr) {
-      const already = riverPaid.get(a.userId) ?? 0;
-      const potBefore = pot + [...riverPaid.values()].reduce((x, y) => x + y, 0);
-      lastBet = Math.max(0, amt - already);
-      lastBetPotBefore = potBefore;
+      lastBet = Math.max(0, amt - (riverPaid.get(a.userId) ?? 0));
+      lastBetPotBefore = pot + sum(riverPaid);
       aggressions += 1;
     }
-    if (amt > 0) riverPaid.set(a.userId, Math.max(riverPaid.get(a.userId) ?? 0, amt));
+    contribute(riverPaid, a);
   }
   return null;
 }
@@ -468,6 +488,8 @@ export function renderMarkdown(report: LiveMeasureReport): string {
   for (const c of report.riverOnePair.cells) lines.push(`| ${c.sizeClass} | ${c.calls} | ${c.won} | ${fmt(c.wonPct, '%')} |`);
   lines.push('');
   lines.push('## 4. Receipt counts (horse_brain_telemetry)');
+  lines.push('');
+  lines.push('V62 is opt-in (default off since #8781): zero v62 fires on a containing revision is expected; v61 is the live witness.');
   lines.push('');
   lines.push('| feature | total | by day |');
   lines.push('|---|---|---|');

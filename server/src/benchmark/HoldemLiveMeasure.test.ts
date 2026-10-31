@@ -99,11 +99,14 @@ describe('one pair on the river', () => {
 describe('the river call faced', () => {
   const act = (userId: string, action: string, stage: string, amount?: number, isFullRaise?: boolean): ReviewAction => ({ userId, action, stage, amount, isFullRaise });
 
-  it('measures the bet against the pot before it, with street-total amounts', () => {
-    // preflop: v raises to 6, h calls 6 (pot 12); flop: v bets 8, h calls (28);
-    // turn: check/check; river: v bets 14 into 28 = 0.5, h calls.
+  it('measures the bet against the pot before it, in the engine amount convention', () => {
+    // Forced posts and bets/raises are street TOTALS; a call is the INCREMENT
+    // (HandController.processAction). sb 0.5 / bb 1 / h opens to 6 (total) /
+    // v (sb) calls 5.5 more = pot 12; flop: v bets 8, h calls 8 (28); turn
+    // check/check; river: v bets 14 into 28 = 0.5, h calls.
     const actions = [
-      act('v', 'raise', 'preflop', 6), act('h', 'call', 'preflop', 6),
+      act('v', 'sb', 'preflop', 0.5), act('h', 'bb', 'preflop', 1),
+      act('h', 'raise', 'preflop', 6), act('v', 'call', 'preflop', 5.5),
       act('v', 'bet', 'flop', 8), act('h', 'call', 'flop', 8),
       act('v', 'check', 'turn'), act('h', 'check', 'turn'),
       act('v', 'bet', 'river', 14), act('h', 'call', 'river', 14),
@@ -124,6 +127,23 @@ describe('the river call faced', () => {
     expect(riverCallFaced(small, 'h')).toEqual({ betFraction: 0.25, raised: false });
     expect(sizeClassOf(0.25, false)).toBe('small');
     expect(riverCallFaced([act('v', 'bet', 'river', 10), act('h', 'fold', 'river')], 'h')).toBeNull();
+    // A blind defence: sb 0.5, bb 1, open to 3 (total), both blinds call the
+    // increments (2.5 and 2): pot 9, not 7.5. A 3-chip river bet is 1/3 pot: small.
+    const defence = [
+      act('s', 'sb', 'preflop', 0.5), act('b', 'bb', 'preflop', 1), act('h', 'raise', 'preflop', 3),
+      act('s', 'call', 'preflop', 2.5), act('b', 'call', 'preflop', 2),
+      act('s', 'bet', 'river', 3), act('h', 'call', 'river', 3),
+    ];
+    expect(riverCallFaced(defence, 'h')).toEqual({ betFraction: 0.333, raised: false });
+    expect(sizeClassOf(0.333, false)).toBe('small');
+    // A dead ante adds to the pot without raising the street level.
+    const ante = [
+      { userId: 'v', action: 'ante', stage: 'preflop', amount: 1, dead: true } as ReviewAction,
+      { userId: 'h', action: 'ante', stage: 'preflop', amount: 1, dead: true } as ReviewAction,
+      act('v', 'raise', 'preflop', 4), act('h', 'call', 'preflop', 4),
+      act('v', 'bet', 'river', 5), act('h', 'call', 'river', 5),
+    ];
+    expect(riverCallFaced(ante, 'h')).toEqual({ betFraction: 0.5, raised: false });
     // A short all-in call (no isFullRaise) is a call; a full-raise all-in is aggression.
     const jam = [act('v', 'raise', 'preflop', 6), act('h', 'call', 'preflop', 6), act('v', 'all_in', 'river', 30, true), act('h', 'all_in', 'river', 9)];
     expect(riverCallFaced(jam, 'h')).toEqual({ betFraction: 2.5, raised: false });

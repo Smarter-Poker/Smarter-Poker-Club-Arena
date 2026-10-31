@@ -16,13 +16,21 @@ attributed to the fix (the report names the serving release).
   3. `riverOnePairCalls` - how often a horse that called a river bet holding
      exactly one pair won, by the V62 size class of the bet faced (small
      < 0.4 pot, medium < 0.7, large or a raise). Reads `horse_hand_reviews`
-     (card objects or strings; street-total amounts; forced posts are actions
-     there). Caveat carried in the report: those rows exist only for hands
+     (card objects or strings). Amounts follow the engine's own convention,
+     checked in `HandController.processAction`: a `call` is the increment, a
+     bet / raise / all-in / forced post is the street total, a dead post
+     (ante) is pooled separately - the first draft took every amount as a
+     street total and undercounted each blind defence, shifting size classes
+     upward (caught in review). Hold'em rows only (`game_variant = 'nlh'`,
+     12,207 of ~62,000 daily rows), so the row cap is spent on Hold'em; a
+     board flush or board straight is not a one-pair call. Caveat carried in the report: those rows exist only for hands
      with |net| >= 20bb, so this is the big-pot subset - compare before and
      after on the same subset.
   4. `receiptCounts` - `horse_brain_telemetry` fires per day for
      `v61_river_one_pair_shade`, `v62_river_bettor_polarity` and the two V38
-     river receipts beside them.
+     river receipts beside them. V62 is opt-in (default off since #8781), so
+     zero V62 fires on a containing revision is the expected state; the
+     report says so.
 - `server/scripts/holdem-live-measure.ts`: `sample-health --samples FILE`
   appends one `/health` sample; `report --samples FILE --since-hours N --out
   PATH` runs three bounded SELECTs (by day / indexed `played_at` with a

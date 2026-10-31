@@ -1,4 +1,4 @@
--- @live-proof: strpos(pg_get_functiondef('public.fn_close_tournament_entry_window(uuid,text)'::regprocedure),'addon_waiting_for_late_entry_levels')>0 AND strpos(pg_get_functiondef('public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure),'no early add-ons')>0 AND strpos(pg_get_functiondef('public.fn_close_tournament_addon_period(uuid,text)'::regprocedure),'addon_waiting_for_late_entry_levels')>0
+-- @live-proof: strpos(pg_get_functiondef('public.fn_close_tournament_entry_window(uuid,text)'::regprocedure),'addon_waiting_for_late_entry_levels')>0 AND strpos(pg_get_functiondef('public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure),'no early add-ons')>0
 -- Owner 2026-10-31: add-ons start only after the final late-entry level.
 -- Afternoon Deep Stack 8b33a780 opened after elapsed minute 80 before level 8
 -- finished; 50 immutable purchases committed. Preserve receipts/finalized pools.
@@ -48,19 +48,7 @@ BEGIN
        OR (COALESCE(v_t.addon_from_start,false)
            AND v_t.addon_period_ends_at-v_t.addon_period_started_at>interval '60 seconds')$new$);
   EXECUTE d;
-  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_close_tournament_addon_period(uuid,text)'::regprocedure) IS DISTINCT FROM 'c570c866b2c9446eed97916edda488a4' THEN
-    RAISE EXCEPTION 'ADDON_ENTRY_LEVEL_PREIMAGE_CHANGED: public.fn_close_tournament_addon_period(uuid,text)';
-  END IF;
-  d:=pg_get_functiondef('public.fn_close_tournament_addon_period(uuid,text)'::regprocedure);
-  d:=replace(d,$old$  IF v_t.addon_period_started_at IS NULL OR v_t.addon_period_ends_at IS NULL THEN$old$,$new$  -- An old early window cannot finalize the pool before the level boundary.
-  IF NOT COALESCE(v_t.prize_pool_finalized,false)
-     AND COALESCE(v_t.late_reg_levels,v_t.rebuy_levels,0)>0
-     AND (v_t.current_level IS NULL OR
-          v_t.current_level<COALESCE(v_t.late_reg_levels,v_t.rebuy_levels,0)) THEN
-    RETURN jsonb_build_object('ok',false,'reason','addon_waiting_for_late_entry_levels');
-  END IF;
-  IF v_t.addon_period_started_at IS NULL OR v_t.addon_period_ends_at IS NULL THEN$new$);
-  EXECUTE d;
+
 END;
 $patch$;
 COMMIT;

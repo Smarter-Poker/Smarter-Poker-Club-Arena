@@ -17,7 +17,8 @@ describe('add-ons wait for the last late-entry level', () => {
     expect(sql).toContain(
       'public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)'
     );
-    expect(sql).toContain('public.fn_close_tournament_addon_period(uuid,text)');
+    expect(sql).not.toContain("d:=pg_get_functiondef('public.fn_close_tournament_addon_period");
+    expect(test).toContain('legacy expired window still closes without holding old engine');
     expect(sql).toContain('ADDON_ENTRY_LEVEL_PREIMAGE_CHANGED');
   });
 });

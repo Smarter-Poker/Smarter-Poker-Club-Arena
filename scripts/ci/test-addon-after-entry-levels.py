@@ -54,7 +54,7 @@ try:
     CREATE FUNCTION fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,int,text)
       RETURNS jsonb LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'MONEY_BOUNDARY_REACHED'; END$$;
     CREATE FUNCTION fn_finalize_tournament_entry_pool_locked(uuid,text,text) RETURNS jsonb LANGUAGE sql
-      AS $$SELECT '{"finalized":true}'::jsonb$$;
+      AS $$SELECT '{"ok":true,"finalized":true}'::jsonb$$;
     -- Preserve existing earliest-clock admission behavior; only transition is under test.
     CREATE FUNCTION fn_tournament_late_registration_open(uuid) RETURNS bool LANGUAGE sql AS $$
       SELECT NOT coalesce(prize_pool_finalized,false) AND
@@ -72,7 +72,9 @@ try:
     check('RED early purchase reaches money', 'MONEY_BOUNDARY_REACHED' in refusal())
     run(MIG.read_text())
     check('GREEN waits for last late entry level',close()['reason']=='addon_waiting_for_late_entry_levels')
-    check('early legacy deadline cannot finalize pool', json.loads(run(f"SELECT fn_close_tournament_addon_period('{T}');"))['reason']=='addon_waiting_for_late_entry_levels')
+    run("UPDATE tournaments SET addon_period_ends_at=now()-interval '1 second';")
+    check('legacy expired window still closes without holding old engine', json.loads(run(f"SELECT fn_close_tournament_addon_period('{T}');"))['ok'] is True)
+    run("UPDATE tournaments SET addon_period_ends_at=now()+interval '59 seconds';")
     check('GREEN early purchase refused even client claimslevel99','Add-On Period Is Closed' in refusal())
     run('UPDATE tournaments SET current_level=7;')
     check('last late level still running cannot purchase','Add-On Period Is Closed' in refusal())

@@ -2,7 +2,7 @@
 
 Afternoon Deep Stack opened its add-on at elapsed minute 80 while current_level was 3 and late_reg_levels was 8. Fifty purchases were real, not a display count. The entry-close RPC followed the earlier elapsed clock and instructed the engine to open add-ons.
 
-The transition now waits for the configured level boundary. The locked purchase RPC independently refuses early levels, unknown levels, pre-start status and legacy long Free Buy windows. Historical purchase receipts still replay; finalized pools and existing purchases are not rewritten. The add-on close also refuses premature finalization.
+The transition now waits for the configured level boundary. The locked purchase RPC independently refuses early levels, unknown levels, pre-start status and legacy long Free Buy windows. Historical purchase receipts still replay; finalized pools and existing purchases are not rewritten. Existing window finalization remains compatible with the serving engine: refusing an expired window while that engine holds all dealers could prevent level advancement forever. The strict guard belongs at opening and purchase; the new engine owns the corrected pause timing.
 
 All new engine windows, including Free Buy, start only after the committed boundary and every dealer parks. The offer lasts exactly 60 seconds, including within a synchronized break; the independent regular break retains its own pause. Early horse purchase selection is removed. Legacy early Free Buy windows recover at the closing boundary.
 

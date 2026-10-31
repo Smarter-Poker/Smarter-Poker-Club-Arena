@@ -8,3 +8,9 @@ Stats proof: evaluate after dependencies, refuse cancellation, require successfu
 cleanup, and accept only the fixed private-record proof event. The regression
 fails against the old condition. All fixture, provenance, delivery and cleanup
 requirements remain unchanged. No client or engine runtime change.
+
+Required accounting CI also exposed a calendar-dependent fixture collision:
+on October 31, the Today fixture's next-midnight row lands on the fixed
+November 1 DST case for the same user. Give fixed-date DST cases their own
+fixture user. Preserve every boundary, expected amount, and production reader.
+The native PostgreSQL suite reproduced the failure before this isolation.

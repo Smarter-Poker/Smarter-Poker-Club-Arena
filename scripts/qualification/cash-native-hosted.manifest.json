@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 260024,
-      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+      "bytes": 260843,
+      "sha256": "acdc890f2b87c8d89246fbb47335081f022264596df1b09dc6be294873e6a3fa"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5518,5 +5518,21 @@
     "scope": "Reviewed additive merge preserves both player-throwable-favorites and member-jackpot-win-loss selection in existing database qualification; active source identity only, historical audits and financial assertions/results unchanged.",
     "execution_performed": false,
     "sha256": "91758847f6d478a14d3c301fd14d76463bf0f4315027e3543866f70a94e1a319"
+  },
+  "weeklyBoundaryFrameCoverEnforcementSourceAudit20261031": {
+    "scope": "Current CI source identity only: 12 additive lines enforce the original pending cash-boundary frame-cover native qualification in existing accounting shard 2 and retain its result in an always-running artifact step. Every prior workflow command, cash business input, fixture, case, financial assertion, profile, budget, runner, permission and dependency remains unchanged.",
+    "reason": "Bind the reviewed workflow addition that enforces index installation, original row/club-total equivalence and concurrent visibility regression protection for the demonstrated Midway timeout.",
+    "previousCiPin": {
+      "bytes": 260024,
+      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+    },
+    "currentCiPin": {
+      "bytes": 260843,
+      "sha256": "acdc890f2b87c8d89246fbb47335081f022264596df1b09dc6be294873e6a3fa"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false,
+    "qualification": "Source identity only. Preserve SOURCE_ONLY_UNRUN and every historical cash/native/financial verdict; no production or financial recertification. Required exact-head checks and live installation/closure proof remain separate."
   }
 }

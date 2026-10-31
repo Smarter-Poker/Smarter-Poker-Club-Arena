@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 259122,
-      "sha256": "37001f2b3cb5709174cb66bb876b055de4f76550b61e777b7ff8ce7ca59a9fae"
+      "bytes": 259123,
+      "sha256": "ae720f0fd8d3910258105a64a646ea09bf9dfba883281793a9fd10ecc1b1ac91"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -1808,5 +1808,18 @@
     },
     "execution_performed": false,
     "qualification": "Source identity only, not historical or production recertification. Required final-head checks remain enforced."
+  },
+  "heavyClientRunnerCapacitySourceAudit20261030": {
+    "scope": "Current CI source identity only: move the existing compiler, client unit shards and production build from the guarded four-core pool to the existing guarded eight-core pool; request eight client workers bounded by actual CPU capacity. Preserve fallback runners, financial/native commands and profiles, assertions, matrices, deadlines, permissions, dependencies and historical evidence.",
+    "previousCiPin": {
+      "bytes": 259122,
+      "sha256": "37001f2b3cb5709174cb66bb876b055de4f76550b61e777b7ff8ce7ca59a9fae"
+    },
+    "currentCiPin": {
+      "bytes": 259123,
+      "sha256": "ae720f0fd8d3910258105a64a646ea09bf9dfba883281793a9fd10ecc1b1ac91"
+    },
+    "execution_performed": false,
+    "qualification": "Source binding only. No historical financial/native/live receipt is restamped. Required exact-head protected checks and hosted execution remain necessary."
   }
 }

@@ -894,3 +894,56 @@ it('binds the renewed MTT outage delivery without extending or rewriting earlier
   ])
     expect(entry.ownerOrder).toContain(safeguard);
 });
+
+it('binds a distinct qualified next-break carrier and preserves Diamond operator closure', () => {
+  const raw = readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8');
+  const doc = JSON.parse(raw);
+  const id = '2026-10-31-mtt-action-outage-qualified-next-break';
+  const marker = ',\n    {\n      "id": "' + id + '"';
+  expect(raw.split(marker)).toHaveLength(2);
+  expect(doc.windows.findIndex((w: { id: string }) => w.id === id)).toBe(60);
+  expect(
+    createHash('sha256')
+      .update(raw.slice(0, raw.indexOf(marker)))
+      .digest('hex')
+  ).toBe('65d83df32769560949ac3abaf141a9d207e3bc41891056706524bcbb2f740045');
+  expect(
+    createHash('sha256')
+      .update(raw.slice(raw.indexOf('  "databaseWindows"')))
+      .digest('hex')
+  ).toBe('b42eb3dd7b76725a8fb83d8282cfd599a7edc2c3b5a6d3ddb6a70f075fd18ca1');
+  const entry = doc.windows[60];
+  expect(entry.contains).toBe('280303d1e569344c837780b0605f95c5b00e687b');
+  expect(entry.notBefore).toBe('2026-10-31T03:53:00Z');
+  expect(entry.notAfter).toBe('2026-10-31T05:10:00Z');
+  expect(entry.announceAtChicagoMinutes).toEqual([53]);
+  expect(entry.migrations).toEqual([]);
+  const floorRaw = readFileSync(join(root, 'server/release/activation-floor.json'));
+  expect(JSON.parse(floorRaw.toString())).toEqual({
+    schema: 'engine-release-activation-floor/v2-owner-window',
+    preparationAt: entry.notBefore,
+    activationAt: entry.notBefore,
+    expiresAt: entry.notAfter,
+    timeZone: 'America/Chicago',
+    ownerWindowId: id,
+    clientPublicationAt: entry.notBefore,
+  });
+  expect(entry.releaseWitness).toEqual({
+    path: 'server/release/activation-floor.json',
+    sha256: 'c3ffe90a717270b0af30a7b306e72877bb48b338b3b16fa612d1d68126da15ed',
+  });
+  expect(createHash('sha256').update(floorRaw).digest('hex')).toBe(entry.releaseWitness.sha256);
+  for (const safeguard of [
+    'current-head checks',
+    'EED33',
+    '29 runtime pins',
+    'full285s reserve',
+    'OWN healthy v3 thaw',
+    'one actual activation maximum',
+    'INSTALLED migration20261030235825',
+    'KEEP DIAMOND CLOSED',
+    '01a18fed-2211-7a62-9416-611dd6e4d96d',
+    'not Diamond resumed play',
+  ])
+    expect(entry.ownerOrder).toContain(safeguard);
+});

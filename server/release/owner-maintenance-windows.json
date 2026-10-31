@@ -582,6 +582,19 @@
         "path": "server/release/activation-floor.json",
         "sha256": "a00a089a3cb49987e14db2c0d5fe4c230109c9f8852bfe59764040f323c74f73"
       }
+    },
+    {
+      "id": "2026-10-31-mtt-action-outage-qualified-next-break",
+      "ownerOrder": "Dan directly continued the same urgent MTT and Call/Raise/Fold outage at03:46UTC October31: focus on ours and finish the new engine by the next safe break. Required checks completed and PR8816 protected merged at03:51:37UTC as280303d1e569344c837780b0605f95c5b00e687b, after ordinary listener-migration DDL admission closed at03:50. This distinct finite single-activation carrier follows that ongoing urgent incident instruction, not a deadline-only emergency, extension, automatic rollover or reuse of the preceding04:10-expiry carrier or any release/checkpoint intent. Preserve all60 preceding records byte-for-byte, their order/expiry/witnesses and all databaseWindows. Runtime source is unchanged from the protected8816 repair; require current-head checks and actual protected inclusion, exact EED33 cases and29 runtime pins, composed real MAIN Docker Node22.23.2 qualification and every native prerequisite. Require unchanged guard SHA256b8e43e73864d46db088096474d0334f22076e83c1ce70b8a50c382a3a2cae312 and helper SHA256401a15fa30f663b8614cf962ed4650c7f55927d29705ab9bdef9dac0638ee6e4; INSTALLED migration20261030235825 with operator MD58ee8d46e5e8045ca727ea7684a3474c3 and exact history/security/ACL/RLS/registry readback. Fixed03:53-05:10UTC October31; Chicago minute53 notice and55 activation only, targeting04:53notice/04:55activation after migration admission reopens04:04, one actual activation maximum. Use only the existing stage/receiver and original exclusive locks, exact image/process/socket/endpoint identity and O_EXCL/fsynced claim before one ACK. Preserve20s MAIN/full5s close,40s checkpoint/5s cleanup,245s proof/135s rollback/full285s reserve,120s last-hand notice, real hand-boundary drain,300s durable freeze, rolling-hour seal, rollback and completed OWN healthy v3 thaw. Preserve whole physical cohort custody including original15/128/110 and both10K cohorts; pending or unknown outcomes keep original operation IDs. Dan explicitly KEEP DIAMOND CLOSED at03:45UTC under separate operator hold01a18fed-2211-7a62-9416-611dd6e4d96d: finish existing hands safely, no refunds. Do not release, replace or reinterpret that hold. Postcutover proof requires Club10K natural committed play and affected legal actions plus preserved Diamond hold/no new hands, not Diamond resumed play, and fifteen ACTIVE minutes after adoption. Never clear unrelated pauses, discard originals, fabricate winners, force actions, change chips/seats/blind schedules, replay payouts/migrations, close foreign Inspector, signal MAIN directly or add another publisher/watcher/timer/repair loop. No arbitrary-minute restart, automatic extension or universal future-failure guarantee. Non-engine delivery remains immediate.",
+      "contains": "280303d1e569344c837780b0605f95c5b00e687b",
+      "notBefore": "2026-10-31T03:53:00Z",
+      "notAfter": "2026-10-31T05:10:00Z",
+      "announceAtChicagoMinutes": [53],
+      "migrations": [],
+      "releaseWitness": {
+        "path": "server/release/activation-floor.json",
+        "sha256": "c3ffe90a717270b0af30a7b306e72877bb48b338b3b16fa612d1d68126da15ed"
+      }
     }
   ],
   "databaseWindows": [

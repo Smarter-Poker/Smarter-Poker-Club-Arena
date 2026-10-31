@@ -32,3 +32,19 @@ describe('revealed cards leave boards and totals clear', () => {
     );
   });
 });
+
+it('moves prototype-backed browser rectangles without losing their dimensions', () => {
+  const row: CardBox = Object.create({ left: 10, top: 30, width: 80, height: 32 });
+  expect(Object.keys(row)).toEqual([]);
+  const obstacle = { left: 0, top: 20, width: 100, height: 50 };
+  const placed = placeProtectedCardRow(row, [obstacle], {
+    left: 0,
+    top: 0,
+    width: 393,
+    height: 852,
+  });
+  expect(placed).not.toBeNull();
+  expect(placed!.width).toBe(80);
+  expect(placed!.height).toBe(32);
+  expect(overlap(placed!, obstacle)).toBe(false);
+});

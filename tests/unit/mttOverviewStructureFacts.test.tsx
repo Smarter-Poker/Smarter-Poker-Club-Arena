@@ -140,6 +140,46 @@ describe('live tournament tabs share the committed blind amounts', () => {
     };
   }
 
+  it('shows elapsed running time from actual start and ticks during breaks', async () => {
+    const input = running({ index: 0, small_blind: 100, big_blind: 200, ante: 0 }, 0);
+    render(
+      <DetailOverviewTab
+        {...input}
+        tournament={{
+          ...input.tournament,
+          started_at: new Date(epoch - 6_800_000).toISOString(),
+          on_break: true,
+        }}
+      />
+    );
+    const value = () => screen.getByText('Running Time').nextElementSibling?.textContent;
+    expect(value()).toBe('1h 53m 20s');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(value()).toBe('1h 53m 21s');
+  });
+
+  it('uses the recorded end for completed duration and never invents a missing start', () => {
+    const input = running(null, 0);
+    const view = render(
+      <DetailOverviewTab
+        {...input}
+        tournament={{
+          ...input.tournament,
+          status: 'COMPLETED',
+          started_at: new Date(epoch - 6_800_000).toISOString(),
+          ended_at: new Date(epoch).toISOString(),
+        }}
+      />
+    );
+    expect(screen.getByText('Running Time').nextElementSibling).toHaveTextContent('1h 53m 20s');
+    view.rerender(
+      <DetailOverviewTab {...input} tournament={{ ...input.tournament, started_at: null }} />
+    );
+    expect(screen.getByText('Running Time').nextElementSibling).toHaveTextContent('Unavailable');
+  });
+
   it('counts down late registration rather than the current blind level', async () => {
     const input = running({ index: 0, small_blind: 100, big_blind: 200, ante: 0 }, 0);
     render(

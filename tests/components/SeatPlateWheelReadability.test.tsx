@@ -29,10 +29,12 @@ describe('player plates stay readable across the complete responsive cascade', (
     expect(rules(page, '.seat__name')).toEqual([]);
     expect(rules(page, '.seat__stack')).toEqual([]);
   });
-  it('each plate fills its seat so wider names do not silently shrink the box', () => {
-    expect(rules(css, '.seat__info')[0]).toMatch(/width:\s*100%/);
+  it('each plate shares the former hero width and a common readable height', () => {
+    expect(rules(css, '.seat__info')[0]).toContain(
+      'width: min(100%, max(100px, calc(var(--seat-avatar-size) * 0.95)))'
+    );
     for (const body of rules(css, '.seat__info')) {
-      const height = body.match(/min-height:\s*(?:clamp\()?([\d.]+)px/);
+      const height = body.match(/min-height:[\s\S]*?(?:max|clamp)\(([\d.]+)px/);
       expect(height).not.toBeNull();
       // Owner-requested proportional mobile boxes retain room for two readable lines.
       expect(Number(height![1])).toBeGreaterThanOrEqual(40);

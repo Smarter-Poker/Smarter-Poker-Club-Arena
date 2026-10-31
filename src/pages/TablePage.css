@@ -5198,11 +5198,14 @@ button.post-bb-overlay-button {
    never feed these dimensions. Taking a seat enters the existing player view. */
 @media (max-width: 480px) and (orientation: portrait) {
   .table-page[data-hero='false'] .table-scaler {
+    /* Half the shared avatar plus the readable panel's lower half. Width is
+       fixed by the viewport here, so this reserve is independent of hand state. */
+    --sp-observer-clear: max(52px, calc(var(--table-w, 360px) * 0.105333 + 24px));
     width: 100%;
     /* Small rings retain their declared downward offset; it cannot also
        consume the bottom observer seat's clearance. */
     height: calc(
-      var(--sp-phone-box-h) + var(--sp-hero-clear) - var(--sp-observer-clear, 42px) -
+      var(--sp-phone-box-h) + var(--sp-hero-clear) - var(--sp-observer-clear, 52px) -
         var(--sp-short-table-drop, 0px)
     );
     max-height: none;
@@ -5211,7 +5214,7 @@ button.post-bb-overlay-button {
   /* The wider painted rail must not widen five board cards into the
      screen-edge action labels. Keep the live board in the centre lane. */
   .table-page[data-hero='false'] .community-area {
-    max-width: 52vw;
+    max-width: 50vw;
   }
   /* Six-seat pods have wider plates than the dense ring. */
   .table-page[data-hero='false'][data-seats='6'] .community-area {
@@ -5271,8 +5274,14 @@ button.post-bb-overlay-button {
     translate: 0 -3px;
   }
 }
-@media (max-width: 340px) and (orientation: portrait) {
-  .table-page[data-hero='false'] .table-scaler {
-    --sp-observer-clear: 38px;
+
+/* Uniform compact pods on short portrait phones need less hero overhang.
+   Return the unused strip to the full ring while retaining its static reserve. */
+@media (min-width: 341px) and (max-width: 480px) and (max-height: 720px) and (orientation: portrait) {
+  .table-page .table-container {
+    --sp-hero-clear: 54px;
+  }
+  .table-page[data-seats='6'] .table-container {
+    --sp-hero-clear: 58px;
   }
 }

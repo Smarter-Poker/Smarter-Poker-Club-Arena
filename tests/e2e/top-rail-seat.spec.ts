@@ -1,28 +1,34 @@
-/**
- * Dan 2026-08-19, bug list item 10: "the top player's box must sit on top of
- * the rail, not in the middle of the table."
- *
- * Table geometry, from the measured skin composites (TablePage.tsx):
- *   .table-surface (the FELT window) = top 8.9%, height 80.3% of .table-scaler
- *   the top rail band sits just ABOVE the felt, centred near y 8.5%
- * So "on the rail" means the player box straddles ~8.5%; "in the middle of the
- * table" means it sits entirely below 8.9%, floating on the felt.
- *
- * Why the seat is compact: with the avatar ABOVE the nameplate, a full-size
- * seat cannot put its box on the rail. The box sits ~3.9% of the table below
- * the seat centre, so anchoring it on the rail needs a seat centre near 4.6%,
- * which pushes the seat - and the bust art, which is drawn rising from its
- * feet - off the top of the canvas into the BBJ banner. A 56px avatar halves
- * that offset and makes it fit. Dan chose this trade-off over flipping the
- * nameplate or letting the art overlap the banner.
- *
- * Dan 2026-10-24: that trade-off now applies to the 7-9 max top-cap seats only.
- * The BBJ plates moved to the left corner (#7832/#7843), and on a 2-6 ring the
- * single top-centre seat is full size - its box still measures on the rail.
+/** Owner 2026-10-31: every top, side and hero seat shares the former hero size.
+ * Banner clearance now belongs to the measured layout hook, not a smaller cap.
+ * Exercise that owner together with the real stylesheet; full-table card,
+ * player and marker clearance is covered in table-proportions.spec.ts.
  */
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { buildSync } from 'esbuild';
+const layoutBundle = buildSync({
+  stdin: {
+    contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {useProtectedCardLayout} from './src/hooks/useProtectedCardLayout'; const ref={current:document.querySelector('.table-scaler')}; function Layout(){useProtectedCardLayout(ref,'fixture');return null} createRoot(document.getElementById('layout-root')).render(React.createElement(Layout));`,
+    resolveDir: process.cwd(),
+    loader: 'tsx',
+  },
+  bundle: true,
+  write: false,
+  format: 'iife',
+  platform: 'browser',
+  define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': '{}' },
+}).outputFiles[0].text;
+async function mount(p: import('@playwright/test').Page, content: string) {
+  await p.setContent(content + '<div id="layout-root"></div>');
+  await p.addScriptTag({ content: layoutBundle });
+  await p.waitForFunction(() =>
+    Boolean(
+      document.querySelector('.seat-wrapper--top')?.getAttribute('style')?.includes('translate:')
+    )
+  );
+}
+const fullAvatar = Math.max(50, 605 * 0.158) * 1.3333;
 
 const seatCss = fs.readFileSync(
   path.join(process.cwd(), 'src/components/table/SeatSlot.css'),
@@ -92,17 +98,12 @@ function readTopCapY(): number {
 
 const TOP_CAP_Y = readTopCapY();
 
-/** The two pairings the app actually ships. Canvas heights: TablePage.css. */
-/* Dan 2026-10-24: the short rings' top seat is no longer capped. The BBJ plates
-   moved to the left corner (#7832/#7843), so nothing sits above it and it is
-   the same full-size villain as every other chair - see the beats after the
-   loop. Its `cap` is therefore the full proportional slot, not a number. */
+/** Real ring positions and canvas heights. */
 const SMALL_RING = { y: TOP_CENTRE_Y, canvas: 960, seats: 6 } as const;
-const FULL_RING = { y: TOP_CAP_Y, canvas: 1000, seats: 9, cap: 76 } as const;
+const FULL_RING = { y: TOP_CAP_Y, canvas: 1000, seats: 9 } as const;
 
 const SCALER_H = 1000;
 const FELT_TOP_PCT = 8.9;
-const RAIL_PCT = 8.5;
 
 const seat = (topPct: number, extraClass: string) => `
   <div class="seat-wrapper ${extraClass}" style="left:50%; top:${topPct}%">
@@ -197,27 +198,27 @@ const RINGS = [
   { label: `full ring (7-9 seats, y ${FULL_RING.y}, canvas ${FULL_RING.canvas})`, ...FULL_RING },
 ];
 
-/* The rail beats hold for BOTH rings, the full-size small-ring seat included:
-   measured 2026-10-24, its box still straddles the rail band. */
+/* Full-size top pods keep their player facts in the upper quarter, below
+   the retained crown anchor. The complete ring is checked separately. */
 for (const ring of RINGS) {
   const content = () =>
     page(ring.y, 'seat-wrapper--top', { canvas: ring.canvas, seats: ring.seats });
 
-  test(`${ring.label}: the player box straddles the rail band`, async ({ page: p }) => {
-    await p.setContent(content());
+  test(`${ring.label}: the complete top pod clears the banner`, async ({ page: p }) => {
+    await mount(p, content());
     const m = await measure(p);
-    expect(m.boxTopPct).toBeLessThanOrEqual(RAIL_PCT);
-    expect(m.boxBottomPct).toBeGreaterThanOrEqual(RAIL_PCT);
+    // The six-seat crown keeps its existing intentional 2px clipping.
+    expect(m.artTopPct * (ring.canvas / 100)).toBeGreaterThanOrEqual(ring.seats === 6 ? -2.01 : 2);
+    expect(m.boxTopPct).toBeGreaterThan(m.artTopPct);
   });
 
-  test(`${ring.label}: the box is not stranded on the felt`, async ({ page: p }) => {
-    await p.setContent(content());
-    expect((await measure(p)).boxTopPct).toBeLessThan(FELT_TOP_PCT);
+  test(`${ring.label}: the box stays in the upper player lane`, async ({ page: p }) => {
+    await mount(p, content());
+    expect((await measure(p)).boxBottomPct).toBeLessThan(25);
   });
 }
 
-/* The banner beats belong to the 7-9 rings only: their two top-cap seats still
-   sit under the jackpot's former band and keep the 76px cap. */
+/* Full rings keep the complete artwork below the page boundary. */
 for (const ring of [FULL_RING].map((r) => ({
   label: `full ring (7-9 seats, y ${r.y}, canvas ${r.canvas})`,
   ...r,
@@ -228,24 +229,15 @@ for (const ring of [FULL_RING].map((r) => ({
   test(`${ring.label}: the whole seat, bust art included, stays inside the canvas`, async ({
     page: p,
   }) => {
-    await p.setContent(content());
+    await mount(p, content());
     const m = await measure(p);
-    /* Two pixels, not zero. Measured clearances at 605px wide are 2.2px on the
-       small ring and 3.9px on the full one; a bare `>= 0` would call 0.2px
-       fine, and 0.2px is a rounding error away from the 2026-08-19 bug this
-       whole rule exists to prevent. */
+    // Keep daylight below the boundary; zero is too close to clipping.
     expect(m.artTopPct * (ring.canvas / 100)).toBeGreaterThanOrEqual(2);
   });
 
-  test(`${ring.label}: the top avatar is capped at ${ring.cap}px`, async ({ page: p }) => {
-    await p.setContent(content());
-    /* The cap belongs to the CANVAS. 76px on the full ring is a 36% larger
-       avatar than the flat 56 it replaced (that number was two-thirds of a
-       flat 84px slot, and the slot became proportional while the cap did not,
-       so a 720px table was halving its top row). The same 76 on the short
-       canvas measures 8.1px INSIDE the banner, which is why the small rings
-       keep 56. Both are measured, not reasoned. */
-    expect((await measure(p)).avatarPx).toBe(ring.cap);
+  test(`${ring.label}: the top avatar uses the full hero size`, async ({ page: p }) => {
+    await mount(p, content());
+    expect((await measure(p)).avatarPx).toBeCloseTo(fullAvatar, 0);
   });
 }
 
@@ -263,38 +255,31 @@ test('small ring: the top-centre seat is the same full size as every other villa
     })
   );
   const m = await measure(p);
-  expect(Math.abs(m.avatarPx - Math.max(50, 605 * 0.158))).toBeLessThanOrEqual(1);
+  expect(Math.abs(m.avatarPx - fullAvatar)).toBeLessThanOrEqual(1);
   const t = await p.evaluate(
     () => getComputedStyle(document.querySelector('.seat__avatar-img')!).transform
   );
   expect(t).toContain('1.45');
 });
 
-test('every short ring (2-6 seats) gets the full-size top seat, 7-9 keep the cap', async ({
-  page: p,
-}) => {
+test('every ring (2-9 seats) gets the full hero-size top seat', async ({ page: p }) => {
   for (const seats of [2, 3, 4, 5, 6, 7, 8, 9]) {
     await p.setContent(
       page(SMALL_RING.y, 'seat-wrapper--top', { canvas: SMALL_RING.canvas, seats })
     );
     const { avatarPx } = await measure(p);
-    if (seats <= 6) expect(avatarPx, `${seats}-max`).toBeGreaterThan(76 + 10);
-    else expect(avatarPx, `${seats}-max`).toBe(76);
+    expect(avatarPx, `${seats}-max`).toBeCloseTo(fullAvatar, 0);
   }
 });
 
 test('CONTROL: a full-size seat at this height would leave the canvas', async ({ page: p }) => {
-  // Since 2026-10-24 this is what the short rings SHIP: the art rises above
-  // the canvas into the open page where the BBJ banner used to be. Kept as the
-  // measurement of how far a full-size top seat reaches, so the 7-9 caps above
-  // are still seen to be doing real work.
-  // No `seat-wrapper--top`, so no cap at all - the proportional slot in full.
+  // The unplaced CSS control proves why the measured hook owns clearance.
   await p.setContent(
     page(SMALL_RING.y, '', { canvas: SMALL_RING.canvas, seats: SMALL_RING.seats })
   );
   const m = await measure(p);
   // Full-size means the proportional law's answer, not the retired 84px rung.
-  expect(Math.abs(m.avatarPx - Math.max(50, 605 * 0.158))).toBeLessThanOrEqual(1);
+  expect(Math.abs(m.avatarPx - fullAvatar)).toBeLessThanOrEqual(1);
   expect(m.artTopPct).toBeLessThan(0);
 });
 
@@ -309,14 +294,8 @@ test('CONTROL: the previous y=11 position stranded the box on the felt', async (
 test('side and bottom seats keep the full-size avatar and 1.45x bust', async ({ page: p }) => {
   await p.setContent(page(50, ''));
   const m = await measure(p);
-  /* 2026-08-29: was `toBe(84)` — the px-ladder avatar that #1650 deliberately
-     replaced with a fraction of the felt. This spec ran in NO CI job, so the
-     pin sat red for a day and guarded nothing. The full-size avatar is now
-     the same law table-proportions.spec.ts enforces: 15.8% of the felt,
-     floored at 50px. What THIS beat still owns is the contrast with the
-     compact top seat above — full-size seats must not silently inherit the
-     top row's 56px cap. */
-  const expected = Math.max(50, 605 * 0.158);
+  // A side seat must use the same proportional slot and artwork scale.
+  const expected = fullAvatar;
   expect(Math.abs(m.avatarPx - expected)).toBeLessThanOrEqual(1);
   expect(m.avatarPx).toBeGreaterThan(56 + 10);
   const t = await p.evaluate(

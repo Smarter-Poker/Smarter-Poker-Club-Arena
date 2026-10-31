@@ -1,0 +1,7 @@
+# Retain each original Lightning hold outcome
+
+A pause could commit while its response was lost. The former helper then re-listed only Lightning-mode clusters, omitted that now-paused cluster, and retired cleanup without releasing it. A process exit before its final journal write also lost known partial work.
+
+The original release helper now persists its candidate set and each pending request before sending it, and each bound answer before continuing. Cleanup resolves exact original pause outcomes without creating missing pauses. Resume uses the same original request identity and an atomic expected-pause comparison, so an intervening operator hold cannot be resumed by this release. Unknown, in-progress and malformed outcomes retain the journal; cleanup prevents new pause work. Prior v1 files remain unknown rather than acquiring guessed ownership. This requires the matching protected operator API migration and its installation proof.
+
+Focused filesystem and transport fixtures reproduce the lost-response omission, premature retirement and missing pre-send journal against the previous helper. Regressions also cover actual isolated child exit after the simulated commit, resume interruption, permanent refusals, foreign ownership, malformed files and unsupported API admission. These fixtures do not invoke production or prove a live release, drain, host census, thaw or tournament recovery. Production safety budgets and native guards remain unchanged.

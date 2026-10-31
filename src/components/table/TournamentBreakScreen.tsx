@@ -214,7 +214,7 @@ export function TournamentBreakScreen({
             .select('current_level, prize_pool, current_players, max_players')
             .eq('id', tournamentId)
             .maybeSingle(),
-          readTournamentStandings(tournamentId, 'id, user_id, username, chips, status', true),
+          readTournamentStandings(tournamentId, 'id, user_id, username, chips, status'),
         ]);
         if (!mounted || pending) return;
         if (tRes.error || pRes.error || !tRes.data || !pRes.data) {
@@ -238,12 +238,15 @@ export function TournamentBreakScreen({
             user_id?: string;
             username?: string | null;
             chips?: number | null;
+            status?: string;
           }>
-        ).map((r) => ({
-          playerId: String(r.user_id ?? ''),
-          playerName: String(r.username ?? 'Player'),
-          stack: Number(r.chips) || 0,
-        }));
+        )
+          .filter((r) => r.status === 'playing' || r.status === 'registered')
+          .map((r) => ({
+            playerId: String(r.user_id ?? ''),
+            playerName: String(r.username ?? 'Player'),
+            stack: Number(r.chips) || 0,
+          }));
         const sorted = [...active].sort((a, b) => b.stack - a.stack);
         /* Rank = 1 + players with strictly more chips; ties share the better
            rank, as every tournament lobby counts it. */
@@ -262,7 +265,7 @@ export function TournamentBreakScreen({
           currentLevel: Math.max(0, Number(t.current_level) || 0),
           prizePool: Number(t.prize_pool) || 0,
           playersRemaining: active.length,
-          totalPlayers: Math.max(Number(t.current_players) || 0, active.length),
+          totalPlayers: pRes.data.length,
           averageStack: active.length ? Math.trunc(totalChips / active.length) : 0,
           topPlayers: ranked.slice(0, 5),
           myPlayer: ranked.find((r) => r.isCurrentUser),

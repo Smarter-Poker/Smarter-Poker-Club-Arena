@@ -446,11 +446,17 @@ describe('the mounted tournament purchase callbacks preserve unknown outcomes', 
       .mockReturnValue({ levelIndex: 3 } as any);
     const rpc = vi
       .mocked(supabase.rpc)
-      .mockRejectedValueOnce(new Error('Lost response'))
-      .mockResolvedValueOnce({
-        data: { success: true, rebuy_type: 'addon', new_stack: 1500 },
-        error: null,
-      } as any);
+      .mockImplementationOnce(() => {
+        const result = Promise.reject(new Error('Lost response'));
+        return Object.assign(result, { abortSignal: (_signal: AbortSignal) => result }) as any;
+      })
+      .mockImplementationOnce(() => {
+        const result = Promise.resolve({
+          data: { success: true, rebuy_type: 'addon', new_stack: 1500 },
+          error: null,
+        });
+        return Object.assign(result, { abortSignal: (_signal: AbortSignal) => result }) as any;
+      });
     try {
       const accept = tableCallback('onAddOnAccept', { ...f, tournamentService });
       await expect(accept()).rejects.toBeInstanceOf(TournamentPurchaseNotSubmittedError);

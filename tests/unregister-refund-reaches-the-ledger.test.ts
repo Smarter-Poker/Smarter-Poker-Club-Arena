@@ -78,6 +78,6 @@ describe('unregistering writes the row the cancel reads', () => {
 
 describe('the client still calls it', () => {
   it('unregisters through the RPC rather than deleting the row itself', () => {
-    expect(SERVICE).toContain("supabase.rpc('fn_unregister_from_tournament'");
+    expect(SERVICE).toMatch(/supabase\s*\.rpc\('fn_unregister_from_tournament'/);
   });
 });

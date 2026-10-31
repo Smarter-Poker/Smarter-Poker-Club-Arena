@@ -1,5 +1,5 @@
-import { tournamentAddOnEntryBoundaryPassed } from '../utils/tournamentAddOnBoundary';
 import { earlyHeroCardsReady, type EarlyHeroCards } from '../utils/earlyHeroCards';
+import { tournamentAddOnEntryBoundaryPassed } from '../utils/tournamentAddOnBoundary';
 import { useTopUpAccounting } from '../hooks/useTopUpAccounting';
 import { autoTopUpRequest, type AutoTopUpRequest } from '../utils/autoTopUpRequest';
 import { tournamentTableLabel } from '../utils/tournamentTableLabel';

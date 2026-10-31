@@ -4464,6 +4464,9 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /** Higher layers own the exact controller's local completion wait. */
+  protected releaseStoppedHandWait(): void {}
+
   stop(): Promise<void> {
     if (this.teardownPromise) return this.teardownPromise;
     this.recordLifecycleDiagnostic('stop_initiated', {
@@ -4474,6 +4477,8 @@ export abstract class ServerTableEngineBase {
     // reacts to that fence and may return in the same microtask turn; neither
     // it nor its current settlement may disappear from the ownership proof.
     const dealingLoopAtFence = this.dealingLoopPromise;
+    const continuationAtFence = this.handContinuation;
+    const controllerAtFence = this.handController;
     const settlementsAtFence = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
     if (this.postHandTasksPromise) settlementsAtFence.push(this.postHandTasksPromise);
     settlementsAtFence.push(...this.tournamentMoveOperations, ...this.readContinuationTasks);
@@ -4483,6 +4488,10 @@ export abstract class ServerTableEngineBase {
     this.firstTerminalObservation ??= leavePendingTerminalReason('stop_requested');
     this.terminal = true;
     this.running = false;
+    // This controller owns a separate pineapple settle clock. Quiesce its
+    // existing callback at the fence, including when custody later refuses
+    // retirement or a retained physical write keeps teardown pending.
+    controllerAtFence?.cancelPineappleSettle?.();
     this.clearEngineLeaseExpiryTimer();
     this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
@@ -4492,7 +4501,25 @@ export abstract class ServerTableEngineBase {
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
 
-    const teardown = this.performStop(dealingLoopAtFence, settlementsAtFence);
+    // Stop already fenced all further actions. Resolve only the local hand
+    // wait before its timer is cancelled, retaining the controller for the
+    // recovery snapshot. This does not settle a hand or release its permit.
+    this.releaseStoppedHandWait();
+
+    if (continuationAtFence) {
+      const drain = continuationAtFence.drainOwnedWork();
+      // Its physical write may fail before the dealing-loop join returns.
+      // Observe now, but preserve the same rejection for the teardown proof.
+      void drain.catch(() => undefined);
+      settlementsAtFence.push(drain);
+    }
+
+    const teardown = this.performStop(
+      dealingLoopAtFence,
+      settlementsAtFence,
+      continuationAtFence,
+      controllerAtFence
+    );
     this.teardownPromise = teardown;
     void teardown
       .then(
@@ -4510,7 +4537,9 @@ export abstract class ServerTableEngineBase {
       ...(this.postHandTasksPromise ? [this.postHandTasksPromise] : []),
       ...this.tournamentMoveOperations,
       ...this.readContinuationTasks,
-    ]
+    ],
+    continuationAtFence: HandContinuationLane | null = this.handContinuation,
+    controllerAtFence: HandController | null = this.handController
   ): Promise<void> {
     this.weeklyHandPause.stop();
     this.weeklyHandTimers.stop();
@@ -4607,6 +4636,37 @@ export abstract class ServerTableEngineBase {
       }
     } else {
       banksCaptured = true;
+    }
+
+    // A generic snapshot excludes the private deck and cannot replace an
+    // unretained original continuation. All accepted physical writers above
+    // have returned, but refusal must preserve the exact original custody.
+    // The memoized rejected teardown also prevents a retry certifying this
+    // same quarantined generation as successfully retired.
+    let originalCustodyUnproven = continuationAtFence?.isUnretained() ?? false;
+    if (controllerAtFence && !continuationAtFence) {
+      try {
+        const phase = controllerAtFence.getLifecyclePhase();
+        if (
+          typeof phase?.handStarted !== 'boolean' ||
+          typeof phase?.handCompleted !== 'boolean' ||
+          (phase.handCompleted && !phase.handStarted)
+        )
+          throw new Error('Stopped Original Hand Phase Is Unproven');
+        // Legacy cash snapshots abandon an unfinished hand; they cannot
+        // preserve its private deck. A prepared original has not actuated,
+        // and a completed original has already joined its accepted writers.
+        originalCustodyUnproven = phase.handStarted && !phase.handCompleted;
+      } catch (error) {
+        failures.push(error);
+        originalCustodyUnproven = true;
+      }
+    }
+    if (originalCustodyUnproven) {
+      throw new AggregateError(
+        [...failures, new Error('Stopped Original Hand Custody Is Unproven')],
+        `Table engine ${this.tableId} retains unproven original hand custody`
+      );
     }
 
     this.recordLifecycleDiagnostic('owned_work_joined');

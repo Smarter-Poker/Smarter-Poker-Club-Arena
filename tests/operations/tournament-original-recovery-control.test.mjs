@@ -97,16 +97,16 @@ test('post-control identity drift cannot certify preparation', async () => {
 });
 const other = '68af0f95-82f5-4047-b424-6780a4236f4d';
 const db = 'https://kuklfnapbkmacvwxktbh.supabase.co';
-function abortFixture({ timeout = false, hash = '0'.repeat(32) } = {}) {
+function abortFixture({ timeout = false, hash = '0'.repeat(32), initiallySettled = false } = {}) {
   const calls = [];
-  let mutated = false;
+  let mutated = initiallySettled;
   const state = () => ({
     ok: true,
     operation_id: runtime.operation_id,
     tournament_id: other,
     current_generation: input.generation,
     quiescence_generation: input.generation,
-    current_boundary_valid: true,
+    current_boundary_valid: !mutated,
     money_hash: hash,
     state: mutated ? 'settled' : 'quiesced',
     tournament_status: mutated ? 'CANCELLED' : 'RUNNING',
@@ -235,5 +235,159 @@ test('control workflow is manual default-branch free compute with canonical conf
   assert.doesNotMatch(
     workflow,
     /HETZNER_SSH|engine-release-transaction|stage-engine-release|repository_dispatch|\.env/
+  );
+});
+
+// Synthetic private values must never reach the returned Actions artifact,
+// including a partial result after a later identity/read failure.
+const privateCanary = 'PRIVATE_PLAYER_ROSTER_LEDGER_SECRET_CANARY';
+function privateResponses(f, { failAfter = false, badCanonicalAfter = false } = {}) {
+  const prior = f.fetchImpl;
+  let healthReads = 0;
+  let canonicalReads = 0;
+  f.fetchImpl = async (url, options) => {
+    if (url.includes('/health') && ++healthReads === 2 && failAfter) throw Error(privateCanary);
+    const response = await prior(url, options);
+    return {
+      ...response,
+      json: async () => {
+        const value = await response.json();
+        const privateFields = {
+          future_field: privateCanary,
+          refunds: [{ user_id: privateCanary, ledger_id: privateCanary }],
+          pre_abort_roster: [privateCanary],
+          money_snapshot: { private_basis: privateCanary },
+          refunded_count: { user_id: privateCanary },
+          financial: {
+            total_refunded: 123,
+            unused_overlay_returned: 4,
+            refunds: [{ user_id: privateCanary }],
+            future: privateCanary,
+          },
+          quiescence: {
+            generation: input.generation,
+            money_hash: '0'.repeat(32),
+            future: privateCanary,
+          },
+        };
+        const poisoned = { ...value, ...privateFields };
+        if (value.runtime) poisoned.runtime = { ...value.runtime, ...privateFields };
+        if (value.receipt) poisoned.receipt = { ...value.receipt, ...privateFields };
+        if (
+          url.endsWith('/fn_ca_tournament_abort_stop_state') &&
+          ++canonicalReads === 2 &&
+          badCanonicalAfter
+        )
+          poisoned.current_generation = 'changed';
+        return poisoned;
+      },
+    };
+  };
+  return f;
+}
+for (const scenario of [
+  { name: 'prepare', action: 'prepare' },
+  { name: 'read', action: 'read' },
+  { name: 'prepare partial after identity failure', action: 'prepare', failAfter: true },
+  { name: 'abort read', action: 'abort_read' },
+  { name: 'abort read partial', action: 'abort_read', failAfter: true },
+  { name: 'settlement already settled', action: 'abort_settle', initiallySettled: true },
+  { name: 'abort settlement', action: 'abort_settle' },
+  { name: 'settlement lost ACK', action: 'abort_settle', timeout: true },
+  { name: 'settlement partial after identity failure', action: 'abort_settle', failAfter: true },
+  { name: 'settlement partial canonical refusal', action: 'abort_settle', badCanonicalAfter: true },
+  { name: 'abort ACK runtime', action: 'abort_ack' },
+  { name: 'abort ACK runtime retired', action: 'abort_ack', initiallySettled: true },
+  { name: 'abort ACK partial', action: 'abort_ack', failAfter: true },
+  { name: 'abort ACK lost ACK', action: 'abort_ack', timeout: true },
+]) {
+  test(`public receipt excludes private/future fields: ${scenario.name}`, async () => {
+    const abort = scenario.action.startsWith('abort_');
+    const f = abort
+      ? abortFixture({ timeout: scenario.timeout, initiallySettled: scenario.initiallySettled })
+      : fixture();
+    if (scenario.action === 'abort_ack') {
+      const prior = f.fetchImpl;
+      f.fetchImpl = async (url, options) => {
+        if (!url.endsWith('/admin/tournament-abort-boundary')) return prior(url, options);
+        f.calls.push({ url, options });
+        if (scenario.timeout) throw Error(privateCanary);
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            runtime: {
+              state: 'acknowledged',
+              operation_id: runtime.operation_id,
+              runtime_retired: scenario.initiallySettled === true,
+            },
+          }),
+        };
+      };
+    }
+    privateResponses(f, scenario);
+    const r = await controlOriginalRecovery(
+      {
+        ...input,
+        action: scenario.action,
+        tournamentId: abort ? other : input.tournamentId,
+        moneyHash: '0'.repeat(32),
+        unexpected_input: privateCanary,
+      },
+      { ...f, serviceIdentity: privateCanary, supabaseUrl: db }
+    );
+    assert.equal(JSON.stringify(r).includes(privateCanary), false);
+    assert.doesNotMatch(
+      JSON.stringify(r),
+      /pre_abort_roster|money_snapshot|future_field|ledger_id|unexpected_input/
+    );
+    const actions = f.calls.filter(
+      (x) => x.url.includes('/admin/') || x.url.endsWith('/fn_ca_settle_tournament_abort')
+    );
+    assert.equal(
+      actions.length,
+      scenario.action === 'abort_read' ||
+        (scenario.action === 'abort_settle' && scenario.initiallySettled)
+        ? 0
+        : 1
+    );
+    if (scenario.name === 'abort ACK runtime retired')
+      assert.equal(r.outcome, 'original_abort_runtime_retired');
+    if (scenario.name === 'settlement already settled')
+      assert.equal(r.outcome, 'original_abort_already_settled');
+    if (!abort && r.outcome === 'prepared_readback') {
+      const { response_digest, ...tuple } = r.runtime;
+      assert.deepEqual(tuple, runtime);
+      assert.match(response_digest.sha256, /^[a-f0-9]{64}$/);
+    }
+    if (r.settlement) assert.match(r.settlement.response_digest.sha256, /^[a-f0-9]{64}$/);
+    if (r.canonicalBefore) assert.match(r.canonicalBefore.response_digest.sha256, /^[a-f0-9]{64}$/);
+  });
+}
+
+test('legal BREAK state survives the public canonical projection without private basis', async () => {
+  const f = privateResponses(abortFixture());
+  const prior = f.fetchImpl;
+  f.fetchImpl = async (url, options) => {
+    const response = await prior(url, options);
+    if (!url.endsWith('/fn_ca_tournament_abort_stop_state')) return response;
+    return {
+      ...response,
+      json: async () => ({ ...(await response.json()), tournament_status: 'BREAK' }),
+    };
+  };
+  const r = await controlOriginalRecovery(
+    { ...input, action: 'abort_read', tournamentId: other },
+    { ...f, serviceIdentity: privateCanary, supabaseUrl: db }
+  );
+  assert.equal(r.outcome, 'original_abort_readback');
+  assert.equal(r.canonicalBefore.tournament_status, 'BREAK');
+  assert.equal(r.canonicalAfter.tournament_status, 'BREAK');
+  assert.equal(JSON.stringify(r).includes(privateCanary), false);
+  assert.equal(
+    f.calls.filter(
+      (x) => x.url.includes('/admin/') || x.url.endsWith('/fn_ca_settle_tournament_abort')
+    ).length,
+    0
   );
 });

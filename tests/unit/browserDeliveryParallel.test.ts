@@ -342,7 +342,11 @@ describe('eight client shards retain the required verdict and unchanged safeguar
     const guarded = ci.jobs.typecheck_compile.steps.find(
       (value: { name: string }) => value.name === name
     );
-    expect(guarded.if).toBe("steps.compile_scope.outputs.presentation_only != 'true'");
+    const key =
+      name === 'No asset ships a white matte'
+        ? 'presentation_only'
+        : 'isolated_simulations_unchanged';
+    expect(guarded.if).toBe(`steps.compile_scope.outputs.${key} != 'true'`);
     const evaluate = new Function('steps', `return (${guarded.if});`);
     for (const [presentation, expected] of [
       [undefined, true],
@@ -356,9 +360,7 @@ describe('eight client shards retain the required verdict and unchanged safeguar
     ] as const) {
       // GitHub compares expression strings without case; JavaScript does not.
       const output = typeof presentation === 'string' ? presentation.toLowerCase() : presentation;
-      expect(evaluate({ compile_scope: { outputs: { presentation_only: output } } })).toBe(
-        expected
-      );
+      expect(evaluate({ compile_scope: { outputs: { [key]: output } } })).toBe(expected);
     }
   });
 });

@@ -168,6 +168,40 @@ def private_bootstrap(runtime_image, controls, inputs, temp, mode, deadline, lif
             require(lifecycle['container_absent'], 'RELEASE_OBSERVATION_PREFLIGHT_CLEANUP_REQUIRED')
 
 
+def validate_schema_preflight(preflight, capture):
+    mapping = preflight.get('catalogue_restore_mapping')
+    keys = {'version', 'rule', 'original_digest', 'restored_digest', 'columns_count',
+            'public_columns_count', 'changed_rows_count', 'changed_rows_digest',
+            'changed_rows_digest_encoding'}
+    require(isinstance(mapping, dict) and set(mapping) == keys,
+            'RELEASE_OBSERVATION_RESTORE_MAPPING_REQUIRED')
+    require(type(mapping['version']) is int and mapping['version'] == 1 and mapping['rule'] == 'public-live-column-rank/v1' and
+            mapping['changed_rows_digest_encoding'] == 'utf8-json-stringify-ordered-object-array/v1' and
+            mapping['original_digest'] == capture['original_catalogue_digest'] and
+            all(isinstance(mapping[key], str) and re.fullmatch('[0-9a-f]{64}', mapping[key])
+                for key in ('original_digest', 'restored_digest', 'changed_rows_digest')) and
+            all(type(mapping[key]) is int and mapping[key] >= 0
+                for key in ('columns_count', 'public_columns_count', 'changed_rows_count')) and
+            mapping['changed_rows_count'] <= mapping['public_columns_count'] <= mapping['columns_count'],
+            'RELEASE_OBSERVATION_RESTORE_MAPPING_REQUIRED')
+    require((mapping['changed_rows_count'] == 0) ==
+            (mapping['restored_digest'] == mapping['original_digest']),
+            'RELEASE_OBSERVATION_RESTORE_MAPPING_REQUIRED')
+    if mapping['changed_rows_count'] == 0:
+        require(mapping['changed_rows_digest'] == native.digest(b'[]'),
+                'RELEASE_OBSERVATION_RESTORE_MAPPING_REQUIRED')
+    require(preflight.get('success') is True and preflight.get('product_certificate') is False and
+            preflight.get('original_catalogue_digest') == capture['original_catalogue_digest'] and
+            preflight.get('catalogue_digest') == mapping['restored_digest'] and
+            preflight.get('role_catalogue_equal') is True and
+            preflight.get('effective_acl_catalogue_equal') is True and
+            preflight.get('ordinary_auth', {}).get('postgrest_own_profile') is True and
+            preflight.get('no_game_or_club_created') is True and
+            preflight.get('current_database_contract_ready') is True,
+            'RELEASE_OBSERVATION_FULL_PREFLIGHT_REQUIRED')
+    return mapping['restored_digest'], mapping
+
+
 def write_schema_zip(path, sql, template):
     with zipfile.ZipFile(path, 'x') as archive:
         archive.writestr('schema.sql', sql)
@@ -186,6 +220,7 @@ def observe(repo, output, expected, runtime_image, smoke_receipt, *, work_deadli
     controls_closure = ['operations/release/fixture/schema-snapshot.mjs',
         'operations/release/fixture/schema-compose.mjs', 'operations/release/fixture/schema-application-hooks.mjs',
         'operations/release/fixture/current-application-roles.mjs',
+        'operations/release/fixture/schema-catalogue-restore-map.mjs',
         'operations/release/native/schema-preflight.mjs',
         'operations/release/native/component-semantic-observations.mjs',
         'operations/release/native/qualify-components.py',
@@ -243,13 +278,9 @@ def observe(repo, output, expected, runtime_image, smoke_receipt, *, work_deadli
             report['stage'] = 'full-schema-native-preflight'
             private_bootstrap(runtime_image, repo, inputs, temp, 'schema-preflight', min(deadline, time.monotonic() + 400), report['preflight_lifecycles'])
             preflight = json.loads((temp / 'schema-preflight.json').read_text())
-            require(preflight.get('success') is True and preflight.get('product_certificate') is False and
-                    preflight.get('catalogue_digest') == capture['original_catalogue_digest'] and
-                    preflight.get('role_catalogue_equal') is True and
-                    preflight.get('effective_acl_catalogue_equal') is True and
-                    preflight.get('ordinary_auth', {}).get('postgrest_own_profile') is True and
-                    preflight.get('no_game_or_club_created') is True and
-                    preflight.get('current_database_contract_ready') is True)
+            restored_digest, restore_mapping = validate_schema_preflight(preflight, capture)
+            report['catalogue_restore_mapping'] = restore_mapping
+            report['expected_restored_catalogue_digest'] = restored_digest
             (output / 'schema-preflight-receipt.json').write_text(native.canonical(preflight))
             # Readiness is now derived from actual full restore/parity and real
             # ordinary Auth facts, never from capture flags or smoke success.
@@ -308,7 +339,7 @@ def observe(repo, output, expected, runtime_image, smoke_receipt, *, work_deadli
             tuple_value = {'club-arena-engine': {'source_sha': engine_sha, 'identity': engine_image},
                            'club-arena-web': {key: web[key] for key in ('source_sha', 'identity', 'manifest_digest')}}
             schema = {'fixture_sha256': native.file_digest(temp / 'composed.sql'),
-                      'catalogue_digest': capture['original_catalogue_digest']}
+                      'catalogue_digest': restored_digest}
             plan = {'tuples': [tuple_value], 'schema': schema}
             web_key = native.fact_digest({'target': 'club-arena-web', **tuple_value['club-arena-web']})
             shutil.copyfile(archive, inputs / (web_key + '.zip'))

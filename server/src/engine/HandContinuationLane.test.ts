@@ -31,6 +31,15 @@ function setup(persist: (b: Readonly<HandContinuationBatch>) => Promise<void> = 
 }
 
 describe('the hand continuation retains before publishing', () => {
+  it('drains an idle terminal lane without authorizing live publication', async () => {
+    const { lane, fence, dispatch } = setup();
+    fence();
+    await expect(lane.drainOwnedWork()).resolves.toBeUndefined();
+    await expect(lane.join()).rejects.toThrow('Hand Continuation Is Fenced');
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(() => lane.enqueue(action)).toThrow('Hand Continuation Is Fenced');
+  });
+
   it('retains one coherent post-dispatch accounting capture without repeating full engine work', async () => {
     const writes: Readonly<HandContinuationBatch>[] = [];
     const captures: Array<{

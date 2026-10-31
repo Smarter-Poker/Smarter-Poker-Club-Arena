@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import {
   configOnly,
   presentationOnly,
+  isolatedSimulationsUnchanged,
   runSelection,
   selectionInputs,
   consumedInputs,
@@ -360,7 +361,7 @@ test('exact Git proof refuses missing inputs, executable companions, deletes and
       GITHUB_OUTPUT: output,
       GITHUB_STEP_SUMMARY: '',
     });
-    assert.equal(readFileSync(output, 'utf8'), 'presentation_only=true\n');
+    assert.equal(readFileSync(output, 'utf8'), 'presentation_only=true\nisolated_simulations_unchanged=true\n');
     runSelection(root, ['scope'], {
       ...process.env,
       CI_BASE_SHA: '',
@@ -368,7 +369,7 @@ test('exact Git proof refuses missing inputs, executable companions, deletes and
       GITHUB_OUTPUT: output,
       GITHUB_STEP_SUMMARY: '',
     });
-    assert.ok(readFileSync(output, 'utf8').endsWith('presentation_only=false\n'));
+    assert.ok(readFileSync(output, 'utf8').endsWith('presentation_only=false\nisolated_simulations_unchanged=false\n'));
     assert.equal(selectionInputs(root, undefined, head).focused, false);
     write(root, p, 'export const Control = () => <button onClick={pay}>Proceed</button>;');
     assert.equal(selectionInputs(root, base, head).focused, false);
@@ -583,3 +584,39 @@ test('real Playwright lists only the proved relevant fixture and never accepts a
     );
     assert.match(fallback, /unrelated.spec.ts/);
   }));
+
+
+test('isolated simulations accept exact CSS and binary artwork without narrowing presentation checks', () => owned((root) => {
+  const git = (...args) => execFileSync('git', args, {cwd: root, env: gitEnvironmentForCwd(), encoding: 'utf8'}).trim();
+  git('init', '-q'); git('config', 'user.name', 'Selection Test'); git('config', 'user.email', 'selection@example.invalid');
+  write(root, 'src/styles/global.css', 'body { color: red }');
+  write(root, 'public/assets/table.png', Buffer.from([137, 80, 78, 71, 255, 0]));
+  write(root, 'server/guard.ts', 'export const guard = true;');
+  git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
+  write(root, 'src/styles/global.css', 'body { color: blue }');
+  write(root, 'public/assets/table.png', Buffer.from([137, 80, 78, 71, 254, 0]));
+  write(root, 'docs/changelog/2026-10-31-colors.md', 'Scoped colors.');
+  git('add', '.'); git('commit', '-qm', 'styles'); const head = git('rev-parse', 'HEAD');
+  assert.equal(isolatedSimulationsUnchanged(root, base, head), true);
+  assert.equal(selectionInputs(root, base, head).focused, false);
+  const output = join(root, 'scope-output');
+  runSelection(root, ['scope'], {...process.env, CI_BASE_SHA:base, CI_HEAD_SHA:head, GITHUB_OUTPUT:output, GITHUB_STEP_SUMMARY:''});
+  assert.equal(readFileSync(output, 'utf8'), 'presentation_only=false\nisolated_simulations_unchanged=true\n');
+  for (const file of ['src/styles/global.css', 'public/assets/table.png', 'server/guard.ts']) {
+    write(root, file, 'dirty candidate');
+    assert.equal(isolatedSimulationsUnchanged(root, base, head), false, file);
+    git('restore', '--', file);
+  }
+  for (const [file, content] of [
+    ['server/new.ts', 'export const x = 1;'], ['supabase/migrations/new.sql', 'SELECT 1;'],
+    ['.github/workflows/ci.yml', 'name: changed'], ['src/styles/global.css', 'body {'],
+    ['public/assets/vector.svg', '<svg/>'], ['src/styles/added.css', 'body {}'],
+  ]) {
+    write(root, file, content); git('add', '.'); git('commit', '-qm', 'mixed');
+    assert.equal(isolatedSimulationsUnchanged(root, base, git('rev-parse', 'HEAD')), false, file);
+    git('reset', '--hard', head);
+  }
+  git('rm', 'public/assets/table.png'); git('commit', '-qm', 'delete');
+  assert.equal(isolatedSimulationsUnchanged(root, base, git('rev-parse', 'HEAD')), false);
+  assert.equal(isolatedSimulationsUnchanged(root, '', head), false);
+}));

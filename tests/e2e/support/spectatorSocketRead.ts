@@ -9,5 +9,13 @@ export function isReadOnlySpectatorSocketType(type: string): boolean {
     'HEARTBEAT',
     'JOIN_LOBBY',
     'LEAVE_LOBBY',
+    'CHANNEL_PING',
+    'CHANNEL_PONG',
+    'JOIN_PRIVATE_RECORD',
+    'LEAVE_PRIVATE_RECORD',
+    'JOIN_CLUB',
+    'LEAVE_CLUB',
+    'JOIN_TOURNAMENT',
+    'LEAVE_TOURNAMENT',
   ].includes(type);
 }

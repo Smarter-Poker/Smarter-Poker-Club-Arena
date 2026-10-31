@@ -2489,7 +2489,10 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
               if (payload?.replayed !== true) natural++;
               const summary = payload as unknown as ReturnType<typeof hands.get>;
               if (!summary) throw new Error('Missing committed public summary');
-              const receipt = JSON.stringify([statsBefore.observer, summary.hand_id]);
+              const receipt = JSON.stringify([
+                JSON.stringify([statsBefore.observer, 'cash']),
+                summary.hand_id,
+              ]);
               if (!baselineReceipts.has(receipt)) hands.set(summary.hand_id, summary);
             }
             return { hands, natural };
@@ -2503,15 +2506,18 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
             expect(hands.size, 'no new hand observation was available').toBeGreaterThan(0);
             const current = await readPublicStatsCache();
             expect(current.observer).toBe(statsBefore.observer);
-            expect(current.cache?.version).toBe(2);
+            expect(current.cache?.version).toBe(3);
             const expected = new Map<string, Record<string, number>>();
             for (const summary of hands.values()) {
-              const receipt = JSON.stringify([statsBefore.observer, summary.hand_id]);
+              const receipt = JSON.stringify([
+                JSON.stringify([statsBefore.observer, 'cash']),
+                summary.hand_id,
+              ]);
               expect(current.cache.receipts.filter((key: string) => key === receipt)).toHaveLength(
                 1
               );
               for (const player of summary.players) {
-                const key = JSON.stringify([statsBefore.observer, player.user_id]);
+                const key = JSON.stringify([statsBefore.observer, 'cash', player.user_id]);
                 const totals = expected.get(key) ?? {
                   handsPlayed: 0,
                   vpipCount: 0,

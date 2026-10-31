@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { schemaCataloguePayload } from './component-semantic-observations.mjs';
 import { captureRoleCatalogue } from '../fixture/schema-snapshot.mjs';
+import { buildCatalogueRestorePlan } from '../fixture/schema-catalogue-restore-map.mjs';
 import { assertFixtureCronCatalog } from '../fixture/cron-provider.mjs';
 import { assertCanonicalSignup } from '../fixture/auth-bootstrap-proof.mjs';
 import {
@@ -44,9 +45,15 @@ export function assertPreflightParity({
 export async function preflightSchema({ db, supervisor, env, api, template, applicationOwner }) {
   const expected = JSON.parse(await readFile('/inputs/production-catalogue.json', 'utf8'));
   const expectedRoles = JSON.parse(await readFile('/inputs/role-catalogue.json', 'utf8'));
+  // Derive the sole public-only physical-slot adapter from ORIGINAL bytes,
+  // before reading the actual restored catalogue. Auth ordinals remain exact.
+  const restoration = await buildCatalogueRestorePlan(db, expected);
+  const restoredExpected = { ...expected,
+    catalogue_text: restoration.expected_catalogue_text,
+    catalogue_digest: restoration.expected_catalogue_digest };
   const observed = await schemaCataloguePayload(db);
   const observedRoles = await captureRoleCatalogue(db);
-  assertPreflightParity({ expected, observed, expectedRoles, observedRoles, template });
+  assertPreflightParity({ expected: restoredExpected, observed, expectedRoles, observedRoles, template });
   await assertFixtureAuthPlatformHelpers(db);
   await assertFixtureCronCatalog(db);
   await assertFixtureAuthPlatformWriteDenied(db);
@@ -89,6 +96,9 @@ export async function preflightSchema({ db, supervisor, env, api, template, appl
     product_certificate: false,
     success: true,
     catalogue_digest: observed.catalogue_digest,
+    original_catalogue_digest: expected.catalogue_digest,
+    // Private changed_rows never leave this process or enter a public receipt.
+    catalogue_restore_mapping: restoration.mapping.public_receipt,
     role_catalogue_equal: true,
     effective_acl_catalogue_equal: true,
     current_database_contract_ready: true,

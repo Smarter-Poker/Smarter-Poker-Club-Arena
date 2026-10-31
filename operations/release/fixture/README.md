@@ -568,3 +568,18 @@ not release admission, publication, serving-engine adoption or a product
 certificate. Existing release-controller admission remains unchanged. This mode
 is **NOT_EXECUTED** until its actual terminal native receipt establishes all14
 cases and complete cleanup. No active production player game may be used.
+
+### Exact original-to-restored public column ordinal adapter
+
+The canonical production catalogue and its digest remain unchanged. The private
+preflight derives one explicit versioned expected restore from that original
+payload before reading the restored native catalogue: only public live-column
+physical ordinals become their original relative live-column rank, because a
+schema-only dump omits dropped physical slots. Genuine Auth migration ordinals
+remain exact. PostgreSQL canonical JSONB text, all other metadata, role/default
+and effective ACL checks remain authoritative. Native observations never supply
+the expected catalogue. Both scenes bind the independently expected restored
+digest; the original digest remains separately retained. Only fixed mapping
+counts/digests are public; changed column rows and original literal payloads
+remain private and are removed with the owned fixture inputs. This mapping is
+source preparation, not a full-schema or connected fourteen-case pass.

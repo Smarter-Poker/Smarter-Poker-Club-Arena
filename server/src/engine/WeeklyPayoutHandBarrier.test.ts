@@ -6,7 +6,14 @@ import * as errorReporter from '../services/errorReporter.js';
 import * as originalRetention from '../services/supabase/handContinuation.js';
 import { HandContinuationLane } from './HandContinuationLane.js';
 
+const ownedEngineFixtures: Array<Record<string, any>> = [];
 afterEach(() => {
+  // Destroy isolated fixture registration, not a runtime retirement certificate.
+  for (const fixture of ownedEngineFixtures.splice(0)) {
+    fixture.running = false;
+    fixture.weeklyHandTimers.stop();
+    (fixture.constructor as any).releaseCurrentEngine(fixture.tableId, fixture);
+  }
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -38,6 +45,8 @@ function liveHand(start = true) {
   );
   if (start) hand.start();
   const engine = new ServerTableEngine('t') as any;
+  expect(engine.claimProcessOwnership()).toBe(true);
+  ownedEngineFixtures.push(engine);
   engine.running = true;
   engine.handController = hand;
   engine.weeklyPayoutStartedController = start ? hand : null;

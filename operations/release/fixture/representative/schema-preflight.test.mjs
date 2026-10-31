@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 // Import the actual full private-controls dependency closure, not a copied stub.
 import { assertPreflightParity } from '../../native/schema-preflight.mjs';
 import { requireFixtureSchemaMode } from '../runtime-files.mjs';
@@ -56,7 +57,7 @@ test('only fixed no-game preflight admits a false schema; ordinary start refuses
   );
 });
 
-test('preflight compares exact original PG catalogue and every role/settings/default ACL fact', () => {
+test('preflight compares the full expected PG catalogue and every role/settings/default ACL fact', () => {
   assertPreflightParity(valid);
   for (const changed of [
     { observed: { ...payload, catalogue_digest: 'b'.repeat(64) } },
@@ -69,4 +70,22 @@ test('preflight compares exact original PG catalogue and every role/settings/def
     { template: { source_contract: { current_database_contract_ready: true, exclusions: [] } } },
   ])
     assert.throws(() => assertPreflightParity({ ...valid, ...changed }));
+});
+
+// Wiring enforcement only: actual PostgreSQL canonical mapping and full restore
+// remain required in the protected native operation, never supplied by doubles.
+test('preflight derives public-only expected restoration before reading native state and exports no private rows', async () => {
+  const source = await readFile(new URL('../../native/schema-preflight.mjs', import.meta.url), 'utf8');
+  assert.ok(source.includes("../fixture/schema-catalogue-restore-map.mjs"));
+  assert.ok(source.indexOf('await buildCatalogueRestorePlan(db, expected)') < source.indexOf('await schemaCataloguePayload(db)'));
+  assert.ok(source.includes('expected: restoredExpected'));
+  assert.ok(source.includes('catalogue_text: restoration.expected_catalogue_text'));
+  assert.ok(source.includes('catalogue_digest: restoration.expected_catalogue_digest'));
+  assert.ok(source.includes('original_catalogue_digest: expected.catalogue_digest'));
+  assert.ok(source.includes('catalogue_restore_mapping: restoration.mapping.public_receipt'));
+  assert.ok(!source.includes('catalogue_restore_mapping: restoration.mapping,'));
+  const controller = await readFile(new URL('../../native/observe-connected-ui.py', import.meta.url), 'utf8');
+  assert.ok(controller.includes("'operations/release/fixture/schema-catalogue-restore-map.mjs'"));
+  assert.ok(controller.includes("'catalogue_digest': restored_digest"));
+  assert.ok(controller.includes("report['catalogue_restore_mapping'] = restore_mapping"));
 });

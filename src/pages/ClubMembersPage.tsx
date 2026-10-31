@@ -12,6 +12,8 @@ import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useDebounce } from '../hooks/useDebounce';
 import { useOnlineNow } from '../hooks/useProfilePresence';
+import { useSharedMinuteTick } from '../hooks/useSharedMinuteTick';
+import { lastSeenIsWithinADay, memberLastSeenLabel } from '../utils/memberLastSeen';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
@@ -1999,22 +2001,6 @@ function highlight(value: string, query: string) {
   );
 }
 
-function lastSeen(iso: string): string {
-  const age = dormancy(iso);
-  if (!age) return '';
-  return age === 'Today' ? 'Seen Today' : `Seen ${age} Ago`;
-}
-
-function dormancy(iso: string): string {
-  const time = new Date(iso).getTime();
-  if (!Number.isFinite(time)) return '';
-  const days = Math.max(0, Math.floor((Date.now() - time) / 86_400_000));
-  if (days < 1) return 'Today';
-  if (days < 30) return `${days}d`;
-  if (days < 365) return `${Math.floor(days / 30)}mo`;
-  return `${Math.floor(days / 365)}y`;
-}
-
 export const MemberRow = memo(function MemberRow({
   member,
   position,
@@ -2060,6 +2046,13 @@ export const MemberRow = memo(function MemberRow({
      it goes dark when the heartbeat does (presence-has-one-definition law). */
   const online = useOnlineNow(member.user_id, member.is_online);
   const status = member.is_seated ? 'At A Table' : online ? 'Online' : 'Offline';
+  /* Inside the last day the last-seen label counts minutes and hours, so the
+     row re-reads it on the shared minute clock (Dan, 2026-10-31). */
+  const showsLastSeen =
+    !member.is_seated && !online && columns.has('activity') && !!member.last_login;
+  const seenNow = useSharedMinuteTick(
+    showsLastSeen && lastSeenIsWithinADay(member.last_login ?? '')
+  );
   return (
     <div
       className={`member-row${member.is_seated ? ' member-row--seated' : online ? ' member-row--online' : ''}`}
@@ -2135,7 +2128,7 @@ export const MemberRow = memo(function MemberRow({
             ) : online ? (
               <span className="member-online">Online</span>
             ) : columns.has('activity') && member.last_login ? (
-              <span className="member-seen">{lastSeen(member.last_login)}</span>
+              <span className="member-seen">{memberLastSeenLabel(member.last_login, seenNow)}</span>
             ) : null}
           </span>
           {simpleMode && member.can_view_financials && (

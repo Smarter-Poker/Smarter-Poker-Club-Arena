@@ -79,6 +79,47 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
+    // Normalize only reviewed routing changes; the existing whole-job hashes
+    // still enforce every command, assertion, timeout, artifact and ordering.
+    const remappedSteps = [
+      ['Backed payout discovery preserves every conservation term', 'matrix.shard == 4'],
+      ['Every Diamond SQL acceptance runner is listed', 'matrix.shard == 3'],
+      ['Diamond Arena SQL acceptance on the isolated fixture', 'matrix.shard == 3'],
+      [
+        'Retain Diamond SQL acceptance evidence',
+        'always() && matrix.shard == 3 && contains(fromJSON(["success", "failure", "cancelled"]), steps.diamond_sql_acceptance.outcome)',
+      ],
+    ];
+    for (const [name, previous] of remappedSteps) {
+      const selected = normalized.jobs.accounting_postgres.steps.filter(
+        (s: { name: string }) => s.name === name
+      );
+      expect(selected).toHaveLength(1);
+      const oldCondition =
+        name === 'Retain Diamond SQL acceptance evidence'
+          ? `always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)`
+          : previous;
+      expect(selected[0].if).toBe(
+        oldCondition.replace(/matrix.shard == [34]/, 'matrix.shard == 2')
+      );
+      selected[0].if = oldCondition;
+    }
+    for (const name of [
+      'Chip journal transactions survive failures and replays',
+      'Evaluate fleet throughput against live dealing capacity',
+    ]) {
+      const selected = normalized.jobs.typecheck_compile.steps.filter(
+        (s: { name: string }) => s.name === name
+      );
+      expect(selected).toHaveLength(1);
+      const previous = name.startsWith('Chip journal')
+        ? "steps.compile_scope.outputs.instructions_only != 'true' && steps.compile_scope.outputs.presentation_only != 'true'"
+        : "steps.compile_scope.outputs.presentation_only != 'true'";
+      expect(selected[0].if).toBe(
+        previous.replace('presentation_only', 'isolated_simulations_unchanged')
+      );
+      selected[0].if = previous;
+    }
     normalizeFrameCoverAddition(normalized.jobs.accounting_postgres);
     normalizePostpaidQualityAddition(normalized.jobs.accounting_postgres);
     const formerClientRoute = '$' + '{{ ' + trusted + " && 'ca-linux-4core' || 'ubuntu-latest' }}";

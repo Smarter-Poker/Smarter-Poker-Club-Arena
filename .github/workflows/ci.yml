@@ -487,12 +487,13 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
-      # Only exact policy prose or proved presentation-only UI can omit this
-      # unchanged SQL fixture. Financial/executable/shared inputs still run it.
+      # Exact policy prose or a positive unchanged-simulation-input proof can
+      # omit this SQL fixture. CSS/raster-only edits still run their full visual
+      # and asset checks. Financial/executable/shared inputs still run replay.
       # Keep all compiler, invariant and source-contract checks.
       # Unavailable classification always executes the existing replay.
       - name: Chip journal transactions survive failures and replays
-        if: steps.compile_scope.outputs.instructions_only != 'true' && steps.compile_scope.outputs.presentation_only != 'true'
+        if: steps.compile_scope.outputs.instructions_only != 'true' && steps.compile_scope.outputs.isolated_simulations_unchanged != 'true'
         run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
 
       - name: TypeScript Check
@@ -699,7 +700,7 @@ jobs:
       - name: Evaluate real SLO alert durations, thresholds and recovery
         run: bash scripts/ci/test-slo-stall-duration.sh
       - name: Evaluate fleet throughput against live dealing capacity
-        if: steps.compile_scope.outputs.presentation_only != 'true'
+        if: steps.compile_scope.outputs.isolated_simulations_unchanged != 'true'
         run: bash scripts/ci/test-fleet-throughput.sh
       - name: Report Typecheck Time
         if: always()
@@ -1415,8 +1416,8 @@ jobs:
     # depends on another's state. They are split across four runners by
     # measured weight, each step keeping its own `if:` and evidence upload:
     #   1  BBJ replay, accounting/credit/cash-source suites, Spin expiry
-    #   2  Full weekly accounting activation and its retained evidence
-    #   3  F06 custody lanes, tournament probes, Diamond SQL acceptance, Lightning
+    #   2  Full weekly accounting activation, Diamond SQL and backed payout discovery
+    #   3  F06 custody lanes, tournament probes, Lightning
     #   4  Production alert SQL, cash pg_cron, PKO, MTT, satellite, Breakfast, V31
     # Shards 3 and 4 build the native isolation tester because their suites
     # need it (PG_ISOLATION_TESTER); 1 and 2 do not use it.
@@ -1436,6 +1437,10 @@ jobs:
     # 766s on shard 1. Move that unchanged proof AND artifact to shard 2:
     # measured workload predicts a ~1593s maximum instead of 2203s,
     # with the same four runners, every assertion and all evidence retained.
+    # October 31 run 41200651455: shards 1..4 took 1785/1414/2195/2033s.
+    # Move the isolated Diamond group (231s) and backed payout scan (188s)
+    # to shard 2, preserving commands, order, artifacts and all four runners.
+    # This balances measured work; it is not a promised future duration.
     # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
     # every suite step belongs to exactly one shard.
     strategy:
@@ -1931,7 +1936,7 @@ jobs:
         run: python3 scripts/ci/test-certification-retirement-postgres.py
 
       - name: Backed payout discovery preserves every conservation term
-        if: matrix.shard == 4
+        if: matrix.shard == 2
         run: python3 scripts/ci/test-backed-payout-scan-postgres.py
 
       - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
@@ -3224,17 +3229,17 @@ jobs:
       # The wrapper names every runner EXPLICITLY, and the check before it fails
       # the job when tests/sql/ holds a runner the wrapper does not name.
       - name: Every Diamond SQL acceptance runner is listed
-        if: matrix.shard == 3
+        if: matrix.shard == 2
         run: node scripts/ci/check-diamond-runners-listed.mjs
       - name: Diamond Arena SQL acceptance on the isolated fixture
         id: diamond_sql_acceptance
-        if: matrix.shard == 3
+        if: matrix.shard == 2
         timeout-minutes: 15
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/run-diamond-sql-acceptance.py --evidence artifacts/diamond-sql-acceptance
       - name: Retain Diamond SQL acceptance evidence
-        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)
+        if: always() && matrix.shard == 2 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.diamond_sql_acceptance.outcome)
         uses: actions/upload-artifact@v4
         with:
           name: diamond-sql-acceptance-${{ github.run_id }}-${{ github.run_attempt }}

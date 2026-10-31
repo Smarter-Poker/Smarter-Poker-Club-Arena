@@ -65,6 +65,45 @@ class NativeObservationAuthority(unittest.TestCase):
             self.assertFalse(folder.exists())
             self.assertTrue(json.loads((folder.parent / 'isolated-ui-evidence/private-cleanup.json').read_text())['complete'])
 
+    def test_original_restore_mapping_binds_every_scene_and_refuses_private_rows_or_forged_target(self):
+        from copy import deepcopy
+        original, restored = 'a' * 64, 'b' * 64
+        mapping = {'version': 1, 'rule': 'public-live-column-rank/v1',
+            'original_digest': original, 'restored_digest': restored,
+            'columns_count': 50, 'public_columns_count': 40, 'changed_rows_count': 7,
+            'changed_rows_digest': 'c' * 64,
+            'changed_rows_digest_encoding': 'utf8-json-stringify-ordered-object-array/v1'}
+        proof = {'success': True, 'product_certificate': False,
+            'original_catalogue_digest': original, 'catalogue_digest': restored,
+            'catalogue_restore_mapping': mapping, 'role_catalogue_equal': True,
+            'effective_acl_catalogue_equal': True, 'ordinary_auth': {'postgrest_own_profile': True},
+            'no_game_or_club_created': True, 'current_database_contract_ready': True}
+        capture = {'original_catalogue_digest': original}
+        self.assertEqual(MODULE.validate_schema_preflight(proof, capture), (restored, mapping))
+        for field, value in [('version', True), ('rule', 'all-schemas/v1'),
+                ('original_digest', 'd' * 64), ('restored_digest', 'd' * 64),
+                ('columns_count', -1), ('public_columns_count', 51),
+                ('changed_rows_count', True), ('changed_rows_count', 41),
+                ('changed_rows_digest', 'invalid'), ('changed_rows_digest_encoding', 'other'),
+                ('changed_rows', [{'column': 'private'}])]:
+            bad = deepcopy(proof); bad['catalogue_restore_mapping'][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(RuntimeError):
+                MODULE.validate_schema_preflight(bad, capture)
+        for field, value in [('catalogue_digest', original), ('original_catalogue_digest', restored),
+                ('role_catalogue_equal', False), ('effective_acl_catalogue_equal', False),
+                ('success', False), ('product_certificate', True),
+                ('ordinary_auth', {}), ('current_database_contract_ready', False)]:
+            bad = deepcopy(proof); bad[field] = value
+            with self.subTest(field=field), self.assertRaises(RuntimeError):
+                MODULE.validate_schema_preflight(bad, capture)
+        empty = deepcopy(proof)
+        empty.update(catalogue_digest=original)
+        empty['catalogue_restore_mapping'].update(restored_digest=original, changed_rows_count=0,
+            changed_rows_digest=MODULE.native.digest(b'[]'))
+        self.assertEqual(MODULE.validate_schema_preflight(empty, capture)[0], original)
+        empty['catalogue_restore_mapping']['changed_rows_digest'] = 'c' * 64
+        with self.assertRaises(RuntimeError): MODULE.validate_schema_preflight(empty, capture)
+
     def test_occupied_container_name_is_never_armed_for_cleanup(self):
         calls = []
         def command(args, **kwargs):

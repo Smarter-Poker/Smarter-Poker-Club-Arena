@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "07ecc5925d551fde38704413665ef6cb9c68015c2772b577c01bfefec9c95331",
-    "tests/unit/fixtureNativeCi.test.ts": "008d4e923b5ca66f45c878767d6cc5ffc1406fa47af77936fb0cfcb1dcbb9abc",
+    "tests/unit/fixtureNativeCi.test.ts": "a1ba44a1d977916db277778b6c565f12913437804c6feaf4adbadbc05311b931",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -567,6 +567,12 @@
     "qualificationStateChanged": false,
     "qualification": "Source identity only; no native, financial, installation or live certification is restamped."
   },
+  "deliveryLatencyScopeContractAudit20261031": {
+    "source": "tests/unit/fixtureNativeCi.test.ts",
+    "previous": "64c715f89b4567fdb6fa0e8661988119c3455d45da8ae0036cf58f835397249c",
+    "currentSha256": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4",
+    "scope": "Only compiler simulation condition source-contract output changes from presentation_only to isolated_simulations_unchanged. All native assertions, probes and financial data remain unchanged. Source wiring only, no native or live recertification."
+  },
   "isolatedConnectedUiSourceAudit20261031": {
     "scope": "Current source identity only for isolated connected UI qualification; no financial qualification, SQL, oracle, profile or historical evidence restamped.",
     "file": "tests/unit/fixtureNativeCi.test.ts",
@@ -576,6 +582,18 @@
       "sha256": "008d4e923b5ca66f45c878767d6cc5ffc1406fa47af77936fb0cfcb1dcbb9abc"
     },
     "reason": "Pin readonly Actions permission ceiling and strict protected manual capture/privacy source guards; require actual native command position before emitting verification. Existing financial assertions unchanged.",
+    "execution_performed": false,
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "protectedLatencyIntegration20261031": {
+    "scope": "Current source binding only: preserve protected delivery-latency contracts and private connected qualification together; original qualification data and assertions unchanged.",
+    "changes": {
+      "repository_files:tests/unit/fixtureNativeCi.test.ts": {
+        "previous_main": "c470cc68e0ab1781dbd2f1b1356917f83ea7a5f2961669eae3c7806478226da4",
+        "current": "a1ba44a1d977916db277778b6c565f12913437804c6feaf4adbadbc05311b931"
+      }
+    },
     "execution_performed": false,
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false

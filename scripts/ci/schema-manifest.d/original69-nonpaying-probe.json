@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/original69-nonpaying-probe-01a190a0",
+  "_comment": "Fixed exact69 service rollback probe; canonical payer unchanged, final exception mandatory. Root installs only from protected main.",
+  "functions": [
+    "smarter_private.original69_probe_member",
+    "smarter_private.original69_probe_economics",
+    "smarter_private.original69_probe_assert",
+    "fn_ca_original69_probe_state",
+    "fn_ca_probe_original69_abort"
+  ]
+}

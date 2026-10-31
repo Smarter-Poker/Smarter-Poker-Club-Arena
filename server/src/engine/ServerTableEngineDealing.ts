@@ -2299,6 +2299,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.f06HandPreparation = preparation;
     const completedHandNumber = this.handCount;
     let handStarted = false;
+    let retainedPreparedOriginal = false;
     // Why this attempt ended without a hand, when it did (diagnostics only).
     let unstartedCause: string | null = null;
     try {
@@ -3628,6 +3629,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.wireOriginalDisconnectAction();
 
       const attempt = { started: false, cause: null as string | null };
+      const preparedPermit = this.f06CurrentPermit;
       try {
         await this.runOriginalController(
           players,
@@ -3638,6 +3640,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       } finally {
         handStarted = attempt.started;
+        // A positively retained original already owns its hand number even
+        // before actuation. Stop joins this finally before capturing bank
+        // custody; rewinding here would label its banks with the prior hand.
+        const permit = this.f06CurrentPermit;
+        retainedPreparedOriginal =
+          this.retainedPreparedOriginalController === preparedController &&
+          !this.hasWeeklyPayoutMutationInFlight() &&
+          permit !== null &&
+          permit === preparedPermit &&
+          permit.recoveryState() === 'attempted' &&
+          permit.binding.table_id === this.tableId &&
+          permit.binding.hand_number === String(handNumber) &&
+          this.handCount === handNumber &&
+          JSON.parse(preparedController.serializeRecoveryState()).handStarted === false;
         unstartedCause ??= attempt.cause;
       }
     } catch (error) {
@@ -3647,7 +3663,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // A reserved number abandoned before start is not a completed boundary.
       // Keep parked banks bound to the last real hand, including every pause
       // that can arrive during asynchronous hand preparation.
-      if (!handStarted) this.handCount = completedHandNumber;
+      if (!handStarted && !retainedPreparedOriginal) this.handCount = completedHandNumber;
       releaseSeatBoundary();
       try {
         // The exact continuation has finished all preparation awaits and never

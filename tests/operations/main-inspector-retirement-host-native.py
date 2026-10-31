@@ -87,11 +87,12 @@ finally:
 elapsed = (time.monotonic() - started) * 1000
 intent = root / (run + '.main-inspector-retirement-intent')
 receipt = root / (run + '.main-inspector-retirement-receipt')
+failure_detail = err.getvalue() + error_bytes.decode('ascii', errors='replace')
 if scenario == 'success':
-    assert code == 0 and receipt.is_file(), err.getvalue()
+    assert code == 0 and receipt.is_file(), failure_detail
     outcome = json.loads(receipt.read_text())['outcome']
 else:
-    assert code == 1 and intent.is_file() and not receipt.exists(), err.getvalue()
+    assert code == 1 and intent.is_file() and not receipt.exists(), failure_detail
     lines = error_bytes.decode('ascii').splitlines()
     diagnostic = json.loads(lines[0])
     assert diagnostic['intent'] == 'durable' and diagnostic['ack'] == 'flushed', diagnostic

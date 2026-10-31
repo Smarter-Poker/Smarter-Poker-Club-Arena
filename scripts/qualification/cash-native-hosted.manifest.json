@@ -229,8 +229,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 47143,
-      "sha256": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c"
+      "bytes": 47170,
+      "sha256": "336b49a88ace6ca18d8e1b8c3b7dadf95bd562d3dbb7028cf30aacac3144a54b"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -5430,5 +5430,16 @@
     },
     "execution_performed": false,
     "qualification": "Source identity only; no historical native or financial result restamped. Final-head required checks remain necessary."
+  },
+  "playerFavoritesRouting20261031": {
+    "reason": "Reviewed additive player-throwable-favorites fixture routing into existing required data-console qualification only. Financial inputs, assertions, historical receipts and qualification status unchanged. Input identity is not execution evidence.",
+    "previous": {
+      "bytes": 47143,
+      "sha256": "8cbe6d6d5652c3475a89695e85116c0a7cfe7df84f5d63f1e137703d9189a52c"
+    },
+    "current": {
+      "bytes": 47170,
+      "sha256": "336b49a88ace6ca18d8e1b8c3b7dadf95bd562d3dbb7028cf30aacac3144a54b"
+    }
   }
 }

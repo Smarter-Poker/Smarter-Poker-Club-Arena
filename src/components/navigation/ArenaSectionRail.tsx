@@ -75,7 +75,7 @@ export default function ArenaSectionRail() {
       try {
         const { resolveUnionUUID } = await import('../../utils/unionIdResolver');
         const unionId = await resolveUnionUUID(unionRouteRef);
-        if (!live) return;
+        if (!live || !unionId) return;
 
         const [overseer, gameManager] = await Promise.allSettled([
           unionService.canOverseeUnion(unionId),

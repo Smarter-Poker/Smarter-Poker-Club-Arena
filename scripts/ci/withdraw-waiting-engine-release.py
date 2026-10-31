@@ -8,6 +8,7 @@ It has no image, seal-write, restart, freeze-write or alternate publisher path.
 import base64
 import datetime
 import fcntl
+import errno
 import json
 import hashlib
 import importlib.util
@@ -391,8 +392,9 @@ def announcement_evidence(request, after_stop=False):
     require(source_hash(PARENT / 'engine-release-unit-wrapper-v1.sh') == WRAPPER_HASH)
     reqroot = ROOT / 'engine-release-requests'
     originals = {}
+    marker_missing = not os.path.lexists(reqroot / (key + '.awaiting-certificate'))
     for suffix in ['request', 'intent', 'awaiting-certificate']:
-        if after_stop and suffix == 'awaiting-certificate' and not os.path.lexists(reqroot / (key + '.' + suffix)):
+        if suffix == 'awaiting-certificate' and marker_missing:
             continue
         raw = regular(reqroot / (key + '.' + suffix), 0o600)
         originals['engine-release-requests/' + key + '.' + suffix] = digest(raw.encode())
@@ -400,6 +402,15 @@ def announcement_evidence(request, after_stop=False):
         elif suffix == 'intent': require(raw == request_raw)
         else: require(raw.strip() == request['releaseSha'])
     require(len(lines) == 6 and lines[0] == request['releaseSha'] and lines[3:5] == [str(generation), CANCEL_CONTROL])
+    if marker_missing and not after_stop:
+        # The pinned transaction removes this advisory marker on entry/exit.
+        # Only this expired original's positive announced disposition replaces it.
+        require(key == '41177442979-1' and lines[5] == '1793440868'
+                and time.time() > 1793440868)
+        require(command(['python3', str(generation / 'engine-release-activation-floor.py'),
+                         'disposition', '--repo', '/opt/club-arena', '--target', CANCEL_CONTROL,
+                         '--control', CANCEL_CONTROL, '--deadline', lines[5],
+                         '--request-root', str(reqroot), '--run-id', key]) == 'announced')
     entry_raw = regular(reqroot / (key + '.activation-entry'), 0o600)
     entry = json.loads(entry_raw)
     require(set(entry) == {'schema', 'runId', 'targetSha', 'controlSha', 'manifestSha256', 'phase'}
@@ -465,6 +476,18 @@ def cancellation_directory(directory):
     require(directory.resolve(strict=True) == directory and directory.stat().st_uid == 0)
 
 
+def cancellation_child_class(argv, key, evidence):
+    generation = PARENT / 'engine-control-generations' / CANCEL_CONTROL
+    if bash_command(argv, [str(generation / 'engine-release-transaction.sh'), '--run-id', key]):
+        return 'pinned_transaction'
+    marker = 'engine-release-requests/' + key + '.awaiting-certificate'
+    if (key == '41177442979-1' and marker not in evidence['originals']
+            and bash_command(argv, [str(generation / 'engine-release-recover.sh'),
+                                    '--run-id', key, '--mode', 'retryable'])):
+        return 'pinned_announcement_recovery'
+    return 'unproven'
+
+
 def cancel_announced(request):
     require(os.getuid() == 0)
     key = request['runKey']; units = cancel_units(key)
@@ -500,7 +523,7 @@ def cancel_announced(request):
             require((PROC / str(parent['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
             children = (PROC / str(parent['pid']) / 'task' / str(parent['pid']) / 'children').read_text().split()
             candidates = [process(int(pid)) for pid in children]
-            matches = [row for row in candidates if bash_command(row['argv'], [str(PARENT / 'engine-control-generations' / CANCEL_CONTROL / 'engine-release-transaction.sh'), '--run-id', key])]
+            matches = [row for row in candidates if cancellation_child_class(row['argv'], key, evidence) != 'unproven']
             require(len(matches) == 1 and matches[0]['parent'] == parent['pid'])
             require((PROC / str(matches[0]['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
             engine_pid = command(['docker', 'container', 'inspect', '--format', '{{.State.Pid}}', 'club-arena-engine'])
@@ -517,6 +540,37 @@ def cancel_announced(request):
         allowed |= {'engine-intake-requests/' + key + '.' + suffix for suffix in ('request', 'intent')}
         require(set(intent) == {'schema', 'request', 'container', 'evidence', 'originalUnit', 'originalProcess', 'originalChild', 'stopContract'} and intent['schema'] == CANCEL_SCHEMA)
         require(set(intent['evidence']['originals']) <= allowed and all(re.fullmatch('[0-9a-f]{64}', value) for value in intent['evidence']['originals'].values()))
+        # A bounded expired retry may end after its immutable intent was saved.
+        # Prevent another retry without rebinding or signalling a new invocation.
+        current = unit_snapshot(units[0])
+        if (not os.path.lexists(issued_path) and current != intent['originalUnit']
+                and not (current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'})):
+            require(key == '41177442979-1' and 'engine-release-requests/'+key+'.awaiting-certificate' not in intent['evidence']['originals'])
+            for original in [intent['originalProcess'], intent['originalChild']]:
+                try:
+                    process(original['pid'])
+                except FileNotFoundError:
+                    # A missing stat/cmdline file is not proof that the PID is gone.
+                    try: os.stat(PROC / str(original['pid']), follow_symlinks=False)
+                    except FileNotFoundError as error:
+                        require(error.errno == errno.ENOENT)
+                    else: raise ValueError('Original process directory remains present')
+                else:
+                    raise ValueError('Original process is present or reused; cancellation remains unproven')
+            require(announcement_evidence(request) == intent['evidence'])
+            require(container_identity(request) == intent['container']); health_pair(request)
+            loaded_stop_contract(units[0], key, allow_masked=masked(units))
+            for unit in units:
+                path = SYSTEMD / unit
+                if os.path.lexists(path): require(path.is_symlink() and os.readlink(path) == '/dev/null')
+                else: os.symlink('/dev/null', path); fsync_directory(SYSTEMD)
+            command(['systemctl', 'daemon-reload'])
+            require(masked(units))
+            current = unit_snapshot(units[0])
+            if not (current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'}):
+                raise ValueError('Changed invocation masked; waiting for natural quiescence without issuing stop')
+            quiet_units(units, intent['originalUnit']['ControlGroup'])
+            unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
         if not os.path.lexists(issued_path):
             current = unit_snapshot(units[0])
             already_quiet = current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'}

@@ -1,0 +1,5 @@
+# Welcome inserts lock their club before child fences
+
+Four original October30 deadlocks paired welcome creation with reset or certification cleanup. The existing insert fence locked the Spin pool or welcome schedule before the later retired-club guard locked the club; cleanup held that club before requesting child locks. The fence now takes the same owning welcome club KEY SHARE first. The retired-club guard and cleanup FOR UPDATE remain unchanged, as do all amounts, identities, gates and lifecycle checks.
+
+The native regression uses captured current creator, fence, retired guard, reset and certification-wrapper bodies with the existing isolated welcome schema. It reproduces the original cycle before installation and exercises the corrected order afterward. External empty-registration cancellation and final fixture-retirement ports are explicit isolated boundaries; this evidence does not certify production cancellation, financial settlement or live game continuity. Required source checks, protected merge, exact migration installation and live readback remain separate.

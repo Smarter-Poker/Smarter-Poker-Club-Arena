@@ -47,6 +47,15 @@ const REAL_ROW = {
 describe('hand detail renders the row shape production actually stores', () => {
   const panel = adaptServiceHandToPanel(REAL_ROW, 'hero');
 
+  it('preserves recorded tournament identity in the panel and replay without inferring it from variant', () => {
+    const tournament = adaptServiceHandToPanel({ ...REAL_ROW, tournament_id: 'event-1' }, 'hero');
+    expect(tournament.tournamentId).toBe('event-1');
+    expect(tournament.replay?.tournamentId).toBe('event-1');
+    const cash = adaptServiceHandToPanel({ ...REAL_ROW, tournament_id: null }, 'hero');
+    expect(cash.tournamentId).toBeNull();
+    expect(cash.replay?.tournamentId).toBeNull();
+  });
+
   it('never emits the string that rendered as UNDEFINE', () => {
     const everyCard = [
       ...panel.streets.flatMap((s) => s.cards ?? []),

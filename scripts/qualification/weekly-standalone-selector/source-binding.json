@@ -155,8 +155,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 260263,
-      "sha256": "f2eccd7b1c58bf3677f9647bcfea51831f647be47b19c41b64bf2e65f0bc9693"
+      "bytes": 261987,
+      "sha256": "c1d61a5219586c70e99141545b903ee0274992a6c61e0f3a37a311f9be37c37a"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1783,6 +1783,19 @@
     "execution_performed": false,
     "qualificationStateChanged": false
   },
+  "postpaidStatementQualification20261031": {
+    "reason": "Add 35 focused postpaid statement/discovery/guarded-migration native cases to the existing required server shard. Every previous command, financial assertion, matrix, deadline, join and artifact upload is preserved.",
+    "changedFile": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 260243,
+      "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
+    },
+    "current": {
+      "bytes": 261967,
+      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+    },
+    "qualification": "Current CI source identity only. No historical financial/native/installation/live result is recertified; all original evidence and other pins remain unchanged."
+  },
   "isolatedConnectedUiSourceAudit20261031": {
     "scope": "Current source identity only for isolated connected UI qualification; no financial qualification, SQL, oracle, profile or historical evidence restamped.",
     "file": ".github/workflows/ci.yml",
@@ -1797,6 +1810,19 @@
     "reason": "Add actions:read only to the existing native reusable caller permission ceiling; all other CI jobs and financial behavior unchanged.",
     "execution_performed": false,
     "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "protectedMainIntegration20261031": {
+    "scope": "Current source binding only. Preserve protected postpaid statement qualification and private connected UI readonly permission together; no historical result or financial input recertified.",
+    "previous_main_ci": {
+      "bytes": 261967,
+      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+    },
+    "current_ci": {
+      "bytes": 261987,
+      "sha256": "c1d61a5219586c70e99141545b903ee0274992a6c61e0f3a37a311f9be37c37a"
+    },
+    "execution_performed": false,
     "qualificationStateChanged": false
   }
 }

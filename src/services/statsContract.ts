@@ -4,6 +4,7 @@ export interface StatsScopeContract {
   target_user_id: string | null;
   club_id: string | null;
   asset: 'chips' | 'diamonds' | null;
+  game_mode?: 'cash' | 'tournament';
   range_days: number | null;
   range_tz: string | null;
   visibility: 'owner' | 'shared_club';
@@ -247,6 +248,9 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
       target_user_id: typeof scope.target_user_id === 'string' ? scope.target_user_id : null,
       club_id: typeof scope.club_id === 'string' ? scope.club_id : null,
       asset: scope.asset === 'chips' || scope.asset === 'diamonds' ? scope.asset : null,
+      ...(scope.game_mode === 'cash' || scope.game_mode === 'tournament'
+        ? { game_mode: scope.game_mode }
+        : {}),
       range_days: nullableFinite(scope.range_days),
       range_tz: typeof scope.range_tz === 'string' ? scope.range_tz : null,
       visibility: scope.visibility === 'shared_club' ? 'shared_club' : 'owner',
@@ -324,10 +328,12 @@ export function statsContractMatchesRequest(
     rangeDays: number | null;
     timezone: string;
     visibility: StatsScopeContract['visibility'];
+    gameMode?: 'cash' | 'tournament';
   }
 ): boolean {
   return (
     contract.valid &&
+    (!request.gameMode || contract.scope.game_mode === request.gameMode) &&
     contract.scope.target_user_id === request.targetUserId &&
     contract.scope.club_id === request.clubId &&
     contract.scope.asset === request.asset &&

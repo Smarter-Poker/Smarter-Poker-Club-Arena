@@ -141,4 +141,15 @@ describe('Stats cache identity', () => {
     expect(readStatsRangeMemo(id)).toEqual(payload(id));
     expect(writeStatsRangeMemo(id, { ...payload(id), contract_version: 1 })).toBe(false);
   });
+  it('never serves cash cache data as tournament statistics or accepts an unscoped legacy payload', () => {
+    const cash = identity({ gameMode: 'cash' });
+    const tournament = identity({ gameMode: 'tournament' });
+    const cashPayload = { ...payload(cash), scope: { ...payload(cash).scope, game_mode: 'cash' } };
+    expect(statsCacheIdentityKey(cash)).not.toBe(statsCacheIdentityKey(tournament));
+    expect(statsPayloadMatchesIdentity(cashPayload, cash)).toBe(true);
+    expect(statsPayloadMatchesIdentity(cashPayload, tournament)).toBe(false);
+    expect(statsPayloadMatchesIdentity(payload(cash), cash)).toBe(false);
+    writeStatsRangeMemo(cash, cashPayload);
+    expect(readStatsRangeMemo(tournament)).toBeNull();
+  });
 });

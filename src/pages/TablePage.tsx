@@ -9736,7 +9736,10 @@ function LiveTablePage({
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Preserve committed, card-free public hand-stat recording; opponent HUDs are retired.
-  const { observePublicEvent } = usePlayerStats(userId);
+  const { observePublicEvent } = usePlayerStats(
+    userId,
+    tableState.isTournament ? 'tournament' : 'cash'
+  );
   const observePublicEventRef = useRef(observePublicEvent);
   observePublicEventRef.current = observePublicEvent;
 
@@ -10061,8 +10064,9 @@ function LiveTablePage({
   const handHistoryFetchedAtRef = useRef<number | null>(null);
   const handHistoryTableRef = useRef<string | null>(null);
   const handHistoryViewerRef = useRef<string | null>(null);
+  const tableHistoryGameMode = tableState.isTournament ? 'tournament' : 'cash';
   const handHistoryScopeRef = useRef('');
-  handHistoryScopeRef.current = `${userId}:${tableId}:${lightningRoom?.poolSessionId ?? ''}`;
+  handHistoryScopeRef.current = `${userId}:${tableId}:${lightningRoom?.poolSessionId ?? ''}:${tableHistoryGameMode}`;
   const handHistoryStateRef = useRef<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   handHistoryStateRef.current = handHistoryState;
   /* Saved-hand ids that arrived WHILE the page fetch was in flight. The fetch
@@ -10150,6 +10154,7 @@ function LiveTablePage({
         // HandHistoryService.getPlayerHands for what the missing tableId did.
         handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
           tableId,
+          gameMode: tableHistoryGameMode,
           lightningPoolSessionId: lightningRoom?.poolSessionId,
           throwOnError: true,
         }),
@@ -10187,7 +10192,15 @@ function LiveTablePage({
     /* `tableId` IS a dependency: a TablePage instance in the multi-table
        container can change table, and a closure over the old id fetched the
        previous table's hands into this one. */
-  }, [showHandHistory, showHandDetail, userId, tableId, lightningRoom?.poolSessionId, lastHandId]);
+  }, [
+    showHandHistory,
+    showHandDetail,
+    userId,
+    tableId,
+    lightningRoom?.poolSessionId,
+    lastHandId,
+    tableHistoryGameMode,
+  ]);
 
   const loadOlderReviewHands = useCallback(async (): Promise<string | null> => {
     if (
@@ -10211,6 +10224,7 @@ function LiveTablePage({
     try {
       const rows = await handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
         tableId,
+        gameMode: tableHistoryGameMode,
         beforeHandNumber: oldest.handNumber,
         throwOnError: true,
       });
@@ -10236,7 +10250,7 @@ function LiveTablePage({
         setOlderHandsLoading(false);
       }
     }
-  }, [userId, tableId, lightningRoom?.poolSessionId, hasOlderHands, toast]);
+  }, [userId, tableId, lightningRoom?.poolSessionId, hasOlderHands, toast, tableHistoryGameMode]);
 
   /**
    * LIVE REFRESH (Phase 1, 2026-09-05). The engine announces every saved hand
@@ -10258,7 +10272,7 @@ function LiveTablePage({
       if (handHistoryStateRef.current !== 'ready' || handHistoryTableRef.current !== tableId)
         return;
       try {
-        const savedScope = `${userId}:${tableId}:${lightningRoom?.poolSessionId ?? ''}`;
+        const savedScope = `${userId}:${tableId}:${lightningRoom?.poolSessionId ?? ''}:${tableHistoryGameMode}`;
         const row = await handHistoryService.getHand(savedId);
         if (
           handHistoryScopeRef.current !== savedScope ||
@@ -10277,6 +10291,7 @@ function LiveTablePage({
         // Lightning's authenticated room announces a physical hand, whereas
         // this page's tableId is the player's pool session, not a tables row.
         if (!row || (!lightningRoom?.poolSessionId && row.table_id !== tableId)) return;
+        if (Boolean(row.tournament_id) !== (tableHistoryGameMode === 'tournament')) return;
         const record = adaptServiceHandToPanel(row, userId);
         setHandHistory((prev) => {
           const next = prependHand(prev, record, Number.POSITIVE_INFINITY);
@@ -10288,7 +10303,7 @@ function LiveTablePage({
         reportError(e, 'TablePage.takeSavedHand');
       }
     },
-    [userId, tableId, lightningRoom?.poolSessionId]
+    [userId, tableId, lightningRoom?.poolSessionId, tableHistoryGameMode]
   );
   const takeSavedHandRef = useRef(takeSavedHand);
   takeSavedHandRef.current = takeSavedHand;
@@ -10302,6 +10317,7 @@ function LiveTablePage({
       try {
         const hands = await handHistoryService.getPlayerHands(userId, 1, {
           tableId,
+          gameMode: tableHistoryGameMode,
           lightningPoolSessionId: lightningRoom?.poolSessionId,
           throwOnError: true,
         });
@@ -10315,7 +10331,15 @@ function LiveTablePage({
     return () => {
       cancelled = true;
     };
-  }, [showHandReplay, replaySubjectId, lastHandId, userId, tableId, lightningRoom?.poolSessionId]);
+  }, [
+    showHandReplay,
+    replaySubjectId,
+    lastHandId,
+    userId,
+    tableId,
+    lightningRoom?.poolSessionId,
+    tableHistoryGameMode,
+  ]);
 
   /* The per-table hand cache is gone (see `handHistory` above). Keys written
      by earlier builds are removed once so they stop taking storage; nothing

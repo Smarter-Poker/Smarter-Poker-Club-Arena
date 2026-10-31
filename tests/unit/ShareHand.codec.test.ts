@@ -245,3 +245,13 @@ describe('ShareHand codec v3', () => {
     expect(d.preflop.map((a) => a.action)).toEqual(['CHECK']);
   });
 });
+
+describe('recorded game mode in shared hands', () => {
+  it('round-trips tournament identity and known cash without classifying old links', () => {
+    expect(decodeHandFromUrl(encodeHand({ ...HAND, tournamentId: 'event-1' }))?.tournamentId).toBe(
+      'event-1'
+    );
+    expect(decodeHandFromUrl(encodeHand({ ...HAND, tournamentId: null }))?.tournamentId).toBeNull();
+    expect(decodeHandFromUrl(encodeHand(HAND))?.tournamentId).toBeUndefined();
+  });
+});

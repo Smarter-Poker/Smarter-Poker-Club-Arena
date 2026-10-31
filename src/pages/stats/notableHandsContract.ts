@@ -5,6 +5,7 @@ export interface NotableHandsRequest {
   clubId: string | null;
   asset: 'chips' | 'diamonds';
   visibility: 'owner';
+  gameMode?: 'cash' | 'tournament';
 }
 
 const POSTGRES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -52,6 +53,7 @@ export function normalizeHands(data: unknown, request: NotableHandsRequest): Han
     scope.club_id !== request.clubId ||
     scope.asset !== request.asset ||
     scope.visibility !== request.visibility ||
+    (request.gameMode !== undefined && scope.game_mode !== request.gameMode) ||
     !validDateTime(payload.generated_at) ||
     !Array.isArray(rows) ||
     rows.length > 100
@@ -74,6 +76,8 @@ export function normalizeHands(data: unknown, request: NotableHandsRequest): Han
       !exactMoney(hand.big_blind, true) ||
       hand.big_blind <= 0 ||
       typeof hand.is_tournament !== 'boolean' ||
+      (request.gameMode !== undefined &&
+        hand.is_tournament !== (request.gameMode === 'tournament')) ||
       !(
         hand.position === null ||
         (typeof hand.position === 'string' && hand.position.trim().length > 0)

@@ -46,7 +46,7 @@ describe('committed server summary through the live browser store', () => {
     });
     expect(container).toBeEmptyDOMElement();
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.PLAYER_STATS_SWR)!);
-    expect(stored.version).toBe(2);
+    expect(stored.version).toBe(3);
     expect(stored.receipts).toHaveLength(5);
     expect(Object.values(stored.stats)).toEqual([
       expect.objectContaining({

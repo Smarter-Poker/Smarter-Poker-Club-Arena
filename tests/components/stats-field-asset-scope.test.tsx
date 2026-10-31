@@ -25,7 +25,7 @@ describe('comparison asset provenance', () => {
   it('reads the selected asset and never paints old ranks during an asset change', async () => {
     let complete!: (value: any) => void;
     reads.distribution
-      .mockResolvedValueOnce({ rows: [row('field:chips', 91)] })
+      .mockResolvedValueOnce({ rows: [row('field:cash:chips', 91)] })
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -34,11 +34,11 @@ describe('comparison asset provenance', () => {
       );
     const view = render(<BenchmarkPanel scope="chips" values={{ bb100: 10 }} />);
     expect(await screen.findByText('Compared With 91 Players.')).toBeInTheDocument();
-    expect(reads.distribution).toHaveBeenLastCalledWith('field:chips');
+    expect(reads.distribution).toHaveBeenLastCalledWith('field:cash:chips');
     view.rerender(<BenchmarkPanel scope="diamonds" values={{ bb100: 10 }} />);
     expect(screen.queryByText('Compared With 91 Players.')).not.toBeInTheDocument();
-    await waitFor(() => expect(reads.distribution).toHaveBeenLastCalledWith('field:diamonds'));
-    complete({ rows: [row('field:diamonds', 37)] });
+    await waitFor(() => expect(reads.distribution).toHaveBeenLastCalledWith('field:cash:diamonds'));
+    complete({ rows: [row('field:cash:diamonds', 37)] });
     expect(await screen.findByText('Compared With 37 Players.')).toBeInTheDocument();
   });
 

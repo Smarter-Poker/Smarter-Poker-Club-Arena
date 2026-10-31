@@ -87,7 +87,10 @@ beforeEach(() => {
   });
 }, 60_000); // importing GameServer alone can pass 10s on a loaded CI runner
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 async function deliverFromOtherManager(work: () => void): Promise<void> {
   await runWithTournamentDataAuthority(sourceOwner, async () => {
@@ -261,7 +264,10 @@ describe('durable wake page read ownership', () => {
     }
     query.then = (resolve: (value: unknown) => unknown) => {
       afterRead?.();
-      return Promise.resolve({ data, error: null }).then(resolve);
+      return Promise.resolve({
+        data: typeof data === 'function' ? data() : data,
+        error: null,
+      }).then(resolve);
     };
     vi.spyOn(supabase, 'from').mockReturnValue(query);
   }
@@ -298,5 +304,165 @@ describe('durable wake page read ownership', () => {
   it('accepts a proved empty page', async () => {
     page([]);
     expect(await server.drainTournamentManagerWakePages()).toBe(true);
+  });
+
+  it('keeps a rejected admission pending without starving the rest of its readable page', async () => {
+    const first = { id: 1, tournament_id: targetOwner.tournamentId, generation: 1 };
+    const later = { id: 2, tournament_id: sourceOwner.tournamentId, generation: 1 };
+    page([first, later]);
+    server.admitTournamentManagerWake.mockRejectedValueOnce(
+      new Error('capacity admission unknown')
+    );
+
+    await expect(server.drainTournamentManagerWakePages()).resolves.toBe(false);
+    expect(server.admitTournamentManagerWake.mock.calls).toEqual([[first], [later]]);
+    expect(supabase.from).toHaveBeenCalledWith('tournament_manager_wakes');
+  });
+
+  function ownDrain() {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    delete server.drainTournamentManagerWakes;
+    Object.assign(server, {
+      lifecycleGeneration: 1,
+      tournamentManagerWakeDrainRequested: false,
+      tournamentManagerWakeDrainInFlight: false,
+      tournamentManagerWakeDrainRetryTimer: null,
+      tournamentManagerWakeDrainRetryGeneration: 0,
+      tournamentManagerWakeDrainRetryBackoffMs: 250,
+    });
+  }
+
+  it('does not forget an earlier admission failure when the drain advances to its next page', async () => {
+    const rows = Array.from({ length: 201 }, (_, index) => ({
+      id: index + 1,
+      tournament_id: targetOwner.tournamentId,
+      generation: 1,
+    }));
+    const pages = [rows.slice(0, 200), rows.slice(200)];
+    page(() => pages.shift());
+    server.admitTournamentManagerWake.mockRejectedValueOnce(new Error('first admission unknown'));
+
+    await expect(server.drainTournamentManagerWakePages()).resolves.toBe(false);
+    expect(server.admitTournamentManagerWake).toHaveBeenCalledTimes(201);
+    expect(server.admitTournamentManagerWake).toHaveBeenLastCalledWith(rows[200]);
+    expect(pages).toEqual([]);
+  });
+
+  it('hands a rejected live notification to the same durable drain without a reconnect', async () => {
+    server.startTournamentManagerWakeSubscription();
+    ownDrain();
+    const row = {
+      id: 3,
+      tournament_id: targetOwner.tournamentId,
+      generation: 8,
+      consumed_at: null,
+    };
+    page([row]);
+    server.admitTournamentManagerWake.mockRejectedValueOnce(new Error('live admission unknown'));
+    await deliverFromOtherManager(() =>
+      channels[0].callbacks.get('tournament_manager_wakes:INSERT')!({ new: row })
+    );
+
+    expect(server.admitTournamentManagerWake.mock.calls).toEqual([[row]]);
+    expect(server.tournamentManagerWakeDrainRequested).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(server.admitTournamentManagerWake.mock.calls).toEqual([[row], [row]]);
+    expect(server.tournamentManagerWakeDrainRequested).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['shutdown', 'lifecycle', 'channel'])(
+    'does not pass a late live-admission rejection to a retired %s owner',
+    async (retirement) => {
+      server.startTournamentManagerWakeSubscription();
+      ownDrain();
+      let rejectAdmission!: (error: Error) => void;
+      server.admitTournamentManagerWake.mockImplementationOnce(
+        () => new Promise((_resolve, reject) => (rejectAdmission = reject))
+      );
+      const row = { id: 3, tournament_id: targetOwner.tournamentId, generation: 8 };
+      await deliverFromOtherManager(() =>
+        channels[0].callbacks.get('tournament_manager_wakes:INSERT')!({ new: row })
+      );
+      if (retirement === 'shutdown') server.running = false;
+      else if (retirement === 'lifecycle') server.lifecycleGeneration++;
+      else server.tournamentManagerWakeChannel = null;
+      rejectAdmission(new Error('retired live admission'));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(server.admitTournamentManagerWake).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(server.tournamentManagerWakeDrainRequested).toBe(false);
+    }
+  );
+
+  it.each([undefined, targetOwner.tournamentId])(
+    'retries the same durable requests through the existing backoff after a %s drain admission rejects',
+    async (scope) => {
+      ownDrain();
+      const first = {
+        id: 1,
+        tournament_id: targetOwner.tournamentId,
+        generation: 7,
+        consumed_at: null,
+      };
+      const later = { ...first, id: 2, generation: 4 };
+      page([first, later]);
+      const rpc = vi.spyOn(supabase, 'rpc');
+      server.admitTournamentManagerWake.mockRejectedValueOnce(new Error('recovery not confirmed'));
+
+      await server.drainTournamentManagerWakes(scope);
+      expect(server.admitTournamentManagerWake.mock.calls).toEqual([[first], [later]]);
+      expect(server.tournamentManagerWakeDrainRequested).toBe(true);
+      expect(server.tournamentManagerWakeDrainInFlight).toBe(false);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(249);
+      expect(server.admitTournamentManagerWake).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(server.admitTournamentManagerWake.mock.calls).toEqual([
+        [first],
+        [later],
+        [first],
+        [later],
+      ]);
+      expect(server.tournamentManagerWakeDrainRequested).toBe(false);
+      expect(server.tournamentManagerWakeDrainRetryTimer).toBeNull();
+      expect(server.tournamentManagerWakeDrainRetryBackoffMs).toBe(250);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(rpc).not.toHaveBeenCalled();
+      expect([first.consumed_at, later.consumed_at]).toEqual([null, null]);
+    }
+  );
+
+  it('does not retain or retry an admission rejection from a retired lifecycle', async () => {
+    ownDrain();
+    const first = { id: 1, tournament_id: targetOwner.tournamentId, generation: 1 };
+    const later = { ...first, id: 2 };
+    page([first, later]);
+    server.admitTournamentManagerWake.mockImplementationOnce(async () => {
+      server.lifecycleGeneration++;
+      throw new Error('retired recovery');
+    });
+
+    await server.drainTournamentManagerWakes();
+    expect(server.admitTournamentManagerWake.mock.calls).toEqual([[first]]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not re-admit after shutdown while its causal retry is pending', async () => {
+    ownDrain();
+    const row = { id: 1, tournament_id: targetOwner.tournamentId, generation: 1 };
+    page([row]);
+    server.admitTournamentManagerWake.mockRejectedValueOnce(new Error('admission unknown'));
+    await server.drainTournamentManagerWakes();
+    expect(vi.getTimerCount()).toBe(1);
+    server.running = false;
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(server.admitTournamentManagerWake).toHaveBeenCalledOnce();
+    expect(server.tournamentManagerWakeDrainRetryTimer).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -1,13 +1,13 @@
 /** Monetary history totals are comparable only inside one arena asset. */
 export type HistoryAsset = 'chips' | 'diamonds';
 export function handAssetTotals(
-  rows: Array<{ arenaAsset?: HistoryAsset; net: number; pot: number }>
+  rows: Array<{ arenaAsset?: HistoryAsset; tournamentId?: string | null; net: number; pot: number }>
 ): Array<{ asset: HistoryAsset | 'unclassified'; net: number; biggestPot: number }> {
   const totals = new Map<HistoryAsset | 'unclassified', { net: number; biggestPot: number }>();
   for (const row of rows) {
     // Missing metadata cannot prove denomination. Keep the hand visible,
     // but never combine its money with another unclassified hand.
-    if (!row.arenaAsset) continue;
+    if (!row.arenaAsset || row.tournamentId) continue;
     const asset = row.arenaAsset;
     const previous = totals.get(asset) ?? { net: 0, biggestPot: 0 };
     previous.net = Math.round((previous.net + row.net) * 100) / 100;

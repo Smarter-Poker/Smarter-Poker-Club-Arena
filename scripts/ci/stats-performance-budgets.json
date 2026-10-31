@@ -14,6 +14,7 @@
     "RakeTab": { "baselineGzipKb": 1.43, "maxGzipKb": 2 },
     "TrophiesTab": { "baselineGzipKb": 0.96, "maxGzipKb": 2 },
     "TournamentsTab": { "baselineGzipKb": 1.57, "maxGzipKb": 2 },
+    "TournamentPlayingStats": { "baselineGzipKb": 0, "maxGzipKb": 1.5 },
     "AnalysisTab": { "baselineGzipKb": 5.43, "maxGzipKb": 7 },
     "StatsCharts": { "baselineGzipKb": 1.52, "maxGzipKb": 3 },
     "StatsPositionPiePlot": { "baselineGzipKb": 5.27, "maxGzipKb": 6 },

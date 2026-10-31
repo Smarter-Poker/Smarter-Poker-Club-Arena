@@ -679,7 +679,8 @@ export function HandDetailModal({
     return !!currentUserName && name.toLowerCase() === currentUserName.toLowerCase();
   };
   const muckCount = muckWidth(model);
-  const variant = gameTypeLabel(model.gameVariant) || hand.gameType;
+  const gameVariant = gameTypeLabel(model.gameVariant) || hand.gameType;
+  const variant = hand.tournamentId ? `Tournament · ${gameVariant}` : gameVariant;
   const isBomb = !!hand.bombPot || (!!hand.bombBoards?.length && !hand.ritBoards?.length);
   const showdownRows = model.showdown;
   const takenBy = hand.winners.map((w) => w.playerName).join(', ');

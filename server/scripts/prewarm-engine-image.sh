@@ -90,4 +90,10 @@ CANDIDATE_FILESYSTEM_WARM
 }
 
 # Standalone caller: both the receiver and transaction use these exact bytes.
+# Both callers use one immutable image/fixture-bound durable scale receipt.
+# This is before notice/intake in the receiver, and before notice in the
+# transaction. Unknown serving/seal identity refuses; desired SHA alone never
+# bypasses qualification of a still-serving legacy process.
 prewarm_candidate_image
+python3 "$(dirname "$(readlink -f "$0")")/legacy-census-scale-preflight.py" \
+  "$IMAGE_REF" "$RUN_ID" "$DEADLINE"

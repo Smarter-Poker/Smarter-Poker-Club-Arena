@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   movePlayerFollow,
@@ -86,4 +87,10 @@ describe('explicit player following', () => {
     params.set('followPlayer', 'not-a-user');
     expect(readPlayerFollow(params)).toBeUndefined();
   });
+});
+
+it('follows the maintained engine feed because the player table is not WAL-published', () => {
+  const source = readFileSync('src/components/table/PlayerFollowSubscription.tsx', 'utf8');
+  expect(source).toContain('subscribeTournamentStandings(target.tournamentId');
+  expect(source).not.toContain("'postgres_changes'");
 });

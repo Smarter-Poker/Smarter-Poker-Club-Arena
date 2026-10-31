@@ -471,16 +471,19 @@ emergency = m.get("reason") == "Deployment Recovery"
 transition = os.environ.get("DAILY_TRANSITION") == "1" and m.get("schedule") is None and local.minute >= 55 and m.get("reason") == "Scheduled Engine Maintenance"
 raise SystemExit(0 if (daily or emergency or transition) else 1)
 ' 2>/dev/null || return 0
-  set +e
-  timeout --signal=TERM --kill-after=2s 60s \
-    "$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"
-  rc=$?
-  set -e
+  # The helper writes its hold file after every answered Cluster and lists
+  # paused Clusters on a retry, so a kill here never strands a paused Cluster;
+  # 5 s per call keeps twelve round trips inside the outer budget.
+  rc=0
+  timeout --signal=TERM --kill-after=2s 90s \
+    "$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" --timeout-seconds 5 || rc=$?
   case "$rc" in
     0|1) LIGHTNING_HOLD_PLACED=1 ;;
-    126|127) echo "[engine-release-transaction] WARN: the Lightning hold helper could not run (exit $rc); Lightning was NEVER ASKED to pause and the census guard decides on its own" >&2; LIGHTNING_HOLD_PLACED=1 ;;
+    126|127) echo "[engine-release-transaction] WARN: the Lightning hold helper could not run (exit $rc); Lightning was NEVER ASKED to pause this pass and the census guard decides on its own" >&2 ;;
     *) echo "[engine-release-transaction] WARN: the Lightning hold answered UNKNOWN (exit $rc); it is retried on the next pass" >&2 ;;
   esac
+  # A hold file written before a kill is a placed hold, whatever the exit code.
+  [ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1
   return 0
 }
 
@@ -502,27 +505,41 @@ m = d.get("maintenance") if isinstance(d, dict) else None
 raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get("active") is not True else 1)
 ' 2>/dev/null || return 0
   release_lightning_hold 0
-  LIGHTNING_HOLD_PLACED=0
+  # Released means the file is gone. A hold that could not be released keeps
+  # LIGHTNING_HOLD_PLACED=1 so this pass runs again and again until it is.
+  [ -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=0
   return 0
 }
 
-# Release the hold after the thaw, on every exit path. Resuming while the
-# platform is still frozen would only be refused, so this waits for the
-# serving engine to report the break over, bounded by the latest known break
-# end plus ninety seconds and never more than ten minutes. The resume itself
-# is retried three times; a hold that still cannot be released stays on disk
-# for engine-release-recover.sh, and says so.
+# Release the hold after the thaw, on every exit path and whenever a
+# qualifying break has passed. The wait is for the SERVING ENGINE to report the
+# break over (the operator door itself is not behind the Postgres freeze), so a
+# resume lands on a live floor rather than racing the cutover; it is bounded by
+# the latest known break end plus ninety seconds and never more than ten
+# minutes. Callable under set -e: every non-zero answer is caught. A hold that
+# still cannot be released stays on disk for the next pass or the fence, and
+# says so. The second argument is a hard stop epoch for signalled exits.
 release_lightning_hold() {
-  local exit_code="${1:-0}" break_end wait_until response http_code body attempt rc
+  local exit_code="${1:-0}" stop_epoch="${2:-0}" break_end wait_until response http_code body attempt rc attempts=3 budget=60
   [ -e "$LIGHTNING_HOLD_FILE" ] || return 0
   break_end="${BREAK_END_EPOCH:-0}"
   [ "${LEGACY_ENTRY_BREAK_END_EPOCH:-0}" -le "$break_end" ] || break_end="$LEGACY_ENTRY_BREAK_END_EPOCH"
   wait_until=$(( break_end + 90 ))
   [ "$wait_until" -le $(( $(date +%s) + 600 )) ] || wait_until=$(( $(date +%s) + 600 ))
-  # A signalled exit (systemd stop: TERM/HUP -> 75, INT -> 130) has 330 s before
-  # SIGKILL; it waits at most two minutes and then asks anyway - a refusal
-  # keeps the hold on disk for the retry or the fence.
-  case "$exit_code" in 75|130) [ "$wait_until" -le $(( $(date +%s) + 120 )) ] || wait_until=$(( $(date +%s) + 120 )) ;; esac
+  case "$exit_code" in
+    75|130)
+      # A signalled exit (systemd stop: TERM/HUP -> 75, INT -> 130) shares the
+      # 330 s stop budget with the seal abort and desired recovery that ran
+      # before this. One attempt, inside what is left; a refusal keeps the hold
+      # on disk for the retried transaction or the fence.
+      attempts=1
+      [ "$stop_epoch" -gt 0 ] || stop_epoch=$(( $(date +%s) + 60 ))
+      budget=$(( stop_epoch - $(date +%s) - 5 ))
+      [ "$budget" -ge 10 ] || { echo "[engine-release-transaction] WARN: no stop budget left to release the Lightning hold; $LIGHTNING_HOLD_FILE stays on disk for the retry or the fence" >&2; return 0; }
+      [ "$budget" -le 60 ] || budget=60
+      [ "$wait_until" -le $(( stop_epoch - budget - 5 )) ] || wait_until=$(( stop_epoch - budget - 5 ))
+      ;;
+  esac
   while [ "$(date +%s)" -lt "$wait_until" ]; do
     response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
       http://127.0.0.1:8080/health 2>/dev/null)" || { sleep 5; continue; }
@@ -540,21 +557,23 @@ raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get
     fi
     sleep 5
   done
-  for attempt in 1 2 3; do
-    timeout --signal=TERM --kill-after=2s 60s \
-      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"
-    rc=$?
+  rc=0
+  for attempt in $(seq 1 "$attempts"); do
+    rc=0
+    timeout --signal=TERM --kill-after=2s "${budget}s" \
+      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE" || rc=$?
     [ "$rc" -ne 0 ] || return 0
-    [ "$attempt" -lt 3 ] && sleep 15
+    [ "$attempt" -lt "$attempts" ] && sleep 15
   done
-  echo "[engine-release-transaction] FATAL: the Lightning hold for run $RUN_ID could not be released (exit $rc); $LIGHTNING_HOLD_FILE stays on disk for engine-release-recover.sh" >&2
+  echo "[engine-release-transaction] FATAL: the Lightning hold for run $RUN_ID could not be released (exit $rc); $LIGHTNING_HOLD_FILE stays on disk and is retried on the next pass or by engine-release-recover.sh" >&2
   return 0
 }
 
 recover_on_exit() {
-  local rc=$? recovery_deadline recovery_remaining non_break_deadline
+  local rc=$? recovery_deadline recovery_remaining non_break_deadline exit_started
   trap - EXIT HUP INT TERM
   set +e
+  exit_started="$(date +%s)"
   # A run that is leaving no longer waits at the certificate; an older target
   # must not keep standing aside for it while systemd schedules a retry.
   rm -f -- "$AWAITING_CERTIFICATE_FILE"
@@ -601,7 +620,7 @@ recover_on_exit() {
   fi
   # After the engine lock is released: waiting for the thaw must not keep the
   # supervisor or a successor release out of the lock for minutes.
-  release_lightning_hold "$rc"
+  release_lightning_hold "$rc" $(( exit_started + 300 ))
   exit "$rc"
 }
 trap recover_on_exit EXIT

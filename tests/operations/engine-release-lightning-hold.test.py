@@ -34,8 +34,9 @@ C3 = "33333333-3333-4333-8333-333333333333"
 class FakeDoor:
     """Answers the Cluster listing and the operator door from a script."""
 
-    def __init__(self, clusters, answers=None, fail_on=None):
+    def __init__(self, clusters, answers=None, fail_on=None, modes=None):
         self.clusters = clusters
+        self.modes = modes or {}
         self.answers = answers or {}
         self.fail_on = fail_on or set()
         self.calls = []
@@ -44,8 +45,8 @@ class FakeDoor:
         self.calls.append((url, payload))
         if payload is None:
             assert url.startswith(f"{BASE}/rest/v1/cash_games?"), url
-            assert "cluster_mode=eq.lightning" in url
-            return [{"id": c, "cluster_mode": "lightning"} for c in self.clusters]
+            assert "cluster_mode=in.%28lightning%2Cpaused%29" in url, url
+            return [{"id": c, "cluster_mode": self.modes.get(c, "lightning")} for c in self.clusters]
         assert url == f"{BASE}/rest/v1/rpc/fn_lightning_operator_control", url
         key = (payload["p_action"], payload["p_cluster_id"])
         if key in self.fail_on:
@@ -161,6 +162,48 @@ class LightningHoldTests(unittest.TestCase):
         self.assertEqual([p["p_cluster_id"] for p in resumes], [C1, C2])
         self.assertEqual(resumes[1]["p_args"]["request_id"], hold.request_id("123-1", "resume", C2))
 
+    def test_a_kill_between_two_clusters_strands_nothing(self):
+        # The hold file is durable after every answered Cluster, and a retry
+        # lists paused Clusters too, so the one paused before the kill is
+        # recorded by its replayed answer rather than lost.
+        class Killed(Exception):
+            pass
+
+        class KillingDoor(FakeDoor):
+            def __call__(self, url, payload):
+                if payload is not None and payload["p_cluster_id"] == C2:
+                    raise Killed()
+                return super().__call__(url, payload)
+
+        with self.assertRaises(Killed):
+            hold.pause(BASE, KillingDoor([C1, C2, C3]), "123-1", self.hold_file)
+        self.assertEqual(self.read()["held"], [C1])
+        # Retry: C1 is now 'paused' in the listing; its replayed first answer
+        # is ok without `already`, so it stays held; C2 and C3 are paused now.
+        door = FakeDoor([C1, C2, C3], modes={C1: "paused"},
+                        answers={("pause", C1): {"ok": True, "idempotent": True, "replayed": True}})
+        self.assertEqual(hold.pause(BASE, door, "123-1", self.hold_file), hold.EXIT_DONE)
+        self.assertEqual(self.read()["held"], [C1, C2, C3])
+
+    def test_a_partly_released_hold_is_re_held_under_a_new_generation(self):
+        hold.pause(BASE, FakeDoor([C1, C2]), "123-1", self.hold_file)
+        door = FakeDoor([C1, C2], answers={("resume", C1): {"ok": False, "code": "CLUSTER_FROZEN", "reason": "CLUSTER_FROZEN"}})
+        self.assertEqual(hold.resume(BASE, door, "123-1", self.hold_file), hold.EXIT_PARTIAL)
+        self.assertEqual(self.read()["held"], [C1])
+        # Next qualifying break: C2 deals again and must be re-paused with a
+        # request id the door has not seen; C1 is still held.
+        door2 = FakeDoor([C1, C2], modes={C1: "paused"}, answers={("pause", C1): {"ok": True, "already": True, "code": "ALREADY"}})
+        self.assertEqual(hold.pause(BASE, door2, "123-1", self.hold_file), hold.EXIT_DONE)
+        record = self.read()
+        self.assertEqual(record["generation"], 2)
+        self.assertEqual(sorted(record["held"]), [C1, C2])
+        pauses = [p for _, p in door2.calls if p is not None]
+        self.assertEqual([p["p_cluster_id"] for p in pauses], [C2])
+        self.assertEqual(pauses[0]["p_args"]["request_id"], hold.request_id("123-1", "pause", C2, 2))
+        # C1 answered `already` only because this run paused it earlier; it
+        # was carried in `held` from the record, not from that answer.
+        self.assertNotIn(C1, record["already"])
+
     def test_a_refused_resume_keeps_the_hold_for_the_next_reader(self):
         hold.pause(BASE, FakeDoor([C1, C2]), "123-1", self.hold_file)
         door = FakeDoor([C1, C2], answers={("resume", C1): {"ok": False, "code": "CLUSTER_FROZEN", "reason": "CLUSTER_FROZEN"}})
@@ -169,6 +212,7 @@ class LightningHoldTests(unittest.TestCase):
         record = self.read()
         self.assertEqual(record["resume_refused"], {C1: "CLUSTER_FROZEN"})
         self.assertEqual(record["released"], [C2])
+        self.assertEqual(record["held"], [C1])
         # The next reader re-asks only the still-held list (idempotent for C2).
         door2 = FakeDoor([C1, C2])
         self.assertEqual(hold.resume(BASE, door2, "123-1", self.hold_file), hold.EXIT_DONE)

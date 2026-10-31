@@ -72,8 +72,13 @@ describe('Lightning is held for the engine cutover', () => {
     expect(fn).toContain('"$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"');
     // Three outcomes stay distinct: placed (0/1), could-not-run (126/127), UNKNOWN (retry).
     expect(fn).toMatch(/0\|1\) LIGHTNING_HOLD_PLACED=1/);
+    // Could-not-run is never folded into placed (10.86 rule 1); the next pass asks again.
     expect(fn).toMatch(/126\|127\)[^\n]*NEVER ASKED/);
+    expect(fn).not.toMatch(/126\|127\)[^\n]*LIGHTNING_HOLD_PLACED=1/);
     expect(fn).toMatch(/\*\)[^\n]*UNKNOWN/);
+    // Safe under set -e in the main loop: the helper's exit is caught, never fatal.
+    expect(fn).toContain('--timeout-seconds 5 || rc=$?');
+    expect(fn).toContain('[ ! -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=1');
     // No flag may turn the hold into an admission or a refusal of the checkpoint.
     expect(fn).not.toMatch(/SKIP|FORCE|OVERRIDE|ALLOW_/);
     expect(fn).not.toContain('die ');
@@ -88,7 +93,9 @@ describe('Lightning is held for the engine cutover', () => {
       transaction.indexOf('\n}', transaction.indexOf('release_lightning_hold_if_break_over() {'))
     );
     expect(over).toContain('m.get("active") is not True');
-    expect(over).toContain('release_lightning_hold 0\n  LIGHTNING_HOLD_PLACED=0');
+    // Only a released (absent) hold clears the flag; a retained one is retried next pass.
+    expect(over).toContain('release_lightning_hold 0\n');
+    expect(over).toContain('[ -e "$LIGHTNING_HOLD_FILE" ] || LIGHTNING_HOLD_PLACED=0');
     expect(helper).toContain('generation = int(previous.get("generation", 1)) + 1');
   });
 
@@ -100,7 +107,8 @@ describe('Lightning is held for the engine cutover', () => {
     expect(fn).toContain('[ -e "$LIGHTNING_HOLD_FILE" ] || return 0');
     expect(fn).toContain('m.get("active") is not True');
     expect(fn).toContain('"$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"');
-    expect(fn).toMatch(/for attempt in 1 2 3; do/);
+    expect(fn).toMatch(/for attempt in \$\(seq 1 "\$attempts"\); do/);
+    expect(fn).toContain('--hold-file "$LIGHTNING_HOLD_FILE" || rc=$?');
     // Bounded: never past ten minutes from now.
     expect(fn).toContain('+ 600 ))');
     const onExit = transaction.slice(
@@ -109,9 +117,15 @@ describe('Lightning is held for the engine cutover', () => {
     );
     // After the engine lock is released, never while holding it.
     expect(onExit).toContain('    flock -u 9\n    LOCK_HELD=0\n  fi\n  # After the engine lock is released');
-    expect(onExit).toContain('  release_lightning_hold "$rc"\n  exit "$rc"');
-    // A signalled exit has 330 s before SIGKILL: it waits at most two minutes.
-    expect(fn).toMatch(/case "\$exit_code" in 75\|130\)/);
+    expect(onExit).toContain('  release_lightning_hold "$rc" $(( exit_started + 300 ))\n  exit "$rc"');
+    // A signalled exit shares systemd's 330 s stop budget: one attempt inside
+    // what is left of a hard stop clock stamped when the exit began.
+    expect(fn).toContain('75|130)');
+    expect(fn).toContain('attempts=1');
+    expect(onExit).toContain('exit_started="$(date +%s)"');
+    expect(onExit).toContain('release_lightning_hold "$rc" $(( exit_started + 300 ))');
+    expect(helper).toContain('"cluster_mode": "in.(lightning,paused)"');
+    expect(helper).toContain('record["complete"] = True');
     expect(transaction).toContain('LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');
     expect(recover).toContain('LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');
     expect(recover).toMatch(/"\$LIGHTNING_HOLD" resume \\\n\s+--env-file "\$ENV_FILE" --run-id "\$RUN_ID" --hold-file "\$LIGHTNING_HOLD_FILE"/);
@@ -124,7 +138,7 @@ describe('Lightning is held for the engine cutover', () => {
     expect(helper).toContain('PROJECT_HOST = "kuklfnapbkmacvwxktbh.supabase.co"');
     expect(helper).toContain('/rest/v1/rpc/fn_lightning_operator_control');
     expect(helper).toContain('"p_args": {"request_id": request_id(run_id, action, cluster_id, generation)}');
-    expect(helper).toContain('"cluster_mode": "eq.lightning"');
+    expect(helper).toContain('"cluster_mode": "in.(lightning,paused)"');
     expect(helper).toContain('class RefuseRedirects');
     expect(helper).not.toMatch(/is_horse|horse_id/);
     expect(helper).not.toMatch(/print\([^)]*service_key/);

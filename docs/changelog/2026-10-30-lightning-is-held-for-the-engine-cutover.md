@@ -35,9 +35,12 @@ release's own run key as the operator and the reason.
     release request. A Cluster that was already paused belongs to whoever
     paused it: recorded as `already`, never resumed by this run. A door
     refusal (`CLUSTER_BUSY` while a drain is in flight) is PARTIAL with its
-    code named. An unreachable database is UNKNOWN (exit 3) and the file still
-    records everything paused before the failure, so resume can release it;
-    a retried pause continues from where it stopped.
+    code named. An unreachable database is UNKNOWN (exit 3). The hold file is
+    written after EVERY answered Cluster (a SIGTERM does not run `finally`),
+    the listing includes `paused` Clusters, and request ids replay, so a
+    pause killed between two Clusters strands nothing: the retry records the
+    one already paused by its replayed answer and continues. A partly
+    released hold is re-held under a new generation.
   - `resume` resumes exactly the held list and retires the file to
     `.released`. A refused resume keeps the file for the next reader.
   - Three outcomes (0 done, 1 partial, 3 unknown), pinned project host, no
@@ -62,9 +65,12 @@ release's own run key as the operator and the reason.
   answer is retried on the next pass. `release_lightning_hold` runs from
   `recover_on_exit` on EVERY exit path - sealed, refused, died, interrupted -
   waits for `/health` to report the break over (bounded by the latest known
-  break end plus 90 s, never more than ten minutes, and at most two minutes on
-  a signalled exit so systemd's 330 s stop budget is never exceeded), then
-  resumes with three attempts. A hold that still cannot be released stays on disk and says so.
+  break end plus 90 s, never more than ten minutes), then resumes with three
+  attempts; on a signalled exit it makes one attempt inside what is left of a
+  300 s stop clock stamped when the exit began, so systemd's 330 s budget is
+  never exceeded. It is safe under `set -e` (every helper exit is caught), it
+  runs after the engine lock is released, and a hold that could not be
+  released is retried on every later pass while the file exists. A hold that still cannot be released stays on disk and says so.
 - `engine-release-recover.sh --mode terminal` is the second reader: it resumes
   a hold file left behind, loudly, without blocking terminal retirement.
 - `install-engine-supervisor.sh`: the helper is in `REQUIRED_FILES` and the
@@ -84,7 +90,7 @@ already runs for that transaction.
 
 ## Tests
 
-- `tests/operations/engine-release-lightning-hold.test.py` - 14 unit tests
+- `tests/operations/engine-release-lightning-hold.test.py` - 16 unit tests
   over the helper with a scripted operator door.
 - `tests/lightning-is-held-for-the-engine-cutover.law.test.ts` - packaging,
   the placement gate, the release-on-every-exit wiring, the second reader,

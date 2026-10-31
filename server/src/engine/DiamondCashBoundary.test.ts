@@ -331,7 +331,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
 
   it('sends a Diamond add-on through the custody door, never the chip add-on', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.lifecycleCanMutate = () => true;
     engine.broadcastCurrentState = () => {};
@@ -361,7 +363,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
 
   it('keeps a Diamond top-up whole and inside the table maximum', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 199, is_horse: false }];
     engine.broadcastCurrentState = () => {};
     const rpc = vi
@@ -372,6 +376,7 @@ describe('the first Diamond game stays inside the custody boundary', () => {
       applied: 1,
     });
     expect((rpc.mock.calls[0] as unknown as [string, Record<string, unknown>])[1].p_amount).toBe(1);
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 200, is_horse: false }];
     await expect(engine.addChips('hero', 50, 'attempt')).resolves.toEqual({
       success: false,
@@ -394,7 +399,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
      now. `rpc` is still never called during the hand. */
   it('records a mid-hand Diamond top-up as an intent, and moves nothing yet', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.handController = {};
     const rpc = vi.spyOn(supabase, 'rpc');
@@ -412,7 +419,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     /* Three taps in one hand must not promise more than the table can hold.
        max_buy_in is 200 in this fixture and the seat holds 40. */
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.handController = {};
     vi.spyOn(supabase, 'rpc');
@@ -431,7 +440,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
 
   it('the same tap retried is one intent, and a second tap is two', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 0, is_horse: false }];
     engine.handController = {};
     vi.spyOn(supabase, 'rpc');
@@ -444,7 +455,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
 
   it('a whole Diamond or nothing, even as an intent', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 0, is_horse: false }];
     engine.handController = {};
     vi.spyOn(supabase, 'rpc');
@@ -461,7 +474,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
        the stack it is actually raising, and the amount is re-measured against
        the headroom that is left. */
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.handController = {};
     await engine.addChips('hero', 100, 'attempt');
@@ -493,12 +508,15 @@ describe('the first Diamond game stays inside the custody boundary', () => {
        never empties is how a table stops dealing. This is the opposite of the
        chip rule, where an unresolved row is money already taken. */
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.handController = {};
     await engine.addChips('hero', 100, 'attempt');
     engine.handController = null;
     // The player left while the hand finished.
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [];
     const rpc = vi.spyOn(supabase, 'rpc');
     await engine.processPendingAddOns(engine.seatedPlayers);
@@ -508,7 +526,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
 
   it('never lands an intent while a hand is running', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.handController = {};
     await engine.addChips('hero', 100, 'attempt');
@@ -527,7 +547,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
      opening stack. In the window the top-up is an intent, as mid hand. */
   it('a top-up while the finished hand is still settling is an intent, and moves nothing', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.handController = null;
     engine.settlementInFlight = new Set([new Promise<void>(() => {})]);
@@ -543,7 +565,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
 
   it('lands no intent while the last hand is still settling, and lands it after', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.handController = {};
     await engine.addChips('hero', 100, 'mid-hand');
@@ -568,7 +592,9 @@ describe('the first Diamond game stays inside the custody boundary', () => {
 
   it('leaves chip continuity, idle recovery and horse reload inert', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.readDiamondAddonReceipt = vi.fn(async () => null);
     engine.tableInfo = { ...table, arena: diamond };
+    engine.lifecycleCanMutate = () => true;
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 0, is_horse: false }];
     engine.pendingAddOnSweepNeeded = true;
     engine.pendingAddOns.set('hero', 10);

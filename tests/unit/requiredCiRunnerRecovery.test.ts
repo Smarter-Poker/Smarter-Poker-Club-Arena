@@ -121,7 +121,9 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       typecheck_compile: '88a03bf85dc749608900101f598720ad93c957e5b5bf75791c589c9e25228168',
       unit_shards: 'a694772adb1e9b9c9cf9e8ff24d9a655deb26d18b5d1f191b120ac3b4516c474',
       unit: '69c8c0e64dddf305dd3336a22d977be302c177d26adb4f19a9928efd40fe42a0',
-      accounting_postgres: '9c768f7e37daa19bfd065741ca11c8f92e906f73cfa6422e138f5f658952afd4',
+      // PR7835 adds only the original top-up receipt qualifier in accounting shard1.
+      // Every other normalized job and all prior accounting commands are retained.
+      accounting_postgres: '5f4ce9659e31965a26b8a016f910fcde94b73a686e6f52cd5e32cba9ec44d435',
       server_shards: '9b89b7ee75080d4d8b5aafd55d35adf888bd49c30720aa96ad2225bad240ee41',
       server: '086cab96ac6e24b0ced5ab9407a2c406eddfa451de33d6b614953b1f9f94bd1d',
       verdict: 'cbcc5b069cdc625a6fb5a5c23b6a5c6a4ed2c3669f37bf74163c3eea6c5fbd0f',

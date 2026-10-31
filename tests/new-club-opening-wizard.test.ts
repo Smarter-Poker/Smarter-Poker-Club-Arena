@@ -204,8 +204,12 @@ describe('paid leaderboard funding waterfall', () => {
     );
     expect(permissionSql).toContain("'postgres:EXECUTE,service_role:EXECUTE'");
     expect(permissionSql).toContain('after_image IS DISTINCT FROM before_image');
+    expect(payoutFile).toMatch(/CREATE OR REPLACE FUNCTION public\.fn_payout_leaderboard\(/);
+    expect(payoutFile).not.toMatch(
+      /DROP\s+FUNCTION(?:\s+IF\s+EXISTS)?\s+public\.fn_payout_leaderboard\(/i
+    );
     expect(payoutFile).toContain(
-      '-- CREATE OR REPLACE retains existing ownership and execute ACL.'
+      'GRANT EXECUTE ON FUNCTION public.fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz) TO service_role;'
     );
   });
 });

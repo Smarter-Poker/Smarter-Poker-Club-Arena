@@ -248,7 +248,7 @@ export function Review() {
                             'TonySr',
                             'Burls',
                           ][i],
-                          avatar: 'https://smarter.poker/avatars/table/vip_wolf@2x.webp',
+                          avatar: `https://smarter.poker/avatars/table/${document.documentElement.dataset.avatar || 'vip_wolf@2x.webp'}`,
                           stack:
                             document.documentElement.dataset.allIn === 'true' && i % 3 === 0
                               ? 0

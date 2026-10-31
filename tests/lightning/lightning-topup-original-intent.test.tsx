@@ -10,6 +10,10 @@ import { useLightningTopUpReceipts } from '../../src/lightning/useLightningTopUp
 const source = readFileSync('src/pages/TablePage.tsx', 'utf8');
 const api = readFileSync('src/services/GameServerAPI.ts', 'utf8');
 function compile(text: string, names: string[], values: unknown[], result: string) {
+  if (result === 'handleAddChips') {
+    names = [...names, 'addChipsOwnerRef', 'recordedTopUpsRef'];
+    values = [...values, { current: { scope: 'fixture' } }, { current: new Set<string>() }];
+  }
   const js = ts.transpileModule(text, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
@@ -394,7 +398,7 @@ describe('a Lightning unknown outcome survives the HTTP adapter', () => {
     expect(release).not.toHaveBeenCalled();
     expect(balance).not.toHaveBeenCalled();
     expect(values.toast.error).toHaveBeenCalledWith(
-      'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
+      'The Table Did Not Confirm This Top Up. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
     );
     expect(http.mock.calls.map((call) => JSON.parse(call[1].body).opId)).toEqual([
       'original01',

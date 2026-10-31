@@ -1,0 +1,5 @@
+{
+  "_owner": "codex/auto-top-up-audit-20261023",
+  "_comment": "Migration 20261023182011 adds service-only readback of existing cash and Diamond top-up operations. Source declaration is not installation evidence.",
+  "functions": ["fn_cash_addon_receipt", "fn_diamond_top_up_receipt"]
+}

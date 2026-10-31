@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 import {
   PRIVATE_RECORD_CLIENT_TITLE,
+  PRIVATE_RECORD_ROSTER_READ_MS,
+  PRIVATE_RECORD_CASE_MS,
+  PRIVATE_RECORD_OBSERVATION_LIMIT,
+  summarizePrivateRecordObservations,
   snapshotPrivateRecordFixtureProfile,
   readPrivateRecordFixturePlayerNumber,
   assertPrivateRecordFixtureRoster,
@@ -19,7 +23,7 @@ const ENGINE = 'wss://engine.smarter.poker/ws/channel';
 const images = ['/avatars/table/free_ninja@2x.webp', '/avatars/table/free_shark@2x.webp'];
 
 test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
-  test.setTimeout(420_000);
+  test.setTimeout(PRIVATE_RECORD_CASE_MS);
   expect(
     process.env.E2E_PRIVATE_RECORD_CLIENT_PROOF,
     'Explicit admitted provider proof required'
@@ -67,7 +71,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
             !/^(?:realtime:)?(?:member-record:|club-roster:)/.test(frame.topic)
           )
             return;
-          if (paid.length >= 512) {
+          if (paid.length >= PRIVATE_RECORD_OBSERVATION_LIMIT) {
             observationsOverflow = true;
             return;
           }
@@ -113,11 +117,11 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     socket.on('framereceived', ({ payload }) => {
       try {
         const frame = JSON.parse(String(payload));
-        if (frames.length >= 512) observationsOverflow = true;
+        if (frames.length >= PRIVATE_RECORD_OBSERVATION_LIMIT) observationsOverflow = true;
         if (
           ['PRIVATE_RECORD_STATUS', 'PRIVATE_RECORD_CHANGED'].includes(frame.type) &&
           typeof frame.topic === 'string' &&
-          frames.length < 512
+          frames.length < PRIVATE_RECORD_OBSERVATION_LIMIT
         )
           frames.push({
             socket: id,
@@ -408,7 +412,9 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       { timeout: 45_000 }
     );
     void initialRosterRead.catch(() => {});
-    await page.getByRole('textbox', { name: 'Search Club Members' }).fill(playerNumber);
+    await page
+      .getByRole('searchbox', { name: 'Search Club Members' })
+      .fill(playerNumber, { timeout: 45_000 });
     assertPrivateRecordFixtureRoster(await (await initialRosterRead).json(), userId, playerNumber);
     const rosterRow = page.getByRole('listitem').filter({
       has: page
@@ -444,6 +450,8 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       endpoint: 'gateway' | 'paid',
       roster: boolean
     ) => {
+      const deliveryStartedAt = Date.now();
+      let readbackObservedAt: number | undefined;
       const frameFrom = frames.length;
       const paidFrom = paid.length;
       const responseRead = page.waitForResponse(
@@ -466,12 +474,14 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
             const row = roster
               ? assertPrivateRecordFixtureRoster(body, userId, playerNumber)
               : body?.identity;
-            return row?.user_id === userId && String(row.avatar_url).includes(image);
+            const matches = row?.user_id === userId && String(row.avatar_url).includes(image);
+            if (matches) readbackObservedAt = Date.now();
+            return matches;
           } catch {
             return false;
           }
         },
-        { timeout: 45_000 }
+        { timeout: roster ? PRIVATE_RECORD_ROSTER_READ_MS : 45_000 }
       );
       void responseRead.catch(() => {});
       await page.evaluate(
@@ -518,6 +528,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
           { timeout: 30_000 }
         )
         .toBe(true);
+      const eventObservedAt = Date.now();
       await responseRead;
       const visible = roster ? rosterAvatar : avatar;
       await expect.poll(() => visible.getAttribute('src'), { timeout: 45_000 }).toContain(image);
@@ -532,6 +543,14 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
           { timeout: 30_000 }
         )
         .toBe(true);
+      const timings = (proof.deliveryTimings ??= []) as Record<string, unknown>[];
+      timings.push({
+        consumer: roster ? 'roster' : 'member',
+        endpoint,
+        eventObservedMs: eventObservedAt - deliveryStartedAt,
+        readbackObservedMs: readbackObservedAt! - deliveryStartedAt,
+        visibleObservedMs: Date.now() - deliveryStartedAt,
+      });
     };
     await changeAndRead(rosterTopic, selected[0], 'gateway', true);
     expect(paidForTopic(rosterTopic)).toBe(0);
@@ -623,7 +642,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     fault.restore();
     gatewayFault.restore();
     proof.faultRestored = true;
-    proof.observedRecordFrames = frames;
+    Object.assign(proof, summarizePrivateRecordObservations(frames));
     proof.openGatewaySockets = [...gatewayOpen];
     proof.allFaultsRestored = true;
     try {

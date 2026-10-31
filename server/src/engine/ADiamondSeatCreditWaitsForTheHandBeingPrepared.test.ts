@@ -43,7 +43,9 @@ afterEach(() => {
 
 function engineWith(stack: number) {
   const engine = new ServerTableEngine(TABLE) as any;
+  engine.readDiamondAddonReceipt = vi.fn(async () => null);
   engine.tableInfo = { ...diamondTable };
+  engine.lifecycleCanMutate = () => true;
   engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack, is_horse: true }];
   engine.getMaxBuyIn = () => 200;
   engine.handController = null;

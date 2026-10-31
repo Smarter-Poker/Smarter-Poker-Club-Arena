@@ -1,0 +1,3 @@
+# Verify roster failover at the required refresh cadence
+
+The published client intentionally waits at least 180 seconds between automatic roster reads. Production proof 41184165580 received gateway updates but its 45-second response wait expired before that permitted refresh. Preserve the owner's runtime cadence. Give each of the two roster readbacks 180 seconds plus the existing 45-second request allowance; member-detail waits stay unchanged. Bound the full case to ten minutes within its existing fifteen-minute job, and retain at most 2,048 token-free observations to cover the measured 127 events/minute with headroom. Overflow still fails. The regression compares the proof budget with the maintained page policy. No runtime or engine change.

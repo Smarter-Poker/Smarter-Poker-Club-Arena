@@ -111,8 +111,8 @@ export function useTableSession(
   // reported 200). The engine's pot_distributed event (relayed onto the
   // MasterBus by TablePage as POT_DISTRIBUTED) carries the authoritative
   // total_pot for every completed hand — track the session maximum here,
-  // next to the ref it feeds. CHIPS_ADDED carries the post-top-up stack and
-  // keeps raising the peak. Exact tick-by-tick stack peaks need the WS merge
+  // next to the ref it feeds. CHIPS_ADDED may carry an authoritative stack;
+  // without one, only the table snapshot raises the peak. Exact tick-by-tick stack peaks need the WS merge
   // inside TablePage (transport-blocked at 307KB); this covers every pot and
   // every chip-add without touching it.
   useEffect(() => {

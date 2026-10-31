@@ -25,11 +25,17 @@ describe('a session result counts what was bought in', () => {
 
   it('the table page asks once per occupied account/table session and applies the answer', () => {
     const src = readFileSync(join(__dirname, '..', '..', 'src', 'pages', 'TablePage.tsx'), 'utf8');
-    expect(src).toContain("supabase.rpc('fn_my_cash_session_baseline', { p_table_id: askedFor })");
+    const reader = readFileSync(
+      join(__dirname, '..', '..', 'src', 'hooks', 'useTopUpAccounting.ts'),
+      'utf8'
+    );
+    expect(reader).toContain("supabase.rpc('fn_my_cash_session_baseline', {");
+    expect(reader).toContain('p_table_id: tableId');
+    expect(src).toContain('useTopUpAccounting({');
     expect(src).toContain('}, [sessionRestoreKey]);');
     expect(src).toContain('`${tableId}:${userId}`');
     expect(src).toContain('error || !active || sessionBaselineTableRef.current !== askedKey');
-    expect(src).toContain('totalBuyInRef.current = sessionBuyInTotal({');
+    expect(src).toContain('totalBuyInRef.current = facts.totalBuyIn;');
   });
 
   it('the function is bound to the caller and closed to anon', () => {

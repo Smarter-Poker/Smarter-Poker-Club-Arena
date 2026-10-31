@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
    /tournaments/:id up to 3.6s AFTER the tap, from a hook instance that may live
    inside the in-tab lobby. useAppNavigate keeps that landing in the tab instead
    of unmounting the container. See InTabLobbyContext.tsx. */
-import { useAppNavigate } from '../context/InTabLobbyContext';
+import { useAppNavigate, useInTabLobby } from '../context/InTabLobbyContext';
 import { useUserStore } from '../stores/useUserStore';
 import { tournamentService, type TournamentEntryTicket } from '../services/TournamentService';
 import { supabase } from '../lib/supabase';
@@ -11,7 +11,11 @@ import { masterBus } from '../core/MasterBus';
 import { signUpDialog } from '../components/tournament/signUpDialog';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
-import { markTournamentEntered } from '../utils/tournamentEntryNavigation';
+import {
+  markTournamentEntered,
+  rememberTournamentLobby,
+  tournamentSeatNavigationOptions,
+} from '../utils/tournamentEntryNavigation';
 
 /**
  * How hard we look for the seat the server was meant to give us.
@@ -80,6 +84,7 @@ export interface RegisterTournamentParams {
 export function useTournamentRegistration() {
   const [isRegistering, setIsRegistering] = useState(false);
   const navigate = useAppNavigate();
+  const inTab = useInTabLobby();
   const toast = useToast();
   /** Flips synchronously, so a second activation cannot slip past an await. */
   const registeringRef = useRef(false);
@@ -184,6 +189,7 @@ export function useTournamentRegistration() {
         return;
       }
 
+      rememberTournamentLobby(currentUserId, t.id, inTab?.getLobbyTabId?.());
       setIsRegistering(true);
       try {
         const registration = await tournamentService.registerPlayer(
@@ -333,7 +339,7 @@ export function useTournamentRegistration() {
           if (lookup.state === 'seated') {
             const seatTableId = lookup.tableId;
             markTournamentEntered(currentUserId, t.id);
-            navigate(`/table/${seatTableId}`);
+            navigate(`/table/${seatTableId}`, tournamentSeatNavigationOptions(currentUserId, t.id));
           } else if (lookup.state === 'pending') {
             toast.info('You Are Registered. Your Seat Is Being Assigned.');
             navigate(`/tournaments/${t.id}`);
@@ -350,7 +356,7 @@ export function useTournamentRegistration() {
         if (aliveRef.current) setIsRegistering(false);
       }
     },
-    [currentUserId, username, navigate, toast]
+    [currentUserId, username, navigate, toast, inTab]
   );
 
   return { register, isRegistering };

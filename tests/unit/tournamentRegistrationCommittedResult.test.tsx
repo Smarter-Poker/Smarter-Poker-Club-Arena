@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const m = vi.hoisted(() => ({
+  lobby: null as string | null,
   register: vi.fn(),
   seat: vi.fn(),
   navigate: vi.fn(),
@@ -18,7 +19,10 @@ vi.mock('../../src/services/TournamentService', () => ({
     registerPlayer: m.register,
   },
 }));
-vi.mock('../../src/context/InTabLobbyContext', () => ({ useAppNavigate: () => m.navigate }));
+vi.mock('../../src/context/InTabLobbyContext', () => ({
+  useInTabLobby: () => ({ getLobbyTabId: () => m.lobby }),
+  useAppNavigate: () => m.navigate,
+}));
 vi.mock('../../src/stores/useUserStore', () => ({
   useUserStore: (select: any) => select({ user: { id: 'player', username: 'Player' } }),
 }));
@@ -41,6 +45,7 @@ const tournament = { id: 'event', name: 'Event', buy_in_amount: 10, status: 'RUN
 beforeEach(() => {
   vi.resetAllMocks();
   sessionStorage.clear();
+  m.lobby = null;
   vi.useFakeTimers();
   m.register.mockResolvedValue({ id: 'entry', table_id: 'own-table' });
 });
@@ -49,6 +54,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('a committed registration keeps its result through presentation failures', () => {
+  it('retains the initiating lobby while the authoritative registration is in flight', async () => {
+    m.lobby = 'lobby:original';
+    let resolve!: (value: any) => void;
+    m.register.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const hook = renderHook(() => useTournamentRegistration());
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = hook.result.current.register(tournament);
+    });
+    m.lobby = 'lobby:later';
+    await act(async () => {
+      resolve({ table_id: 'own-table' });
+      await pending;
+    });
+    expect(m.navigate).toHaveBeenCalledWith('/table/own-table', {
+      state: { tournamentSeat: { tournamentId: 'event', lobbyTabId: 'lobby:original' } },
+    });
+  });
   it('still reaches the paid seat if the page refresh callback throws', async () => {
     const hook = renderHook(() => useTournamentRegistration());
     const error = new Error('page refresh failed');
@@ -59,7 +86,9 @@ describe('a committed registration keeps its result through presentation failure
     });
     expect(m.register).toHaveBeenCalledTimes(1);
     expect(sessionStorage.getItem('ca_tourney_entered:player:event')).toBe('1');
-    expect(m.navigate).toHaveBeenCalledWith('/table/own-table');
+    expect(m.navigate).toHaveBeenCalledWith('/table/own-table', {
+      state: { tournamentSeat: { tournamentId: 'event', lobbyTabId: null } },
+    });
     expect(m.error).not.toHaveBeenCalled();
     expect(m.report).toHaveBeenCalledWith(error, 'useTournamentRegistration.onSuccess', {
       tournamentId: 'event',
@@ -91,7 +120,9 @@ describe('a committed registration keeps its result through presentation failure
         throw error;
       });
     });
-    expect(m.navigate).toHaveBeenCalledWith('/table/own-table');
+    expect(m.navigate).toHaveBeenCalledWith('/table/own-table', {
+      state: { tournamentSeat: { tournamentId: 'event', lobbyTabId: null } },
+    });
     expect(m.error).not.toHaveBeenCalled();
     expect(m.report).toHaveBeenCalledWith(error, 'useTournamentRegistration.onSuccess', {
       tournamentId: 'event',
@@ -110,7 +141,9 @@ describe('a committed registration keeps its result through presentation failure
     });
     expect(m.register).toHaveBeenCalledTimes(1);
     expect(m.seat).toHaveBeenCalledTimes(2);
-    expect(m.navigate).toHaveBeenCalledWith('/table/confirmed-seat');
+    expect(m.navigate).toHaveBeenCalledWith('/table/confirmed-seat', {
+      state: { tournamentSeat: { tournamentId: 'event', lobbyTabId: null } },
+    });
     expect(m.error).not.toHaveBeenCalled();
     expect(m.warning).not.toHaveBeenCalled();
   });

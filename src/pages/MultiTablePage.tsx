@@ -4118,6 +4118,10 @@ export default function MultiTablePage() {
 
   const inTabLobbyNav = useMemo<InTabLobbyNav>(
     () => ({
+      getLobbyTabId: () => {
+        const current = tablesRef.current[activeIndexRef.current];
+        return current && isLobbyTab(current) ? current.id : null;
+      },
       openTournament: openTournamentTab,
       openHub: openHubTab,
       openArena: openArenaTab,
@@ -4666,6 +4670,36 @@ export default function MultiTablePage() {
     pendingTabIndexRef.current = null;
     if (pending !== null && pending >= 0 && pending < prev.length) {
       setActiveIndex(pending);
+      return;
+    }
+    // Completing registration replaces the exact lobby pill that requested it.
+    // A background seat rebuild may already have appended the destination;
+    // move that same instance into the lobby position instead of duplicating it.
+    const admission = location.state?.tournamentSeat;
+    const origin = admission?.lobbyTabId;
+    const originIndex =
+      admission?.tournamentId && typeof origin === 'string'
+        ? prev.findIndex((t) => t.id === origin && isLobbyTab(t))
+        : -1;
+    if (originIndex >= 0) {
+      const existing = prev.find((t) => t.id === routeTableId);
+      const admitted: TableInstance = existing
+        ? { ...existing, seated: true }
+        : {
+            id: routeTableId,
+            name: 'Your Tournament',
+            stakes: '',
+            isMyTurn: false,
+            pot: 0,
+            kind: 'table',
+            seated: true,
+          };
+      const next = prev.flatMap((t, index) =>
+        index === originIndex ? [admitted] : t.id === routeTableId ? [] : [t]
+      );
+      tablesRef.current = next;
+      setTables(next);
+      setActiveIndex(next.findIndex((t) => t.id === routeTableId));
       return;
     }
     const existingIdx = prev.findIndex((t) => t.id === routeTableId);

@@ -1,3 +1,7 @@
+import {
+  markTournamentEntered,
+  tournamentSeatNavigationOptions,
+} from '../../utils/tournamentEntryNavigation';
 import type { FollowTournamentPlayer } from '../../utils/followTournamentPlayer';
 import { useSatelliteAwards } from '../../components/tournament/details/useSatelliteAwards';
 import { satelliteStartsWhenFull } from '../../utils/satelliteQualification';
@@ -532,7 +536,8 @@ export default function TournamentDetails({
     if (myEntry.status !== 'playing' && myEntry.status !== 'registered') return;
 
     autoOpenedTableRef.current = true;
-    navigate(`/table/${myEntry.table_id}`);
+    markTournamentEntered(user.id, tournamentId);
+    navigate(`/table/${myEntry.table_id}`, tournamentSeatNavigationOptions(user.id, tournamentId));
   }, [
     tournamentId,
     tournament?.status,

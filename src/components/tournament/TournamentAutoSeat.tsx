@@ -42,6 +42,7 @@ import { MULTI_DAY_CAPABILITY } from '../../utils/multiDaySchedule';
 import { readTournamentStageView } from '../../services/TournamentStageService';
 import {
   markTournamentEntered,
+  tournamentSeatNavigationOptions,
   tournamentEntryNavigationKey,
 } from '../../utils/tournamentEntryNavigation';
 import './TournamentAutoSeat.css';
@@ -286,7 +287,7 @@ export default function TournamentAutoSeat() {
         if (enterGame) {
           enteredRef.current.add(entryKey);
           markTournamentEntered(user.id, t.tournament_id);
-          navigate(`/table/${tableId}`);
+          navigate(`/table/${tableId}`, tournamentSeatNavigationOptions(user.id, t.tournament_id));
         }
       }
       if (!visibleSeatAway) setBlindingOff(null);

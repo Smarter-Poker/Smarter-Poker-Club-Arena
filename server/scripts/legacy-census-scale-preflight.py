@@ -157,12 +157,28 @@ def write_state(path, value, exclusive=False):
         os.close(directory)
 
 
+def daemon_lists_no_container(name, timeout):
+    # Authoritative absence that does not depend on CLI wording: the daemon
+    # answered (exit 0) and lists no container by this exact name.
+    listing = command(['docker', 'ps', '--all', '--no-trunc', '--filter', 'name=^/?' + re.escape(name) + '$',
+                       '--format', '{{.ID}}'], timeout=timeout, check=False)
+    return listing.returncode == 0 and listing.stdout.strip() == ''
+
+
 def inspect_own(name, key, timeout):
     result = command(['docker', 'inspect', '--format',
                       '{{json .Id}} {{json (index .Config.Labels "' + LABEL + '")}}', name],
                      timeout=timeout, check=False)
     if result.returncode:
-        require('No such object' in result.stderr or 'No such container' in result.stderr,
+        # 2026-10-31: the first production run (receiver 41226449485) removed
+        # its container and then refused here, because the host Docker CLI's
+        # not-found wording did not match the exact capitalised strings. A
+        # not-found answer in any case is absence; anything else is confirmed
+        # against the daemon's own listing, and an unconfirmed answer is still
+        # unknown.
+        stderr = result.stderr.lower()
+        require('no such object' in stderr or 'no such container' in stderr or
+                daemon_lists_no_container(name, timeout),
                 'owned disposable container state unknown')
         return False
     values = result.stdout.strip().split()

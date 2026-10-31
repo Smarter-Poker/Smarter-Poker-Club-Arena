@@ -138,6 +138,7 @@ test('both club views keep receiving rows and one survives the other unmounting'
     `${CASH_TABLE_CARD_SELECTOR}[data-id="${subject.tableId}"]:visible`
   );
   await selected.getByRole('button', { name: /^Details:/ }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get('game')).toBe(subject.tableId);
   const returnToLobby = page.url();
   await page
     .getByRole('dialog')

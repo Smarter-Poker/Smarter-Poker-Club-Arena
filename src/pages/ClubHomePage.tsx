@@ -1,3 +1,4 @@
+import LobbyFilterLabel from '../components/lobby/LobbyFilterLabel';
 import LobbyGameSections from '../components/lobby/LobbyGameSections';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
@@ -576,7 +577,7 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   /* LOBBY V2: All Games is a real tab now — the line-based table renders a
      combined column set for it, so it no longer needs to be hidden. */
   { key: 'ALL', label: 'ALL' },
-  { key: 'MTT', label: 'MTT' },
+  { key: 'MTT', label: "MTT'S" },
   { key: 'HOLDEM', label: 'NLH' },
   { key: 'OMAHA', label: 'PLO' },
   { key: 'LIMIT', label: 'LIMIT' },
@@ -5601,7 +5602,7 @@ function ClubHomePageContent({
                               selectGameType(tab.key);
                             }}
                           >
-                            {tab.label}
+                            <LobbyFilterLabel>{tab.label}</LobbyFilterLabel>
                           </button>
                         ))}
                       </div>
@@ -5637,7 +5638,7 @@ function ClubHomePageContent({
                                   setAllStatusFilter(status.key);
                                 }}
                               >
-                                {status.label}
+                                <LobbyFilterLabel>{status.label}</LobbyFilterLabel>
                               </button>
                             ))}
                           </div>
@@ -5669,7 +5670,7 @@ function ClubHomePageContent({
                                     if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                                   }}
                                 >
-                                  All
+                                  <LobbyFilterLabel>All</LobbyFilterLabel>
                                 </button>
                                 {/* AUDIT 2026-08-21: these chips used to be a hand-written list
                     chosen by showsCash, which disagreed with the sheet on the
@@ -5703,7 +5704,7 @@ function ClubHomePageContent({
                                         if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                                       }}
                                     >
-                                      {sf.label}
+                                      <LobbyFilterLabel>{sf.label}</LobbyFilterLabel>
                                     </button>
                                   );
                                 })}
@@ -5717,7 +5718,7 @@ function ClubHomePageContent({
                                       selectFavoritesOnly(!favoritesOnly);
                                     }}
                                   >
-                                    Favorites
+                                    <LobbyFilterLabel>Favorites</LobbyFilterLabel>
                                   </button>
                                 )}
                               </div>
@@ -5756,7 +5757,9 @@ function ClubHomePageContent({
                         }}
                       >
                         <IconSort />
-                        <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
+                        <LobbyFilterLabel>
+                          {gameType === 'ALL' ? 'Sort' : 'Filters'}
+                        </LobbyFilterLabel>
                       </button>
                     </div>
                   </div>

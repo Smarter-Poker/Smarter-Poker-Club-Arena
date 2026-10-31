@@ -160,7 +160,7 @@ test.describe('the mobile lobby chrome on production', () => {
     const certificateOwner = await openPreferenceLobby(page, 'original-open');
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
-    const target = ['MTT', 'SPINS', 'HEADS UP'].includes(original) ? 'PLO' : 'MTT';
+    const target = ["MTT'S", 'SPINS', 'HEADS UP'].includes(original) ? 'PLO' : "MTT'S";
     let returningPage: Page | undefined;
     let returningReady = false;
     const failures: unknown[] = [];
@@ -407,7 +407,7 @@ test.describe('the mobile lobby chrome on production', () => {
       const lobby = page.locator('.multi-table-page__lobby-tab .club-home:visible');
       await expect(lobby).toBeVisible({ timeout: 30_000 });
       await openLobbyGameSection(lobby, 'MTT');
-      await lobby.getByRole('tab', { name: 'MTT', exact: true }).click();
+      await lobby.getByRole('tab', { name: "MTT'S", exact: true }).click();
       const tournament = lobby
         .locator('[data-testid="lobby-game-row"][data-kind="mtt"]:visible')
         .first();

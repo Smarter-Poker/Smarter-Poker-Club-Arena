@@ -640,6 +640,7 @@ test('cash navigation retires its handler and still refuses a missing View actio
 });
 
 const SHEETS = [
+  'src/components/lobby/LobbyFilterLabel.css',
   'src/styles/globals.css',
   'src/pages/ClubHomePage.css',
   'src/components/lobby/ClubLobbyCommandTop.css',
@@ -861,7 +862,7 @@ for (const width of [320, 393]) {
     // game types. This case represents the opened tournament family: four
     // types, and the five supported tournament statuses.
     await page.locator('.game-bar__types').evaluate((types) => {
-      types.innerHTML = ['MTT', 'Spins', "Sit N Go's", 'Satellites']
+      types.innerHTML = ["MTT'S", 'Spins', "Sit N Go's", 'Satellites']
         .map((label) => `<button type="button" role="tab" class="game-bar__type">${label}</button>`)
         .join('');
     });
@@ -900,9 +901,10 @@ for (const width of [320, 393]) {
     expect(Math.abs(metrics.types[1].left - metrics.types[3].left)).toBeLessThanOrEqual(1);
     expect(metrics.types[0].right).toBeLessThanOrEqual(metrics.types[1].left);
     expect(metrics.statuses).toHaveLength(5);
-    for (let i = 0; i < metrics.statuses.length; i++) {
-      for (const other of metrics.statuses.slice(i + 1)) {
-        const current = metrics.statuses[i];
+    const footer = [...metrics.statuses, metrics.filter];
+    for (let i = 0; i < footer.length; i++) {
+      for (const other of footer.slice(i + 1)) {
+        const current = footer[i];
         expect(
           current.right <= other.left ||
             other.right <= current.left ||
@@ -918,8 +920,11 @@ for (const width of [320, 393]) {
       expect(control.textFits, `${control.label} must fit its touch target`).toBe(true);
     }
     expect(metrics.filter.top).toBeGreaterThanOrEqual(
-      Math.max(...metrics.statuses.map((r) => r.bottom))
+      Math.max(...metrics.types.map((r) => r.bottom))
     );
+    const startingSoon = metrics.statuses[4];
+    expect(Math.abs(metrics.filter.top - startingSoon.top)).toBeLessThanOrEqual(1);
+    expect(metrics.filter.left).toBeGreaterThanOrEqual(startingSoon.right);
     expect(metrics.pageOverflow).toBeLessThanOrEqual(1);
     // Every control remains an actual hit target after scrolling into view,
     // including the final status and Filters below the wrapped type grid.

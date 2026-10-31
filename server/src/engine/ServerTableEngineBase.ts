@@ -4488,6 +4488,10 @@ export abstract class ServerTableEngineBase {
     this.firstTerminalObservation ??= leavePendingTerminalReason('stop_requested');
     this.terminal = true;
     this.running = false;
+    // This controller owns a separate pineapple settle clock. Quiesce its
+    // existing callback at the fence, including when custody later refuses
+    // retirement or a retained physical write keeps teardown pending.
+    controllerAtFence?.cancelPineappleSettle?.();
     this.clearEngineLeaseExpiryTimer();
     this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandContinuationLane } from './HandContinuationLane.js';
 import { HandController } from './HandController.js';
+import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
@@ -211,6 +212,86 @@ describe('Run It Twice terminal error boundary', () => {
       } finally {
         await stopping.catch(() => {});
         (engine.constructor as any).releaseCurrentEngine(TABLE, engine);
+      }
+    }
+  );
+
+  it.each(['quarantine', 'physical_write'] as const)(
+    'quiesces the exact pending pineapple beat at the stop fence: %s',
+    async (mode) => {
+      vi.useFakeTimers();
+      const { engine } = harness();
+      expect(engine.claimProcessOwnership()).toBe(true);
+      const controller = new HandController(
+        {
+          tableId: TABLE,
+          handNumber: 91,
+          gameVariant: 'pineapple',
+          smallBlind: 1,
+          bigBlind: 2,
+          rakeConfig: { percent: 5, cap: 100, noFlopNoDrop: true },
+        } as HandConfig,
+        [player(1), player(2), player(3)],
+        1
+      );
+      engine.handController = controller;
+      controller.start();
+      for (let action = 0; controller.getState().stage === 'preflop' && action < 20; action++) {
+        const state = controller.getState();
+        const actor = state.players.find((p) => p.seat === state.currentPlayerSeat)!;
+        expect(
+          controller.performAction(actor.seat, state.currentBet > actor.bet ? 'call' : 'check', 0)
+        ).toBe(true);
+      }
+      expect(controller.getState().stage).toBe('pineapple_discard');
+      for (const seatPlayer of controller.getState().players.filter((p) => !p.is_folded))
+        expect(controller.performDiscard(seatPlayer.seat, 0)).toBe(true);
+      expect(controller.allPineappleDiscardsIn()).toBe(true);
+      expect(controller.getState().stage).toBe('pineapple_discard');
+      const original = controller.serializeRecoveryState();
+      const entered = deferred();
+      const held = deferred();
+      if (mode === 'physical_write') {
+        engine.handContinuation = new HandContinuationLane(
+          0,
+          () => controller.serializeRecoveryState(),
+          () => ({}),
+          async () => {
+            entered.resolve();
+            await held.promise;
+          },
+          async () => {},
+          () => engine.running,
+          () => {}
+        );
+        engine.handContinuation.checkpoint();
+        await entered.promise;
+      }
+      engine.flushSnapshot = vi.fn(async () => {});
+      const cancel = vi.spyOn(controller, 'cancelPineappleSettle');
+      const stopping = engine.stop();
+      const quiescedAtFence = cancel.mock.calls.length;
+      const outcome = stopping.then(
+        () => null,
+        (error: unknown) => error
+      );
+      try {
+        await vi.advanceTimersByTimeAsync(HAND_COMPLETION.DISCARD_SETTLE_MS + 1);
+        expect(controller.serializeRecoveryState() === original).toBe(true);
+        expect(controller.getState().stage).toBe('pineapple_discard');
+        expect(quiescedAtFence).toBe(1);
+        expect(engine.handController).toBe(controller);
+        expect(engine.flushSnapshot).not.toHaveBeenCalled();
+        expect(engine.hasReleasedProcessOwnership()).toBe(false);
+        held.resolve();
+        expect(await outcome).toBeInstanceOf(AggregateError);
+      } finally {
+        held.resolve();
+        await outcome;
+        controller.cancelPineappleSettle();
+        (engine.constructor as any).releaseCurrentEngine(TABLE, engine);
+        vi.clearAllTimers();
+        vi.useRealTimers();
       }
     }
   );

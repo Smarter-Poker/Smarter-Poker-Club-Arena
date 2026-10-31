@@ -1,0 +1,9 @@
+# One-survivor future satellite value tickets
+
+This extends the existing required `scripts/ci/test-satellite-value-awards.py` native PostgreSQL driver and its CI accounting lane. It has no remote connection option. The three `*-before.sql` / wrapper inputs are exact canonical function definitions captured by the sole production operator on October 31, 2026, normalized only to the canonical trailing newline. They preserve the actual legacy producer (14eddc55fc178f81232f619fa764ee7e), receipt reader (c4b817ae5a6d328dc3118bdfc5d98c21), and unchanged public wrapper (5537ad0729a9a2cd9d14c961de5fcee2).
+
+The driver composes the existing real financial catalog and installed value-ticket rail. Actual authenticated entries fund a single-survivor source. Future closed/full/already-held/seat-cap conditions exercise both Chips and Diamonds. Existing seat-cap occupancy is a synthetic zero-stack opening with native cluster, scope and admission identities; it is not a production cash buy-in or engine gameplay proof. The test checks reusable native backing, no full-award wallet credit, exact bubble cash, immutable duplicate receipt and terminal source close. The same future-ticket assertion must fail under the actual old producer.
+
+The historical transition uses one isolated transaction: create an actual old cash payment, install the successor function bodies, verify the exact existing receipt and wallet aggregate, then roll the entire scene back. Old settled awards are never rewritten. Existing cohort, denomination, single-use consumption, concurrency and financial rollback tests continue afterward.
+
+`postimages.json` records canonical definitions and body hashes. The migration itself asserts both preimages and final bodies, owner, SECURITY DEFINER, search_path, statement_timeout and actual ACLs. Historical qualification attempts retain their actual failures; new fixture or hash corrections do not relabel them passing.

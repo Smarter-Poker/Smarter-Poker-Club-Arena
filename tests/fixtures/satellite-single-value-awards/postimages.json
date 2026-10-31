@@ -1,0 +1,10 @@
+{
+  "fn_settle_satellite_tournament_pre_money_path_gate": {
+    "definition_md5": "10ef0bb347ef36feff6c105c491ff12c",
+    "source_md5": "de3d43e8558fbfa9c85530ab04529a61"
+  },
+  "fn_ca_satellite_settlement_receipt": {
+    "definition_md5": "8b565a3b3a0e1c239d29d21033a1c83b",
+    "source_md5": "18ac80b2e2e41480a9cdef2153b78f60"
+  }
+}

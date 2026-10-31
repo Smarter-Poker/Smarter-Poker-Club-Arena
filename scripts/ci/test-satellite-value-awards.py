@@ -139,6 +139,43 @@ def main():
   diamond_seed=diamond_seed.replace("PERFORM pg_temp.qualifier_assert((SELECT prize_balance=108 AND gross_in=108", "PERFORM public.fn_poker_diamond_tournament_open_shadow(source_id);\n PERFORM pg_temp.qualifier_assert((SELECT prize_balance=108 AND gross_in=108")
   diamond_seed=diamond_seed.replace('PERFORM 1; /* Reuse the actual one-platform Diamond arena. */', "INSERT INTO auth.users(id) SELECT owner_id FROM public.clubs WHERE id=club AND owner_id IS NOT NULL ON CONFLICT(id) DO NOTHING; INSERT INTO public.users(id,username) SELECT owner_id,'native_diamond_platform_owner' FROM public.clubs WHERE id=club AND owner_id IS NOT NULL ON CONFLICT(id) DO NOTHING; INSERT INTO public.profiles(id,username,display_name) SELECT owner_id,'native_diamond_platform_owner','Native Diamond Platform Owner' FROM public.clubs WHERE id=club AND owner_id IS NOT NULL ON CONFLICT(id) DO NOTHING;")
   composed.write_text(seed+'\n'+scene.read_text()+'\n'+diamond_seed+'\n'+(fixture/'native-diamond-cases.sql').read_text()+"\nSET CONSTRAINTS ALL IMMEDIATE;\nROLLBACK;\n")
+  # The current one-survivor legacy producer is a separate public call path.
+  # Capture its actual owners, then demonstrate the future-award assertion RED
+  # before installing the narrowly guarded successor in this isolated catalog.
+  single=root/'tests/fixtures/satellite-single-value-awards'
+  for capture in ['legacy-inner-before.sql','receipt-before.sql','wrapper-unchanged.sql']:
+   e.sql(db,file=single/capture,label='actual-single-owner-'+capture,seconds=30)
+  e.sql(db,"REVOKE ALL ON FUNCTION public.fn_ca_satellite_settlement_receipt(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role; REVOKE ALL ON FUNCTION public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid) FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid) TO service_role;",label='actual-single-owner-acl')
+  properties="SELECT jsonb_agg(jsonb_build_object('identity',oid::regprocedure::text,'definition_md5',md5(pg_get_functiondef(oid)),'source_md5',md5(prosrc),'owner',pg_get_userbyid(proowner),'security_definer',prosecdef,'config',proconfig,'acl',proacl)) FROM pg_proc WHERE oid IN('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)'::regprocedure,'public.fn_ca_satellite_settlement_receipt(uuid,uuid)'::regprocedure,'public.fn_settle_satellite_tournament(uuid,uuid)'::regprocedure);"
+  e.sql(db,properties,label='single-properties-before')
+  one_seed=seed[:seed.index('CREATE FUNCTION pg_temp.qualifier_case')]
+  creator=seed[seed.index('CREATE FUNCTION pg_temp.qualifier_case'):]
+  creator=creator[:creator.index(" EXECUTE 'SET LOCAL ROLE service_role';\n r:=public.fn_get_satellite_qualifier_state")]
+  creator=creator.replace('pg_temp.qualifier_case(', 'pg_temp.single_value_case(')
+  creator=creator.replace('CASE WHEN survivors=2 THEN 993001 ELSE 993002 END','993100+abs(hashtext(case_name)%10000)')
+  # A finite legacy target is an explicit opening, never a modified settled contract.
+  creator=creator.replace("0,NULL,3,0,club,0,0,0,false,false,false,0,0,0,'MTT','freezeout','mtt-v2'","0,CASE WHEN (case_name LIKE '%full%' OR case_name LIKE '%held%') THEN 3 ELSE NULL END,3,0,club,0,0,0,false,false,false,0,0,0,CASE WHEN (case_name LIKE '%full%' OR case_name LIKE '%held%') THEN 'SNG' ELSE 'MTT' END,'freezeout',CASE WHEN (case_name LIKE '%full%' OR case_name LIKE '%held%') THEN 'sng-v1' ELSE 'mtt-v2' END")
+  creator+="\n RETURN jsonb_build_object('tournament_id',source_id,'qualifier_ids',to_jsonb(q),'target_id',target_id,'table_id',v_table_id);\nEND $case$;\n"
+  diamond_creator=diamond_seed[diamond_seed.index('CREATE FUNCTION pg_temp.qualifier_diamond_case'):]
+  diamond_creator=diamond_creator[:diamond_creator.index(" EXECUTE 'SET LOCAL ROLE service_role';\n r:=public.fn_get_satellite_qualifier_state")]
+  diamond_creator=diamond_creator.replace('pg_temp.qualifier_diamond_case(', 'pg_temp.single_diamond_case(')
+  diamond_creator=diamond_creator.replace("0,NULL,3,0,club,0,0,0,false,false,false,0,0,0,'MTT','freezeout','mtt-v2'","0,CASE WHEN (case_name LIKE '%full%' OR case_name LIKE '%held%') THEN 3 ELSE NULL END,3,0,club,0,0,0,false,false,false,0,0,0,CASE WHEN (case_name LIKE '%full%' OR case_name LIKE '%held%') THEN 'SNG' ELSE 'MTT' END,'freezeout',CASE WHEN (case_name LIKE '%full%' OR case_name LIKE '%held%') THEN 'sng-v1' ELSE 'mtt-v2' END")
+  diamond_creator+="\n RETURN jsonb_build_object('tournament_id',source_id,'qualifier_ids',to_jsonb(q),'target_id',target_id,'table_id',v_table_id);\nEND $case$;\n"
+  single_scene=output/'single-funded-cases.sql'
+  single_scene.write_text(one_seed+creator+diamond_creator+(single/'native-cases.sql').read_text()+"\nSET CONSTRAINTS ALL IMMEDIATE; ROLLBACK;\n")
+  code,_,error=e.sql(db,file=single_scene,label='single-old-red',seconds=180,check=False)
+  if code==0 or 'SINGLE_VALUE_EXPECT_REUSABLE_TICKET' not in error:
+   raise ValueError('old actual single-winner path did not produce the expected RED: '+error[-2500:])
+  successor=root/'supabase/migrations/20261031211736_single_winner_satellite_fallback_is_a_reusable_value_ticket.sql'
+  historical=output/'single-historical-transition.sql'
+  # One isolated transaction creates a genuine legacy payment, replaces the
+  # functions, verifies replay, and rolls everything back before other cases.
+  transition=successor.read_text().replace('BEGIN;', '', 1).removesuffix('COMMIT;\n')
+  historical.write_text(one_seed+creator+(single/'historical-before.sql').read_text().removesuffix('COMMIT;\n')+transition+(single/'historical-after.sql').read_text().replace('BEGIN;', '', 1))
+  e.sql(db,file=historical,label='single-historical-transition',seconds=60)
+  e.sql(db,file=successor,label='single-value-successor',seconds=30)
+  e.sql(db,properties,label='single-properties-after')
+  e.sql(db,file=single_scene,label='single-new-green',seconds=180)
   e.sql(db,file=composed,label='funded-value-ticket-cases',seconds=180)
   qualify_concurrent_consumption(e,root,native,db,output,seed,scene.read_text(),diamond_seed,(fixture/'native-diamond-cases.sql').read_text())
   e.report.update(passed=True,status='passed')

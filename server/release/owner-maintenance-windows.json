@@ -660,6 +660,19 @@
         "path": "server/release/activation-floor.json",
         "sha256": "a223b2ae8a52b703db393fa4acf9dc4e3374dd8c6ffb4313884b95f5c9f4b2f8"
       }
+    },
+    {
+      "id": "2026-10-31-horse-v63-v69-next-55",
+      "ownerOrder": "Dan directly in this chat on Sat 2026-10-31 at 12:07 America/Chicago (17:07 UTC) ordered verbatim: \"YOU CAN DEPLOY AT THE NEXT :55 BREAK, YOU DO NOT HAVE TO WAIT UNTIL 4AM GET THAT DONE NOW\". This NEW owner-ordered window implements that direct order: it authorizes the next safe Chicago minute 55 activation of protected main containing the Hold'em horse decision changes V63-V69 (PRs #8851 #8874 #8875 #8885 #8892 #8893 #8902); 0562b8d49cfc246b3e24327e23ba5e72fc402251 (V69 merge, containing V63-V68) is a protected minimum only. It is not a heartbeat, timer, automatic expiry renewal or authority inferred from a missed deadline, and it does not extend, retarget or replay any older carrier, run, certificate or checkpoint intent. The finite 17:25-23:25 UTC October 31 eligibility bounds are agent-selected implementation of the order, not timestamps quoted from Dan; expiry ends this window without automatic extension and it never overlaps the 2026-11-01 04:00 Chicago daily window. Prove actual candidate inclusion, current-head protected qualification and compatible composed source/image/control, including required installed schema, before use. Preserve every historical window byte, order, expiry, witness and databaseWindow. Where the original bd11 owner operation is not already proven retired, proven exact typed retirement of that original owner remains a prerequisite before any new operation; never replay its signal or infer absent custody from a timeout. Unknown acknowledgments and outcomes remain UNKNOWN with their original IDs and require original durable readback. Diamond remains closed. This entry and its new exact activation-floor witness permit ONE actual activation only, Chicago minute 53 notice and minute 55 activation; no arbitrary-minute reset. Use only the existing stage/receiver and original locked release transaction, exact source/image/container/process identity, original hand/controller/deck/bank and funded-seat custody, exclusive ownership and durable one-shot intent. Preserve 120s last-hand lead, actual hand-boundary drain, 300s durable database freeze and reservation-bound certificate, full 285s cutover/proof/rollback reserve, 245s post-checkpoint proof, 135s rollback, 40s checkpoint including 5s cleanup, 20s MAIN with full 5s remote-close reserve, rolling one-window-per-hour seal and complete own-window healthy v3 thaw. No MAIN signal/kill, foreign Inspector close, forced hands, invented winners, chip/seat/balance edits, migration/payment replay, second publisher, watcher, timer or recurring repair. Require sealed serving identity and natural committed-hand progress before claiming delivery; this source entry neither deploys nor certifies live behavior. Non-engine delivery remains immediate.",
+      "contains": "0562b8d49cfc246b3e24327e23ba5e72fc402251",
+      "notBefore": "2026-10-31T17:25:00Z",
+      "notAfter": "2026-10-31T23:25:00Z",
+      "announceAtChicagoMinutes": [53],
+      "migrations": [],
+      "releaseWitness": {
+        "path": "server/release/activation-floor.json",
+        "sha256": "1003712d8712dbf23492f70568075455add06f4a0c753ff1867305fffcc17217"
+      }
     }
   ],
   "databaseWindows": [

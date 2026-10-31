@@ -1305,3 +1305,72 @@ it('binds the noon manual continuation while preserving the expired unpushed car
   ])
     expect(entry.ownerOrder).toContain(boundary);
 });
+
+it('binds the owner-ordered next :55 Horse V63-V69 activation without renewing any historical window', () => {
+  const raw = readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8');
+  const doc = JSON.parse(raw);
+  const id = '2026-10-31-horse-v63-v69-next-55';
+  const entry = doc.windows.find((w: { id: string }) => w.id === id);
+  expect(doc.windows.filter((w: { id: string }) => w.id === id)).toHaveLength(1);
+  expect(doc.windows[66]).toEqual(entry);
+  expect(entry.contains).toBe('0562b8d49cfc246b3e24327e23ba5e72fc402251');
+  expect(entry.announceAtChicagoMinutes).toEqual([53]);
+  expect(entry.migrations).toEqual([]);
+  expect(entry.notBefore).toBe('2026-10-31T17:25:00Z');
+  expect(entry.notAfter).toBe('2026-10-31T23:25:00Z');
+  const span = Date.parse(entry.notAfter) - Date.parse(entry.notBefore);
+  expect(span).toBeGreaterThanOrEqual(420_000);
+  expect(span).toBeLessThanOrEqual(21_600_000);
+  // Never reaches the 2026-11-01 04:00 America/Chicago daily window.
+  expect(Date.parse(entry.notAfter)).toBeLessThan(Date.parse('2026-11-01T08:30:00Z'));
+  const expectedFloor = Buffer.from(
+    JSON.stringify(
+      {
+        schema: 'engine-release-activation-floor/v2-owner-window',
+        preparationAt: entry.notBefore,
+        activationAt: entry.notBefore,
+        expiresAt: entry.notAfter,
+        timeZone: 'America/Chicago',
+        ownerWindowId: id,
+        clientPublicationAt: entry.notBefore,
+      },
+      null,
+      2
+    ) + '\n'
+  );
+  expect(entry.releaseWitness).toEqual({
+    path: 'server/release/activation-floor.json',
+    sha256: createHash('sha256').update(expectedFloor).digest('hex'),
+  });
+  const selected = readFileSync(join(root, 'server/release/activation-floor.json'));
+  if (JSON.parse(selected.toString()).ownerWindowId === id) expect(selected).toEqual(expectedFloor);
+  // Exact original bytes, not merely equivalent parsed historical authorizations.
+  const start = raw.indexOf(',\n    {\n      "id": "' + id + '"');
+  const end = raw.indexOf('\n  ],\n  "databaseWindows":', start);
+  expect(start).toBeGreaterThan(0);
+  const historical = raw.slice(0, start) + raw.slice(end);
+  expect(createHash('sha256').update(historical).digest('hex')).toBe(
+    'af6d171426e581132b60bd755db46f2b703be96889456fe44a51879280d5eb75'
+  );
+  for (const boundary of [
+    'YOU CAN DEPLOY AT THE NEXT :55 BREAK, YOU DO NOT HAVE TO WAIT UNTIL 4AM GET THAT DONE NOW',
+    'NEW owner-ordered window',
+    'agent-selected',
+    'typed retirement',
+    'UNKNOWN',
+    'Diamond remains closed',
+    'ONE actual activation',
+    '120s',
+    '300s',
+    '285s',
+    '245s',
+    '135s',
+    '40s',
+    '5s cleanup',
+    '20s MAIN',
+    'full 5s remote-close',
+    'v3 thaw',
+    'migration/payment replay',
+  ])
+    expect(entry.ownerOrder).toContain(boundary);
+});

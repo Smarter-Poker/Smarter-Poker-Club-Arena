@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const config = JSON.parse(readFileSync(join(ROOT, 'server', 'tsconfig.scripts.json'), 'utf8'));
@@ -31,7 +32,9 @@ describe('server scripts are type-checked', () => {
     expect(at).toBeGreaterThan(0);
     const next = ci.indexOf('- name: TypeScript Check (server scripts)', at);
     expect(next).toBeGreaterThan(at);
-    expect(ci.slice(next, next + 400)).toContain('run: npx tsc -p tsconfig.scripts.json --noEmit');
+    // The step itself: from its name to the next step.
+    const step = sliceBetween(ci.slice(next), '- name: TypeScript Check (server scripts)', '\n      - name: ');
+    expect(step).toContain('run: npx tsc -p tsconfig.scripts.json --noEmit');
     // Inside the same job: no other job heading between the two steps.
     expect(ci.slice(at, next)).not.toMatch(/\n  [a-z_]+:\n/);
   });

@@ -37,6 +37,11 @@ def main():
     unit = prefix + '@' + key + '.service'
     mask = template.with_name(unit)
     group = None
+    intake_template = template.with_name(prefix + '-intake@.service')
+    path_template = template.with_name(prefix + '-intake@.path')
+    intake_unit = prefix + '-intake@' + key + '.service'
+    path_unit = prefix + '-intake@' + key + '.path'
+    other_masks = [template.with_name(intake_unit), template.with_name(path_unit)]
     with tempfile.TemporaryDirectory(prefix=prefix + '-', dir=os.environ.get('RUNNER_TEMP') or os.environ.get('TMPDIR')) as directory:
         parent = Path(directory)
         wrapper = parent / 'engine-release-unit-wrapper-v1.sh'
@@ -51,6 +56,8 @@ def main():
                             + 'ExecStart=' + str(wrapper) + ' start %i\n'
                             + 'ExecStopPost=' + str(wrapper) + ' recover %i ${SERVICE_RESULT} ${EXIT_CODE} ${EXIT_STATUS}\n'
                             + 'KillMode=control-group\nTimeoutStopSec=10\nRestart=on-failure\nRestartSec=1\n')
+        intake_template.write_text('[Service]\nType=oneshot\nExecStart=/bin/true\n')
+        path_template.write_text('[Path]\nPathExists='+str(parent/'never-created')+'\nUnit='+intake_unit+'\n')
         try:
             run(['systemctl', 'daemon-reload'])
             run(['systemctl', 'start', '--no-block', unit])
@@ -89,6 +96,37 @@ def main():
                 refused = subprocess.run(['systemctl', 'start', unit], capture_output=True, timeout=5)
                 assert refused.returncode != 0
                 assert run(['systemctl', 'show', unit, '-p', 'MainPID', '--value']) == '0'
+                # A real expired-style oneshot exits 75, then owns no process
+                # during its exact 30-second restart delay. Never stop this case.
+                mask.unlink(); run(['systemctl', 'daemon-reload'])
+                recovery.write_text('#!/bin/bash\nexit 75\n')
+                wrapper.write_text('#!/bin/bash\n/bin/bash '+str(recovery)+' --run-id "$2" --mode retryable\nrc=$?\nexit "$rc"\n')
+                template.write_text(template.read_text().replace('RestartSec=1', 'RestartSec=30s'))
+                run(['systemctl', 'daemon-reload'])
+                # Reload may unload this stopped unique instance; start loads it.
+                run(['systemctl', 'start', '--no-block', unit])
+                wait_for(lambda: m.unit_snapshot(unit)['SubState'] == 'auto-restart')
+                empty_state = m.unit_snapshot(unit)
+                assert empty_state['MainPID'] == '0'
+                m.loaded_stop_contract(unit, key)
+                m.empty_retry_admission(unit, empty_state, key, {'originals': {}})
+                bindings = {service: m.configured_service_cgroup(service, m.unit_snapshot(service, service_context=True))
+                            for service in [unit, intake_unit]}
+                for other in [intake_unit, path_unit]:
+                    empty_other = m.prove_unit_empty(other)
+                    assert empty_other['ActiveState'] in {'inactive', 'failed'}
+                assert m.unit_snapshot(path_unit)['MainPID'] is None
+                for other_mask in other_masks: other_mask.symlink_to('/dev/null')
+                mask.symlink_to('/dev/null'); m.fsync_directory(mask.parent)
+                run(['systemctl', 'daemon-reload'])
+                wait_for(lambda: m.unit_snapshot(unit)['ActiveState'] in {'inactive', 'failed'}, seconds=35)
+                m.quiet_units([unit, intake_unit, path_unit], empty_state['ControlGroup'] or None, native_empty=True, bindings=bindings)
+                m.loaded_stop_contract(unit, key, allow_masked=True, bindings=bindings)
+                closed = m.prove_unit_empty(unit, bindings)
+                assert closed['MainPID'] == '0'
+                if empty_state['ControlGroup']: assert m.cgroup_empty(empty_state['ControlGroup'])
+                assert run(['systemctl', 'show', unit, '-p', 'LoadState', '--value']) == 'masked'
+                print('Real Linux 30-second auto-restart empty admission and natural masked quiescence passed without stop.', flush=True)
         finally:
             # These names are unique and this fixture created every selected file.
             try:
@@ -103,6 +141,7 @@ def main():
                     wait_for(lambda: m.cgroup_empty(group))
             finally:
                 mask.unlink(missing_ok=True); template.unlink(missing_ok=True)
+                for owned in [*other_masks, intake_template, path_template]: owned.unlink(missing_ok=True)
                 run(['systemctl', 'daemon-reload'])
                 subprocess.run(['systemctl', 'reset-failed', unit], capture_output=True, timeout=5)
     print('Real Linux masked stop and empty cgroup qualification passed; owned fixture retired.')

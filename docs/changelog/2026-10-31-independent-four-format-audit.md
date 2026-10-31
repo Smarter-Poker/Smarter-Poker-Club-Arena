@@ -85,3 +85,5 @@ A05 active completion receipt parser coerced true/[1]/'1' into version1 and blan
 Morning Free Buy remains RUNNING level30 with latest recorded hand19:08:57.634619Z. Active recovery owner still holds the existing engine operation; its latest read reports original20 unresolved. No duplicate release or financial operations initiated.
 
 Additional source concern requiring reproduction: prepareFreshTableBalance sets isFinalTable before broadcast/announcement acknowledgement, and its next invocation excludes an already-final table; a false broadcast may therefore never be retried. Not yet classified as a confirmed live failure or repaired.
+
+A05 first normal push correctly refused three stale completion-parser source fingerprints. Reviewed the exact parser diff and each binding, updated only its current input hash and appended its audit note; prior qualification states are preserved. The initial push failure is retained in scratch/push-a05.log. Compiler passed; corrected push remains required.

@@ -117,6 +117,14 @@ def secure_directory(path):
     for part in [*reversed(path.parents), path]:
         if part == path and not part.exists():
             part.mkdir(mode=0o700)
+            # Persist the namespace before the one-shot intent can authorize
+            # Docker creation; fsync(intent/STATE) alone misses this mkdir.
+            for directory in (part, part.parent):
+                fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         info = part.lstat()
         require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022,
                 'qualification state directory ownership refused')

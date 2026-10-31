@@ -184,6 +184,15 @@ class ScaleBoundary(unittest.TestCase):
                 finally:
                     signal.signal(signum,previous)
 
+    def test_new_state_namespace_is_durable_before_intent(self):
+        with tempfile.TemporaryDirectory(prefix='native-scale-directory-') as directory:
+            state = Path(directory)/'state'
+            with patch.object(m.Path,'lstat',return_value=type('S',(),{'st_mode':0o040700,'st_uid':0})()), patch.object(m.os,'open',wraps=os.open) as opened, patch.object(m.os,'fsync',wraps=os.fsync) as synced:
+                m.secure_directory(state)
+                self.assertEqual([call.args[0] for call in opened.call_args_list], [state,state.parent])
+                self.assertEqual(synced.call_count,2)
+            self.assertTrue(state.is_dir())
+
     def test_connected_source_enforces_existing_route_and_containment(self):
         helper = (ROOT/'server/scripts/prewarm-engine-image.sh').read_text()
         installer = (ROOT/'server/scripts/install-engine-supervisor.sh').read_text()

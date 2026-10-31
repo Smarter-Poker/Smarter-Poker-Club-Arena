@@ -1,0 +1,7 @@
+# V31 compactor frozen-model authority admission
+
+R7 qualification was rejected with HTTP 409 before any cell build: the gateway allowed COMPACTOR to read frozen-model authority, while both database ingress guards allowed only M2. The migration adds COMPACTOR to that one read operation in the function and validated nonce CHECK. M1 remains denied; model preparation and freezing remain COMPACTOR-only.
+
+The exact installed function and constraint preimages are required. One transaction uses a one-second lock timeout and five-second statement timeout, preserves the complete function catalog except its changed body and the table catalog, and asserts exact postimages. Replay identity, freshness, digest checks, ACLs, RLS, legacy operations and all certification gates remain unchanged. These ingress objects are excluded from frozen numerical source graphs; no capture, training or validation data is replaced.
+
+A focused native PostgreSQL 17 fixture reproduces rejection at both original guards, proves the only changed role/operation pair across all 33 combinations, and checks replay, stale/future/null timestamps, invalid digests, browser denial, table RLS, function metadata and retained nonce bytes. The existing required V31 PostgreSQL harness executes it. Production installation still requires protected merge, Apply Merged Migration and exact catalog/history readback; source tests do not certify or load R7.

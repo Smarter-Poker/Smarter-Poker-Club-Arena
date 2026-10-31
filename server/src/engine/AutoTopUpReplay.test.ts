@@ -79,6 +79,27 @@ describe('the original command owns delayed and concurrent replies', () => {
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(e.seatedPlayers[0].stack).toBe(20);
   });
+  it('refuses a different amount reusing an in-flight operation identity', async () => {
+    const e = engine();
+    let finish!: (r: any) => void;
+    const rpc = vi.spyOn(supabase, 'rpc').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }) as any
+    );
+    const first = e.addChips('hero', 10, 'conflicting-operation');
+    const conflicting = e.addChips('hero', 20, 'conflicting-operation');
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    finish({ data: 90, error: null });
+    await first;
+    await expect(conflicting).resolves.toMatchObject({
+      success: false,
+      code: 'OPERATION_CONFLICT',
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(e.seatedPlayers[0].stack).toBe(20);
+  });
   it('recovers a committed operation after both acknowledgements were lost', async () => {
     const e = engine();
     e.readCashAddonReceipt

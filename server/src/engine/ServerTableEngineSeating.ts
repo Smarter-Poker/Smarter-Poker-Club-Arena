@@ -62,7 +62,10 @@ type AddChipsResult = {
 };
 
 export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
-  private readonly addChipsInFlight = new Map<string, Promise<AddChipsResult>>();
+  private readonly addChipsInFlight = new Map<
+    string,
+    { amount: number; operation: Promise<AddChipsResult> }
+  >();
   private readonly addChipsUserTail = new Map<string, Promise<AddChipsResult>>();
   protected readCashAddonReceipt = readCashAddonReceipt;
   protected readDiamondAddonReceipt = readDiamondAddonReceipt;
@@ -76,17 +79,26 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const operationId = opId || randomUUID();
     const key = `${userId}:${operationId}`;
     const existing = this.addChipsInFlight.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.amount !== amount)
+        return {
+          success: false,
+          error: 'Top-Up Operation Was Reused With A Different Amount.',
+          code: 'OPERATION_CONFLICT',
+        };
+      return existing.operation;
+    }
     const previous = this.addChipsUserTail.get(userId);
     const operation = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(() =>
       this.addChipsOnce(userId, amount, operationId)
     );
-    this.addChipsInFlight.set(key, operation);
+    this.addChipsInFlight.set(key, { amount, operation });
     this.addChipsUserTail.set(userId, operation);
     try {
       return await operation;
     } finally {
-      if (this.addChipsInFlight.get(key) === operation) this.addChipsInFlight.delete(key);
+      if (this.addChipsInFlight.get(key)?.operation === operation)
+        this.addChipsInFlight.delete(key);
       if (this.addChipsUserTail.get(userId) === operation) this.addChipsUserTail.delete(userId);
     }
   }

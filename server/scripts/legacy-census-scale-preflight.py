@@ -168,9 +168,11 @@ def cleanup(name, key, deadline):
         value = deadline - time.monotonic()
         require(value > 0, 'disposable cleanup deadline exhausted')
         return min(value, 1.5)
-    if inspect_own(name, key, remaining()):
+    observed = inspect_own(name, key, remaining())
+    if observed:
         command(['docker', 'rm', '-f', name], timeout=remaining())
     require(not inspect_own(name, key, remaining()), 'disposable cleanup not proved')
+    return observed
 
 
 def validate_result(result, fixture_sha):
@@ -226,7 +228,8 @@ def main(image, run_id, deadline):
                 intent = read_state(intent_path)
                 require(intent.get('binding') == binding and intent.get('container') == name,
                         'unresolved scale cleanup custody refused')
-                cleanup(name, key, time.monotonic() + 5)
+                require(cleanup(name, key, time.monotonic() + 5),
+                        'prior creation acknowledgement remains unknown; no automatic repeat')
                 raise RuntimeError('prior refused scale cleanup proved; no automatic repeat')
             require(receipt.get('candidate') == candidate and receipt.get('status') == 'qualified' and
                     receipt.get('cleanupProved') is True and 0 < receipt.get('elapsedMs', 0) <= 40000,
@@ -240,7 +243,8 @@ def main(image, run_id, deadline):
             intent = read_state(intent_path)
             require(intent.get('binding') == binding and intent.get('container') == name,
                     'existing one-shot intent custody refused')
-            cleanup(name, key, time.monotonic() + 5)
+            require(cleanup(name, key, time.monotonic() + 5),
+                    'prior creation acknowledgement remains unknown; no automatic repeat')
             raise RuntimeError('prior scale intent has no positive receipt; own cleanup proved, no automatic repeat')
         require(serving(run_id) == before_serving, 'serving identity changed before allocation')
         available = re.search(r'^MemAvailable:\s+([0-9]+) kB$', Path('/proc/meminfo').read_text(), re.M)
@@ -252,6 +256,7 @@ def main(image, run_id, deadline):
         cleanup_deadline = started + 40
         output_path = STATE / (key + '.output')
         result, error, cleanup_ok = None, None, False
+        execution_acknowledged, observed_container = False, False
         try:
             def cap_output():
                 resource.setrlimit(resource.RLIMIT_FSIZE, (OUTPUT_CAP, OUTPUT_CAP))
@@ -270,6 +275,7 @@ def main(image, run_id, deadline):
                 execution = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=output,
                                            stderr=output, timeout=max(0.1, 35-(time.monotonic()-started)),
                                            preexec_fn=cap_output)
+                execution_acknowledged = True
                 require(execution.returncode == 0, 'disposable fixed scale fixture failed; no automatic retry')
             require(output_path.stat().st_size <= OUTPUT_CAP, 'fixture output exceeded bound')
             result = json.loads(output_path.read_text())
@@ -278,7 +284,11 @@ def main(image, run_id, deadline):
             error = str(exc)
         finally:
             try:
-                cleanup(name, key, cleanup_deadline)
+                observed_container = cleanup(name, key, cleanup_deadline)
+                # Absence after an unknown Docker client outcome cannot exclude
+                # a create still completing in the daemon. Never certify it.
+                require(execution_acknowledged or observed_container,
+                        'container creation acknowledgement unknown; cleanup remains unknown')
                 cleanup_ok = True
             except Exception as exc:
                 error = (error + '; ' if error else '') + str(exc)
@@ -293,6 +303,7 @@ def main(image, run_id, deadline):
             error = (error + '; ' if error else '') + str(exc)
         receipt = {'binding':binding, 'candidate':candidate, 'status':'qualified' if error is None and cleanup_ok else 'refused',
                    'runId':run_id, 'at':time.time(), 'elapsedMs':elapsed, 'cleanupProved':cleanup_ok,
+                   'executionAcknowledged':execution_acknowledged, 'observedOwnedContainer':observed_container,
                    'servingBefore':before_serving, 'servingAfter':after_serving, 'result':result,
                    'hostAvailableBytes':int(available[1])*1024, 'error':error}
         write_state(receipt_path, receipt)

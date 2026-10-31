@@ -126,7 +126,7 @@ class ScaleBoundary(unittest.TestCase):
                 binding = {'schema':'legacy-native-scale-binding/v1','image':'sha256:'+'a'*64,
                            'fixtureSHA256':fixture_sha,'controllerSHA256':m.digest(Path(m.__file__).read_bytes()),'profile':m.PROFILE}
                 return {'binding':binding,'container':'ca-native-scale-'+key[:32]}
-            with patch.object(m,'STATE',state), patch.object(m.os,'geteuid',return_value=0), patch.object(m.sys,'platform','linux'), patch.object(m,'serving',return_value=identity), patch.object(m,'candidate_identity',return_value={}), patch.object(m,'secure_directory'), patch.object(m.os,'fstat',return_value=type('S',(),{'st_mode':0o100600,'st_uid':0})()), patch.object(m.Path,'exists',exists), patch.object(m,'read_state',side_effect=read_intent), patch.object(m,'cleanup') as cleanup, patch.object(m,'command') as command:
+            with patch.object(m,'STATE',state), patch.object(m.os,'geteuid',return_value=0), patch.object(m.sys,'platform','linux'), patch.object(m,'serving',return_value=identity), patch.object(m,'candidate_identity',return_value={}), patch.object(m,'secure_directory'), patch.object(m.os,'fstat',return_value=type('S',(),{'st_mode':0o100600,'st_uid':0})()), patch.object(m.Path,'exists',exists), patch.object(m,'read_state',side_effect=read_intent), patch.object(m,'cleanup',return_value=True) as cleanup, patch.object(m,'command') as command:
                 with self.assertRaisesRegex(RuntimeError,'no automatic repeat'):
                     m.main('sha256:'+'a'*64,'42-1',str(int(time.time())+600))
                 cleanup.assert_called_once()
@@ -157,8 +157,8 @@ class ScaleBoundary(unittest.TestCase):
                 write.assert_not_called()
 
     def test_real_term_int_hup_enter_main_finally_and_leave_nonretryable_receipt(self):
-        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-            with self.subTest(signal=signum), tempfile.TemporaryDirectory(prefix='native-scale-signal-') as directory:
+        for signum, observed in [(signal.SIGTERM,True), (signal.SIGINT,True), (signal.SIGHUP,True), (signal.SIGTERM,False)]:
+            with self.subTest(signal=signum, observed=observed), tempfile.TemporaryDirectory(prefix='native-scale-signal-') as directory:
                 state = Path(directory)
                 identity = {'revision':next(iter(m.LEGACY))}
                 original = Path.read_text
@@ -169,13 +169,16 @@ class ScaleBoundary(unittest.TestCase):
                     self.fail('signal did not refuse')
                 previous = signal.signal(signum, m.refuse_signal)
                 try:
-                    with patch.object(m,'STATE',state), patch.object(m.os,'geteuid',return_value=0), patch.object(m.sys,'platform','linux'), patch.object(m,'serving',return_value=identity), patch.object(m,'candidate_identity',return_value={}), patch.object(m,'secure_directory'), patch.object(m.os,'fstat',return_value=type('S',(),{'st_mode':0o100600,'st_uid':0})()), patch.object(m.Path,'read_text',read), patch.object(m.subprocess,'run',side_effect=interrupt), patch.object(m,'cleanup') as cleanup:
+                    with patch.object(m,'STATE',state), patch.object(m.os,'geteuid',return_value=0), patch.object(m.sys,'platform','linux'), patch.object(m,'serving',return_value=identity), patch.object(m,'candidate_identity',return_value={}), patch.object(m,'secure_directory'), patch.object(m.os,'fstat',return_value=type('S',(),{'st_mode':0o100600,'st_uid':0})()), patch.object(m.Path,'read_text',read), patch.object(m.subprocess,'run',side_effect=interrupt), patch.object(m,'cleanup',return_value=observed) as cleanup:
                         with self.assertRaisesRegex(RuntimeError,'interrupted by signal'):
                             m.main('sha256:'+'a'*64,'42-1',str(int(time.time())+600))
                         cleanup.assert_called_once()
                     receipt = json.loads(next(state.glob('*.json')).read_text())
                     self.assertEqual(receipt['status'],'refused')
-                    self.assertIs(receipt['cleanupProved'],True)
+                    self.assertIs(receipt['cleanupProved'],observed)
+                    self.assertIs(receipt['executionAcknowledged'],False)
+                    if not observed:
+                        self.assertIn('creation acknowledgement unknown',receipt['error'])
                     self.assertIn('interrupted by signal',receipt['error'])
                     self.assertEqual(len(list(state.glob('*.intent'))),1)
                 finally:

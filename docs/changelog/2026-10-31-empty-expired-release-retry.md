@@ -9,3 +9,5 @@ The empty path masks only the three original instances. It never stops or adopts
 Local regression qualification covers empty admission, raced successors, pending-to-quiet continuation, exact native result shapes and loaded retry settings. The maintained required Linux fixture exercises a real exit-75 oneshot with a 30-second auto-restart delay and natural masked quiescence without a stop. Local macOS cannot execute that fixture; hosted execution remains required. No production action or recovery is claimed.
 
 Native reference: systemd v255 src/core/dbus-unit.c bus_unit_method_get_processes enumerates the unit cgroup and its main/control PIDs; https://github.com/systemd/systemd/blob/v255/src/core/dbus-unit.c.
+
+Hosted qualification exposed a fixture-only lifecycle error: daemon-reload may unload the stopped unique instance, so reset-failed refuses before the new scenario begins. The fixture now starts its restored template directly. Runtime admission and all native assertions and budgets are unchanged; hosted rerun remains required.

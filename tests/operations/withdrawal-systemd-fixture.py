@@ -103,7 +103,7 @@ def main():
                 wrapper.write_text('#!/bin/bash\n/bin/bash '+str(recovery)+' --run-id "$2" --mode retryable\nrc=$?\nexit "$rc"\n')
                 template.write_text(template.read_text().replace('RestartSec=1', 'RestartSec=30s'))
                 run(['systemctl', 'daemon-reload'])
-                run(['systemctl', 'reset-failed', unit])
+                # Reload may unload this stopped unique instance; start loads it.
                 run(['systemctl', 'start', '--no-block', unit])
                 wait_for(lambda: m.unit_snapshot(unit)['SubState'] == 'auto-restart')
                 empty_state = m.unit_snapshot(unit)

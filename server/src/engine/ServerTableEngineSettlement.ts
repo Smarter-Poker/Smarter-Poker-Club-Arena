@@ -1,3 +1,4 @@
+import { PostHandStageTiming } from './PostHandStageTiming.js';
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import {
   observeCommittedHandRiverValue,
@@ -1771,6 +1772,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         ])
       ),
     };
+    const stageTiming = new PostHandStageTiming(snap.handNumber);
+    this.postHandStageTiming = stageTiming;
     // ═══════════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE (continued) — Steps 8-15
     // Steps 1-7 completed in HAND_COMPLETE handler above
@@ -1928,11 +1931,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       moneyCritical: boolean,
       fn: (diagnostic?: LeavePendingAttempt) => Promise<void>
     ): Promise<void> => {
+      const timing = stageTiming.queue(stepName, STEP_LANE[stepName] ?? 'record');
       const exec = async (): Promise<void> => {
         // A successor generation may acquire the table while this step waits
         // behind another lane operation. Re-prove authority at execution, not
         // merely when the promise is queued, before beginning a new decision.
-        if (!this.lifecycleCanMutate()) return;
+        if (!this.lifecycleCanMutate()) {
+          timing.finish('lifecycle_denied');
+          return;
+        }
+        timing.start();
         const started = performance.now();
         let outcome = 'returned';
         const budget = STEP_RETRY[stepName] ?? 0;
@@ -2014,6 +2022,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             );
           }
         } finally {
+          timing.finish(outcome === 'threw' ? 'threw' : 'returned');
           try {
             const elapsed = Math.max(0, performance.now() - started);
             const labels = {
@@ -2988,6 +2997,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          own receipt. Undefined until it answers; the announcer treats an
          absent count as "read to find out". */
       let resolvedAddOnCount: number | undefined;
+      const finishObligationsTiming = stageTiming.start('post_commit_obligations', 'barrier');
       this.setLoopPhase('settlement_post_commit_obligations');
       /* THE DRAIN DOES NOT NEED THE LEASE; THE REFLECTION BELOW STILL DOES
        * (2026-09-12).
@@ -3097,6 +3107,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           );
         }
       }
+      finishObligationsTiming(obligationsApplied ? 'returned' : 'handoff');
       postCommitStateCanReflect = this.lifecycleCanMutate();
 
       if (!obligationsApplied) {
@@ -3144,6 +3155,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            its replay receipt intentionally does not claim which process did it. */
         let persistedSeats: Awaited<ReturnType<typeof readCommittedSeatStacks>> = null;
         let persistedSeatError: unknown = null;
+        const finishRefreshTiming = stageTiming.start('committed_seat_refresh', 'barrier');
         try {
           persistedSeats = await readCommittedSeatStacks({
             read: () =>
@@ -3161,7 +3173,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 attempt,
               }),
           });
+          finishRefreshTiming('returned');
         } catch (error) {
+          finishRefreshTiming('threw');
           persistedSeatError = error;
         }
         if (!this.lifecycleCanMutate()) {
@@ -3184,7 +3198,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           /* The envelope resolved the frozen add-ons silently. Say what it
              did (the add_on_applied bubble, the private add_on_adjusted
              frame) and rebuild the cap cache - see announceEnvelopeResolvedAddOns. */
-          await this.announceEnvelopeResolvedAddOns(v_handHistoryId, players, resolvedAddOnCount);
+          const finishAnnounceTiming = stageTiming.start('addon_announcement', 'barrier');
+          try {
+            await this.announceEnvelopeResolvedAddOns(v_handHistoryId, players, resolvedAddOnCount);
+            finishAnnounceTiming('returned');
+          } catch (error) {
+            finishAnnounceTiming('threw');
+            throw error;
+          }
           if (!this.lifecycleCanMutate()) postCommitStateCanReflect = false;
         }
       }
@@ -4143,7 +4164,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     if (!this.lifecycleCanMutate()) return;
 
     // Both lanes must land before the barrier releases the next deal.
-    await Promise.all([lanes.record, lanes.seats]);
+    const finishLanesTiming = stageTiming.start('lane_join', 'barrier');
+    try {
+      await Promise.all([lanes.record, lanes.seats]);
+      finishLanesTiming('returned');
+      stageTiming.complete();
+    } catch (error) {
+      finishLanesTiming('threw');
+      throw error;
+    }
 
     // Settlement pipeline complete - table unlocked for next hand.
     // A HAND ENDED (2026-09-05): leavers cashed out, announced moves landed,

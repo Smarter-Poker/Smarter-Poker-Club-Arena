@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PostHandStageTiming } from '../engine/PostHandStageTiming.js';
 import {
   parsePublicTableLivenessQuery as parse,
   selectPublicTableLiveness as select,
@@ -136,4 +137,18 @@ describe('explicit public table progress scope', () => {
     expect(a.dealable).toBe(b.dealable);
     expect(a.paused).toBe(b.paused);
   });
+});
+
+it('exposes only fixed exact-hand timing for explicit table scope', () => {
+  const timing = new PostHandStageTiming(19, () => 1);
+  timing.start('committed_seat_refresh', 'barrier')('returned');
+  const snapshot = timing.snapshot()!;
+  const row = table(1, { postHandTiming: { ...snapshot, privatePayload: 'PRIVATE' } as any });
+  const selected = select([row], { kind: 'tables', tableIds: [id(1)] });
+  expect(selected[0].postHandTiming).toEqual(snapshot);
+  expect(JSON.stringify(selected)).not.toContain('PRIVATE');
+  expect(
+    select([row], { kind: 'tournament', gameFormat: 'mtt', clubIds: [club] })[0]
+  ).not.toHaveProperty('postHandTiming');
+  expect(select([row], { kind: 'tables', tableIds: [id(2)] })).toEqual([]);
 });

@@ -5564,7 +5564,9 @@ export class GameServer {
     const equityWorkers = equityWorkerPoolStatus();
     // Per-table liveness first — everything below is aggregate telemetry that
     // cannot distinguish a dealing table from a frozen one.
-    const tableLiveness = this.tableLivenessSnapshot();
+    const tableLiveness = this.tableLivenessSnapshot(
+      livenessQuery?.kind === 'tables' ? new Set(livenessQuery.tableIds) : undefined
+    );
     const liveStalledTables = tableLiveness
       .filter((t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000)
       .map((t) => ({
@@ -6790,7 +6792,7 @@ export class GameServer {
     return failing.sort((x, y) => y.msFailing - x.msFailing);
   }
 
-  private tableLivenessSnapshot() {
+  private tableLivenessSnapshot(timingTableIds?: ReadonlySet<string>) {
     const tournamentDescriptorByTableId = new Map<
       string,
       { gameFormat: 'mtt' | 'spin' | 'sng'; clubId: string | null }
@@ -6825,6 +6827,10 @@ export class GameServer {
         // what it was doing for those 96 seconds, so a fleet-wide stall showed up
         // as ninety identical unexplained numbers. This is the missing half.
         loopPhase: engine.describeLoopPhase(),
+        // Allocate a trace snapshot only for an explicitly requested table.
+        ...(timingTableIds?.has(id)
+          ? { postHandTiming: engine.postHandTimingSnapshot?.() ?? null }
+          : {}),
         paused: engine.isPausedByDesign(),
         // Registered, and never started once. See hasNeverStarted() on the
         // engine base for why this could not be inferred from the fields

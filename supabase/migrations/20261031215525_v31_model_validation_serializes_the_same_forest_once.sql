@@ -14,21 +14,24 @@ SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='5s';
 CREATE TEMP TABLE v31_seal_validation_preimage ON COMMIT DROP AS
  SELECT oid,to_jsonb(p)-'prosrc' metadata FROM pg_proc p WHERE oid IN (
-'public.fn_gto_v31_public215_canonical(jsonb)'::regprocedure,'public.fn_gto_v31_public215_model_valid(jsonb)'::regprocedure,'public.fn_gto_v31_cell_payload_checksum(jsonb)'::regprocedure,'public.fn_gto_v31_seal_build(uuid)'::regprocedure);
+'public.fn_gto_v31_public215_canonical(jsonb)'::regprocedure,'public.fn_gto_v31_public215_model_valid(jsonb)'::regprocedure,'public.fn_gto_v31_cell_payload_checksum(jsonb)'::regprocedure,'public.fn_gto_v31_seal_build(uuid)'::regprocedure,'public.fn_gto_v31_source_node_v3_valid(jsonb)'::regprocedure,'public.fn_gto_v31_source_node_v4_valid(jsonb)'::regprocedure);
 DO $preflight$
 DECLARE fk oid;
 BEGIN
- IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_canonical(jsonb)'::regprocedure) NOT IN ('5ee370b7046fd44c33dbe3ea429c3a91','1860f48794d139dcf174c4294bf5dce7') THEN RAISE EXCEPTION 'V31 preimage differs: fn_gto_v31_public215_canonical'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_canonical(jsonb)'::regprocedure) NOT IN ('5ee370b7046fd44c33dbe3ea429c3a91','9fdfaf295bb19eaff360d5b3cb9a111a') THEN RAISE EXCEPTION 'V31 preimage differs: fn_gto_v31_public215_canonical'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_model_valid(jsonb)'::regprocedure) NOT IN ('1c8da8eb890a2a3ab5f24e7f9eeedc48','762098f8d28855034cacd38ae2918fcb') THEN RAISE EXCEPTION 'V31 preimage differs: fn_gto_v31_public215_model_valid'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_cell_payload_checksum(jsonb)'::regprocedure) NOT IN ('70e1d9afb1762f1f9d1a368bd2883c93','1c6ca7903c209964f2c4cb442036e7de') THEN RAISE EXCEPTION 'V31 preimage differs: fn_gto_v31_cell_payload_checksum'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_seal_build(uuid)'::regprocedure) NOT IN ('ce2b0015cbde0ebca67af173968a368e','e74b379a151846969ec4b1071288c80b') THEN RAISE EXCEPTION 'V31 preimage differs: fn_gto_v31_seal_build'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v3_valid(jsonb)'::regprocedure) NOT IN ('fd185af67a480d8262109575a25ac51e','13b7724a355d40bcc1ca9eb5a8888127') THEN RAISE EXCEPTION 'V31 preimage differs: fn_gto_v31_source_node_v3_valid'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v4_valid(jsonb)'::regprocedure) NOT IN ('4af1170638a0145b286b4b687d998fc3','4757f9005ca956a453ce7be1f5e70d25') THEN RAISE EXCEPTION 'V31 preimage differs: fn_gto_v31_source_node_v4_valid'; END IF;
+ IF to_regprocedure('public.fn_gto_v31_source_node_v3_fields_valid(jsonb)') IS NOT NULL AND (SELECT md5(prosrc) FROM pg_proc WHERE oid=to_regprocedure('public.fn_gto_v31_source_node_v3_fields_valid(jsonb)'))<>'56dad8b4161a1a112d9b72c814efdbfd' THEN RAISE EXCEPTION 'V31 source fields helper differs'; END IF;
  IF to_regprocedure('public.fn_gto_v31_public215_model_canonical_fast(jsonb)') IS NOT NULL AND (SELECT md5(prosrc) FROM pg_proc WHERE oid=to_regprocedure('public.fn_gto_v31_public215_model_canonical_fast(jsonb)'))<>'19dc4b1342d33ff48c70a1715f3fe7d0' THEN RAISE EXCEPTION 'V31 serialization helper differs'; END IF;
  SELECT oid INTO STRICT fk FROM pg_constraint WHERE conrelid='public.gto_v31_runtime_cells'::regclass AND confrelid='public.gto_v31_datasets'::regclass
  AND conname='gto_v31_runtime_cells_dataset_id_fkey' AND contype='f' AND convalidated AND NOT condeferrable AND NOT condeferred;
  IF (SELECT count(*)=4 AND bool_and(tgenabled IN ('O','A')) FROM pg_trigger WHERE tgconstraint=fk) IS NOT TRUE THEN RAISE EXCEPTION 'V31 dataset FK enforcement is absent'; END IF;
  IF (public.fn_gto_v31_public215_physics_implementation()='66f413bc9179d5b10df7c5a73547931c47a3e90fd7895c4de596c7287e98e733' AND public.fn_gto_v31_public215_encoding_implementation()='1121d3ff6873757d8560e55f397e29df8978cc8b845259bbaa2c529f40950f6d') IS NOT TRUE THEN RAISE EXCEPTION 'V31 frozen numerical implementations differ'; END IF;
 END $preflight$;
--- DRAFT corrected linear nested aggregates; NULL delegates to unchanged generic canonical.
+-- Linear nested aggregates; NULL delegates to unchanged generic canonical.
 CREATE OR REPLACE FUNCTION public.fn_gto_v31_public215_model_canonical_fast(p jsonb)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT SET search_path=pg_catalog AS $fn$
 WITH root AS MATERIALIZED(
@@ -84,12 +87,14 @@ CROSS JOIN LATERAL(
  )trees
 )heads
 $fn$;
--- DRAFT: unchanged original generic body after NULL fastpath; Root owns maintained installation.
+-- The original generic body follows a closed-model-only fast path.
 CREATE OR REPLACE FUNCTION public.fn_gto_v31_public215_canonical(p jsonb)
 RETURNS text LANGUAGE plpgsql IMMUTABLE STRICT SET search_path=pg_catalog AS $fn$
 DECLARE fast text;t text;v record;parts text[]:=ARRAY[]::text[];
 BEGIN
- fast:=public.fn_gto_v31_public215_model_canonical_fast(p);IF fast IS NOT NULL THEN RETURN fast;END IF;
+ IF jsonb_typeof(p)='object' AND p->>'format'='public_hist215_v1' THEN
+  fast:=public.fn_gto_v31_public215_model_canonical_fast(p);IF fast IS NOT NULL THEN RETURN fast;END IF;
+ END IF;
  CASE jsonb_typeof(p)
  WHEN 'object' THEN
   FOR v IN SELECT key,value FROM jsonb_each(p) ORDER BY key COLLATE "C" LOOP
@@ -429,19 +434,421 @@ BEGIN
   RETURN v_checksum;
 END;
 $function$;
+CREATE OR REPLACE FUNCTION public.fn_gto_v31_source_node_v3_fields_valid(p_node jsonb)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public
+AS $fn$
+DECLARE
+  v_context jsonb := p_node->'node_context';
+  v_line_proof jsonb := p_node->'line_proof';
+  v_specs jsonb := p_node->'action_specs';
+  v_frequencies jsonb := p_node->'frequencies';
+  v_action_evs jsonb := p_node->'action_evs_bb';
+  v_policy_evs jsonb := p_node->'policy_evs_bb';
+  v_matchups jsonb := p_node->'matchups';
+  v_action record;
+  v_family text;
+  v_unit text;
+  v_size numeric;
+  v_role text := v_context->>'node_role';
+  v_facing text := v_context->>'facing_kind';
+  v_bucket text := v_context->>'facing_size_bucket';
+  v_has_check boolean := false;
+  v_has_fold boolean := false;
+  v_has_call boolean := false;
+  v_has_bet boolean := false;
+  v_table_size integer;
+  v_allowed_positions text[];
+  v_board text := v_context->>'board';
+  v_cards text[] := ARRAY[]::text[];
+  v_card text;
+  v_i integer;
+  v_weight numeric;
+  v_frequency numeric;
+  v_frequency_sum numeric;
+  v_action_ev numeric;
+  v_expected_ev numeric;
+  v_action_keys text[];v_action_key text;v_action_index integer;
+  v_weights numeric[];v_policies numeric[];v_decoded numeric[];
+  v_frequency_values numeric[]:=ARRAY[]::numeric[];
+  v_ev_values numeric[]:=ARRAY[]::numeric[];v_types_ok boolean;v_blocked boolean[];v_board_ids integer[];
+  v_policy_ev numeric;
+  v_derived_line jsonb;
+  v_line_role text;
+  v_hero_solver_player integer;
+  v_preflop_aggressor integer;
+  v_node_cards text[];
+  v_expected_node_cards text[]:=ARRAY[]::text[];
+  v_facing_target numeric;
+  v_facing_actor_total numeric;
+  v_root_pot_chips numeric;
+  v_effective_stack_chips numeric;
+  v_chips_per_bb numeric;
+  v_last_token text;
+BEGIN
+  IF p_node IS NULL OR jsonb_typeof(p_node)<>'object'
+     OR NOT public.fn_gto_v31_source_node_scalar_types_valid(p_node)
+     OR NOT public.fn_gto_v31_physical_positions_valid(p_node)
+     OR NOT public.fn_gto_v31_action_specs_valid(v_specs)
+     OR (SELECT count(*) FROM jsonb_object_keys(p_node))<>12
+     OR NOT (p_node ?& ARRAY['schema','node','node_checksum','node_context','line_proof','action_specs',
+       'frequencies','policy_evs_bb','action_evs_bb','matchups',
+       'source_combo_order_checksum','range_bundle_checksum'])
+     OR p_node->>'schema' IS DISTINCT FROM 'smarter-poker.pio-policy.v3'
+     OR COALESCE(p_node->>'node','') !~ '^r:[0-9]+(:[cf]|:b[1-9][0-9]*|:[2-9TJQKA][cdhs])*$'
+     OR COALESCE(p_node->>'node_checksum','') !~ '^[0-9a-f]{64}$'
+     OR COALESCE(p_node->>'source_combo_order_checksum','') !~ '^[0-9a-f]{64}$'
+     OR p_node->>'source_combo_order_checksum'=repeat('0',64)
+     OR COALESCE(p_node->>'range_bundle_checksum','') !~ '^[0-9a-f]{64}$'
+     OR p_node->>'range_bundle_checksum'=repeat('0',64)
+     OR jsonb_typeof(v_context)<>'object'
+     OR (SELECT count(*) FROM jsonb_object_keys(v_context))<>16
+     OR NOT (v_context ?& ARRAY['street','game_family','objective','utility_context',
+       'table_size','pot_type','hero_position','opponent_position','depth_bucket',
+       'texture_class','node_role','facing_kind','facing_size_bucket','board',
+       'facing_target_chips','facing_actor_total_chips'])
+     OR COALESCE(v_board,'') !~ '^([2-9TJQKA][cdhs]){3,5}$'
+     OR length(v_board) <> (CASE v_context->>'street'
+       WHEN 'flop' THEN 6 WHEN 'turn' THEN 8 WHEN 'river' THEN 10 ELSE 0 END)
+     OR COALESCE(v_context->>'game_family','') NOT IN ('cash','spin','tourney_ev','tourney_icm')
+     OR COALESCE(v_context->>'objective','') NOT IN ('cash_ev','chip_ev','icm')
+     OR COALESCE(v_context->>'utility_context','') NOT IN
+       ('cash_ev','chip_ev','spin_ladder','satellite','bubble','final_table','in_money','ladder')
+     OR COALESCE(v_context->>'pot_type','') NOT IN ('limped','srp','3bet','4bet_plus')
+     OR COALESCE((v_context->>'depth_bucket')::integer,0) NOT IN (10,20,40,80,150)
+     OR COALESCE(v_context->>'texture_class','') !~ '^[ABML][mtr][pu][cd]$'
+     OR v_context->>'texture_class' IS DISTINCT FROM public.fn_gto_texture_class_any(v_board)
+     OR COALESCE(v_role,'') NOT IN ('open','cbet','probe','delayed_cbet','barrel','facing_bet','facing_raise','check_raise','bet_raise','all_in')
+     OR jsonb_typeof(v_line_proof)<>'object'
+     OR (SELECT count(*) FROM jsonb_object_keys(v_line_proof))<>7
+     OR NOT (v_line_proof ?& ARRAY['schema','manifest_checksum','hero_solver_player',
+       'preflop_aggressor_solver_player','root_pot_chips','effective_stack_chips',
+       'chips_per_bb'])
+     OR v_line_proof->>'schema' IS DISTINCT FROM 'smarter-poker.pio-line-proof.v1'
+     OR COALESCE(v_line_proof->>'manifest_checksum','') !~ '^[0-9a-f]{64}$'
+     OR v_line_proof->>'manifest_checksum'=repeat('0',64)
+     OR jsonb_typeof(v_line_proof->'hero_solver_player')<>'number'
+     OR COALESCE((v_line_proof->>'hero_solver_player')::integer,-1) NOT IN (0,1)
+     OR jsonb_typeof(v_line_proof->'preflop_aggressor_solver_player') NOT IN ('number','null')
+     OR (jsonb_typeof(v_line_proof->'preflop_aggressor_solver_player')='number'
+       AND (v_line_proof->>'preflop_aggressor_solver_player')::integer NOT IN (0,1))
+     OR jsonb_typeof(v_line_proof->'root_pot_chips')<>'number'
+     OR jsonb_typeof(v_line_proof->'effective_stack_chips')<>'number'
+     OR jsonb_typeof(v_line_proof->'chips_per_bb')<>'number'
+     OR jsonb_typeof(v_specs)<>'object'
+     OR (SELECT count(*) FROM jsonb_object_keys(v_specs))<2
+     OR jsonb_typeof(v_frequencies)<>'object'
+     OR jsonb_typeof(v_action_evs)<>'object'
+     OR jsonb_typeof(v_policy_evs)<>'array' OR jsonb_array_length(v_policy_evs)<>1326
+     OR jsonb_typeof(v_matchups)<>'array' OR jsonb_array_length(v_matchups)<>1326
+     OR (SELECT count(*) FROM jsonb_object_keys(v_frequencies))<>(SELECT count(*) FROM jsonb_object_keys(v_specs))
+     OR (SELECT count(*) FROM jsonb_object_keys(v_action_evs))<>(SELECT count(*) FROM jsonb_object_keys(v_specs)) THEN
+    RETURN false;
+  END IF;
+
+  v_hero_solver_player:=(v_line_proof->>'hero_solver_player')::integer;
+  IF jsonb_typeof(v_line_proof->'preflop_aggressor_solver_player')='number' THEN
+    v_preflop_aggressor:=(v_line_proof->>'preflop_aggressor_solver_player')::integer;
+  END IF;
+  v_root_pot_chips:=(v_line_proof->>'root_pot_chips')::numeric;
+  v_effective_stack_chips:=(v_line_proof->>'effective_stack_chips')::numeric;
+  v_chips_per_bb:=(v_line_proof->>'chips_per_bb')::numeric;
+  IF v_root_pot_chips<=0 OR v_effective_stack_chips<=0 OR v_chips_per_bb<=0
+     OR v_root_pot_chips<>trunc(v_root_pot_chips)
+     OR v_effective_stack_chips<>trunc(v_effective_stack_chips)
+     OR v_chips_per_bb<>trunc(v_chips_per_bb)
+     OR v_effective_stack_chips<>((v_context->>'depth_bucket')::numeric*v_chips_per_bb) THEN
+    RETURN false;
+  END IF;
+  IF (v_context->>'pot_type'='limped') IS DISTINCT FROM (v_preflop_aggressor IS NULL) THEN
+    RETURN false;
+  END IF;
+
+  FOR v_i IN 0..length(v_board)/2-1 LOOP
+    v_card:=substr(v_board,v_i*2+1,2);
+    IF v_card=ANY(v_cards) THEN RETURN false; END IF;
+    v_cards:=array_append(v_cards,v_card);
+  END LOOP;
+  SELECT COALESCE(array_agg(token ORDER BY ordinal),'{}'::text[]) INTO v_node_cards
+    FROM unnest(string_to_array(p_node->>'node',':')) WITH ORDINALITY part(token,ordinal)
+   WHERE token~'^[2-9TJQKA][cdhs]$';
+  IF length(v_board)/2>3 THEN
+    FOR v_i IN 3..length(v_board)/2-1 LOOP
+      v_expected_node_cards:=array_append(v_expected_node_cards,substr(v_board,v_i*2+1,2));
+    END LOOP;
+  END IF;
+  IF v_node_cards IS DISTINCT FROM v_expected_node_cards THEN RETURN false; END IF;
+  v_derived_line:=public.fn_gto_v31_node_line_proof(
+    p_node->>'node',
+    v_preflop_aggressor,
+    v_root_pot_chips,
+    v_effective_stack_chips
+  );
+  v_line_role:=v_derived_line->>'derived_node_role';
+  IF v_derived_line IS NULL
+     OR v_derived_line->>'street' IS DISTINCT FROM v_context->>'street'
+     OR COALESCE((v_derived_line->>'current_actor_solver_player')::integer,-1)<>v_hero_solver_player
+     OR v_line_role<>v_role
+     OR v_derived_line->>'derived_facing_kind' IS DISTINCT FROM v_facing
+     OR v_derived_line->>'derived_facing_size_bucket' IS DISTINCT FROM v_bucket
+     OR v_derived_line->'facing_target_chips' IS DISTINCT FROM v_context->'facing_target_chips'
+     OR v_derived_line->'facing_actor_total_chips' IS DISTINCT FROM v_context->'facing_actor_total_chips' THEN
+    RETURN false;
+  END IF;
+  v_last_token := (string_to_array(p_node->>'node',':'))[
+    array_length(string_to_array(p_node->>'node',':'),1)
+  ];
+  IF v_role IN ('open','cbet','probe','delayed_cbet','barrel') THEN
+    IF v_context->'facing_target_chips' IS DISTINCT FROM 'null'::jsonb
+       OR v_context->'facing_actor_total_chips' IS DISTINCT FROM 'null'::jsonb THEN
+      RETURN false;
+    END IF;
+  ELSE
+    IF v_last_token !~ '^b[1-9][0-9]*$'
+       OR jsonb_typeof(v_context->'facing_target_chips')<>'number'
+       OR jsonb_typeof(v_context->'facing_actor_total_chips')<>'number' THEN
+      RETURN false;
+    END IF;
+    v_facing_target := (v_context->>'facing_target_chips')::numeric;
+    v_facing_actor_total := (v_context->>'facing_actor_total_chips')::numeric;
+    IF v_facing_target <= 0 OR v_facing_actor_total <= 0
+       OR v_facing_target > v_facing_actor_total
+       OR v_facing_target <> substring(v_last_token FROM 2)::numeric
+       OR (v_role='all_in' AND v_facing_target<>v_facing_actor_total)
+       OR (v_role<>'all_in' AND v_facing_target>=v_facing_actor_total) THEN
+      RETURN false;
+    END IF;
+  END IF;
+  v_table_size := (v_context->>'table_size')::integer;
+  v_allowed_positions := CASE v_table_size
+    WHEN 2 THEN ARRAY['SB','BB'] WHEN 3 THEN ARRAY['SB','BB','BTN']
+    WHEN 4 THEN ARRAY['SB','BB','CO','BTN'] WHEN 5 THEN ARRAY['SB','BB','HJ','CO','BTN']
+    WHEN 6 THEN ARRAY['SB','BB','UTG','HJ','CO','BTN']
+    WHEN 7 THEN ARRAY['SB','BB','UTG','MP','HJ','CO','BTN']
+    WHEN 8 THEN ARRAY['SB','BB','UTG','UTG1','MP','HJ','CO','BTN']
+    WHEN 9 THEN ARRAY['SB','BB','UTG','UTG1','UTG2','MP','HJ','CO','BTN']
+    WHEN 10 THEN ARRAY['SB','BB','UTG','UTG1','UTG2','UTG3','MP','HJ','CO','BTN']
+    ELSE NULL END;
+  IF v_allowed_positions IS NULL
+     OR NOT (v_context->>'hero_position'=ANY(v_allowed_positions))
+     OR NOT (v_context->>'opponent_position'=ANY(v_allowed_positions))
+     OR v_context->>'hero_position'=v_context->>'opponent_position'
+     OR NOT ((v_context->>'game_family'='cash' AND v_context->>'objective'='cash_ev' AND v_context->>'utility_context'='cash_ev')
+       OR (v_context->>'game_family'='spin' AND v_context->>'objective'='chip_ev' AND v_context->>'utility_context'='chip_ev')
+       OR (v_context->>'game_family'='spin' AND v_context->>'objective'='icm' AND v_context->>'utility_context'='spin_ladder')
+       OR (v_context->>'game_family'='tourney_ev' AND v_context->>'objective'='chip_ev' AND v_context->>'utility_context'='chip_ev')
+       OR (v_context->>'game_family'='tourney_icm' AND v_context->>'objective'='icm' AND
+           v_context->>'utility_context' IN ('satellite','bubble','final_table','in_money','ladder'))) THEN
+    RETURN false;
+  END IF;
+  IF (v_role IN ('open','cbet','probe','delayed_cbet','barrel') AND (v_facing<>'none' OR v_bucket<>'none'))
+     OR (v_role='all_in' AND (v_facing<>'all_in' OR v_bucket<>'all_in'))
+     OR (v_role='facing_bet' AND (v_facing<>'bet' OR v_bucket NOT IN ('small','mid','big')))
+     OR (v_role IN ('facing_raise','check_raise','bet_raise') AND
+         (v_facing<>'raise' OR v_bucket NOT IN ('small','mid','big'))) THEN RETURN false; END IF;
+
+  FOR v_action IN SELECT key,value FROM jsonb_each(v_specs) LOOP
+    IF NOT (v_frequencies?v_action.key) OR NOT (v_action_evs?v_action.key)
+       OR jsonb_typeof(v_action.value)<>'object'
+       OR jsonb_typeof(v_frequencies->v_action.key)<>'array'
+       OR jsonb_array_length(v_frequencies->v_action.key)<>1326
+       OR jsonb_typeof(v_action_evs->v_action.key)<>'array'
+       OR jsonb_array_length(v_action_evs->v_action.key)<>1326 THEN RETURN false; END IF;
+    v_family:=v_action.value->>'family'; v_unit:=v_action.value->>'size_unit';
+    IF v_family NOT IN ('check','fold','call','bet','raise','all_in') THEN RETURN false; END IF;
+    v_has_check:=v_has_check OR v_family='check'; v_has_fold:=v_has_fold OR v_family='fold';
+    v_has_call:=v_has_call OR v_family='call'; v_has_bet:=v_has_bet OR v_family='bet';
+    IF v_family IN ('check','fold','call') THEN
+      IF v_unit IS DISTINCT FROM 'none' OR v_action.value->'size_value' IS DISTINCT FROM 'null'::jsonb
+         OR (v_action.value->>'all_in')::boolean IS DISTINCT FROM false THEN RETURN false; END IF;
+    ELSIF v_family='all_in' THEN
+      IF v_unit IS DISTINCT FROM 'all_in' OR v_action.value->'size_value' IS DISTINCT FROM 'null'::jsonb
+         OR (v_action.value->>'all_in')::boolean IS DISTINCT FROM true THEN RETURN false; END IF;
+    ELSE
+      v_size:=(v_action.value->>'size_value')::numeric;
+      IF v_size<=0 OR v_size>20 OR COALESCE((v_action.value->>'all_in')::boolean,false)
+         OR (v_family='bet' AND v_unit<>'pot_fraction')
+         OR (v_family='raise' AND v_unit<>'pot_after_call_fraction') THEN RETURN false; END IF;
+    END IF;
+  END LOOP;
+  IF v_role IN ('open','cbet','probe','delayed_cbet','barrel') THEN
+    IF NOT v_has_check OR v_has_fold OR v_has_call THEN RETURN false; END IF;
+  ELSIF v_role='all_in' THEN
+    IF NOT v_has_fold OR NOT v_has_call OR v_has_check OR v_has_bet
+       OR EXISTS (SELECT 1 FROM jsonb_each(v_specs) s WHERE s.value->>'family' NOT IN ('fold','call')) THEN RETURN false; END IF;
+  ELSE
+    IF NOT v_has_fold OR NOT v_has_call OR v_has_check OR v_has_bet THEN RETURN false; END IF;
+  END IF;
+
+  -- Decode each vector once; JSON numbers remain exact NUMERIC values.
+  SELECT array_agg(key ORDER BY ordinality) INTO v_action_keys FROM jsonb_each(v_specs) WITH ORDINALITY;
+  SELECT array_agg(CASE WHEN jsonb_typeof(value)='number' THEN (value#>>'{}')::numeric END ORDER BY ordinality),
+         bool_and(jsonb_typeof(value)='number') INTO v_weights,v_types_ok
+    FROM jsonb_array_elements(v_matchups) WITH ORDINALITY;
+  IF v_types_ok IS NOT TRUE THEN RETURN false; END IF;
+  SELECT array_agg(CASE WHEN jsonb_typeof(value)='number' THEN (value#>>'{}')::numeric END ORDER BY ordinality),
+         bool_and(jsonb_typeof(value) IN ('number','null')) INTO v_policies,v_types_ok
+    FROM jsonb_array_elements(v_policy_evs) WITH ORDINALITY;
+  IF v_types_ok IS NOT TRUE THEN RETURN false; END IF;
+  FOREACH v_action_key IN ARRAY v_action_keys LOOP
+    SELECT array_agg(CASE WHEN jsonb_typeof(value)='number' THEN (value#>>'{}')::numeric END ORDER BY ordinality),
+           bool_and(jsonb_typeof(value)='number') INTO v_decoded,v_types_ok
+      FROM jsonb_array_elements(v_frequencies->v_action_key) WITH ORDINALITY;
+    IF v_types_ok IS NOT TRUE THEN RETURN false; END IF;
+    v_frequency_values:=v_frequency_values||ARRAY[v_decoded];
+    SELECT array_agg(CASE WHEN jsonb_typeof(value)='number' THEN (value#>>'{}')::numeric END ORDER BY ordinality),
+           bool_and(jsonb_typeof(value) IN ('number','null')) INTO v_decoded,v_types_ok
+      FROM jsonb_array_elements(v_action_evs->v_action_key) WITH ORDINALITY;
+    IF v_types_ok IS NOT TRUE THEN RETURN false; END IF;
+    v_ev_values:=v_ev_values||ARRAY[v_decoded];
+  END LOOP;
+  SELECT array_agg((strpos('23456789TJQKA',left(card,1))-1)*4+strpos('cdhs',right(card,1))-1)
+    INTO v_board_ids FROM unnest(v_cards) card;
+  SELECT array_agg(a=ANY(v_board_ids) OR b=ANY(v_board_ids) ORDER BY b,a)
+    INTO v_blocked FROM generate_series(1,51) b CROSS JOIN generate_series(0,50) a WHERE a<b;
+  FOR v_i IN 0..1325 LOOP
+    v_weight:=v_weights[v_i+1];
+    IF v_weight<0 THEN RETURN false; END IF;
+    v_frequency_sum:=0; v_expected_ev:=0;
+    FOR v_action_index IN 1..cardinality(v_action_keys) LOOP
+      v_frequency:=v_frequency_values[v_action_index][v_i+1];
+      IF v_frequency<0 OR v_frequency>1 THEN RETURN false; END IF;
+      v_frequency_sum:=v_frequency_sum+v_frequency;
+      v_action_ev:=v_ev_values[v_action_index][v_i+1];
+      IF v_weight>0 THEN
+        IF v_action_ev IS NULL THEN RETURN false; END IF;
+        v_expected_ev:=v_expected_ev+v_frequency*v_action_ev;
+      ELSIF v_frequency<>0 OR v_action_ev IS NOT NULL THEN RETURN false;
+      END IF;
+    END LOOP;
+    v_policy_ev:=v_policies[v_i+1];
+    IF v_weight>0 THEN
+      IF abs(v_frequency_sum-1)>0.00002 OR v_policy_ev IS NULL THEN RETURN false; END IF;
+      IF abs(v_policy_ev-v_expected_ev)>0.02 THEN RETURN false; END IF;
+    ELSIF v_frequency_sum<>0 OR v_policy_ev IS NOT NULL THEN RETURN false;
+    END IF;
+    IF v_blocked[v_i+1] AND v_weight<>0 THEN RETURN false; END IF;
+  END LOOP;
+  RETURN true;
+EXCEPTION WHEN OTHERS THEN RETURN false;
+END;
+$fn$;
+CREATE OR REPLACE FUNCTION public.fn_gto_v31_source_node_v3_valid(p_node jsonb)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path=public AS $fn$
+BEGIN
+ IF p_node->>'node_checksum' IS DISTINCT FROM public.fn_gto_v31_node_checksum(p_node) THEN RETURN false; END IF;
+ RETURN public.fn_gto_v31_source_node_v3_fields_valid(p_node);
+EXCEPTION WHEN OTHERS THEN RETURN false;
+END;
+$fn$;
+CREATE OR REPLACE FUNCTION public.fn_gto_v31_source_node_v4_valid(p_node jsonb)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path=public AS $fn$
+DECLARE
+ projected jsonb; state jsonb:=p_node->'complete_public_state';
+ ranges jsonb:=p_node->'solver_ranges'; utility jsonb:=state->'utility';
+ model jsonb:=utility->'icm_model'; rake jsonb:=utility->'rake';
+ actor text; side text; value numeric; i integer; a integer; b integer;
+ board_ids integer[]:=ARRAY[]::integer[]; card text; weight numeric;
+ oop_values numeric[];ip_values numeric[];range_values numeric[];matchup_values numeric[];numeric_values boolean;
+BEGIN
+ IF p_node IS NULL OR jsonb_typeof(p_node) IS DISTINCT FROM 'object'
+ OR (SELECT count(*) FROM jsonb_object_keys(p_node))<>14
+ OR NOT (p_node ?& ARRAY['schema','node','node_checksum','node_context','line_proof','action_specs',
+ 'frequencies','policy_evs_bb','action_evs_bb','matchups','source_combo_order_checksum',
+ 'range_bundle_checksum','complete_public_state','solver_ranges'])
+ OR p_node->>'schema' IS DISTINCT FROM 'smarter-poker.pio-policy.v4'
+ OR p_node->>'node_checksum' IS DISTINCT FROM public.fn_gto_v31_node_checksum(p_node)
+ OR jsonb_typeof(state) IS DISTINCT FROM 'object'
+ OR state IS DISTINCT FROM public.fn_gto_v31_complete_public_state(p_node)
+ OR jsonb_typeof(utility) IS DISTINCT FROM 'object'
+ OR (SELECT count(*) FROM jsonb_object_keys(utility))<>5
+ OR NOT utility ?& ARRAY['objective','utility_context','rake','icm_model_bundle_checksum','icm_model']
+ OR utility->'objective' IS DISTINCT FROM p_node#>'{node_context,objective}'
+ OR utility->'utility_context' IS DISTINCT FROM p_node#>'{node_context,utility_context}'
+ OR jsonb_typeof(utility->'icm_model_bundle_checksum') IS DISTINCT FROM 'string'
+ OR COALESCE(utility->>'icm_model_bundle_checksum','') !~ '^[0-9a-f]{64}$'
+ OR utility->>'icm_model_bundle_checksum'=repeat('0',64)
+ OR jsonb_typeof(ranges) IS DISTINCT FROM 'object'
+ OR (SELECT count(*) FROM jsonb_object_keys(ranges))<>3
+ OR NOT ranges ?& ARRAY['schema','OOP','IP']
+ OR ranges->>'schema' IS DISTINCT FROM 'smarter-poker.pio-exact-node-ranges.v1' THEN RETURN false; END IF;
+ IF utility->>'objective'='icm' THEN
+  IF rake IS DISTINCT FROM '[0,0]'::jsonb OR jsonb_typeof(model) IS DISTINCT FROM 'object'
+  OR (SELECT count(*) FROM jsonb_object_keys(model))<>6
+  OR NOT model ?& ARRAY['model_id','source_snapshot_checksum','oop_stack_chips','ip_stack_chips','root_pot_chips','payout_per_chip']
+  OR jsonb_typeof(model->'model_id') IS DISTINCT FROM 'string' OR length(model->>'model_id') NOT BETWEEN 1 AND 128
+  OR jsonb_typeof(model->'source_snapshot_checksum') IS DISTINCT FROM 'string'
+  OR model->>'source_snapshot_checksum' !~ '^[0-9a-f]{64}$'
+  OR model->>'source_snapshot_checksum'=repeat('0',64)
+  OR NOT public.fn_gto_v31_json_safe_integer(model->'oop_stack_chips',1,9007199254740991)
+  OR NOT public.fn_gto_v31_json_safe_integer(model->'ip_stack_chips',1,9007199254740991)
+  OR model->'root_pot_chips' IS DISTINCT FROM p_node#>'{line_proof,root_pot_chips}'
+  OR jsonb_typeof(model->'payout_per_chip') IS DISTINCT FROM 'number'
+  OR (model->>'payout_per_chip')::numeric<=0 THEN RETURN false; END IF;
+ ELSE
+  IF model IS DISTINCT FROM 'null'::jsonb OR jsonb_typeof(rake) IS DISTINCT FROM 'array'
+  OR jsonb_array_length(rake)<>2 OR jsonb_typeof(rake->0) IS DISTINCT FROM 'number'
+  OR (rake->>0)::numeric NOT BETWEEN 0 AND 1
+  OR NOT public.fn_gto_v31_json_safe_integer(rake->1,0,9007199254740991) THEN RETURN false; END IF;
+ END IF;
+ projected:=(p_node-'complete_public_state'-'solver_ranges')||
+  jsonb_build_object('schema','smarter-poker.pio-policy.v3','node_checksum',p_node->>'node_checksum');
+ IF NOT public.fn_gto_v31_source_node_v3_fields_valid(projected) THEN RETURN false; END IF;
+ FOR card IN SELECT substring(p_node#>>'{node_context,board}' FROM k FOR 2)
+   FROM generate_series(1,length(p_node#>>'{node_context,board}'),2) k LOOP
+  board_ids:=array_append(board_ids,(strpos('23456789TJQKA',left(card,1))-1)*4+strpos('cdhs',right(card,1))-1);
+ END LOOP;
+ actor:=CASE p_node#>>'{line_proof,hero_solver_player}' WHEN '0' THEN 'OOP' ELSE 'IP' END;
+ -- Decode each full range exactly once; all JSON type guards remain strict.
+ FOREACH side IN ARRAY ARRAY['OOP','IP'] LOOP
+  IF jsonb_typeof(ranges->side) IS DISTINCT FROM 'array' OR jsonb_array_length(ranges->side)<>1326 THEN RETURN false; END IF;
+  SELECT array_agg(CASE WHEN jsonb_typeof(e.value)='number' THEN (e.value#>>'{}')::numeric END ORDER BY e.ordinality),
+   bool_and(jsonb_typeof(e.value)='number') INTO range_values,numeric_values
+  FROM jsonb_array_elements(ranges->side) WITH ORDINALITY e;
+  IF numeric_values IS DISTINCT FROM true THEN RETURN false;END IF;
+  IF side='OOP' THEN oop_values:=range_values;ELSE ip_values:=range_values;END IF;
+ END LOOP;
+ -- The unchanged complete V3 validator above owns matchup types/shape/bounds.
+ -- #>>'{}' preserves the original ->>i numeric conversion, including SQL NULL.
+ SELECT array_agg((e.value#>>'{}')::numeric ORDER BY e.ordinality) INTO matchup_values
+ FROM jsonb_array_elements(p_node->'matchups') WITH ORDINALITY e;
+ FOREACH side IN ARRAY ARRAY['OOP','IP'] LOOP
+  range_values:=CASE side WHEN 'OOP' THEN oop_values ELSE ip_values END;
+  i:=0;
+  FOR b IN 1..51 LOOP FOR a IN 0..b-1 LOOP
+   value:=range_values[i+1];
+   IF value NOT BETWEEN 0 AND 1 OR ((a=ANY(board_ids) OR b=ANY(board_ids)) AND value<>0) THEN RETURN false; END IF;
+   weight:=matchup_values[i+1];
+   IF side=actor AND weight>0 AND value<=0 THEN RETURN false; END IF;
+   i:=i+1;
+  END LOOP; END LOOP;
+ END LOOP;
+ RETURN true;
+EXCEPTION WHEN OTHERS THEN RETURN false;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.fn_gto_v31_source_node_v3_fields_valid(jsonb) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_gto_v31_source_node_v3_fields_valid(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_gto_v31_public215_model_canonical_fast(jsonb) FROM PUBLIC,anon,authenticated,service_role;
 DO $verify$
 BEGIN
+ IF EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid IN('public.fn_gto_v31_public215_model_canonical_fast(jsonb)'::regprocedure,'public.fn_gto_v31_source_node_v3_fields_valid(jsonb)'::regprocedure) AND p.proowner<>(SELECT proowner FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v3_valid(jsonb)'::regprocedure)) THEN RAISE EXCEPTION 'V31 new validation helper owner differs';END IF;
  IF EXISTS(SELECT 1 FROM pg_temp.v31_seal_validation_preimage b JOIN pg_proc p ON p.oid=b.oid WHERE (to_jsonb(p)-'prosrc') IS DISTINCT FROM b.metadata)
- OR (SELECT count(*) FROM pg_temp.v31_seal_validation_preimage)<>4 THEN RAISE EXCEPTION 'V31 OID/signature/owner/ACL/settings changed'; END IF;
+ OR (SELECT count(*) FROM pg_temp.v31_seal_validation_preimage)<>6 THEN RAISE EXCEPTION 'V31 OID/signature/owner/ACL/settings changed'; END IF;
  IF EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
  WHERE p.oid='public.fn_gto_v31_public215_model_canonical_fast(jsonb)'::regprocedure AND a.grantee<>p.proowner) THEN RAISE EXCEPTION 'V31 serialization helper must remain internal'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_model_canonical_fast(jsonb)'::regprocedure)<>'19dc4b1342d33ff48c70a1715f3fe7d0' THEN RAISE EXCEPTION 'V31 postimage differs: fn_gto_v31_public215_model_canonical_fast'; END IF;
- IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_canonical(jsonb)'::regprocedure)<>'1860f48794d139dcf174c4294bf5dce7' THEN RAISE EXCEPTION 'V31 postimage differs: fn_gto_v31_public215_canonical'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_canonical(jsonb)'::regprocedure)<>'9fdfaf295bb19eaff360d5b3cb9a111a' THEN RAISE EXCEPTION 'V31 postimage differs: fn_gto_v31_public215_canonical'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_model_valid(jsonb)'::regprocedure)<>'762098f8d28855034cacd38ae2918fcb' THEN RAISE EXCEPTION 'V31 postimage differs: fn_gto_v31_public215_model_valid'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_cell_payload_checksum(jsonb)'::regprocedure)<>'1c6ca7903c209964f2c4cb442036e7de' THEN RAISE EXCEPTION 'V31 postimage differs: fn_gto_v31_cell_payload_checksum'; END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_seal_build(uuid)'::regprocedure)<>'e74b379a151846969ec4b1071288c80b' THEN RAISE EXCEPTION 'V31 postimage differs: fn_gto_v31_seal_build'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v3_valid(jsonb)'::regprocedure)<>'13b7724a355d40bcc1ca9eb5a8888127' THEN RAISE EXCEPTION 'V31 postimage differs: fn_gto_v31_source_node_v3_valid'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v4_valid(jsonb)'::regprocedure)<>'4757f9005ca956a453ce7be1f5e70d25' THEN RAISE EXCEPTION 'V31 postimage differs: fn_gto_v31_source_node_v4_valid'; END IF;
+ IF EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE p.oid='public.fn_gto_v31_source_node_v3_fields_valid(jsonb)'::regprocedure AND a.grantee NOT IN(p.proowner,'service_role'::regrole)) OR NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid='public.fn_gto_v31_source_node_v3_fields_valid(jsonb)'::regprocedure AND NOT p.prosecdef AND has_function_privilege('service_role',p.oid,'EXECUTE') AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) THEN RAISE EXCEPTION 'V31 source fields helper ACL or invoker changed'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v3_fields_valid(jsonb)'::regprocedure)<>'56dad8b4161a1a112d9b72c814efdbfd' THEN RAISE EXCEPTION 'V31 source fields helper postimage differs'; END IF;
  IF (public.fn_gto_v31_public215_physics_implementation()='66f413bc9179d5b10df7c5a73547931c47a3e90fd7895c4de596c7287e98e733' AND public.fn_gto_v31_public215_encoding_implementation()='1121d3ff6873757d8560e55f397e29df8978cc8b845259bbaa2c529f40950f6d') IS NOT TRUE THEN RAISE EXCEPTION 'V31 numerical implementations changed'; END IF;
 END $verify$;
+-- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_model_canonical_fast(jsonb)'::regprocedure)='19dc4b1342d33ff48c70a1715f3fe7d0' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_canonical(jsonb)'::regprocedure)='9fdfaf295bb19eaff360d5b3cb9a111a' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_model_valid(jsonb)'::regprocedure)='762098f8d28855034cacd38ae2918fcb' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_cell_payload_checksum(jsonb)'::regprocedure)='1c6ca7903c209964f2c4cb442036e7de' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_seal_build(uuid)'::regprocedure)='e74b379a151846969ec4b1071288c80b' AND public.fn_gto_v31_public215_physics_implementation()='66f413bc9179d5b10df7c5a73547931c47a3e90fd7895c4de596c7287e98e733' AND public.fn_gto_v31_public215_encoding_implementation()='1121d3ff6873757d8560e55f397e29df8978cc8b845259bbaa2c529f40950f6d' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v3_fields_valid(jsonb)'::regprocedure)='56dad8b4161a1a112d9b72c814efdbfd' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v3_valid(jsonb)'::regprocedure)='13b7724a355d40bcc1ca9eb5a8888127' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v4_valid(jsonb)'::regprocedure)='4757f9005ca956a453ce7be1f5e70d25'
 COMMIT;
--- @live-proof: (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_model_canonical_fast(jsonb)'::regprocedure)='19dc4b1342d33ff48c70a1715f3fe7d0' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_canonical(jsonb)'::regprocedure)='1860f48794d139dcf174c4294bf5dce7' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_public215_model_valid(jsonb)'::regprocedure)='762098f8d28855034cacd38ae2918fcb' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_cell_payload_checksum(jsonb)'::regprocedure)='1c6ca7903c209964f2c4cb442036e7de' AND (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_gto_v31_seal_build(uuid)'::regprocedure)='e74b379a151846969ec4b1071288c80b' AND public.fn_gto_v31_public215_physics_implementation()='66f413bc9179d5b10df7c5a73547931c47a3e90fd7895c4de596c7287e98e733' AND public.fn_gto_v31_public215_encoding_implementation()='1121d3ff6873757d8560e55f397e29df8978cc8b845259bbaa2c529f40950f6d'

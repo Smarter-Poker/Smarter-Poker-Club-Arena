@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='seal-validators-', dir=base) as folder,
         source=SOURCE.read_text()
         def definition(name):
             return re.search(r'CREATE(?: OR REPLACE)? FUNCTION public\.'+name+r'\(.*?\$fn\$;',source,re.S).group()
-        sql("CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;CREATE SCHEMA auth;CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$SELECT 'service_role'::text$$;CREATE SCHEMA extensions;CREATE EXTENSION pgcrypto WITH SCHEMA extensions;")
+        sql("CREATE ROLE anon LOGIN;CREATE ROLE authenticated LOGIN;CREATE ROLE service_role LOGIN;CREATE SCHEMA auth;CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$SELECT 'service_role'::text$$;CREATE SCHEMA extensions;CREATE EXTENSION pgcrypto WITH SCHEMA extensions;")
         # Controlled unchanged dependency fixtures only: this is pure-validator,
         # not physics or legacy matrix qualification. Real hash owner is retained.
         oldbase=(ROOT/'supabase/migrations/20260908181657_the_horse_reads_only_a_certified_solver_dataset.sql').read_text()
@@ -74,12 +74,12 @@ with tempfile.TemporaryDirectory(prefix='seal-validators-', dir=base) as folder,
         sql(originals['fn_gto_v31_public215_canonical'].replace('public.fn_gto_v31_public215_canonical','public.baseline_canonical'))
         sql(originals['fn_gto_v31_public215_model_valid'].replace('public.fn_gto_v31_public215_model_valid','public.baseline_model_valid').replace('public.fn_gto_v31_public215_canonical','public.baseline_canonical'))
         sql(originals['fn_gto_v31_cell_payload_checksum'].replace('public.fn_gto_v31_cell_payload_checksum(','public.baseline_payload_checksum('))
-        seal=HERE/'public215-seal-before.sql';assert hashlib.sha256(seal.read_bytes()).hexdigest()=='5f7999c52f589ff96fd03d5994f610a24f3b488b560934368e2f18844a3eba8a'
+        seal=HERE/'public215-seal-before.sql';assert hashlib.sha256(seal.read_bytes()).hexdigest()=='b5a9f4c1f679bbdc80c52127296a55b2b36be855112f62d905cb5d6b8a6f0f1b'
         sql(seal.read_text().rstrip().rstrip(';')+';')
         for name in names:
             sql('REVOKE ALL ON FUNCTION public.'+name+'('+('text' if name.endswith('_f64') else 'jsonb')+') FROM PUBLIC,anon,authenticated,service_role')
         sql('REVOKE ALL ON FUNCTION public.fn_gto_v31_seal_build(uuid) FROM PUBLIC,anon,authenticated;GRANT EXECUTE ON FUNCTION public.fn_gto_v31_seal_build(uuid) TO service_role;')
-        sigs=[name+'('+('text' if name.endswith('_f64') else 'jsonb')+')' for name in names]+['fn_gto_v31_seal_build(uuid)']
+        sigs=[name+'('+('text' if name.endswith('_f64') else 'jsonb')+')' for name in names]+['fn_gto_v31_seal_build(uuid)']+['fn_gto_v31_source_node_v3_valid(jsonb)','fn_gto_v31_source_node_v4_valid(jsonb)']
         metadata=lambda:"SELECT jsonb_object_agg(oid::regprocedure::text,to_jsonb(p)-'prosrc') FROM pg_proc p WHERE oid IN("+','.join("'public."+sig+"'::regprocedure" for sig in sigs)+")"
         before_metadata=sql(metadata());before_f64=sql("SELECT pg_get_functiondef('public.fn_gto_v31_public215_f64(text)'::regprocedure)")
         sql(MIGRATION.read_text())
@@ -87,7 +87,12 @@ with tempfile.TemporaryDirectory(prefix='seal-validators-', dir=base) as folder,
         assert sql("SELECT pg_get_functiondef('public.fn_gto_v31_public215_f64(text)'::regprocedure)")==before_f64,'numeric f64 owner changed'
         for proof in re.findall(r'^-- @live-proof: (.+)$',MIGRATION.read_text(),re.M):assert sql('SELECT '+proof)=='t'
         # Every additive helper must remain inaccessible to caller roles.
-        assert sql("SELECT bool_and(NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('authenticated',oid,'EXECUTE') AND NOT has_function_privilege('service_role',oid,'EXECUTE')) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname LIKE 'fn_gto_v31_%' AND oid NOT IN("+','.join("'public."+sig+"'::regprocedure" for sig in sigs)+",'public.fn_gto_v31_json_checksum(jsonb)'::regprocedure,'public.fn_gto_v31_cell_payload_checksum_matrix_v2(jsonb)'::regprocedure,'public.fn_gto_v31_public215_physics_implementation()'::regprocedure,'public.fn_gto_v31_public215_encoding_implementation()'::regprocedure)")=='t'
+        assert sql("SELECT bool_and(NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('authenticated',oid,'EXECUTE') AND NOT has_function_privilege('service_role',oid,'EXECUTE')) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname LIKE 'fn_gto_v31_%' AND oid NOT IN("+','.join("'public."+sig+"'::regprocedure" for sig in sigs)+",'public.fn_gto_v31_source_node_v3_fields_valid(jsonb)'::regprocedure,'public.fn_gto_v31_json_checksum(jsonb)'::regprocedure,'public.fn_gto_v31_cell_payload_checksum_matrix_v2(jsonb)'::regprocedure,'public.fn_gto_v31_public215_physics_implementation()'::regprocedure,'public.fn_gto_v31_public215_encoding_implementation()'::regprocedure)")=='t'
+        assert sql("SELECT NOT prosecdef AND has_function_privilege('service_role',oid,'EXECUTE') AND NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('authenticated',oid,'EXECUTE') FROM pg_proc WHERE oid='public.fn_gto_v31_source_node_v3_fields_valid(jsonb)'::regprocedure")== 't'
+        for function in ['fn_gto_v31_source_node_v3_fields_valid','fn_gto_v31_source_node_v3_valid','fn_gto_v31_source_node_v4_valid']:
+            assert sql("SELECT public."+function+"('{}'::jsonb)",role='service_role')=='f'
+            for denied in ['anon','authenticated']:
+                sql("SELECT public."+function+"('{}'::jsonb)",role=denied,error='permission denied')
         def lit(value):return "'"+json.dumps(value,ensure_ascii=True,separators=(',',':')).replace("'","''")+"'::jsonb"
         def equal_canonical(value):
             text=lit(value);assert sql('SELECT public.baseline_canonical('+text+')=public.fn_gto_v31_public215_canonical('+text+')')=='t'

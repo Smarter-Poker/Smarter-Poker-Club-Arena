@@ -302,3 +302,17 @@ it('shows Unavailable on a Players row whose win / loss read failed', () => {
   expect(page).toContain('winLossUnavailable={winLoss.unavailable.has(member.user_id)}');
   expect(page).toContain("return unavailable ? 'Unavailable' : '...';");
 });
+
+it('keeps current results visible when only historical ownership is unavailable', async () => {
+  vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue({
+    ...record,
+    overall: { cash: null, mtt: -50, net: null },
+  });
+  const { container } = render(<MemberWinLossCard clubId="club-partial" userId="player-partial" />);
+  await screen.findByText('+70.00');
+  const overall = screen.getByText('Overall').closest('.mm-stat');
+  expect(overall?.querySelector('.mm-stat__value')?.textContent).toBe('Unavailable');
+  expect(overall?.textContent).toContain('Cash Unavailable / Tournaments -50.00');
+  expect(overall?.className).not.toMatch(/mm-stat--(up|down)/);
+  expect(container.textContent).toContain('Some Historical Jackpot Club Records Are Missing');
+});

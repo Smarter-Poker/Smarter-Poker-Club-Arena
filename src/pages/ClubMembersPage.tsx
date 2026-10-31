@@ -220,7 +220,7 @@ function walletFigure(value: number | null): string {
 
 /** Win / loss for one row: the figure, "Unavailable" after a failed read, or "...". */
 function winLossText(winLoss: WinLossFigure | undefined, unavailable: boolean): string {
-  if (winLoss) return winLossChips(winLoss.net);
+  if (winLoss) return winLoss.net === null ? 'Unavailable' : winLossChips(winLoss.net);
   return unavailable ? 'Unavailable' : '...';
 }
 
@@ -2042,7 +2042,7 @@ export const MemberRow = memo(function MemberRow({
   columns: Set<OptionalColumn>;
 }) {
   const winLossTone =
-    !winLoss || winLoss.net === 0
+    !winLoss || winLoss.net === null || winLoss.net === 0
       ? ''
       : winLoss.net > 0
         ? ' member-winloss--up'

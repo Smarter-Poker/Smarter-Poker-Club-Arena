@@ -332,19 +332,30 @@ function signalLabel(kind: TournamentSignal, entry: LobbyEntry): string {
   }
 }
 
-/** Row-level accents: the rail colour says the best thing about the game. */
-function compactRowClass(entry: LobbyEntry): string | undefined {
+/** The same event facts style both schedules; a guarantee never hides its type. */
+export function tournamentRowClasses(entry: LobbyEntry): string {
+  if (entry.kind === 'cash') return '';
   const signals = tournamentSignals(entry);
-  if (signals.length === 0 && entry.kind === 'cash') return undefined;
-  const cls: string[] = [];
-  if (entry.kind === 'mtt' && entry.featured) cls.push('is-featured');
-  if (entry.kind !== 'cash') cls.push('compact-lobby__row--tourney');
+  const keys = new Set(entry.rules.map((rule) => rule.key));
+  const cls = ['is-standard'];
+  if (signals.includes('satellite')) cls.push('is-satellite');
   if (signals.includes('freeroll')) cls.push('is-freeroll');
-  else if (signals.includes('hot-gtd')) cls.push('is-hot-gtd');
-  else if (signals.some((k) => k === 'pko' || k === 'mystery' || k === 'bounty'))
+  if (signals.some((kind) => kind === 'pko' || kind === 'mystery' || kind === 'bounty'))
     cls.push('is-bounty');
+  if (keys.has('freezeout')) cls.push('is-freezeout');
+  if (keys.has('rebuy') || keys.has('reentry') || keys.has('addon')) cls.push('is-rebuy');
+  if (keys.has('turbo')) cls.push('is-turbo');
+  if (keys.has('hyper')) cls.push('is-hyper');
+  if (keys.has('deepstack')) cls.push('is-deepstack');
+  return cls.join(' ');
+}
+
+function compactRowClass(entry: LobbyEntry): string | undefined {
+  if (entry.kind === 'cash') return undefined;
+  const cls = ['compact-lobby__row--tourney', tournamentRowClasses(entry)];
+  if (entry.kind === 'mtt' && entry.featured) cls.push('is-featured');
   if (entry.status === 'starting_soon' || entry.status === 'late_reg') cls.push('is-urgent');
-  return cls.join(' ') || undefined;
+  return cls.join(' ');
 }
 
 function SatelliteRowDestination({ entry }: { entry: LobbyEntry }) {
@@ -368,18 +379,16 @@ function TournamentRowSignals({
   /** The wide board already prints its clock in the title's second line. */
   badgesOnly?: boolean;
 }) {
-  const signals = tournamentSignals(entry);
+  const signals = tournamentSignals(entry).filter((kind) => kind !== 'hot-gtd');
   const hasClock =
     !badgesOnly && entry.kind === 'mtt' && tournamentClockLine(entry, Date.now()) !== null;
   /* One shared 1Hz tick for every clock on the board, and none at all for a
      row with nothing to count. */
   const now = useSharedSecondTick(hasClock);
   const clock = hasClock ? tournamentClockLine(entry, now) : null;
-  /* A guarantee under the highlight threshold still says what it is, quietly. */
+  /* One silver guarantee frame, independent of event type or guarantee size. */
   const plainGtd =
-    !badgesOnly && !signals.includes('hot-gtd') && entry.guaranteeValue > 0
-      ? `${compactChips(entry.guaranteeValue)} GTD`
-      : null;
+    !badgesOnly && entry.guaranteeValue > 0 ? `${compactChips(entry.guaranteeValue)} GTD` : null;
   if (signals.length === 0 && !clock && !plainGtd) return null;
   return (
     <span className="lt-signals">
@@ -563,7 +572,8 @@ function SpinTopTierBadge() {
  * first, VIP is a door, NEW is the smallest claim of the three.
  */
 function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
-  if (!entry.featured && !entry.vipOnly && !entry.isNew && !entry.clubLabel) return null;
+  const showFeatured = entry.featured && entry.kind !== 'mtt';
+  if (!showFeatured && !entry.vipOnly && !entry.isNew && !entry.clubLabel) return null;
   return (
     <span className="lt-flags">
       {/* Only ever set on a union board, for a game belonging to another club,
@@ -574,18 +584,12 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
           {entry.clubLabel}
         </span>
       )}
-      {entry.featured && (
+      {showFeatured && (
         <span
           className="lt-flag lt-flag--featured"
-          /* MTT top events remain locked above the chosen schedule order.
-             Cash featured pins continue to decorate the default order only. */
-          title={
-            entry.kind === 'mtt'
-              ? 'Top Event. Pinned To The Top Of The Schedule'
-              : 'Featured By The Host. Pinned To The Top Unless You Choose A Sort'
-          }
+          title="Featured By The Host. Pinned To The Top Unless You Choose A Sort"
         >
-          {entry.kind === 'mtt' ? 'Top Event' : 'FEATURED'}
+          FEATURED
         </span>
       )}
       {entry.vipOnly && (
@@ -810,10 +814,7 @@ const COL_STATUS: ColumnDef = {
           on their last bought seat rather than at a time, so "Starts In 29
           Min..." beside a badge reading Filling was two different answers to
           the same question; and a cash game is running now. */}
-      <LobbyStatusBadge
-        status={e.status}
-        label={e.kind !== 'cash' && e.status === 'late_reg' ? 'Running' : e.statusLabel}
-      />
+      <LobbyStatusBadge status={e.status} label={e.statusLabel} />
     </span>
   ),
 };
@@ -1309,7 +1310,7 @@ const LobbyRow = memo(function LobbyRow({
     <tr
       data-id={entry.id}
       data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
-      className={`lt-row lt-row--${entry.status}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
+      className={`lt-row lt-row--${entry.status} ${tournamentRowClasses(entry)}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
       data-lightning={entry.kind === 'cash' && entry.game?.lightning ? 'on' : undefined}
       data-cash-format={
@@ -2019,7 +2020,7 @@ export default function LobbyTable({
                         entry.variantLabel
                       )}
                     </span>
-                    {entry.kind === 'mtt' && entry.featured && <LobbyFlagChips entry={entry} />}
+                    {entry.kind === 'mtt' && <LobbyFlagChips entry={entry} />}
                     {entry.kind !== 'cash' && <SatelliteRowDestination entry={entry} />}
                     {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
                     <PlayerStateChip entry={entry} ctx={rowCtx} />

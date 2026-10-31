@@ -17,6 +17,7 @@
  * the mapping is directly unit-testable.
  */
 
+import { parseHandBlinds, type HandBlinds } from './handBlinds';
 import type { EngineSnapshot } from '../services/EngineStateClient';
 import { recordServerTime } from './serverClock';
 import { canonicalCards } from './tableGeometry';
@@ -95,6 +96,7 @@ export interface DisconnectFsmEntry {
 export interface EnginePublishedState {
   table_id: string;
   hand_number: number;
+  hand_blinds?: unknown;
   pot: number;
   community_cards: Array<{ rank: string; suit: string }>;
   /** DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active). */
@@ -181,6 +183,7 @@ export interface EnginePublishedState {
 // ─── Output: the fields we patch into TableState. Keeping this type open-ended
 // (Partial<unknown>-shape) avoids importing the 20-field TableState type here.
 export interface MappedTableStatePatch {
+  handBlinds: HandBlinds | null;
   pot: number;
   communityCards: Array<{ rank: string; suit: string }>;
   /** DOUBLE-BOARD BOMB POT 2026-08-20: second board (empty unless active). */
@@ -584,6 +587,7 @@ export function mapEngineSnapshot(
   return {
     // See LIVE E2E FIX above: with a settlement partition present, the main
     // pot is pots[0]; otherwise the running total s.pot is the main pot.
+    handBlinds: parseHandBlinds(s.hand_blinds, s.table_id, s.hand_number),
     pot: rawPots.length > 0 ? rawPots[0].amount : (s.pot ?? 0),
     communityCards: canonicalCards(s.community_cards),
     communityCards2: canonicalCards(s.community_cards2),

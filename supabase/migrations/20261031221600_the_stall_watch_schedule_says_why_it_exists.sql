@@ -21,6 +21,8 @@
 -- Not DDL: cron.unschedule/cron.schedule write rows in cron.job, so this
 -- triggers no PostgREST schema reload and is not refused in the break window.
 
+-- @live-proof: EXISTS(SELECT 1 FROM cron.job WHERE jobname = 'ca-table-stall-watch-10s' AND jobid > 509 AND schedule = '10 seconds' AND command = 'SELECT public.fn_ca_table_stall_watch_tick(60000)' AND active)
+
 BEGIN;
 
 SELECT cron.unschedule('ca-table-stall-watch-10s');

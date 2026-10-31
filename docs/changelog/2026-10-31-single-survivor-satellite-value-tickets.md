@@ -1,0 +1,13 @@
+# Future one-survivor satellite fallback awards retain ticket value
+
+The current legacy producer still selected wallet cash for a closed/full/already-held target and a capped Diamond winner. The installed reusable-ticket migration covered the multi-survivor producer, while the public single-survivor wrapper continued invoking this older owner.
+
+The new normally reserved functions-only migration replaces the exact captured legacy producer and its receipt reader. Full fallback awards use the already installed same-value Chips/Diamonds ticket backing. Ordinary eligible seats, the bubble remainder, source closeout, historical early returns and exact duplicate receipts remain under their existing owners. No new payer, balance adjustment or settled-history conversion is introduced. The unchanged wrapper and actual service/private function ACLs are asserted.
+
+The existing required native PostgreSQL qualification now covers one survivor with closed/full/already-held/capped targets in both assets, actual paid entries, native ticket backing, bubble-only wallet movement and exact replay. A separate transaction creates an actual pre-migration cash receipt, replaces the functions, and verifies historical receipt/wallet immutability before rollback. Existing cohort/denomination/single-use/concurrency cases continue. Native results and exact final source hashes belong in the task evidence; installation and production behavior are separate, sole-operator steps.
+
+Reviewed source before editing: legacy classification at675–738 and ticket owner1041–1164; receipt ticket validation322–428. The narrow receipt extension is necessary because the old reader required a chip issue journal for every ticket, including the new native Diamond rail. New marked tickets use the existing canonical backing assertion; unmarked historical checks stay intact.
+
+Source-only change, no TypeScript inputs changed. Compiler and normal hooks remain required before ordinary submission. No production calls or installation were performed by this source owner.
+
+ROOT installed the byte-exact qualified migration once at the acknowledged21:39Z boundary under the documented active-production-outage exception: retained original hands can reach the legacy terminal payer before manual recovery withdrawal. The same operator immediately recorded exact bytes in the migration manifest and submitted this recording through normal protected checks. History119330bytes/MD59c34306b23c6d75822bb0f41741cdb8f; both postimage, owner and ACL assertions passed. No payout, wallet, seat or hand operation was executed. Natural production award behavior remains pending.

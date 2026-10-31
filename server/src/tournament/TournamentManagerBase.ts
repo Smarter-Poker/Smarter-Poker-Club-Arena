@@ -6697,6 +6697,14 @@ export abstract class TournamentManagerBase {
       await this.readTournamentClub(tournament.club_id, lifecycle);
       this.assertLifecycleCurrent(lifecycle);
 
+      // Establish the stage boundary before launch recovery, seating or dealers.
+      // An unreadable plan cannot authorize play past a possibly sealed day end.
+      await this.loadMultiDayPlan(tournament, lifecycle);
+      if (this.multiDayPlan?.kind === 'unknown') {
+        this.running = false;
+        return;
+      }
+
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
       this.tournamentEntryCloseAnnounced = false;
@@ -7823,9 +7831,6 @@ export abstract class TournamentManagerBase {
       }
       await this.drainTableEngineStartJobs();
       this.assertLifecycleCurrent(lifecycle);
-      // Multi-day: learn the stage plan before the level clock can reach a
-      // day's last level. No I/O for any format a plan cannot be sealed on.
-      await this.loadMultiDayPlan(tournament, lifecycle);
 
       /**
        * Start blind timer — AT THE ADVERTISED START, not at seating.
@@ -8205,6 +8210,10 @@ export abstract class TournamentManagerBase {
        * and the level clock below is never armed.
        */
       await this.loadMultiDayPlan(tournament, lifecycle);
+      if (this.multiDayPlan?.kind === 'unknown') {
+        this.running = false;
+        return;
+      }
       this.rearmStageEndPauseFromPlan();
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;

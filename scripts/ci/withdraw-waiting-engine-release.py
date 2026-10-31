@@ -9,6 +9,10 @@ import base64
 import datetime
 import fcntl
 import json
+import hashlib
+import importlib.util
+import ssl
+from urllib.parse import urlencode
 import os
 from pathlib import Path
 import re
@@ -38,7 +42,8 @@ def require(condition):
 
 def selection(value):
     fields = {'runKey', 'releaseSha', 'controlSha', 'desiredSha', 'instanceId'}
-    require(isinstance(value, dict) and set(value) == fields)
+    require(isinstance(value, dict) and set(value) in (fields, fields | {'mode'}))
+    require('mode' not in value or value['mode'] == 'cancel_expired_announcement')
     require(all(isinstance(v, str) for v in value.values()))
     require(RUN.fullmatch(value['runKey']) is not None)
     require(all(SHA.fullmatch(value[k]) for k in ('releaseSha', 'controlSha', 'desiredSha')))
@@ -153,7 +158,426 @@ def terminal(request, invocation=None):
             'servingInstanceUnchanged': True, 'originalTerminalEdgesRetired': True}
 
 
+# This narrow capability retires an expired announcement from the pinned
+# generation whose original recovery cannot terminalize announcement-only work.
+CANCEL_SCHEMA = 'expired-announcement-cancellation/v1'
+CANCEL_CONTROL = 'bd11ad35ca27843fd2f4910e5a8fc6a76d8c9d4e'
+CANCEL_HASHES = {
+    'engine-release-database-proof.py': '7034aa6f2d42a7a321c1e610fa517acd165367512aa8f3e62aaee719a4703155',
+    'engine-release-lightning-hold.py': '401a15fa30f663b8614cf962ed4650c7f55927d29705ab9bdef9dac0638ee6e4',
+    'engine-release-seal.py': '7ea266198c0a59e223ba662027352f5a45291d7d9fe25753d3c7dd2ec63916b2',
+    'engine-release-transaction.sh': 'fdfb0522c0c3acd218f66544ced70550c9c1ca3e1aee5a56c79f6b1afae30c88',
+    'engine-release-recover.sh': 'b6186c0e752ee93c9d57e79cb963c4386ff70ff0ed2a52f141d8373013096b83',
+    'engine-release-activation-floor.py': '850c6056e1eb630b8ca6729b5b654c40612f1c25d692999c8cf5fe3b985ddef2',
+}
+WRAPPER_HASH = 'e9abdbe2c97c3594b32a920285e78858c1e0497f00a8a7edd21b99ba0491dc9c'
+SYSTEMD = Path('/etc/systemd/system')
+CGROUP = Path('/sys/fs/cgroup')
+THAW_STEPS = {'sit_out_at', 'hold_expires_at', 'addon_period_ends_at', 'reversible_until',
+              'reveal_deadline_at', 'rebuy_prompt_until', 'bomb_pot_next_due_at',
+              'cash_stay_last_tick_at', 'cash_rejoin_expires_at', 'level_started_at',
+              'cluster_break_eligible_since', 'cluster_move_expires_at',
+              'reconnect_presence', 'reconnect_snapshots', 'lightning_drain_deadline_at'}
+
+
+def digest(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+def fsync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+
+
+def save_once(path, value):
+    raw = json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n'
+    if os.path.lexists(path):
+        require(regular(path, 0o600) == raw)
+        return
+    # Atomic immutable create, never replace another writer's state.
+    temporary = path.with_name('.' + path.name + '.' + str(os.getpid()))
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, 'w') as output:
+            output.write(raw)
+            output.flush()
+            os.fsync(output.fileno())
+        os.link(temporary, path, follow_symlinks=False)
+        fsync_directory(path.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def source_hash(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        before = os.fstat(fd)
+        require(stat.S_ISREG(before.st_mode) and before.st_uid == 0 and before.st_size < 262144)
+        raw = os.read(fd, 262144)
+        after = os.fstat(fd)
+        identity = lambda row: (row.st_dev, row.st_ino, row.st_mode, row.st_uid, row.st_size, row.st_mtime_ns, row.st_ctime_ns)
+        require(identity(after) == identity(before) and len(raw) == before.st_size)
+        return digest(raw)
+    finally: os.close(fd)
+
+
+def cancel_units(key):
+    return ['club-arena-engine-release-v1@' + key + '.service',
+            'club-arena-engine-intake-v1@' + key + '.service',
+            'club-arena-engine-intake-v1@' + key + '.path']
+
+
+def own_wants_edge(unit):
+    edge = SYSTEMD / 'multi-user.target.wants' / unit
+    if not os.path.lexists(edge): return edge
+    require(edge.is_symlink())
+    template = unit.split('@', 1)[0] + '@.' + unit.rsplit('.', 1)[1]
+    require(os.readlink(edge) in {str(SYSTEMD / template), str(SYSTEMD / unit), '../' + template, '../' + unit})
+    return edge
+
+
+def unit_snapshot(unit):
+    names = ['MainPID', 'InvocationID', 'ActiveState', 'SubState', 'Result',
+             'ExecMainCode', 'ExecMainStatus', 'ControlGroup']
+    args = ['systemctl', 'show', unit]
+    for name in names: args += ['-p', name]
+    value = dict(line.split('=', 1) for line in command(args).splitlines())
+    require(set(value) == set(names))
+    return value
+
+
+def loaded_stop_contract(unit, key, allow_masked=False):
+    fields = ['ExecStart', 'ExecStop', 'ExecStopPost', 'KillMode', 'FragmentPath', 'DropInPaths',
+              'RequiredBy', 'RequisiteOf', 'BoundBy', 'ConsistsOf', 'PropagatesStopTo']
+    args = ['systemctl', 'show', unit]
+    for field in fields: args += ['-p', field]
+    result = dict(line.split('=', 1) for line in command(args).splitlines())
+    require(set(result) == set(fields))
+    require(result['KillMode'] == 'control-group' and result['DropInPaths'] == '')
+    require(all(result[field] == '' for field in ['ExecStop', 'RequiredBy', 'RequisiteOf', 'BoundBy', 'ConsistsOf', 'PropagatesStopTo']))
+    if allow_masked and result['FragmentPath'] == '/dev/null':
+        require(all(result[field] == '' for field in ['ExecStart', 'ExecStop', 'ExecStopPost']))
+        return {'maskedEmpty': True}
+    require(result['FragmentPath'] == str(SYSTEMD / 'club-arena-engine-release-v1@.service'))
+    wrapper = str(PARENT / 'engine-release-unit-wrapper-v1.sh')
+    for field, expected in [('ExecStart', wrapper + ' start ' + key),
+                            ('ExecStopPost', wrapper + ' recover ' + key + ' ${SERVICE_RESULT} ${EXIT_CODE} ${EXIT_STATUS}')]:
+        raw = result[field]
+        require(raw.count('path=') == 1 and raw.count('argv[]=') == 1)
+        path = re.search(r'(?:\{ |; )path=([^;]+) ;', raw)
+        argv = re.search(r'argv\[\]=([^;]+) ;', raw)
+        require(path is not None and path.group(1).strip() == wrapper and argv is not None)
+        actual = argv.group(1).strip()
+        for name in ('SERVICE_RESULT', 'EXIT_CODE', 'EXIT_STATUS'):
+            actual = actual.replace('$' + name, '${' + name + '}')
+        require(actual == expected and 'ignore_errors=no' in raw)
+    # Runtime timing/status fields in Exec* change; only command/configuration
+    # authority is retained and compared after the masks are loaded.
+    return {field: result[field] for field in fields if field not in {'ExecStart', 'ExecStopPost'}}
+
+
+def cgroup_empty(path):
+    require(isinstance(path, str) and path.startswith('/system.slice/') and '..' not in path.split('/'))
+    target = CGROUP / path.lstrip('/')
+    if not os.path.lexists(target): return True
+    require(target.resolve(strict=True) == target and target.is_dir())
+    values = dict(line.split() for line in (target / 'cgroup.events').read_text().splitlines())
+    return values.get('populated') == '0'
+
+
+def quiet_units(units, original_group):
+    states = [unit_snapshot(unit) for unit in units]
+    require(all(row['MainPID'] == '0' and row['ActiveState'] in {'inactive', 'failed'}
+                and (not row['ControlGroup'] or cgroup_empty(row['ControlGroup'])) for row in states))
+    require(cgroup_empty(original_group))
+    return states
+
+
+def masked(units):
+    return all(os.path.islink(SYSTEMD / unit) and os.readlink(SYSTEMD / unit) == '/dev/null'
+               and command(['systemctl', 'show', unit, '-p', 'LoadState', '--value']) == 'masked' for unit in units)
+
+
+def time_ms(value):
+    require(isinstance(value, str))
+    parsed = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    require(parsed.tzinfo is not None)
+    return round(parsed.timestamp() * 1000)
+
+
+def prove_thaw(rows, active, stamp, now):
+    require(isinstance(rows, list) and len(rows) == 1 and active == [])
+    row = rows[0]
+    require(row.get('contract_version') == 3 and time_ms(row.get('announced_at')) == stamp
+            and time_ms(row.get('freeze_started_at')) == stamp + 120000)
+    target = time_ms(row.get('release_target_at'))
+    require(target == stamp + 420000 and target < now and stamp + 120000 <= time_ms(row.get('thawed_at')) <= now
+            and re.fullmatch(r'[0-9a-fA-F-]{36}', row.get('ownership_token', '')) is not None
+            and type(row.get('release_generation')) is int and row['release_generation'] > 0)
+    shifted = row.get('shifted')
+    require(isinstance(shifted, dict) and shifted.get('complete') is True and shifted.get('_targets_snapshotted') is True and THAW_STEPS <= set(shifted))
+    targets = shifted.get('_target_counts')
+    require(isinstance(targets, dict) and set(targets) == THAW_STEPS
+            and all(type(targets[key]) is int and targets[key] >= 0 and type(shifted[key]) is int
+                    and shifted[key] == targets[key] for key in THAW_STEPS))
+    require(abs(float(row['frozen_seconds']) * 1000 - (target - stamp - 120000)) <= 2)
+    return {'announcedAtMs': stamp, 'freezeStartedAtMs': stamp + 120000,
+            'releasedThroughMs': target, 'ownershipToken': row['ownership_token'],
+            'generation': row['release_generation']}
+
+
+def own_thaw(stamp):
+    # The fixed canonical store is used only inside this protected host helper.
+    # Only bounded GETs, no RPC or production write, and redirects are refused.
+    helper = PARENT / 'engine-control-generations' / CANCEL_CONTROL / 'engine-release-database-proof.py'
+    require(source_hash(helper) == CANCEL_HASHES[helper.name])
+    spec = importlib.util.spec_from_file_location('qualified_withdrawal_database_reader', helper)
+    reader = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reader)
+    values = reader.read_fixed_env(Path('/opt/club-arena/server/.env'))
+    require(values.get('SUPABASE_URL', '').rstrip('/') == 'https://kuklfnapbkmacvwxktbh.supabase.co'
+            and bool(values.get('SUPABASE_SERVICE_ROLE_KEY')))
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs): return None
+    opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+    def get(table, query):
+        url = values['SUPABASE_URL'].rstrip('/') + '/rest/v1/' + table + '?' + urlencode(query)
+        key = values['SUPABASE_SERVICE_ROLE_KEY']
+        request = urllib.request.Request(url, headers={'apikey': key, 'authorization': 'Bearer ' + key,
+                                                     'cache-control': 'no-cache, no-store'})
+        with opener.open(request, timeout=5) as response:
+            raw = response.read(32769)
+            require(len(raw) <= 32768)
+            return json.loads(raw)
+    stamp_iso = datetime.datetime.fromtimestamp(stamp / 1000, datetime.timezone.utc).isoformat()
+    rows = get('engine_maintenance_thaws', {'select': 'contract_version,announced_at,freeze_started_at,release_target_at,thawed_at,ownership_token,release_generation,shifted,frozen_seconds',
+                                          'announced_at': 'eq.' + stamp_iso, 'limit': '2'})
+    active = get('engine_maintenance_break', {'select': 'id', 'id': 'eq.true', 'limit': '2'})
+    return prove_thaw(rows, active, stamp, round(time.time() * 1000))
+
+
+def announcement_evidence(request, after_stop=False):
+    require(request['controlSha'] == request['releaseSha'] == CANCEL_CONTROL)
+    key = request['runKey']
+    generation = PARENT / 'engine-control-generations' / CANCEL_CONTROL
+    require(generation.resolve(strict=True) == generation)
+    for name, expected in CANCEL_HASHES.items(): require(source_hash(generation / name) == expected)
+    require(source_hash(PARENT / 'engine-release-unit-wrapper-v1.sh') == WRAPPER_HASH)
+    reqroot = ROOT / 'engine-release-requests'
+    originals = {}
+    for suffix in ['request', 'intent', 'awaiting-certificate']:
+        if after_stop and suffix == 'awaiting-certificate' and not os.path.lexists(reqroot / (key + '.' + suffix)):
+            continue
+        raw = regular(reqroot / (key + '.' + suffix), 0o600)
+        originals['engine-release-requests/' + key + '.' + suffix] = digest(raw.encode())
+        if suffix == 'request': lines = raw.splitlines(); request_raw = raw
+        elif suffix == 'intent': require(raw == request_raw)
+        else: require(raw.strip() == request['releaseSha'])
+    require(len(lines) == 6 and lines[0] == request['releaseSha'] and lines[3:5] == [str(generation), CANCEL_CONTROL])
+    entry_raw = regular(reqroot / (key + '.activation-entry'), 0o600)
+    entry = json.loads(entry_raw)
+    require(set(entry) == {'schema', 'runId', 'targetSha', 'controlSha', 'manifestSha256', 'phase'}
+            and entry['schema'] == 'engine-release-activation-floor/v2-owner-window' and entry['runId'] == key
+            and entry['targetSha'] == entry['controlSha'] == CANCEL_CONTROL and entry['phase'] == 'announcement')
+    reservation_raw = regular(ROOT / ('engine-recovery-window-' + key + '.json'), 0o600)
+    reservation = json.loads(reservation_raw)
+    require(set(reservation) == {'runId', 'sha', 'announcedAt', 'cause'} and reservation['runId'] == key
+            and reservation['sha'] == CANCEL_CONTROL and reservation['cause'] == 'urgent')
+    stamp = reservation['announcedAt']
+    require(type(stamp) is int and stamp + 420000 < time.time() * 1000)
+    # Existing immutable floor verifier binds announcement to the qualified manifest/window.
+    require(command([str(generation / 'engine-release-activation-floor.py'), 'reservation', '--repo', '/opt/club-arena',
+                     '--target', CANCEL_CONTROL, '--control', CANCEL_CONTROL, '--deadline', lines[5],
+                     '--run-id', key, '--state-root', str(ROOT)]) == str(stamp))
+    require(entry['manifestSha256'] == '6008a4314d7a80e77ad0df28c6cc4dd83777ab813f3e66192108be25e063b0ac')
+    for suffix in ['break-deadline', 'legacy-checkpoint-intent', 'main-inspector-retirement-intent', 'lightning-hold.json']:
+        require(not os.path.lexists(reqroot / (key + '.' + suffix)))
+    released_path = reqroot / (key + '.lightning-hold.json.released')
+    released_raw = regular(released_path, 0o600)
+    spec = importlib.util.spec_from_file_location('qualified_withdrawal_hold_reader', generation / 'engine-release-lightning-hold.py')
+    helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+    released = helper.own_record(released_path, key)
+    require(released is not None and released['phase'] == 'released')
+    seal = generation / 'engine-release-seal.py'
+    require(command([str(seal), 'pending-owner']) == 'none')
+    require(command([str(seal), 'get', 'desired-sha']) == request['desiredSha'])
+    pin = ROOT / 'engine-release-generation-pins' / (key + '.generation')
+    require(regular(pin, 0o600) == str(generation) + '\n' + CANCEL_CONTROL + '\n')
+    originals[str(pin.relative_to(ROOT))] = digest(regular(pin, 0o600).encode())
+    for directory, suffix in [('engine-intake-requests', 'intent'), ('engine-intake-requests', 'request'), ('engine-image-leases', 'lease')]:
+        path = ROOT / directory / (key + '.' + suffix)
+        if os.path.lexists(path):
+            raw = regular(path, 0o600)
+            require(raw.splitlines() == ([request['releaseSha']] if directory == 'engine-image-leases'
+                                        else [lines[0], lines[4], lines[1], lines[2], lines[5]]))
+            originals[str(path.relative_to(ROOT))] = digest(raw.encode())
+    require(not os.path.lexists(ROOT / 'engine-release-results' / (key + '.json')))
+    return {'originals': originals, 'entryHash': digest(entry_raw.encode()),
+            'reservationHash': digest(reservation_raw.encode()), 'releasedHoldHash': digest(released_raw.encode()), 'thaw': own_thaw(stamp)}
+
+
+def unchanged_evidence(actual, expected, key):
+    actual = dict(actual); expected = dict(expected)
+    left = actual.pop('originals'); right = expected.pop('originals')
+    missing = set(right) - set(left)
+    require(actual == expected and set(left) <= set(right)
+            and missing <= {'engine-release-requests/' + key + '.awaiting-certificate'}
+            and all(value == right[name] for name, value in left.items()))
+
+
+def validate_cancellation_reply(answer, request):
+    require(isinstance(answer, dict) and answer.get('schema') == CANCEL_SCHEMA and answer.get('request') == request
+            and answer.get('result') == 'cancelled-expired-announcement' and answer.get('servingInstanceUnchanged') is True
+            and answer.get('originalTerminalEdgesRetired') is True and answer.get('quiescent') is True
+            and answer.get('stopDisposition') in {'requested', 'not-needed-already-quiescent'})
+    require(isinstance(answer.get('actualUnitStates'), list) and len(answer['actualUnitStates']) == 3)
+    require(all(row.get('MainPID') == '0' and row.get('ActiveState') in {'inactive', 'failed'} for row in answer['actualUnitStates']))
+
+
+def cancellation_directory(directory):
+    directory.mkdir(mode=0o700, exist_ok=True)
+    require(directory.resolve(strict=True) == directory and directory.stat().st_uid == 0)
+
+
+def cancel_announced(request):
+    require(os.getuid() == 0)
+    key = request['runKey']; units = cancel_units(key)
+    directory = ROOT / 'engine-release-cancellations'
+    cancellation_directory(directory)
+    lockfd = os.open(directory / (key + '.lock'), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    enginefd = os.open(ENGINE_LOCK, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(enginefd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        receipt_path = directory / (key + '.receipt.json')
+        intent_path = directory / (key + '.intent.json')
+        issued_path = directory / (key + '.stop-issued.json')
+        quiet_path = directory / (key + '.quiescent.json')
+        if os.path.lexists(receipt_path):
+            receipt = json.loads(regular(receipt_path, 0o600)); validate_cancellation_reply(receipt, request)
+            require(masked(units)); quiet_units(units, receipt['originalControlGroup'])
+            require(container_identity(request) == receipt['container']); health_pair(request)
+            return receipt
+        for unit in units: own_wants_edge(unit)
+        health_pair(request); container = container_identity(request)
+        if os.path.lexists(intent_path):
+            intent = json.loads(regular(intent_path, 0o600))
+            require(intent['request'] == request and intent['container'] == container)
+        else:
+            evidence = announcement_evidence(request)
+            stop_contract = loaded_stop_contract(units[0], key)
+            state = unit_snapshot(units[0])
+            require(state['ActiveState'] in {'active', 'activating'} and INVOCATION_PATTERN(state['InvocationID']))
+            parent = process(int(state['MainPID']))
+            require(bash_command(parent['argv'], [str(PARENT / 'engine-release-unit-wrapper-v1.sh'), 'start', key]))
+            require(state['ControlGroup'].startswith('/system.slice/') and state['ControlGroup'].endswith('/' + units[0]))
+            require((PROC / str(parent['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
+            children = (PROC / str(parent['pid']) / 'task' / str(parent['pid']) / 'children').read_text().split()
+            candidates = [process(int(pid)) for pid in children]
+            matches = [row for row in candidates if bash_command(row['argv'], [str(PARENT / 'engine-control-generations' / CANCEL_CONTROL / 'engine-release-transaction.sh'), '--run-id', key])]
+            require(len(matches) == 1 and matches[0]['parent'] == parent['pid'])
+            require((PROC / str(matches[0]['pid']) / 'cgroup').read_text().strip() == '0::' + state['ControlGroup'])
+            engine_pid = command(['docker', 'container', 'inspect', '--format', '{{.State.Pid}}', 'club-arena-engine'])
+            require(engine_pid.isdigit() and int(engine_pid) > 1)
+            require(not (PROC / engine_pid / 'cgroup').read_text().strip().startswith('0::' + state['ControlGroup']))
+            require(all(row['MainPID'] == '0' and row['ActiveState'] in {'inactive', 'failed'} for row in [unit_snapshot(unit) for unit in units[1:]]))
+            require(announcement_evidence(request) == evidence and container_identity(request) == container)
+            health_pair(request); require(unit_snapshot(units[0]) == state and process(parent['pid']) == parent)
+            intent = {'schema': CANCEL_SCHEMA, 'request': request, 'container': container, 'evidence': evidence,
+                      'originalUnit': state, 'originalProcess': parent, 'originalChild': matches[0], 'stopContract': stop_contract}
+            save_once(intent_path, intent)
+        allowed = {'engine-release-requests/' + key + '.' + suffix for suffix in ('request', 'intent', 'awaiting-certificate')}
+        allowed |= {'engine-release-generation-pins/' + key + '.generation', 'engine-image-leases/' + key + '.lease'}
+        allowed |= {'engine-intake-requests/' + key + '.' + suffix for suffix in ('request', 'intent')}
+        require(set(intent) == {'schema', 'request', 'container', 'evidence', 'originalUnit', 'originalProcess', 'originalChild', 'stopContract'} and intent['schema'] == CANCEL_SCHEMA)
+        require(set(intent['evidence']['originals']) <= allowed and all(re.fullmatch('[0-9a-f]{64}', value) for value in intent['evidence']['originals'].values()))
+        if not os.path.lexists(issued_path):
+            current = unit_snapshot(units[0])
+            already_quiet = current['MainPID'] == '0' and current['ActiveState'] in {'inactive', 'failed'}
+            if already_quiet:
+                quiet_units(units, intent['originalUnit']['ControlGroup'])
+                unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
+            else:
+                require(announcement_evidence(request) == intent['evidence'])
+                require(current == intent['originalUnit'])
+                require(process(intent['originalProcess']['pid']) == intent['originalProcess'])
+                require(process(intent['originalChild']['pid']) == intent['originalChild'])
+            # Per-instance masks survive reboot. No engine or template unit is selected.
+            for unit in units:
+                path = SYSTEMD / unit
+                if os.path.lexists(path): require(path.is_symlink() and os.readlink(path) == '/dev/null')
+                else: os.symlink('/dev/null', path); fsync_directory(SYSTEMD)
+            command(['systemctl', 'daemon-reload'])
+            require(masked(units))
+            if already_quiet:
+                quiet_units(units, intent['originalUnit']['ControlGroup'])
+                unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
+            else:
+                loaded_stop_contract(units[0], key, allow_masked=True)
+                require(announcement_evidence(request) == intent['evidence'])
+                require(unit_snapshot(units[0]) == intent['originalUnit'])
+                require(process(intent['originalProcess']['pid']) == intent['originalProcess'])
+                require(process(intent['originalChild']['pid']) == intent['originalChild'])
+            health_pair(request); require(container_identity(request) == container)
+            save_once(issued_path, {'schema': CANCEL_SCHEMA, 'intentHash': digest(regular(intent_path, 0o600).encode()),
+                                   'stopDisposition': 'not-needed-already-quiescent' if already_quiet else 'requested'})
+            # One stop of this exact release only. A lost response never sends it again.
+            if not already_quiet:
+                try: command(['systemctl', 'stop', '--no-block', units[0]], timeout=5)
+                except (OSError, subprocess.SubprocessError): pass
+        else:
+            issued = json.loads(regular(issued_path, 0o600))
+            require(set(issued) == {'schema', 'intentHash', 'stopDisposition'} and issued['schema'] == CANCEL_SCHEMA
+                    and issued['intentHash'] == digest(regular(intent_path, 0o600).encode())
+                    and issued['stopDisposition'] in {'requested', 'not-needed-already-quiescent'})
+        require(masked(units))
+        deadline = time.monotonic() + 60
+        while True:
+            try: states = quiet_units(units, intent['originalUnit']['ControlGroup']); break
+            except (ValueError, OSError, subprocess.SubprocessError):
+                if time.monotonic() >= deadline: raise ValueError('Cancellation stop outcome unknown; no repeat stop')
+                time.sleep(1)
+        require(container_identity(request) == container); health_pair(request)
+        if not os.path.lexists(quiet_path):
+            unchanged_evidence(announcement_evidence(request, after_stop=True), intent['evidence'], key)
+            save_once(quiet_path, {'schema': CANCEL_SCHEMA, 'actualUnitStates': states})
+        quiet = json.loads(regular(quiet_path, 0o600))
+        # Once the honest quiescence receipt exists, cleanup can resume after any
+        # partial unlink. Historical window and announcement entry never change.
+        require(digest(regular(ROOT / 'engine-release-requests' / (key + '.activation-entry'), 0o600).encode()) == intent['evidence']['entryHash'])
+        require(digest(regular(ROOT / ('engine-recovery-window-' + key + '.json'), 0o600).encode()) == intent['evidence']['reservationHash'])
+        require(digest(regular(ROOT / 'engine-release-requests' / (key + '.lightning-hold.json.released'), 0o600).encode()) == intent['evidence']['releasedHoldHash'])
+        for relative, expected in intent['evidence']['originals'].items():
+            path = ROOT / relative
+            if os.path.lexists(path):
+                require(digest(regular(path, 0o600).encode()) == expected)
+                path.unlink(); fsync_directory(path.parent)
+        for unit in units:
+            edge = own_wants_edge(unit)
+            if os.path.lexists(edge):
+                edge.unlink(); fsync_directory(edge.parent)
+        require(all(not os.path.lexists(ROOT / relative) for relative in allowed))
+        require(masked(units)); quiet_units(units, intent['originalUnit']['ControlGroup'])
+        require(container_identity(request) == container); health_pair(request)
+        receipt = {'schema': CANCEL_SCHEMA, 'request': request, 'result': 'cancelled-expired-announcement',
+                   'servingInstanceUnchanged': True, 'originalTerminalEdgesRetired': True, 'quiescent': True,
+                   'container': container, 'originalControlGroup': intent['originalUnit']['ControlGroup'],
+                   'actualUnitStates': quiet['actualUnitStates'], 'stopDisposition': json.loads(regular(issued_path, 0o600))['stopDisposition'], 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+        save_once(receipt_path, receipt)
+        return receipt
+    finally:
+        os.close(enginefd); os.close(lockfd)
+
+
+def INVOCATION_PATTERN(value):
+    return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{32}', value) is not None
+
+
+
 def remote(request):
+    if request.get('mode') == 'cancel_expired_announcement':
+        return cancel_announced(request)
     require(os.getuid() == 0 and hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'))
     result_path = ROOT / 'engine-release-results' / (request['runKey'] + '.json')
     if os.path.lexists(result_path):
@@ -244,6 +668,13 @@ def main():
         reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=150)
         require(reply.returncode == 0 and len(reply.stdout) <= 4096)
         answer = json.loads(reply.stdout)
+        if request.get('mode') == 'cancel_expired_announcement':
+            validate_cancellation_reply(answer, request)
+            destination = Path('artifacts/engine-withdrawal')
+            destination.mkdir(parents=True, exist_ok=True)
+            (destination / 'receipt.json').write_text(json.dumps(answer, indent=2) + '\n')
+            print('Exact expired announcement cancelled; serving engine unchanged.')
+            return
         require(set(answer) == set(request) | {'schema', 'result', 'invocationId',
                 'originalTransactionExitStatus', 'servingInstanceUnchanged', 'originalTerminalEdgesRetired'})
         require(all(answer.get(k) == v for k, v in request.items()))

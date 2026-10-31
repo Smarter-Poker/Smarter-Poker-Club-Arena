@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -251,6 +252,284 @@ class Withdrawal(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=3)
                 process.stdout.close()
+
+
+class AnnouncedCancellation(unittest.TestCase):
+    def test_thaw_requires_exact_complete_owned_release(self):
+        stamp = 1793429586934
+        iso = lambda ms: module.datetime.datetime.fromtimestamp(ms / 1000, module.datetime.timezone.utc).isoformat()
+        row = {'contract_version': 3, 'announced_at': iso(stamp), 'freeze_started_at': iso(stamp + 120000),
+               'release_target_at': iso(stamp + 420000), 'thawed_at': iso(stamp + 410000),
+               'ownership_token': '12345678-1234-1234-1234-123456789abc', 'release_generation': 1,
+               'shifted': dict.fromkeys(module.THAW_STEPS, 0) | {'complete': True, '_targets_snapshotted': True, '_target_counts': dict.fromkeys(module.THAW_STEPS, 0)}, 'frozen_seconds': 300}
+        self.assertEqual(module.prove_thaw([row], [], stamp, stamp + 430000)['announcedAtMs'], stamp)
+        bad = [{'contract_version': 2}, {'announced_at': iso(stamp + 1)}, {'freeze_started_at': iso(stamp)},
+               {'release_target_at': iso(stamp + 440000)}, {'shifted': {'complete': True}},
+               {'ownership_token': None}, {'release_generation': 0}, {'frozen_seconds': 200}]
+        for change in bad:
+            with self.subTest(change=change), self.assertRaises((ValueError, TypeError)):
+                module.prove_thaw([row | change], [], stamp, stamp + 430000)
+        for rows, active in [([], []), ([row, row], []), ([row], [{'id': True}])]:
+            with self.assertRaises(ValueError): module.prove_thaw(rows, active, stamp, stamp + 430000)
+
+    def test_durable_records_are_create_once_and_symlinks_refuse(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder:
+            path = Path(folder) / 'intent'
+            # The host requires root ownership; fixture reads its own immutable bytes.
+            with patch.object(module, 'regular', side_effect=lambda p, mode=None: Path(p).read_text()):
+                module.save_once(path, {'value': 1})
+                module.save_once(path, {'value': 1})
+                with self.assertRaises(ValueError): module.save_once(path, {'value': 2})
+                self.assertEqual(json.loads(path.read_text()), {'value': 1})
+
+    def harness(self, folder, patches):
+        root = Path(folder); state = root / 'state'; state.mkdir()
+        systemd = root / 'systemd'; systemd.mkdir(); (systemd / 'multi-user.target.wants').mkdir()
+        proc = root / 'proc'; proc.mkdir(); parent = root / 'control'; parent.mkdir()
+        lock = root / 'engine.lock'; lock.touch()
+        request = {'runKey': '41177442979-1', 'releaseSha': module.CANCEL_CONTROL,
+                   'controlSha': module.CANCEL_CONTROL, 'desiredSha': 'c' * 40,
+                   'instanceId': '1-1234abcd', 'mode': 'cancel_expired_announcement'}
+        key = request['runKey']; units = module.cancel_units(key); group = '/system.slice/' + units[0]
+        original = {'MainPID': '12', 'InvocationID': 'f' * 32, 'ActiveState': 'activating',
+                    'SubState': 'start', 'Result': 'success', 'ExecMainCode': '0', 'ExecMainStatus': '0', 'ControlGroup': group}
+        ended = original | {'MainPID': '0', 'ActiveState': 'failed', 'SubState': 'failed',
+                            'Result': 'exit-code', 'ExecMainCode': '1', 'ExecMainStatus': '75', 'ControlGroup': ''}
+        idle = ended | {'Result': 'success', 'ExecMainStatus': '0'}
+        generation = parent / 'engine-control-generations' / module.CANCEL_CONTROL
+        processes = {12: {'pid': 12, 'parent': 1, 'start': '100', 'argv': ['bash', str(parent / 'engine-release-unit-wrapper-v1.sh'), 'start', key]},
+                     13: {'pid': 13, 'parent': 12, 'start': '101', 'argv': ['bash', str(generation / 'engine-release-transaction.sh'), '--run-id', key]}}
+        for pid in [12, 13, 14]:
+            (proc / str(pid)).mkdir(); (proc / str(pid) / 'cgroup').write_text('0::' + (group if pid != 14 else '/engine') + '\n')
+        (proc / '12/task/12').mkdir(parents=True); (proc / '12/task/12/children').write_text('13')
+        originals = {}
+        for directory, suffix in [('engine-release-requests', 'request'), ('engine-release-requests', 'intent'),
+                                  ('engine-release-requests', 'awaiting-certificate'), ('engine-release-generation-pins', 'generation'),
+                                  ('engine-intake-requests', 'request'), ('engine-image-leases', 'lease')]:
+            path = state / directory / (key + '.' + suffix); path.parent.mkdir(exist_ok=True); path.write_text(suffix)
+            originals[str(path.relative_to(state))] = module.digest(path.read_bytes())
+        entry = state / 'engine-release-requests' / (key + '.activation-entry'); entry.write_text('announcement')
+        reservation = state / ('engine-recovery-window-' + key + '.json'); reservation.write_text('original')
+        released = state / 'engine-release-requests' / (key + '.lightning-hold.json.released'); released.write_text('released')
+        evidence = {'releasedHoldHash': module.digest(released.read_bytes()), 'originals': originals, 'entryHash': module.digest(entry.read_bytes()),
+                    'reservationHash': module.digest(reservation.read_bytes()), 'thaw': {'released': True}}
+        control = {'stopped': False, 'stopCount': 0, 'unknownStop': False, 'cgroupEmpty': True,
+                   'evidenceFails': False, 'commands': [], 'container': {'id': 'a' * 64, 'image': 'sha256:' + 'b' * 64, 'startedAt': 'original'}}
+        def command(args, timeout=5):
+            control['commands'].append(args)
+            if args[:3] == ['systemctl', 'stop', '--no-block']:
+                control['stopCount'] += 1
+                if control['unknownStop']: raise subprocess.TimeoutExpired(args, 5)
+                control['stopped'] = True; return ''
+            if args[:2] == ['systemctl', 'show']: return 'masked'
+            if args[:3] == ['docker', 'container', 'inspect']: return '14'
+            return ''
+        def check_evidence(_, after_stop=False):
+            if control['evidenceFails']: raise ValueError('runtime promotion')
+            return evidence
+        for name, value in [('ROOT', state), ('PARENT', parent), ('SYSTEMD', systemd), ('PROC', proc), ('ENGINE_LOCK', lock)]:
+            patches.enter_context(patch.object(module, name, value))
+        patches.enter_context(patch.object(os, 'getuid', return_value=0))
+        patches.enter_context(patch.object(module, 'cancellation_directory', side_effect=lambda p: p.mkdir(exist_ok=True)))
+        patches.enter_context(patch.object(module, 'regular', side_effect=lambda p, mode=None: Path(p).read_text()))
+        patches.enter_context(patch.object(module, 'announcement_evidence', side_effect=check_evidence))
+        patches.enter_context(patch.object(module, 'container_identity', side_effect=lambda _: control['container']))
+        patches.enter_context(patch.object(module, 'health_pair'))
+        patches.enter_context(patch.object(module, 'loaded_stop_contract', return_value={'qualified': True}))
+        patches.enter_context(patch.object(module, 'process', side_effect=lambda pid: processes[pid]))
+        patches.enter_context(patch.object(module, 'unit_snapshot', side_effect=lambda unit: (ended if control['stopped'] else original).copy() if unit == units[0] else idle.copy()))
+        patches.enter_context(patch.object(module, 'cgroup_empty', side_effect=lambda _: control['cgroupEmpty']))
+        patches.enter_context(patch.object(module, 'command', side_effect=command))
+        patches.enter_context(patch.object(module.time, 'sleep'))
+        clock = iter(range(0, 100000, 70)); patches.enter_context(patch.object(module.time, 'monotonic', side_effect=lambda: next(clock)))
+        return request, control, state, entry, reservation, units
+
+    def test_actual_exit_is_retained_and_repeat_only_reads(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            request, control, state, entry, reservation, units = self.harness(folder, patches)
+            answer = module.cancel_announced(request)
+            module.validate_cancellation_reply(answer, request)
+            self.assertEqual(answer['actualUnitStates'][0]['ExecMainStatus'], '75')
+            self.assertEqual(control['stopCount'], 1)
+            self.assertEqual(module.cancel_announced(request), answer)
+            self.assertEqual(control['stopCount'], 1)
+            self.assertTrue(entry.exists()); self.assertTrue(reservation.exists())
+            self.assertFalse((state / 'engine-release-requests' / (request['runKey'] + '.request')).exists())
+            self.assertFalse(any('record-failure' in args for args in control['commands']))
+
+    def test_unknown_stop_never_reissues_and_can_finish_from_quiescence(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            request, control, state, *_ = self.harness(folder, patches)
+            control['unknownStop'] = True
+            for _ in range(2):
+                with self.assertRaises(ValueError): module.cancel_announced(request)
+            self.assertEqual(control['stopCount'], 1)
+            self.assertTrue((state / 'engine-release-requests' / (request['runKey'] + '.request')).exists())
+            control['stopped'] = True
+            answer = module.cancel_announced(request)
+            self.assertTrue(answer['quiescent']); self.assertEqual(control['stopCount'], 1)
+
+    def test_nonempty_cgroup_never_retires(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            request, control, state, *_ = self.harness(folder, patches)
+            control['cgroupEmpty'] = False
+            with self.assertRaises(ValueError): module.cancel_announced(request)
+            self.assertTrue((state / 'engine-release-requests' / (request['runKey'] + '.request')).exists())
+            self.assertFalse((state / 'engine-release-cancellations' / (request['runKey'] + '.receipt.json')).exists())
+
+    def test_source_or_runtime_proof_refusal_has_no_stop_or_mask(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            request, control, state, _, _, units = self.harness(folder, patches)
+            control['evidenceFails'] = True
+            with self.assertRaises(ValueError): module.cancel_announced(request)
+            self.assertEqual(control['stopCount'], 0)
+            self.assertFalse(any((module.SYSTEMD / unit).exists() for unit in units))
+
+    def test_crashes_at_each_durable_edge_preserve_one_stop_and_history(self):
+        for edge in ['intent.json', 'stop-issued.json', 'quiescent.json', 'receipt.json']:
+            with self.subTest(edge=edge), tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+                request, control, state, entry, reservation, units = self.harness(folder, patches)
+                original_save = module.save_once
+                def crashed(path, value):
+                    original_save(path, value)
+                    if path.name.endswith(edge): raise OSError('crash after durable create')
+                with patch.object(module, 'save_once', side_effect=crashed), self.assertRaises(OSError):
+                    module.cancel_announced(request)
+                if edge == 'stop-issued.json':
+                    with self.assertRaises(ValueError): module.cancel_announced(request)
+                    self.assertEqual(control['stopCount'], 0)  # Unknown issue gap is never replayed.
+                    control['stopped'] = True
+                answer = module.cancel_announced(request)
+                self.assertTrue(answer['quiescent']); self.assertLessEqual(control['stopCount'], 1)
+                self.assertTrue(entry.exists()); self.assertTrue(reservation.exists())
+
+    def test_partial_mask_and_foreign_mask_fail_closed(self):
+        for foreign in [False, True]:
+            with self.subTest(foreign=foreign), tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+                request, control, state, _, _, units = self.harness(folder, patches)
+                path = module.SYSTEMD / units[0]
+                if foreign:
+                    path.symlink_to('/foreign')
+                    with self.assertRaises(ValueError): module.cancel_announced(request)
+                else:
+                    symlink = os.symlink
+                    def interrupted(src, dst, **kwargs):
+                        symlink(src, dst, **kwargs)
+                        raise OSError('mask crash')
+                    with patch.object(os, 'symlink', side_effect=interrupted), self.assertRaises(OSError): module.cancel_announced(request)
+                    self.assertEqual(control['stopCount'], 0)
+                    self.assertTrue(module.cancel_announced(request)['quiescent'])
+                self.assertLessEqual(control['stopCount'], 1)
+
+
+    def test_original_announced_recovery_exits_before_engine_lock_or_supervisor(self):
+        source = (ROOT / 'server/scripts/engine-release-recover.sh').read_text()
+        branch = source.split('case "$FLOOR_DISPOSITION" in', 1)[1].split('\nif [ "$RECOVERY_MODE"', 1)[0]
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as directory:
+            lock = Path(directory) / 'must-not-open'
+            result = subprocess.run(['bash', '-c', 'set -eu\nFLOOR_DISPOSITION=announced\nENGINE_LOCK="$1"\ncase "$FLOOR_DISPOSITION" in' + branch, 'fixture', str(lock)], capture_output=True, text=True, timeout=3)
+            self.assertEqual(result.returncode, 75, result.stderr)
+            self.assertIn('announcement-only owner retained', result.stderr)
+            self.assertFalse(lock.exists())
+
+    def test_admission_checks_real_announcement_files_and_refuses_changed_custody(self):
+        for failure in [None, 'runtime', 'foreign', 'manifest', 'checkpoint', 'hold', 'pending', 'source']:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+                root = Path(folder); state = root / 'state'; state.mkdir(); parent = root / 'parent'; parent.mkdir()
+                generation = parent / 'engine-control-generations' / module.CANCEL_CONTROL; generation.mkdir(parents=True)
+                request = {'runKey': '41177442979-1', 'releaseSha': module.CANCEL_CONTROL, 'controlSha': module.CANCEL_CONTROL,
+                           'desiredSha': 'c' * 40, 'instanceId': '1-1234abcd', 'mode': 'cancel_expired_announcement'}
+                key = request['runKey']; reqroot = state / 'engine-release-requests'; reqroot.mkdir()
+                lines = '\n'.join([module.CANCEL_CONTROL, 'url', 'actor', str(generation), module.CANCEL_CONTROL, '1793440868']) + '\n'
+                for suffix, raw in [('request', lines), ('intent', lines), ('awaiting-certificate', module.CANCEL_CONTROL + '\n')]:
+                    (reqroot / (key + '.' + suffix)).write_text(raw)
+                # The expected manifest is derived from the exact retained source blob.
+                manifest = subprocess.check_output(['git', 'show', module.CANCEL_CONTROL + ':server/release/activation-floor.json'], cwd=ROOT)
+                entry = {'schema': 'engine-release-activation-floor/v2-owner-window', 'runId': key,
+                         'targetSha': module.CANCEL_CONTROL, 'controlSha': module.CANCEL_CONTROL,
+                         'manifestSha256': module.digest(manifest), 'phase': 'announcement'}
+                if failure == 'runtime': entry['phase'] = 'runtime'
+                if failure == 'foreign': entry['runId'] = '1-1'
+                if failure == 'manifest': entry['manifestSha256'] = '0' * 64
+                (reqroot / (key + '.activation-entry')).write_text(json.dumps(entry))
+                (reqroot / (key + '.lightning-hold.json.released')).write_text('released')
+                (generation / 'engine-release-lightning-hold.py').write_text("def own_record(path, key): return {'phase': 'released'}\n")
+                stamp = 1793429586934
+                (state / ('engine-recovery-window-' + key + '.json')).write_text(json.dumps({'runId': key, 'sha': module.CANCEL_CONTROL, 'announcedAt': stamp, 'cause': 'urgent'}))
+                pin = state / 'engine-release-generation-pins'; pin.mkdir(); (pin / (key + '.generation')).write_text(str(generation) + '\n' + module.CANCEL_CONTROL + '\n')
+                if failure in {'checkpoint', 'hold'}:
+                    (reqroot / (key + ('.legacy-checkpoint-intent' if failure == 'checkpoint' else '.lightning-hold.json'))).write_text('present')
+                def command(args, timeout=5):
+                    if 'reservation' in args: return str(stamp)
+                    if 'pending-owner' in args: return 'other' if failure == 'pending' else 'none'
+                    return request['desiredSha']
+                patches.enter_context(patch.object(module, 'ROOT', state)); patches.enter_context(patch.object(module, 'PARENT', parent))
+                patches.enter_context(patch.object(module, 'regular', side_effect=lambda p, mode=None: Path(p).read_text()))
+                patches.enter_context(patch.object(module, 'source_hash', side_effect=lambda p: '0' * 64 if failure == 'source' else module.WRAPPER_HASH if p.name == 'engine-release-unit-wrapper-v1.sh' else module.CANCEL_HASHES[p.name]))
+                patches.enter_context(patch.object(module, 'command', side_effect=command))
+                patches.enter_context(patch.object(module, 'own_thaw', return_value={'verified': True}))
+                patches.enter_context(patch.object(module.time, 'time', return_value=stamp / 1000 + 500))
+                if failure:
+                    with self.assertRaises(ValueError): module.announcement_evidence(request)
+                else: self.assertEqual(module.announcement_evidence(request)['thaw'], {'verified': True})
+
+    def test_partial_retirement_resumes_without_another_stop(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            request, control, state, entry, reservation, units = self.harness(folder, patches)
+            original_unlink = Path.unlink; fired = False
+            def interrupted(path, *args, **kwargs):
+                nonlocal fired
+                original_unlink(path, *args, **kwargs)
+                if path.name == request['runKey'] + '.intent' and not fired:
+                    fired = True; raise OSError('crash after partial retirement')
+            with patch.object(Path, 'unlink', interrupted), self.assertRaises(OSError): module.cancel_announced(request)
+            answer = module.cancel_announced(request)
+            self.assertTrue(answer['quiescent']); self.assertEqual(control['stopCount'], 1)
+            self.assertTrue(entry.exists()); self.assertTrue(reservation.exists())
+
+
+    def test_loaded_stop_authority_refuses_foreign_commands_and_propagation(self):
+        key = '41177442979-1'; unit = module.cancel_units(key)[0]
+        wrapper = str(module.PARENT / 'engine-release-unit-wrapper-v1.sh')
+        command = lambda argv: '{ path=' + wrapper + ' ; argv[]=' + argv + ' ; ignore_errors=no ; start_time=n/a ; stop_time=n/a ; pid=0 ; code=(null) ; status=0/0 }'
+        config = {'ExecStart': command(wrapper + ' start ' + key), 'ExecStop': '',
+                  'ExecStopPost': command(wrapper + ' recover ' + key + ' ${SERVICE_RESULT} ${EXIT_CODE} ${EXIT_STATUS}'),
+                  'KillMode': 'control-group', 'FragmentPath': str(module.SYSTEMD / 'club-arena-engine-release-v1@.service'),
+                  'DropInPaths': '', 'RequiredBy': '', 'RequisiteOf': '', 'BoundBy': '', 'ConsistsOf': '', 'PropagatesStopTo': ''}
+        render = lambda value: '\n'.join(k + '=' + v for k, v in value.items())
+        with patch.object(module, 'command', return_value=render(config)):
+            module.loaded_stop_contract(unit, key)
+        for field in config:
+            bad = config | {field: 'foreign'}
+            with self.subTest(field=field), patch.object(module, 'command', return_value=render(bad)), self.assertRaises(ValueError):
+                module.loaded_stop_contract(unit, key)
+        empty = config | {'FragmentPath': '/dev/null', 'ExecStart': '', 'ExecStopPost': ''}
+        with patch.object(module, 'command', return_value=render(empty)):
+            self.assertEqual(module.loaded_stop_contract(unit, key, allow_masked=True), {'maskedEmpty': True})
+            with self.assertRaises(ValueError): module.loaded_stop_contract(unit, key)
+        with patch.object(module, 'command', return_value=render(config | {'ExecStopPost': config['ExecStopPost'] + config['ExecStopPost']})), self.assertRaises(ValueError):
+            module.loaded_stop_contract(unit, key)
+
+    def test_pre_stop_interruption_with_positive_quiescence_needs_no_stop(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as folder, ExitStack() as patches:
+            request, control, state, entry, reservation, units = self.harness(folder, patches)
+            original_save = module.save_once
+            def crash(path, value):
+                original_save(path, value)
+                if path.name.endswith('.intent.json'): raise OSError('interrupted before masks/stop')
+            with patch.object(module, 'save_once', side_effect=crash), self.assertRaises(OSError): module.cancel_announced(request)
+            control['stopped'] = True  # Original may have exited while the helper was absent.
+            answer = module.cancel_announced(request)
+            self.assertTrue(answer['quiescent']); self.assertEqual(control['stopCount'], 0)
+            self.assertFalse((state / 'engine-release-requests' / (request['runKey'] + '.request')).exists())
+            self.assertTrue(entry.exists()); self.assertTrue(reservation.exists())
+
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Real systemd qualification requires Linux; required Linux CI never skips')
+    def test_real_linux_mask_reload_and_stop_contract(self):
+        result = subprocess.run(['sudo', '-n', sys.executable, '-B', str(ROOT / 'tests/operations/withdrawal-systemd-fixture.py')], capture_output=True, text=True, timeout=50)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('owned fixture retired', result.stdout)
 
 
 if __name__ == '__main__':

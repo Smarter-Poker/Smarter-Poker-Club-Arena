@@ -56,7 +56,7 @@ describe('spin phase 6 wiring', () => {
     const start = service.indexOf('async registerPlayer(');
     const end = service.indexOf('async unregisterPlayer(', start);
     const method = service.slice(start, end);
-    expect(method).toMatch(/supabase\.rpc\('fn_register_for_tournament_request'/);
+    expect(method).toMatch(/supabase\s*\.rpc\('fn_register_for_tournament_request'/);
     expect(method).not.toContain('retryAsync(');
     expect(method).toContain('p_request_id: requestId');
     expect(method).toContain('withTournamentUnregistrationIntent(');

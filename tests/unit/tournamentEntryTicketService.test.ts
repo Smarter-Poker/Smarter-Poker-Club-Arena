@@ -31,6 +31,7 @@ vi.mock('../../src/lib/supabase', () => {
   const chain = (row: unknown): any => {
     const query: any = {
       select: vi.fn(() => query),
+      abortSignal: vi.fn(() => query),
       eq: vi.fn(() => query),
       update: vi.fn((patch) => {
         mockTournamentUpdate(patch);
@@ -46,7 +47,10 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     getAuthUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }),
     supabase: {
-      rpc: mockRpc,
+      rpc: (...args: unknown[]) => {
+        const result = Promise.resolve(mockRpc(...args));
+        return Object.assign(result, { abortSignal: (_signal: AbortSignal) => result });
+      },
       from: vi.fn((table: string) =>
         chain(
           table === 'tournaments'

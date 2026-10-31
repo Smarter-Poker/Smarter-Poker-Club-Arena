@@ -51,7 +51,7 @@ try:
  INSERT INTO ca_hand_notes SELECT id FROM hand_history;
  INSERT INTO smarter_private.hand_submissions SELECT table_id,hand_number,id,created_at,1,md5(id::text),'{{"original":true}}' FROM hand_history;
  """,label='six-rows-one-eligible')
- code,_,err=e.sql(db,prefix+f"SET LOCAL ca.diamond_purge_tables='{{{table},{table},{table}}}';"+operation+'COMMIT;',label='oversized-batch-refused',check=False)
+ code,_,err=e.sql(db,prefix+"SET LOCAL ca.diamond_purge_tables='{"+','.join([table]*9)+"}';"+operation+'COMMIT;',label='oversized-batch-refused',check=False)
  if not code or 'DIAMOND_REMOVAL_PAGE_BOUND' not in err:raise RuntimeError('oversized batch admitted')
  for label,change,error in [('foreign-club',"UPDATE tables SET club_id=gen_random_uuid();",'DIAMOND_TERMINAL_TABLE_REQUIRED'),('open-arena','UPDATE ca_arena_settings SET cash_games_enabled=true;','DIAMOND_NOT_PARKED'),('unpaid-bounty','UPDATE tournaments SET bounty_pool_paid=0;','DIAMOND_TERMINAL_TABLE_REQUIRED'),('spin-without-terminal-receipt',"UPDATE tournaments SET tournament_type='SPIN';",'DIAMOND_TERMINAL_TABLE_REQUIRED')]:
   code,_,err=e.sql(db,prefix+change+operation+'COMMIT;',label=label,check=False)
@@ -73,6 +73,13 @@ try:
  if e.sql(db,"SELECT expected->>'witness_source'='preserved_financial_facts' AND (expected->>'hand_created_at')::timestamptz=f.hand_created_at FROM smarter_private.hand_submission_disposals d JOIN ca_hand_financial_facts f ON f.hand_id=d.submission_id;",label='recovery-original-time')[1].strip()!='t':raise RuntimeError('recovery invented provenance')
  e.sql(db,prefix+operation+'COMMIT;',label='repeat-recovery-zero')
  if e.sql(db,check,label='repeat-recovery-preserved')[1].strip()!='t':raise RuntimeError('recovery duplicate changed data')
+ # More table identities never increase the 500-row transaction budget.
+ e.sql(db,f"""INSERT INTO hand_history SELECT md5(('budget-'||g)::text)::uuid,'{table}','{tour}',g,false,1,20,1,0,'[]',now() FROM generate_series(100,699)g;
+ INSERT INTO hand_atomic_commits SELECT id,table_id,hand_number,now(),'{{"ok":true}}' FROM hand_history WHERE hand_number>=100;""",label='bounded-large-history')
+ budget_prefix=prefix+"SET LOCAL ca.diamond_purge_tables='{"+','.join([table]*8)+"}';"
+ result=e.sql(db,budget_prefix+operation+'COMMIT;',label='eight-pages-stop-at-500')[1]
+ if '"deleted": 500' not in result:raise RuntimeError('transaction history budget changed: '+result)
+ if e.sql(db,'SELECT count(*)=105 FROM hand_history;',label='global-budget-retains-overflow')[1].strip()!='t':raise RuntimeError('history budget exceeded')
  e.report.update(status='passed',operation_sha256=n.sha(ROOT/'scripts/operations/remove-diamond-settled-history.sql'),limitations=__doc__)
 except BaseException as err:e.report['failure']=repr(err)
 finally:

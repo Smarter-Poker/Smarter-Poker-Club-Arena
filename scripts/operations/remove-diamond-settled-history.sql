@@ -1,5 +1,5 @@
 -- Explicit owner-requested Diamond history removal, 2026-10-30.
--- At most two finite pages, one transaction. No scheduler, refunds, wallet writes or
+-- At most eight tables and 500 histories/witness recoveries, one transaction. No scheduler, refunds, wallet writes or
 -- changes to settlement receipts. Unsettled evidence is deliberately retained.
 -- Caller supplies ca.diamond_purge_table and ca.diamond_purge_dry_run locally.
 SET LOCAL lock_timeout='500ms';
@@ -14,8 +14,10 @@ DECLARE
  v_ids uuid[];
  v_count integer;
  v_recovery_ids uuid[];
+ v_history_budget integer:=500;
+ v_recovery_budget integer:=500;
 BEGIN
- IF coalesce(cardinality(v_tables),0) NOT BETWEEN 1 AND 2 OR array_position(v_tables,NULL) IS NOT NULL THEN
+ IF coalesce(cardinality(v_tables),0) NOT BETWEEN 1 AND 8 OR array_position(v_tables,NULL) IS NOT NULL THEN
   RAISE EXCEPTION 'DIAMOND_REMOVAL_PAGE_BOUND'; END IF;
  IF public.fn_platform_frozen() IS DISTINCT FROM false
  OR NOT pg_try_advisory_xact_lock_shared(530090,2)
@@ -55,7 +57,7 @@ BEGIN
    AND isfinite(a.post_commit_completed_at) AND a.post_commit_result->>'ok'='true'
    AND NOT EXISTS(SELECT 1 FROM public.hand_history h WHERE h.id=s.submission_id)
    AND NOT EXISTS(SELECT 1 FROM smarter_private.hand_submission_disposals d WHERE d.table_id=s.table_id AND d.hand_number=s.hand_number)
-  ORDER BY s.hand_number LIMIT 250
+  ORDER BY s.hand_number LIMIT LEAST(250,v_recovery_budget)
  ) recovery;
  INSERT INTO smarter_private.hand_submission_disposals
   (table_id,hand_number,submission_id,receipt_id,witness_hand_number,reason,expected)
@@ -74,6 +76,7 @@ BEGIN
  WHERE s.submission_id=ANY(v_recovery_ids) ON CONFLICT DO NOTHING;
  GET DIAGNOSTICS v_count=ROW_COUNT;
  v_recovered:=v_recovered+v_count;
+ v_recovery_budget:=v_recovery_budget-v_count;
  WITH page AS MATERIALIZED (
   SELECT h.id FROM public.hand_history h WHERE h.table_id=v_table
   ORDER BY h.hand_number LIMIT 250
@@ -92,6 +95,7 @@ BEGIN
     jsonb_array_elements(r.source_refs) s WHERE s->>'kind' IN ('atomic_economics','signed_economics') AND s->>'id'=h.id::text)
    AND NOT smarter_private.f06_hand_cards_unresolved(h.table_id,h.hand_number::bigint)
    AND NOT smarter_private.f06_movement_boundary_retained(h.table_id,h.hand_number::bigint)
+  LIMIT v_history_budget
   FOR UPDATE OF h SKIP LOCKED
  ) SELECT array_agg(id ORDER BY id) INTO v_ids FROM eligible;
  IF coalesce(cardinality(v_ids),0)=0 THEN
@@ -137,6 +141,7 @@ BEGIN
  GET DIAGNOSTICS v_count=ROW_COUNT;
  IF v_count<>cardinality(v_ids) THEN RAISE EXCEPTION 'DIAMOND_REMOVAL_COUNT_CHANGED'; END IF;
  v_total:=v_total+v_count;
+ v_history_budget:=v_history_budget-v_count;
  v_results:=v_results||jsonb_build_array(jsonb_build_object('deleted',v_count,'table_id',v_table,'ids_md5',md5(v_ids::text),'receipt_preserved',true));
  END LOOP;
  PERFORM set_config('ca.diamond_purge_result',jsonb_build_object('deleted',v_total,'recovered_witnesses',v_recovered,'tables',v_results)::text,true);

@@ -6,6 +6,10 @@ import { parse } from 'yaml';
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
 
+// A history fixture allows 5s to scan and 2s to reap its child. Keep another
+// 5s for Python startup, module loading and result serialization under suite load.
+const historyFixtureTimeoutMs = 12_000;
+
 const script = resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py');
 const source = readFileSync(script, 'utf8');
 const workflowText = readFileSync(
@@ -304,7 +308,7 @@ finally: os.unlink(path)
         '\n'
     ),
     encoding: 'utf8',
-    timeout: 7000,
+    timeout: historyFixtureTimeoutMs,
   });
   expect(ran.status, ran.stderr).toBe(0);
   const data = JSON.parse(ran.stdout);
@@ -775,8 +779,10 @@ print(json.dumps({'restarts':m['sanitize_restart_evidence']({'OOMKilled':True,'E
   expect(JSON.stringify(data)).not.toMatch(/private|secret|Auth|ETIMEDOUT/);
 });
 
-it('streams retained process errors beyond the noisy newest tail with bounded memory and honest coverage', () => {
-  const fixture = `
+it.each(['complete', 'size', 'time'])(
+  'streams retained process errors with bounded memory and honest %s coverage',
+  (mode) => {
+    const fixture = `
 import json,runpy,sys
 m=runpy.run_path(sys.argv[1]); mode=sys.argv[2]
 if mode=='complete':
@@ -786,10 +792,9 @@ else: producer="import time; print('private-secret',flush=True); time.sleep(30)"
 r=m['process_history']([sys.executable,'-c',producer], max_bytes=1024 if mode=='size' else 2000000,seconds=0.05 if mode=='time' else 5)
 print(json.dumps(r))
 `;
-  for (const mode of ['complete', 'size', 'time']) {
     const ran = spawnSync('python3', ['-B', '-c', fixture, script, mode], {
       encoding: 'utf8',
-      timeout: 7000,
+      timeout: historyFixtureTimeoutMs,
     });
     expect(ran.status, ran.stderr).toBe(0);
     const data = JSON.parse(ran.stdout);
@@ -807,7 +812,7 @@ print(json.dumps(r))
     }
     expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|Traceback/);
   }
-});
+);
 
 it('classifies only engine autoheal actions without returning container names or raw text', () => {
   const fixture = `
@@ -1132,7 +1137,7 @@ print(json.dumps({'parsed':parsed,'history':history,'bounded':m['tournament_yiel
 `;
   const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
     encoding: 'utf8',
-    timeout: 7000,
+    timeout: historyFixtureTimeoutMs,
   });
   expect(ran.status, ran.stderr).toBe(0);
   const result = JSON.parse(ran.stdout);
@@ -1173,7 +1178,7 @@ print(json.dumps({'parsed':parsed,'history':history,'bounded':parse('\\n'.join([
 `;
   const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
     encoding: 'utf8',
-    timeout: 7000,
+    timeout: historyFixtureTimeoutMs,
   });
   expect(ran.status, ran.stderr).toBe(0);
   const result = JSON.parse(ran.stdout);

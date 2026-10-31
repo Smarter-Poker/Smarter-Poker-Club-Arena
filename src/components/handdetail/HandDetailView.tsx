@@ -451,7 +451,11 @@ export function HandDetailView({
         <span className="hdv__meta-when">{stamp(model.playedAt)}</span>
         <span className="hdv__meta-stakes">
           {blindLabel(model.smallBlind)} / {blindLabel(model.bigBlind)}
-          {badge ? <em className="hdv__meta-badge">{badge}</em> : null}
+          {model.tournamentId ? (
+            <em className="hdv__meta-badge">Tournament Chips{badge ? ` · ${badge}` : ''}</em>
+          ) : badge ? (
+            <em className="hdv__meta-badge">{badge}</em>
+          ) : null}
         </span>
         <span className="hdv__meta-sn">SN: {model.handNumber ?? ''}</span>
       </div>

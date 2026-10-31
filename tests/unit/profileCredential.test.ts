@@ -218,7 +218,7 @@ describe('the public arena record folds player_stats by hands', () => {
 describe('the credential reads the stats payload, not fabrications', () => {
   it('shows lifetime hands in the rail and the analysis window in the snapshot', () => {
     expect(PROFILE).toContain('stats.lifetimeHands.toLocaleString()');
-    expect(PROFILE).toContain("stats.analysisCapped ? 'Hands Analyzed' : 'Hands Played'");
+    expect(PROFILE).toContain("stats.analysisCapped ? 'Cash Hands Analyzed' : 'Cash Hands Played'");
   });
 
   it('reports the last hand time instead of a decorative "Profile Synced"', () => {
@@ -262,11 +262,18 @@ describe('the public dossier', () => {
     // it reads through a SECURITY DEFINER function that returns the five play
     // fields and no money at all. The ROW SHAPE is unchanged, which is why the
     // folding assertions below still measure the same thing.
-    expect(PUBLIC_PROFILE).toContain("rpc('ca_public_arena_record_v1'");
+    expect(PUBLIC_PROFILE).toContain('readSeparatedPublicArenaRecord(userId)');
+    expect(read('src/services/PublicArenaRecordRead.ts')).toContain(
+      "rpc('ca_public_arena_record_separated'"
+    );
     expect(PUBLIC_PROFILE, 'the page must not read player_stats directly again').not.toContain(
       "from('player_stats')"
     );
-    expect(PUBLIC_PROFILE).toContain('aggregateArenaRecord(data)');
+    expect(read('src/services/PublicArenaRecordRead.ts')).toContain(
+      'aggregateArenaRecord(data.rows)'
+    );
+    expect(PUBLIC_PROFILE).toContain('<dt>Cash Hands</dt>');
+    expect(PUBLIC_PROFILE).toContain('<dt>Cash VPIP / PFR</dt>');
     expect(PUBLIC_PROFILE).toContain('className={styles.publicProfileRecord}');
     expect(PUBLIC_PROFILE).not.toContain('Level {profile.level}');
     expect(PUBLIC_CSS).toContain('.publicProfileRecord');

@@ -309,6 +309,53 @@ test.describe('Player Stats production experience', () => {
     });
   });
 
+  test('separates published cash and tournament samples and preserves mode through history', async ({
+    page,
+  }, testInfo) => {
+    const receipts: Array<{ mode: string; cash: number; tournament: number }> = [];
+    page.on('response', async (response) => {
+      if (!response.url().includes('/rpc/ca_player_stats_overview_separated')) return;
+      if (!response.ok()) return;
+      const data = await response.json().catch(() => null);
+      if (data?.scope?.game_mode)
+        receipts.push({
+          mode: data.scope.game_mode,
+          cash: data.overall?.cash_hands,
+          tournament: data.overall?.tourney_hands,
+        });
+    });
+    const modes = page.getByRole('group', { name: 'Statistics Game Mode', exact: true });
+    await modes.getByRole('button', { name: 'Tournaments', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'Tournaments', exact: true })).toBeVisible();
+    await expect
+      .poll(() => receipts.some((r) => r.mode === 'tournament' && r.cash === 0))
+      .toBe(true);
+    await expect(page.getByRole('tab', { name: 'Analysis', exact: true })).toHaveCount(0);
+    const review = page.getByRole('button', { name: 'Review Tournament Hands', exact: true });
+    if (await review.count()) {
+      await review.click();
+      await expect.poll(() => new URL(page.url()).searchParams.get('gameMode')).toBe('tournament');
+      await expect(
+        page
+          .getByRole('group', { name: 'Hand History Game Mode' })
+          .getByRole('button', { name: 'Tournaments' })
+      ).toHaveAttribute('aria-pressed', 'true');
+      await page.goBack();
+    }
+    await page
+      .getByRole('group', { name: 'Statistics Game Mode', exact: true })
+      .getByRole('button', { name: 'Cash Games', exact: true })
+      .click();
+    await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toBeVisible();
+    await expect
+      .poll(() => receipts.some((r) => r.mode === 'cash' && r.tournament === 0))
+      .toBe(true);
+    await testInfo.attach('separated-game-mode-receipts', {
+      body: JSON.stringify(receipts),
+      contentType: 'application/json',
+    });
+  });
+
   test('traverses every owner Stats surface and preserves club and range scope', async ({
     page,
   }) => {
@@ -316,7 +363,6 @@ test.describe('Player Stats production experience', () => {
       'Performance',
       'Positions',
       'Hands',
-      'Tournaments',
       'Analysis',
       'Trophies',
       'Rake',

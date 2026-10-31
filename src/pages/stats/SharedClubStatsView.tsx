@@ -13,6 +13,7 @@ import PageBar from '../../components/help/PageBar';
 interface Props {
   targetUserId: string;
   asset: string;
+  gameMode?: 'cash' | 'tournament';
   timezone: string;
   rangeKey: string;
   windowDays: number | null;
@@ -38,7 +39,7 @@ export default function SharedClubStatsView(props: Props) {
   const onClubChange = useRef(props.onClubChange);
   onClubChange.current = props.onClubChange;
 
-  const scope = `${props.targetUserId}\u0000${props.asset}`;
+  const scope = `${props.targetUserId}\u0000${props.asset}\u0000${props.gameMode ?? 'cash'}`;
   const visibleClubs = clubsScope === scope ? clubs : [];
   const requestedClub = props.initialClubId?.trim() || null;
   const resolvedUrlClubId =
@@ -115,7 +116,8 @@ export default function SharedClubStatsView(props: Props) {
       clubId,
       props.windowDays,
       props.timezone,
-      props.asset
+      props.asset,
+      props.gameMode ?? 'cash'
     )
       .then((data) => {
         if (overviewRequest.current !== request) return;

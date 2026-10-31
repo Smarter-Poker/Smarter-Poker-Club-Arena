@@ -65,7 +65,7 @@ export default function ClubScopeConsole(props: Props) {
             <p>
               {selectedClub
                 ? 'Every Readout Below Is Restricted To This Club.'
-                : 'All Clubs Preserves Your Complete Existing Stats Contract.'}
+                : 'All Clubs Uses Recorded Hands In The Selected Game Mode.'}
             </p>
             <div className="stats-club-selector" role="group" aria-label="Statistics Club">
               <button

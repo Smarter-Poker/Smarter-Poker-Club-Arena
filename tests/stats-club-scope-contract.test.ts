@@ -194,9 +194,11 @@ describe('authorized club-scoped Stats contract', () => {
   });
 
   it('keeps direct client RPC names and argument lists aligned with database signatures', () => {
-    expect(pageSource).toContain("statsRpcName('ca_player_stats_overview_v2', selectedClubId)");
-    expect(pageSource).toContain("statsRpcName('ca_player_hands_v2', selectedClubId)");
-    expect(pageSource).toContain("supabase.rpc('ca_player_stats_club_comparison'");
+    expect(pageSource).toContain(
+      "statsRpcName('ca_player_stats_overview_separated', selectedClubId)"
+    );
+    expect(pageSource).toContain("statsRpcName('ca_player_hands_separated', selectedClubId)");
+    expect(pageSource).toContain("supabase.rpc('ca_player_stats_club_comparison_separated'");
     expect(pageSource).toContain('...statsScopeArgs(statsScope, selectedClubId)');
     expect(pageSource).toContain('p_user: targetUserId');
     expect(pageSource).toContain('p_days: windowDays');

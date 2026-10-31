@@ -125,6 +125,7 @@ export function replayFromServiceRecord(h: ServiceHandRecord): ReplayModel {
     ),
   });
   replay.arenaAsset = h.arenaAsset;
+  replay.tournamentId = h.tournament_id;
   return replay;
 }
 
@@ -253,6 +254,7 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
   return {
     id: h.id,
     arenaAsset: h.arenaAsset,
+    tournamentId: h.tournament_id,
     handNumber: h.hand_number,
     timestamp: Date.parse(h.played_at) || Date.now(),
     gameType: h.game_type,

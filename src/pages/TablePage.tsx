@@ -9732,7 +9732,10 @@ function LiveTablePage({
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Preserve committed, card-free public hand-stat recording; opponent HUDs are retired.
-  const { observePublicEvent } = usePlayerStats(userId);
+  const { observePublicEvent } = usePlayerStats(
+    userId,
+    tableState.isTournament ? 'tournament' : 'cash'
+  );
   const observePublicEventRef = useRef(observePublicEvent);
   observePublicEventRef.current = observePublicEvent;
 

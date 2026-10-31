@@ -7,6 +7,7 @@ import {
 
 export interface StatsHandDrilldown {
   clubId?: string;
+  gameMode?: 'cash' | 'tournament';
   variant?: string;
   position?: string;
   bigBlind?: number;
@@ -28,7 +29,9 @@ export function readStatsDrilldown(params: URLSearchParams): StatsHandDrilldown 
   const toRaw = params.get('to') || '';
   const statsMetricRaw = params.get('statsMetric')?.trim().toLowerCase();
   const statsSessionRaw = params.get('statsSession')?.trim();
+  const mode = params.get('gameMode');
   return {
+    ...(mode === 'cash' || mode === 'tournament' ? { gameMode: mode } : {}),
     ...(clubId ? { clubId } : {}),
     ...(variant ? { variant } : {}),
     ...(position ? { position } : {}),
@@ -51,6 +54,7 @@ export function statsEvidenceQueryFromDrilldown(drilldown: StatsHandDrilldown): 
     from: drilldown.from ? `${drilldown.from}T00:00:00.000Z` : null,
     to: toExclusive === null ? null : new Date(toExclusive).toISOString(),
     cashMetric: drilldown.statsMetric,
+    tournament: drilldown.gameMode ? drilldown.gameMode === 'tournament' : false,
   };
 }
 
@@ -78,6 +82,8 @@ export function filterHandsByStatsDrilldown(
   const from = drilldown.from ? Date.parse(`${drilldown.from}T00:00:00Z`) : null;
   const to = drilldown.to ? Date.parse(`${drilldown.to}T23:59:59.999Z`) : null;
   return hands.filter((hand) => {
+    if (drilldown.gameMode && Boolean(hand.tournament_id) !== (drilldown.gameMode === 'tournament'))
+      return false;
     if (
       drilldown.variant &&
       canonicalVariant(hand.game_type) !== canonicalVariant(drilldown.variant)

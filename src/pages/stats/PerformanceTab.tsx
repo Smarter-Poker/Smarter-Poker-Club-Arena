@@ -12,7 +12,7 @@ import { Suspense, lazy } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
 import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
 import { StatRow } from './StatRow';
-import { NOT_YET_MEASURED, SCOPE_ALL_GAMES, SCOPE_CASH, ratioOrUnmeasured } from './format';
+import { NOT_YET_MEASURED, SCOPE_CASH, ratioOrUnmeasured } from './format';
 import type { OverallStats } from './types';
 import type { StatsMetricAvailabilityContract } from '../../services/statsContract';
 import { formatRateEvidence, formatSampleEvidence } from './binomialConfidence';
@@ -117,7 +117,7 @@ export default function PerformanceTab({
               (v) => `${(v * 100).toFixed(1)}%`
             )}
             color="#00d4ff"
-            scope={SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
             evidence={formatRateEvidence(overall.vpip, overall.total_hands)}
           />
           <StatRow
@@ -128,7 +128,7 @@ export default function PerformanceTab({
               (v) => `${(v * 100).toFixed(1)}%`
             )}
             color="#8b5cf6"
-            scope={SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
             evidence={formatRateEvidence(overall.pfr, overall.total_hands)}
           />
           <StatRow
@@ -143,7 +143,7 @@ export default function PerformanceTab({
                   : `${(overall.three_bet_percent * 100).toFixed(1)}%`
             }
             color="#f59e0b"
-            scope={exactThreeBet ? SCOPE_CASH : SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
             evidence={formatRateEvidence(
               exactThreeBet && threeBetMeasured
                 ? exactThreeBet.actions / exactThreeBet.opportunities
@@ -160,7 +160,7 @@ export default function PerformanceTab({
                 : `${(overall.fold_to_three_bet * 100).toFixed(1)}%`
             }
             color="#ef4444"
-            scope={SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
             evidence={formatRateEvidence(
               overall.fold_to_three_bet,
               metricAvailability?.fold_to_three_bet_opportunities,
@@ -187,7 +187,7 @@ export default function PerformanceTab({
                   : `${(overall.cbet_flop * 100).toFixed(1)}%`
             }
             color="#8b5cf6"
-            scope={exactCbet ? SCOPE_CASH : SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
             evidence={formatRateEvidence(
               exactCbet && cbetMeasured
                 ? exactCbet.actions / exactCbet.opportunities
@@ -204,7 +204,7 @@ export default function PerformanceTab({
                 : `${(overall.wtsd * 100).toFixed(1)}%`
             }
             color="#6366f1"
-            scope={SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
             evidence={formatRateEvidence(
               overall.wtsd,
               metricAvailability?.wtsd_opportunities,
@@ -222,7 +222,7 @@ export default function PerformanceTab({
                   )
             }
             color="#f59e0b"
-            scope={SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
             evidence={formatSampleEvidence(
               metricAvailability?.aggression_factor_denominator,
               'Passive Action',
@@ -234,7 +234,7 @@ export default function PerformanceTab({
             label="Showdown Win %"
             value={showdownWinRate}
             color="#22c55e"
-            scope={SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
             evidence={formatRateEvidence(
               overall.showdowns_won / overall.showdowns_total,
               overall.showdowns_total
@@ -289,13 +289,13 @@ export default function PerformanceTab({
             label="Hands Won"
             value={overall.hands_won.toLocaleString()}
             color="#22c55e"
-            scope={SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
           />
           <StatRow
             label="Hands Lost"
             value={overall.hands_lost.toLocaleString()}
             color="#ef4444"
-            scope={SCOPE_ALL_GAMES}
+            scope={SCOPE_CASH}
           />
         </div>
       </div>

@@ -40,7 +40,8 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
 import { vipStatusLabel } from '../utils/vipStatus';
-import { aggregateArenaRecord, type ArenaRecord } from '../utils/arenaRecord';
+import type { ArenaRecord } from '../utils/arenaRecord';
+import { readSeparatedPublicArenaRecord } from '../services/PublicArenaRecordRead';
 import { formatCount, formatPct, formatMemberSince } from '../utils/format';
 
 export default function PublicProfilePage() {
@@ -51,19 +52,9 @@ export default function PublicProfilePage() {
   const isMounted = useIsMounted();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  /* The public arena record, one row per club, folded into one line by the
-     dossier. Null until it answers, never zeroes.
-
-     It arrives through ca_public_arena_record_v1 rather than from
-     player_stats directly. That table used to carry "Player stats are public"
-     - FOR SELECT, roles PUBLIC, USING (true) - so every player's
-     total_winnings, total_losses and total_rake were readable by an anonymous
-     browser holding the published anon key. The table is now readable only by
-     its owner and by members of the club the row belongs to, and this page is
-     the one reader that is legitimately cross-club, so it reads through a
-     SECURITY DEFINER function that returns the five play fields and NO money
-     at all. The row shape is unchanged, so aggregateArenaRecord still does
-     the weighting and its unit test still measures it. */
+  /* Cash behavior and finalized tournament results are read independently.
+     Only recorded nonfinancial fields are public; no club identity, private
+     cards, wallet, profit or note data is requested. */
   const [record, setRecord] = useState<ArenaRecord | null>(null);
   const [mutualFriends, setMutualFriends] = useState<
     { id: string; arenaName: string; avatarUrl?: string }[]
@@ -77,7 +68,10 @@ export default function PublicProfilePage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [playerStatus, setPlayerStatus] = useState<PlayerStatus | null>(null);
 
-  const loadingRef = useRef(false);
+  const loadingRef = useRef<string | null>(null);
+  const activeRecordScope = `${user?.id ?? ''}:${userId ?? ''}`;
+  const activeRecordScopeRef = useRef(activeRecordScope);
+  activeRecordScopeRef.current = activeRecordScope;
 
   useEffect(() => {
     document.title = profile
@@ -95,8 +89,9 @@ export default function PublicProfilePage() {
       return;
     }
 
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    const requestScope = `${user?.id ?? ''}:${userId ?? ''}`;
+    if (loadingRef.current === requestScope) return;
+    loadingRef.current = requestScope;
     setLoading(true);
     try {
       const [profileData, mutuals, blocked, friendship, status, arenaRecord] = await Promise.all([
@@ -105,18 +100,13 @@ export default function PublicProfilePage() {
         blockService.isBlocked(user.id, userId),
         checkFriendship(user.id, userId),
         playerStatusService.getPlayerStatus(userId),
-        supabase
-          .rpc('ca_public_arena_record_v1', { p_target_user: userId })
-          .then(({ data, error }) => {
-            if (error) {
-              reportError(error, 'PublicProfilePage.record');
-              return null;
-            }
-            return data && data.length > 0 ? aggregateArenaRecord(data) : null;
-          }),
+        readSeparatedPublicArenaRecord(userId).catch((error) => {
+          reportError(error, 'PublicProfilePage.record');
+          return null;
+        }),
       ]);
 
-      if (!isMounted.current) return;
+      if (!isMounted.current || activeRecordScopeRef.current !== requestScope) return;
       setProfile(profileData);
       setRecord(arenaRecord);
       setMutualFriends(mutuals);
@@ -125,10 +115,13 @@ export default function PublicProfilePage() {
       setPlayerStatus(status);
     } catch (err) {
       reportError(err, 'PublicProfilePage.Load_error');
-      if (isMounted.current) toast.error('Failed to load profile');
+      if (isMounted.current && activeRecordScopeRef.current === requestScope)
+        toast.error('Failed to load profile');
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (loadingRef.current === requestScope) {
+        loadingRef.current = null;
+        if (isMounted.current) setLoading(false);
+      }
     }
   }, [isMounted, navigate, toast, userId, user?.id]);
 
@@ -422,19 +415,22 @@ export default function PublicProfilePage() {
                 nothing. The club count is a real fact about the player. */}
             {record && record.clubs > 0 && (
               <span className={styles.levelBadge}>
-                {formatCount(record.clubs)} {record.clubs === 1 ? 'Club' : 'Clubs'}
+                {formatCount(record.clubs)} {record.clubs === 1 ? 'Cash Club' : 'Cash Clubs'}
               </span>
             )}
             <span className={styles.memberSince}>Member Since {memberSince}</span>
           </div>
 
+          <span className={styles.memberSince}>
+            Recorded Chip Cash Play / Finalized Chip Tournaments
+          </span>
           <dl className={styles.publicProfileRecord} aria-label="Arena Record">
             <div>
-              <dt>Hands</dt>
+              <dt>Cash Hands</dt>
               <dd>{record ? formatCount(record.hands) : '-'}</dd>
             </div>
             <div>
-              <dt>VPIP / PFR</dt>
+              <dt>Cash VPIP / PFR</dt>
               <dd>
                 {record && record.hands > 0
                   ? `${formatPct(record.vpip, 0)} / ${formatPct(record.pfr, 0)}`

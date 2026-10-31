@@ -15,13 +15,15 @@ import StatsEvidenceLink from '../../components/stats/StatsEvidenceLink';
 import { buildStatsTournamentEvidencePath } from '../../lib/statsEvidenceNavigation';
 import { compactChips } from '../../utils/format';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
+const TournamentPlayingStats = lazy(() => import('./TournamentPlayingStats'));
 
 export interface TournamentsTabProps {
   tourn: TournamentSummary;
   overall: OverallStats;
   full: FullStats | null;
   financialPanel?: ReactNode;
+  onOpenHands?: () => void;
 }
 
 export default function TournamentsTab({
@@ -29,13 +31,23 @@ export default function TournamentsTab({
   overall,
   full,
   financialPanel,
+  onOpenHands,
 }: TournamentsTabProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {financialPanel}
+      <Suspense
+        fallback={<div className="stats-section-loading">Opening Tournament Statistics...</div>}
+      >
+        <TournamentPlayingStats overall={overall} full={full} onOpenHands={onOpenHands} />
+      </Suspense>
       <div>
         <div className="stats-section-header">
           <h3>Tournament Results</h3>
+        </div>
+        <div className="stats-notice" role="status">
+          Results Cover Finalized Events In This Window. Playing Statistics Use Recorded Tournament
+          Hands.
         </div>
         <div className="stats-notice" role="status">
           Accounting Coverage: Reconstructed From Tournament Records. Registration, Rebuy, Add-On,

@@ -266,6 +266,12 @@ describe('a hand history a tracker can import', () => {
     expect(text).not.toMatch(/rake|jackpot fee/i);
   });
 
+  it('never exports a tournament as a cash tracker hand when entry metadata is absent', () => {
+    const result = toPokerStarsHand(models[0].model, { ...meta(), isTournament: true });
+    expect(result.faithful).toBe(false);
+    expect(result.reasons.join(' ')).toContain('original tournament entry and level metadata');
+  });
+
   it('writes a raise as "raises BY to TO", with the TO excluding dead money', () => {
     /* A tournament hand with an ante: the ante is in the pot and must NOT be
        part of the level a raise raised to. */

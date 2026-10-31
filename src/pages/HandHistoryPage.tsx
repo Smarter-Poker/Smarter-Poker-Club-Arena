@@ -1,3 +1,4 @@
+import { statsGameMode } from '../services/statsGameMode';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -133,7 +134,8 @@ export default function HandHistoryPage() {
   }, []);
 
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const gameMode = statsGameMode(searchParams.get('gameMode'));
   const { user } = useAuthUser();
   const userId = user?.id ?? null;
   const drilldownKey = searchParams.toString();
@@ -151,7 +153,7 @@ export default function HandHistoryPage() {
   /* The page knows which ROOM it is in, not which club row, so it asks by
      asset and the service names the one open club behind it. */
   const arenaAssetScope = arenaScoped ? ('diamonds' as const) : null;
-  const hasStatsDrilldown = Object.keys(statsDrilldown).length > 0;
+  const hasStatsDrilldown = Object.keys(statsDrilldown).some((key) => key !== 'gameMode');
   const cameFromStats = searchParams.get('source') === 'stats';
   /* DEEP LINK (Phase 1, 2026-09-05): `/hand-history?hand=<id>` opens ON that
      hand - expanded and scrolled to - fetching it by id when it is not on the
@@ -300,6 +302,7 @@ export default function HandHistoryPage() {
                 clubId: statsDrilldown.clubId,
                 throwOnError: true,
                 indexedArchive: true,
+                gameMode,
               }),
             { maxRetries: 2, isMountedRef: isMounted }
           );
@@ -344,6 +347,7 @@ export default function HandHistoryPage() {
     statsDrilldown,
     useStatsEvidence,
     drilldownKey,
+    gameMode,
     archiveScope,
     isMounted,
     toast,
@@ -406,6 +410,7 @@ export default function HandHistoryPage() {
                 clubId: statsDrilldown.clubId,
                 throwOnError: true,
                 indexedArchive: true,
+                gameMode,
               }),
             { maxRetries: 2, isMountedRef: isMounted }
           );
@@ -432,6 +437,7 @@ export default function HandHistoryPage() {
     statsDrilldown,
     useStatsEvidence,
     drilldownKey,
+    gameMode,
     archiveScope,
     rows.length,
     loading,
@@ -487,6 +493,17 @@ export default function HandHistoryPage() {
       try {
         const row = await handHistoryService.getHand(linkedHandId);
         if (!alive || requestKeyRef.current !== archiveScope) return;
+        if (row && !searchParams.has('gameMode') && row.tournament_id) {
+          setSearchParams(
+            (current) => {
+              const next = new URLSearchParams(current);
+              next.set('gameMode', 'tournament');
+              return next;
+            },
+            { replace: true }
+          );
+          return;
+        }
         setLinkedRead({ scope: archiveScope, row });
         setLinkedState(row ? 'idle' : 'missing');
       } catch (e) {
@@ -533,7 +550,12 @@ export default function HandHistoryPage() {
     if (linkedHandId) {
       const onPage = rows.find((r) => r.id === linkedHandId);
       const lead = onPage ?? linkedRow;
-      if (lead && !list.some((h) => h.id === lead.id)) list = [lead, ...list];
+      if (
+        lead &&
+        Boolean(lead.tournament_id) === (gameMode === 'tournament') &&
+        !list.some((h) => h.id === lead.id)
+      )
+        list = [lead, ...list];
     }
     return list.map((h) => adaptServiceHandToPanel(h, userId));
   }, [
@@ -550,6 +572,7 @@ export default function HandHistoryPage() {
     linkedRow,
     useStatsEvidence,
     loadedScope,
+    gameMode,
     archiveScope,
   ]);
 
@@ -617,6 +640,7 @@ export default function HandHistoryPage() {
           tableName: h.tableName ?? 'Club Arena',
           playedAt: h.timestamp,
           heroUserId: userId,
+          isTournament: !!h.tournamentId,
           /* The TABLE's own size, read from the table row. A constant 9 wrote
              every heads-up and three-handed hand into a tracker as full ring,
              and those are different games in every statistic it keeps. */
@@ -706,6 +730,7 @@ export default function HandHistoryPage() {
       handAssetTotals(
         hands.map((h) => ({
           arenaAsset: h.arenaAsset,
+          tournamentId: h.tournamentId,
           net: h.replay.players.find((p) => p.userId === userId)?.net ?? 0,
           pot: h.replay.potTotal,
         }))
@@ -751,6 +776,15 @@ export default function HandHistoryPage() {
         date: new Date(h.timestamp).toISOString(),
         table: h.tableName || '',
         game: gameTypeLabel(h.replay.gameVariant) || h.gameType,
+        mode: h.tournamentId ? 'Tournament' : 'Cash',
+        unit: h.tournamentId
+          ? 'Tournament Chips'
+          : h.arenaAsset === 'diamonds'
+            ? 'Diamonds'
+            : h.arenaAsset === 'chips'
+              ? 'Chips'
+              : 'Unclassified',
+        tournamentId: h.tournamentId ?? '',
         stakes: h.blinds,
         asset: h.arenaAsset ?? 'unclassified',
         hand_number: h.handNumber,
@@ -808,7 +842,15 @@ export default function HandHistoryPage() {
         status="HAND RECORD // LIVE"
         metrics={[
           { label: 'Won', value: stats.wins, tone: 'live' },
-          { label: 'Biggest Pot', value: biggestPotsByAsset, tone: 'attention' },
+          {
+            label: gameMode === 'tournament' ? 'Events' : 'Biggest Pot',
+            value:
+              gameMode === 'tournament'
+                ? new Set(hands.flatMap((hand) => (hand.tournamentId ? [hand.tournamentId] : [])))
+                    .size
+                : biggestPotsByAsset,
+            tone: 'attention',
+          },
         ]}
       />
 
@@ -874,13 +916,36 @@ export default function HandHistoryPage() {
           type="button"
           className="hh-search__export"
           onClick={exportForTracker}
-          disabled={hands.length === 0}
+          disabled={hands.length === 0 || gameMode === 'tournament'}
+          aria-describedby={gameMode === 'tournament' ? 'hh-tracker-tournament-note' : undefined}
           title="Export These Hands In The PokerStars Format"
         >
           Export For Tracker
         </button>
       </div>
 
+      <div className="hh-filters" role="group" aria-label="Hand History Game Mode">
+        {(['cash', 'tournament'] as const).map((mode) => (
+          <button
+            type="button"
+            key={mode}
+            className={`hh-filter-chip${gameMode === mode ? ' active' : ''}`}
+            aria-pressed={gameMode === mode}
+            onClick={() =>
+              setSearchParams((current) => {
+                const next = new URLSearchParams(current);
+                next.set('gameMode', mode);
+                next.delete('hand');
+                next.delete('statsSession');
+                next.delete('statsMetric');
+                return next;
+              })
+            }
+          >
+            {mode === 'cash' ? 'Cash Games' : 'Tournaments'}
+          </button>
+        ))}
+      </div>
       <div className="hh-filters" role="group" aria-label="Filter Loaded Hands">
         {FILTERS.map((f) => (
           <button
@@ -904,8 +969,8 @@ export default function HandHistoryPage() {
           onClick={() =>
             navigate(
               arenaScoped
-                ? '/hand-history'
-                : `/hand-history?${DIAMOND_HAND_HISTORY_PARAM}=${DIAMOND_HAND_HISTORY_VALUE}`,
+                ? `/hand-history?gameMode=${gameMode}`
+                : `/hand-history?${DIAMOND_HAND_HISTORY_PARAM}=${DIAMOND_HAND_HISTORY_VALUE}&gameMode=${gameMode}`,
               { replace: true }
             )
           }
@@ -913,6 +978,13 @@ export default function HandHistoryPage() {
           Diamond Arena
         </button>
       </div>
+
+      {gameMode === 'tournament' && (
+        <div className="hh-stats-drilldown" role="status" id="hh-tracker-tournament-note">
+          Tournament CSV Exports Preserve Event IDs. Tracker Export Requires Original Entry And
+          Level Metadata.
+        </div>
+      )}
 
       {linkedHandId && linkedState === 'missing' && (
         <div className="hh-stats-drilldown" role="status">

@@ -99,7 +99,9 @@ jobs:
   unpaid-lightning-funding-contracts:
     name: Unpaid Lightning follows original funding
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Run41224174509 completed every qualification at9m58s and cleanup at9m59s,
+    # then the10m provider cap cancelled its verdict. Reserve one closing minute.
+    timeout-minutes: 11
     steps:
       - uses: actions/checkout@v4
       - name: Install PostgreSQL 17 from the signed PGDG source only

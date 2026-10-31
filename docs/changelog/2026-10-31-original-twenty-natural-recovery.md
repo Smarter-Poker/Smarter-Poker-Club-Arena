@@ -31,3 +31,19 @@ canonical bracket form as the existing abort handler, preserving the real
 constant-time service check before any platform access. The unchanged law fails
 on the prior source and passes with the correction; behavioral unauthorized
 requests still never reach preparation.
+
+A composed Inspector qualification returned a schema-less first JSON payload,
+but its strict schema assertion discarded the refusal reason. That assertion
+now retains at most 4096 characters of the synthetic proposal in its error.
+The schema check, native deadlines, ownership and cleanup stay unchanged. This
+is diagnostic evidence preservation; the underlying refusal remains unknown
+until the existing qualification reports its actual payload.
+
+Unpaid-Lightning run41224174509/job124604739907 completed all30 declared
+steps, with the final qualification at9m58s and cleanup at9m59s, but GitHub
+reported its10m maximum exceeded. The existing job now has an11m cap for
+closing room. All steps, commands, triggers, failure behavior and free Ubuntu
+remain identical. Prior run41222243369 passed in8m42s as a comparable same-
+workflow baseline; whole hosted merge-input equality is not claimed. This
+changes no native runtime deadline, financial rule, weekly STOP or production
+operation.

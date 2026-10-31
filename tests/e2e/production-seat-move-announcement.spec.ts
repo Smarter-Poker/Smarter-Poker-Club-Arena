@@ -10,6 +10,7 @@ import {
   CASH_SPECTATOR_ACTION,
   CASH_TABLE_CARD_SELECTOR,
   collectVisibleCashCandidates,
+  selectClassicCashCandidate,
 } from './support/cashTableCandidates';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 
@@ -17,7 +18,7 @@ const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4
 const ENGINE_HOST = 'engine.smarter.poker';
 const MAIN_NAME = /\bmain(?:\s*\d+)?\b/i;
 const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
-type CashTable = { id: string; name: string };
+type CashTable = { id: string; name: string; cluster_id?: unknown; cluster?: unknown };
 type RefusedWrite = { transport: 'http' | 'websocket'; operation: string; path: string };
 
 /** Refuse participation before a request can reach a real seat or chip pool. */
@@ -251,12 +252,22 @@ test('the published table explains controlled seat moves without moving a player
       candidates.length,
       'the reserved club needs an occupied cash spectator subject'
     ).toBeGreaterThan(0);
-    const source = candidates[0];
-    subjectTableId = source.id;
     const catalogueRead = await cashRead;
     if (catalogueRead.error || !catalogueRead.rows)
       throw new Error(`The cash catalogue was unreadable: ${catalogueRead.error}`);
     const catalogue = catalogueRead.rows;
+    const source = selectClassicCashCandidate(candidates, catalogue);
+    if (!source)
+      throw new Error(
+        'The classic hero proof needs a visible occupied cash table with an exact must_move cluster catalogue row.'
+      );
+    subjectTableId = source.id;
+    evidence.subjectMode = {
+      tableId: source.id,
+      clusterId: catalogue.find((table) => table.id === source.id)!.cluster_id,
+      clusterMode: 'must_move',
+      authority: 'existing tables catalogue cash_games foreign-key join',
+    };
     expect(observedViewerId, 'the page must use its reserved fixture identity').toBe(fixtureUserId);
     const main = catalogue.find((table) => table.id !== source.id && MAIN_NAME.test(table.name));
     const other = catalogue.find(
@@ -393,6 +404,9 @@ test('the published table explains controlled seat moves without moving a player
     // not an authoritative seat, natural gameplay or a financial receipt.
     await expect.poll(() => snapshotTemplate !== null).toBe(true);
     const template = snapshotTemplate! as Record<string, any>;
+    expect(template.tableId, 'the captured snapshot must belong to the selected subject').toBe(
+      source.id
+    );
     expect(
       template.state.lightning_observer,
       'a public Lightning observer cannot qualify a classic hero diagnostic'

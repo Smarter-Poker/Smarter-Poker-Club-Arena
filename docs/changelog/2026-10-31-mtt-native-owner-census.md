@@ -41,3 +41,11 @@ compiler passed on the integrated protected-main base. Maintained Node 22.23.2
 Mac loaded proof processed 35 million objects in 7.409 seconds; interruption
 proof independently checks the closed listener and living target. The required
 Linux fixture remains pending hosted qualification; a Mac skip is not a pass.
+
+The first hosted run passed the pinned Linux native census qualification but
+found a required accounting-fixture collision at Chicago midnight October 31.
+The dynamic Today fixture seeds its next-day boundary at November 1 midnight;
+the fixed November 1 DST case reused the same player and counted that unrelated
+1,000-unit row. Isolating the fixed-date fixture player preserves the real
+23/25-hour, inclusive-start and exclusive-end assertions. No production
+accounting code or migration is changed for this test-data correction.

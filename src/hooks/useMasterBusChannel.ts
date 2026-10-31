@@ -21,7 +21,7 @@
  */
 
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { subscribeRealtime } from '../lib/subscribeRealtime';
 import {
@@ -105,6 +105,10 @@ export function useMasterBusChannel({
   onSubscriptionError,
   onSubscriptionStatus,
 }: UseMasterBusChannelOptions) {
+  // A row binding belongs to this mounted consumer. A second club lobby can
+  // mount after the first has joined; the SDK cannot add a Postgres binding to
+  // that joined channel, and one view must not remove another view's factory.
+  const ownerId = useId();
   // Store callbacks in refs to avoid re-subscribing on every render
   const callbackRef = useRef(onPayload);
   const errorCallbackRef = useRef(onSubscriptionError);
@@ -140,6 +144,8 @@ export function useMasterBusChannel({
       return;
     }
 
+    const registryKey = `${channelName}:row:${ownerId}`;
+
     // Factory that (re)creates and subscribes the channel. Registered with the
     // MasterBus health monitor so a channel that dies (auth expiry, RLS blip,
     // socket down) is RE-SUBSCRIBED on the next 30s tick instead of being
@@ -161,13 +167,13 @@ export function useMasterBusChannel({
       if (!alive) return;
       const generation = ++subscriptionGeneration;
       admission?.abort();
-      if (acquiredChannel) masterBus.removeRegisteredChannel(channelName, acquiredChannel);
+      if (acquiredChannel) masterBus.removeRegisteredChannel(registryKey, acquiredChannel);
       acquiredChannel = null;
       admission = new AbortController();
       const signal = admission.signal;
       // getOrCreateChannel returns a fresh channel after the monitor removed
       // the dead one, or the existing one on the initial call.
-      const channel = masterBus.getOrCreateChannel(channelName);
+      const channel = masterBus.getOrCreateChannel(registryKey);
 
       /* A channel that is already joined will NOT send a new binding:
          RealtimeChannel.subscribe() builds its join payload only while the
@@ -177,7 +183,7 @@ export function useMasterBusChannel({
       acquiredChannel = channel;
       const state = (channel as any)?.state;
       if (state && state !== 'closed' && state !== 'errored') {
-        masterBus.removeRegisteredChannel(channelName, channel);
+        masterBus.removeRegisteredChannel(registryKey, channel);
         acquiredChannel = null;
         reportError(
           new Error(`Realtime channel ${channelName} was already ${state}; binding skipped`),
@@ -244,7 +250,7 @@ export function useMasterBusChannel({
 
     // Register the factory FIRST so that if the very first subscribe attempt
     // dies, the health monitor can recover it.
-    masterBus.registerChannelFactory(channelName, subscribeChannel);
+    masterBus.registerChannelFactory(registryKey, subscribeChannel);
 
     // Initial subscription
     subscribeChannel();
@@ -254,10 +260,10 @@ export function useMasterBusChannel({
     return () => {
       alive = false;
       admission?.abort();
-      masterBus.removeChannelFactory(channelName);
-      if (acquiredChannel) masterBus.removeRegisteredChannel(channelName, acquiredChannel);
+      masterBus.removeChannelFactory(registryKey);
+      if (acquiredChannel) masterBus.removeRegisteredChannel(registryKey, acquiredChannel);
     };
-  }, [channelName, table, filter, event, enabled, restartKey]);
+  }, [channelName, table, filter, event, enabled, restartKey, ownerId]);
 }
 
 export default useMasterBusChannel;

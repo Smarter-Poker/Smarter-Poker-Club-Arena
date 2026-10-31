@@ -77,6 +77,15 @@ describe('live-table certification observes an active chip-game club', () => {
     // two clubs as well, or every union SPIN and SNG board is counted and then
     // silently dropped as unreadable (run 38656420977).
     expect(continuity).toContain('E2E_UNION_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4');
+    // Controlled seat-move presentation also requires an actually served cash
+    // table. The closed Diamond ladder is not a spectator fixture.
+    const seatMove = step(
+      TABLE_WORKFLOW,
+      'Verify seat-move notices in the served spectator browser'
+    );
+    expect(seatMove).toContain('E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4');
+    expect(seatMove).not.toContain('E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81');
+
     expect(GLOBAL_SETUP).toContain(
       'ensureClubMembership(page, baseURL, process.env.E2E_UNION_CLUB_ID)'
     );

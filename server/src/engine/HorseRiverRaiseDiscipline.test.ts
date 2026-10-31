@@ -164,6 +164,19 @@ describe('V64: a hold em bluff-catcher never raises the river', () => {
     expect(on.actions).toEqual(off.actions);
   });
 
+  it('with the mind on (production) top pair facing a half-pot wager is redirected too', () => {
+    // KQ on Qh9d3s7c2c facing 20 into 40: with opponent reads active second
+    // pair already calls, but top pair raised 58 of 100 seeds before V64.
+    const topPair = () => river('nlh', 'QsKd', 'Qh9d3s7c2c', 20);
+    const on = decideSeeds(topPair, { mind: true }, 100);
+    expect(on.raises).toBe(0);
+    expect(on.verdicts).toBe(100);
+    expect(on.redirects).toBeGreaterThanOrEqual(90);
+    const off = decideSeeds(topPair, { mind: true, v64RiverRaiseNeedsTwoPair: false }, 100);
+    expect(off.raises).toBeGreaterThanOrEqual(40);
+    expect(off.redirects).toBe(0);
+  });
+
   it('a set and top pair plus board pair are read as the law reads them', () => {
     // a set raises as before
     const set = decideSeeds(() => river('nlh', '3h3d', 'Qh9d3s7c2c', 28), {});

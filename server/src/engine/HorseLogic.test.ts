@@ -1852,27 +1852,47 @@ describe('HorseLogic V8 - O8 quarter brake + NLH raise bluffs', () => {
         },
       };
     };
+    // V64 (2026-10-31): by default a hold'em air hand never bluff-raises a
+    // river wager (live, those raises were called 35 of 37 times and won
+    // 7%); the V8 region is pinned on its historical arm, and the default
+    // arm is pinned to make none of them.
     const n = 400;
     let v8Raises = 0;
     let offRaises = 0;
+    let defaultRaises = 0;
     for (let i = 0; i < n; i++) {
       const a = mk();
       if (
         ['raise', 'all_in'].includes(
-          HorseLogic.decide(a.hero, a.gs, 'balanced', {}, { v9Mood: false }).action
+          HorseLogic.decide(a.hero, a.gs, 'balanced', {}, {
+            v9Mood: false,
+            v64RiverRaiseNeedsTwoPair: false,
+          }).action
         )
       )
         v8Raises++;
       const b = mk();
       if (
         ['raise', 'all_in'].includes(
-          HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v8Nlh: false, v9Mood: false }).action
+          HorseLogic.decide(b.hero, b.gs, 'balanced', {}, {
+            v8Nlh: false,
+            v9Mood: false,
+            v64RiverRaiseNeedsTwoPair: false,
+          }).action
         )
       )
         offRaises++;
+      const d = mk();
+      if (
+        ['raise', 'all_in'].includes(
+          HorseLogic.decide(d.hero, d.gs, 'balanced', {}, { v9Mood: false }).action
+        )
+      )
+        defaultRaises++;
     }
     expect(v8Raises).toBeGreaterThan(offRaises + 5); // the bluff region exists
     expect(v8Raises / n).toBeLessThan(0.35); // and it is a low-frequency MIX
+    expect(defaultRaises).toBe(0); // V64: and it is closed by default
   });
 
   it('V8 decisions stay legal across randomized states in every variant', () => {

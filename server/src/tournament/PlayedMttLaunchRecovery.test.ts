@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readPlayedMttLaunchProof } from './playedMttLaunchRecovery.js';
+import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
 
 const { from, rpc, reportError } = vi.hoisted(() => ({
   from: vi.fn(),
@@ -58,6 +59,7 @@ function fixture() {
   const state: any = Object.assign(Object.create(TournamentManagerBase.prototype), {
     tournamentId: EVENT,
     tournamentLeaseGeneration: GENERATION,
+    tournamentLeaseProofDeadlineMonotonicMs: tournamentLeaseMonotonicNow() + 60_000,
     running: true,
     lifecycleEpoch: { isCurrent: () => state.running },
     assertLifecycleCurrent: () => {

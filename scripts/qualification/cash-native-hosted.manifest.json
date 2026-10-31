@@ -13,7 +13,7 @@
   },
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 260023,
-      "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
+      "bytes": 260024,
+      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4037,7 +4037,7 @@
       "bytes": 239646,
       "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
     },
-    "review": "Only accounting job40→50minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
+    "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
     "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
   },
   "riverPersistenceBudgetIntegration20261027": {
@@ -5468,6 +5468,40 @@
       "sha256": "48c0f13534ac5861d72ef9f26ee7c5d0c8c59d36a0eb15619fb00f418db40310"
     },
     "qualification": "Current source identity only; no financial/native/live certification restamped."
+  },
+  "heavyClientRunnerCapacitySourceAudit20261030": {
+    "scope": "Current CI source identity only: move the existing compiler, client unit shards and production build from the guarded four-core pool to the existing guarded eight-core pool; request eight client workers bounded by actual CPU capacity. Preserve fallback runners, financial/native commands and profiles, assertions, matrices, deadlines, permissions, dependencies and historical evidence.",
+    "previousCiPin": {
+      "bytes": 259122,
+      "sha256": "37001f2b3cb5709174cb66bb876b055de4f76550b61e777b7ff8ce7ca59a9fae"
+    },
+    "currentCiPin": {
+      "bytes": 259123,
+      "sha256": "ae720f0fd8d3910258105a64a646ea09bf9dfba883281793a9fd10ecc1b1ac91"
+    },
+    "execution_performed": false,
+    "qualification": "Source binding only. No historical financial/native/live receipt is restamped. Required exact-head protected checks and hosted execution remain necessary."
+  },
+  "heavyClientRunnerMainIntegrationSourceAudit20261031": {
+    "scope": "Current workflow source identity after ordinary protected-main integration. Preserve the eight-core client/compiler/build routing and CPU-bounded worker request, alongside protected-main river one-pair SQL/TypeScript parity qualification and server-script compilation. Preserve both parent audits, historical evidence, all financial assertions and qualification states.",
+    "capacityParent": "ec22c15403129514162cd6cc4751d832d40730dc",
+    "protectedMain": "22445691a46f5c273a16e00c34871b51ae12f7fb",
+    "capacityCiPin": {
+      "bytes": 259123,
+      "sha256": "ae720f0fd8d3910258105a64a646ea09bf9dfba883281793a9fd10ecc1b1ac91"
+    },
+    "protectedMainCiPin": {
+      "bytes": 260023,
+      "sha256": "9c1ce9d60e2dc90ef047ec7593e328373a8aba5f897e44d3eb197a97e1455a78"
+    },
+    "integratedCiPin": {
+      "bytes": 260024,
+      "sha256": "ba0bedebc321be47d8f5aee6dbcd4e3dbb75c93f2b4021d9b0d9fbd4e4dff271"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "execution_performed": false,
+    "qualification": "Source identity only; exact integrated-head required checks and hosted execution remain necessary. No native, financial or production recertification."
   },
   "playerFavoritesRouting20261031": {
     "reason": "Reviewed additive player-throwable-favorites fixture routing into existing required data-console qualification only. Financial inputs, assertions, historical receipts and qualification status unchanged. Input identity is not execution evidence.",

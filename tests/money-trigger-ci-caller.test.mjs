@@ -267,7 +267,7 @@ test('paid client routes are exact while financial runners keep the immutable re
     for(const line of text.split('\n')){
       const key=/^  ([A-Za-z_][A-Za-z_0-9-]*):\s*$/.exec(line);if(key)job=key[1];
       const route=/^    runs-on: (.+)$/.exec(line);if(!route)continue;count++;
-      if(expected.has(job)){assert.equal(route[1],"${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}",job);seen.add(job)}
+      if(expected.has(job)){const heavy=(file==='ci.yml' && ['typecheck_compile','unit_shards','build'].includes(job)) || (file==='publish-club-arena-client.yml' && ['client-tests','build-and-store'].includes(job));assert.equal(route[1],"${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-"+(heavy?'8':'4')+"core' || 'ubuntu-latest' }}",job);seen.add(job)}
       else if(file==='ci.yml' && ['typecheck','unit','server','verdict','css-beats-gate'].includes(job))assert.equal(route[1],'ubuntu-latest',job);
       else if(file==='ci.yml' && ['css-beats-e2e','diamond-playfield-e2e'].includes(job))assert.equal(route[1],"${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}",job);
       else if(file==='ci.yml' && ['accounting_postgres','server_shards'].includes(job))assert.equal(route[1],approvedNativeProfileRoute,job);

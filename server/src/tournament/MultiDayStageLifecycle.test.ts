@@ -296,6 +296,30 @@ describe('inert unless a sealed plan exists AND the capability is available', ()
     expect(state.multiDayPlan.kind).toBe('unknown');
   });
 
+  it.each(['42P01', 'PGRST205'])(
+    'an enabled sealed plan with unreadable stages (%s) cannot advance past day end',
+    async (code) => {
+      const state = manager({ currentLevel: 2 });
+      state.tableEngines.set('table-a', engine());
+      state.setLifecycleTimeout = vi.fn(() => 0);
+      const db = fakeDb({
+        tables: {
+          tournament_stage_plans: () => ({ data: planRow(), error: null }),
+          tournament_stages: () => ({ data: null, error: { code, message: 'schema unavailable' } }),
+        },
+        rpc: {
+          fn_capability_available: () => ({ data: true, error: null }),
+          fn_publish_tournament_blind_level: publishHandler(state),
+        },
+      });
+      await state.loadMultiDayPlan(state.tournamentCache, state.lifecycleEpoch.current());
+      await state.advanceBlindLevel(structure);
+      expect(state.currentLevel).toBe(2);
+      expect(state.multiDayPlan.kind).toBe('unknown');
+      expect(db.rpc.map(([name]) => name)).not.toContain('fn_publish_tournament_blind_level');
+    }
+  );
+
   it('a live plan with the capability available reads its stages', async () => {
     fakeDb({
       tables: {

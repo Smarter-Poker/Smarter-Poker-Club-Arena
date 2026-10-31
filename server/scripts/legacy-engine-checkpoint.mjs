@@ -506,7 +506,20 @@ export function legacyCensusMemoryAdmission(value) {
   // V8's native census retains local/global handles and a result vector before
   // constructing its JS array. Reserve well beyond the result array alone.
   // This is admission, never an increase to the predecessor's heap or memory.
-  const requiredHeapBytes = value.usedHeapBytes + reserve;
+  //
+  // The broad census queries Object.prototype, so its JS-heap cost is ONE
+  // array holding a pointer (8 bytes) per matching object, and every matching
+  // JSObject occupies at least three words (map, properties, elements: 24
+  // bytes). The array is therefore at most usedHeap / 3; the matching handles
+  // and result vector live off-heap and are covered by requiredProcessBytes.
+  // Until 2026-10-31 the heap rule demanded a second full heap (usedHeap +
+  // reserve), three times that worst case, which an engine with a ~2 GB live
+  // working set on a ~4.2 GB limit can never meet: the 13:55Z break refused at
+  // used 3,913,011,648 / available 322,107,592, and a freshly restarted
+  // predecessor read ~2.0 GB live within an hour. Half the used heap is 1.5x
+  // the derived worst case, and the measurement is taken after a full
+  // collection (censusGarbageCollection), so it is live heap, not garbage.
+  const requiredHeapBytes = Math.ceil(value.usedHeapBytes / 2) + reserve;
   const requiredProcessBytes = value.usedHeapBytes * 8 + reserve;
   if (!Number.isSafeInteger(requiredProcessBytes)) return null;
   return {
@@ -922,6 +935,16 @@ export async function runLegacyEngineCheckpoint({
       lightningWorkerObjects = null,
       lightningHostObjects = null;
     if (discoverEngines) {
+      // MEASURE LIVE HEAP, NOT UNCOLLECTED GARBAGE (2026-10-31). V8's
+      // used_heap_size counts dead objects until the next major collection,
+      // so the predecessor read "full" and refused its own census at the
+      // 13:55Z break (used 3,913,011,648 / available 322,107,592) although
+      // Runtime.queryObjects below begins with exactly this full collection.
+      // Collect first, then admit against the same unchanged rule and
+      // reserve. A lost answer is an unknown outcome and refuses like every
+      // other operation here; nothing is retried and no memory is added.
+      operation = 'censusGarbageCollection';
+      await connection.request('HeapProfiler.collectGarbage', {}, deadline, operation);
       operation = 'censusMemoryAdmission';
       const memory = remoteValue(
         await connection.request(

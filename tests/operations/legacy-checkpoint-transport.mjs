@@ -416,6 +416,9 @@ try {
           );
           if (group) groupReplyIndices.set(message.id, Number(group[1]));
         }
+        // The census admits against LIVE heap: one full collection is
+        // requested before the memory admission and before any census.
+        if (message.method === 'HeapProfiler.collectGarbage') nativeOrder.push('gc');
         if (
           message.method === 'Runtime.queryObjects' ||
           (message.method === 'Runtime.evaluate' &&
@@ -696,7 +699,7 @@ try {
           scenario === 'census_counts_unknown' ? null : scenario === 'census_counts_zero' ? 0 : 2,
       });
       assert.equal(nativeCensusRequests, 1);
-      assert.deepEqual(nativeOrder, ['census', 'broadReleased', 'guard', 'broadReleased']);
+      assert.deepEqual(nativeOrder, ['gc', 'census', 'broadReleased', 'guard', 'broadReleased']);
       assert.equal(JSON.stringify(result).includes('synthetic-secret'), false);
       assert.ok(JSON.stringify(result.nativeCensusCounts).length < 220);
     }
@@ -714,6 +717,8 @@ try {
       assert.equal(result.reason, 'native census memory headroom refused');
       assert.equal(result.checkpointInvoked, false);
       assert.equal(nativeCensusRequests, 0);
+      // The refusal is measured after a full collection: live heap, not garbage.
+      assert.deepEqual(nativeOrder, ['gc', 'broadReleased']);
       assert.equal(result.censusMemory.ok, false);
       assert.ok(result.censusMemory.availableHeapBytes < result.censusMemory.requiredHeapBytes);
       expectedCalls = 0;
@@ -835,7 +840,7 @@ try {
   );
   if (scenario === 'engine_census') {
     assert.equal(nativeCensusRequests, 1, 'all five exact classes share one full-heap native scan');
-    assert.deepEqual(nativeOrder.slice(0, 3), ['census', 'broadReleased', 'guard']);
+    assert.deepEqual(nativeOrder.slice(0, 4), ['gc', 'census', 'broadReleased', 'guard']);
   }
   if (scenario === 'shared_deadline') {
     assert.equal(nativeCensusRequests, 1);

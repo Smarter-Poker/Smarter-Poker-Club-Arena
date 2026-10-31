@@ -259,12 +259,12 @@ describe('legacy native heap census projection', () => {
     ).toBeNull();
     const exact = {
       usedHeapBytes: 1024,
-      availableHeapBytes: 33555456,
+      availableHeapBytes: 33554944,
       availableProcessBytes: 33562624,
     };
     expect(legacyCensusMemoryAdmission(exact)).toMatchObject({
       ok: true,
-      requiredHeapBytes: 33555456,
+      requiredHeapBytes: 33554944,
       requiredProcessBytes: 33562624,
     });
     expect(
@@ -277,5 +277,34 @@ describe('legacy native heap census projection', () => {
         availableProcessBytes: exact.availableProcessBytes - 1,
       })?.ok
     ).toBe(false);
+  });
+
+  it('admits half the used heap: a full predecessor still refuses, a fresh one is admitted', () => {
+    // The 13:55Z 2026-10-31 production reading: still refused.
+    expect(
+      legacyCensusMemoryAdmission({
+        usedHeapBytes: 3913011648,
+        availableHeapBytes: 322107592,
+        availableProcessBytes: 50471874560,
+      })
+    ).toMatchObject({ ok: false, requiredHeapBytes: 1956505824 + 33554432 });
+    // A predecessor about an hour after restart (~2.0 GB live of a ~4.2 GB
+    // limit), which the full-second-heap rule refused: admitted.
+    expect(
+      legacyCensusMemoryAdmission({
+        usedHeapBytes: 2_100_000_000,
+        availableHeapBytes: 2_135_000_000,
+        availableProcessBytes: 50_000_000_000,
+      })
+    ).toMatchObject({ ok: true, requiredHeapBytes: 1_050_000_000 + 33554432 });
+    // The rule never admits less than the derived worst case (usedHeap / 3).
+    for (const used of [1024, 64 * 1024 * 1024, 2_000_000_000, 3_913_011_648]) {
+      const admission = legacyCensusMemoryAdmission({
+        usedHeapBytes: used,
+        availableHeapBytes: Number.MAX_SAFE_INTEGER - 1,
+        availableProcessBytes: Number.MAX_SAFE_INTEGER - 1,
+      });
+      expect(admission?.requiredHeapBytes).toBeGreaterThanOrEqual(Math.ceil(used / 3) + 32 * 1024 * 1024);
+    }
   });
 });

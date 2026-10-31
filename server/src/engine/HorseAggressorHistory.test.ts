@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Keep equity fixed so these cases measure public-line attribution rather
 // than Monte Carlo sampling or an opponent-memory update.
@@ -59,37 +59,51 @@ const variants = [
 ] as const;
 
 function decideAfterLastAction(
-  variant: (typeof variants)[number],
+  variant: readonly [string, readonly string[]],
   kind: 'call' | 'all_in' | 'raise',
   amount: number,
-  isFullRaise?: boolean
+  isFullRaise?: boolean,
+  context: {
+    mind?: boolean;
+    bet?: number;
+    pot?: number;
+    heroBet?: number;
+    heroStack?: number;
+    history?: ActionRecord[];
+  } = {}
 ) {
-  const hero = player(1, { cards: variant[1].map(card), totalInvested: 30 });
+  const bet = context.bet ?? 50;
+  const hero = player(1, {
+    cards: variant[1].map(card),
+    totalInvested: 30,
+    bet: context.heroBet ?? 0,
+    stack: context.heroStack ?? 500,
+  });
   const raises = kind === 'raise' || (kind === 'all_in' && isFullRaise !== undefined);
   const gs = {
     players: [
       hero,
-      player(2, { bet: 50 }),
+      player(2, { bet }),
       player(3, { stack: kind === 'raise' ? 300 : 0, bet: amount, is_all_in: kind !== 'raise' }),
     ],
     communityCards: ['4s', '5c', '7d', '5d', 'Jc'].map(card),
-    pot: raises ? amount * 4 : 200,
-    currentBet: raises ? amount : 50,
-    minRaise: 50,
+    pot: context.pot ?? (raises ? amount * 4 : 200),
+    currentBet: raises ? amount : bet,
+    minRaise: bet,
     bigBlind: 2,
     gameVariant: variant[0],
     gameMode: 'cash',
     format: 'cash',
     stage: 'river',
     dealerSeat: 3,
-    actionHistory: [
+    actionHistory: context.history ?? [
       action(2, 'bet', 10, 'flop', { isFullRaise: true }),
       action(1, 'call', 10, 'flop'),
       action(3, 'call', 10, 'flop'),
       action(2, 'bet', 20, 'turn', { isFullRaise: true }),
       action(1, 'call', 20, 'turn'),
       action(3, 'call', 20, 'turn'),
-      action(2, 'bet', 50, 'river', { isFullRaise: true }),
+      action(2, 'bet', bet, 'river', { isFullRaise: true }),
       action(3, kind, amount, 'river', { isFullRaise }),
     ],
   } as HorseGameStateV2;
@@ -99,7 +113,8 @@ function decideAfterLastAction(
     'balanced',
     {},
     {
-      mind: false,
+      mind: context.mind ?? false,
+      observeMind: false,
       // The separate one-street pressure model must not mask whether V40
       // retained the correct actor's earlier streets in these comparisons.
       v20Multiway: false,
@@ -110,9 +125,95 @@ function decideAfterLastAction(
   );
 }
 
+function decideTempoLine(wagerTimestamp: number | undefined, precedingTimestamp = 1060) {
+  return decideAfterLastAction(['nlh', ['As', 'Ad']], 'call', 1000, undefined, {
+    mind: true,
+    bet: 1000,
+    pot: 2030,
+    heroBet: 30,
+    heroStack: 10000,
+    history: [
+      action(1, 'check', 0, 'river', { timestamp: 900 }),
+      action(2, 'bet', 10, 'river', { timestamp: 1000, isFullRaise: true }),
+      action(3, 'raise', 30, 'river', { timestamp: 1050, isFullRaise: true }),
+      action(1, 'call', 30, 'river', { timestamp: precedingTimestamp }),
+      action(2, 'raise', 1000, 'river', {
+        timestamp: wagerTimestamp as number,
+        isFullRaise: true,
+      }),
+      action(3, 'call', 970, 'river', { timestamp: 10020 }),
+    ],
+  });
+}
+
 beforeEach(() => {
   HorseMind.reset();
   seedFastRandom(41);
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('current-bettor reads use the wager being faced', () => {
+  it.each([['nlh', ['As', 'Ad']] as const, ...variants])(
+    '%s consults the bettor rather than a later all-in caller',
+    (variant, cards) => {
+      const targeting = vi.spyOn(HorseMind, 'targetingOf').mockReturnValue(0);
+      const bigBet = vi.spyOn(HorseMind, 'bigBetValueTendency').mockReturnValue(null);
+      const snap = vi.spyOn(HorseMind, 'snapBetValueTendency').mockReturnValue(null);
+      vi.spyOn(HorseMind, 'opponentRead').mockReturnValue(null);
+      decideAfterLastAction([variant, cards], 'all_in', 5, undefined, {
+        mind: true,
+        bet: 100,
+        pot: 200,
+      });
+      expect(targeting).toHaveBeenCalledWith('p1', 'p2');
+      expect(targeting).not.toHaveBeenCalledWith('p1', 'p3');
+      expect(bigBet).toHaveBeenCalledWith('p2');
+      expect(bigBet).not.toHaveBeenCalledWith('p3');
+      expect(snap).toHaveBeenCalledWith('p2');
+      expect(snap).not.toHaveBeenCalledWith('p3');
+    }
+  );
+
+  it('uses the latest increasing wager and its preceding action for the tempo read', () => {
+    vi.spyOn(HorseMind, 'targetingOf').mockReturnValue(0);
+    vi.spyOn(HorseMind, 'opponentRead').mockReturnValue(null);
+    vi.spyOn(HorseMind, 'bigBetValueTendency').mockReturnValue(null);
+    const snap = vi.spyOn(HorseMind, 'snapBetValueTendency').mockReturnValue(null);
+    const tank = vi.spyOn(HorseMind, 'tankBetValueTendency').mockReturnValue(null);
+    decideTempoLine(10000);
+    expect(tank).toHaveBeenCalledWith('p2');
+    expect(snap).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [55, false],
+    [100, true],
+  ] as const)('reads the new all-in raiser to %s (full raise: %s)', (amount, full) => {
+    const targeting = vi.spyOn(HorseMind, 'targetingOf').mockReturnValue(0);
+    vi.spyOn(HorseMind, 'opponentRead').mockReturnValue(null);
+    decideAfterLastAction(variants[0], 'all_in', amount, full, { mind: true });
+    expect(targeting).toHaveBeenCalledWith('p1', 'p3');
+    expect(targeting).not.toHaveBeenCalledWith('p1', 'p2');
+  });
+
+  it.each([
+    ['missing current timestamp', undefined, 1060],
+    ['invalid current timestamp', NaN, 1060],
+    ['clock moved backwards', 1000, 1060],
+  ] as const)(
+    'does not invent a tempo read when %s',
+    (_reason, wagerTimestamp, previousTimestamp) => {
+      vi.spyOn(HorseMind, 'targetingOf').mockReturnValue(0);
+      vi.spyOn(HorseMind, 'opponentRead').mockReturnValue(null);
+      vi.spyOn(HorseMind, 'bigBetValueTendency').mockReturnValue(null);
+      const snap = vi.spyOn(HorseMind, 'snapBetValueTendency').mockReturnValue(null);
+      const tank = vi.spyOn(HorseMind, 'tankBetValueTendency').mockReturnValue(null);
+      decideTempoLine(wagerTimestamp, previousTimestamp);
+      expect(snap).not.toHaveBeenCalled();
+      expect(tank).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('the current bettor owns its earlier barrels', () => {

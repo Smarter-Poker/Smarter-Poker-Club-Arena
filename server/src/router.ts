@@ -1,3 +1,4 @@
+import { handleTournamentOriginalRecoveryPrepare } from './handlers/tournamentOriginalRecovery.js';
 import { handleGtoV31Reload } from './handlers/gtoV31Reload.js';
 import { handlePlatformControl } from './handlers/platformControl.js';
 import { handleTournamentAbortBoundary } from './handlers/tournamentAbortBoundary.js';
@@ -94,6 +95,8 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
     requestMaintenanceRecoveryWindow?: GameServer['requestMaintenanceRecoveryWindow'];
     applyOperatorFloorCommand?: GameServer['applyOperatorFloorCommand'];
     acknowledgeTournamentAbortBoundary?: GameServer['acknowledgeTournamentAbortBoundary'];
+    prepareTournamentOriginalRecovery?: GameServer['prepareTournamentOriginalRecovery'];
+    readTournamentOriginalRecoveryPreparation?: GameServer['readTournamentOriginalRecoveryPreparation'];
     endOperatorMaintenance?: GameServer['endOperatorMaintenance'];
     /** Lightning Phase 6: a pool_session_id resolves to its seat proxy. */
     getActionEngine?: GameServer['getActionEngine'];
@@ -604,6 +607,8 @@ export function createRouter(
     }
     if (url.split('?')[0] === '/admin/platform-control')
       return handlePlatformControl(req, res, { gameServer });
+    if (url === '/admin/tournament-original-recovery-prepare')
+      return handleTournamentOriginalRecoveryPrepare(req, res, { gameServer });
     if (url === '/admin/tournament-abort-boundary')
       return handleTournamentAbortBoundary(req, res, { gameServer });
     if (method === 'POST' && url === '/admin/pause')

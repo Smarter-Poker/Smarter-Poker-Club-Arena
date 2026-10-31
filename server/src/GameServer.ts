@@ -1,3 +1,7 @@
+import {
+  ORIGINAL_RECOVERY_OPERATION,
+  ORIGINAL_RECOVERY_TWENTY,
+} from './handlers/tournamentOriginalRecovery.js';
 import { mttPrizeShare } from './services/mttHorseArrivalPlan.js';
 import {
   completeF06Custody,
@@ -11689,6 +11693,41 @@ export class GameServer {
   /** Explicit operator operation only. The persisted request is read before
    * touching physical engines; no discovery pass or recurring repair invokes it.
    */
+  prepareTournamentOriginalRecovery(
+    operationId: string,
+    tournamentId: string,
+    nonce: string
+  ): unknown {
+    if (operationId !== ORIGINAL_RECOVERY_OPERATION || !ORIGINAL_RECOVERY_TWENTY.has(tournamentId))
+      throw new Error('original_recovery_exact_owner_cohort_required');
+    if (isMaintenanceFrozen() || this.maintenanceBreak.isActive())
+      throw new Error('original_recovery_maintenance_not_released');
+    const manager = this.tournamentEngines.get(tournamentId);
+    if (!manager || !manager.hasCurrentTournamentLeaseAuthority())
+      throw new Error('original_recovery_current_manager_unavailable');
+    return {
+      ...manager.prepareTournamentOriginalRecovery(operationId, nonce),
+      instance_id: INSTANCE_ID,
+      release_sha: ENGINE_RELEASE_IDENTITY.releaseSha,
+    };
+  }
+
+  readTournamentOriginalRecoveryPreparation(
+    operationId: string,
+    tournamentId: string,
+    nonce: string
+  ): unknown {
+    if (operationId !== ORIGINAL_RECOVERY_OPERATION || !ORIGINAL_RECOVERY_TWENTY.has(tournamentId))
+      throw new Error('original_recovery_exact_owner_cohort_required');
+    const manager = this.tournamentEngines.get(tournamentId);
+    if (!manager) throw new Error('original_recovery_current_manager_unavailable');
+    return {
+      ...manager.readTournamentOriginalRecoveryPreparation(operationId, nonce),
+      instance_id: INSTANCE_ID,
+      release_sha: ENGINE_RELEASE_IDENTITY.releaseSha,
+    };
+  }
+
   async acknowledgeTournamentAbortBoundary(
     operationId: string,
     tournamentId: string
@@ -11706,6 +11745,8 @@ export class GameServer {
     )
       throw new Error('tournament_abort_original_request_unproven');
     const manager = this.tournamentEngines.get(tournamentId);
+    if (data.state === 'recovery' || (manager && !manager.tournamentAbortActuationAllowed()))
+      throw new Error('operator_abort_withdrawn_for_original_recovery');
     if (data.state === 'settled') {
       if (
         data.receipt?.fully_settled !== true ||

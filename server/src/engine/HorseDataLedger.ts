@@ -732,6 +732,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V61'
   ),
   flag(
+    'v64RiverRaiseNeedsTwoPair',
+    '2026-10-31 Hold em river raise discipline: facing a river wager on one board, one pair, high card and board-paired two pair never value-raise or bluff-raise (a measured over-folder read keeps the blocker bluff-raise); they fall through to the V38 call verdict with the V61 shade. Live review: one-pair raises won 34% (-4,184bb cash), air raises 7% (-1,696bb cash), two pair+ raises about +16,000bb; explicit off arm retained',
+    'V64'
+  ),
+  flag(
     'v63LargeRiverBetShade',
     '2026-10-31 the V61 one-pair river shade steepens past a half-pot wager and caps at 20 points from a pot-sized wager (0.7-pot: 12, V61 8); measured over the latest 19,933 NLH review hands large-wager one-pair calls won 13.3% (119/897) against a 41%+ price and medium 20.7% against 29-41%; league cards positive at 100-200bb, noise at 25-40bb; explicit off arm retained',
     'V63'
@@ -2148,6 +2153,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V61',
     'decide',
     0.001
+  ),
+  receipt(
+    'v64_river_raise_needs_two_pair',
+    'HorseLogic (V64)',
+    'Hold em bluff-catch class redirected from a river raise to the call verdict',
+    'V64',
+    'decide',
+    0.0001
   ),
   receipt(
     'v63_large_river_bet_shade',

@@ -232,7 +232,7 @@
     ]
   },
   "nlh_air_facing_bet": {
-    "sha256": "4574e7bc33b2faeffa4317115ba86283ca4d6a5a5910664a24c23a688a1fb7e1",
+    "sha256": "3761b33e54e471fef69bd80c934c648b57a1ba9ea9891392aa4cd75c81ee928a",
     "actions": [
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1400,\"rngState\":506482016}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":2141,\"rngState\":3218356302}",
@@ -240,14 +240,14 @@
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1264,\"rngState\":2972585104}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1251,\"rngState\":1945784271}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1453,\"rngState\":96886032}",
-      "{\"action\":\"all_in\",\"amount\":null,\"thinkTime\":2918,\"rngState\":1499422475}",
+      "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1588,\"rngState\":2027942165}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":2205,\"rngState\":3356212119}",
-      "{\"action\":\"all_in\",\"amount\":null,\"thinkTime\":2709,\"rngState\":3911682634}",
+      "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1935,\"rngState\":2776373303}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1334,\"rngState\":370702963}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":3132,\"rngState\":510357100}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1298,\"rngState\":3144572547}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1376,\"rngState\":1778577367}",
-      "{\"action\":\"all_in\",\"amount\":null,\"thinkTime\":2330,\"rngState\":3170338737}",
+      "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1909,\"rngState\":2718836473}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1417,\"rngState\":2216939451}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1442,\"rngState\":561566317}",
       "{\"action\":\"fold\",\"amount\":null,\"thinkTime\":1690,\"rngState\":800351316}",

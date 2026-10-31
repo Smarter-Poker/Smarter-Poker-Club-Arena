@@ -1,3 +1,4 @@
+import { tournamentTableLabel } from '../utils/tournamentTableLabel';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { useGameSessionLifecycle } from '../hooks/useGameSessionLifecycle';
 import {
@@ -27081,6 +27082,14 @@ function LiveTablePage({
                                         </>
                                       )}
                                   </span>
+                                  {tournamentTableLabel(tableState.tableName) && (
+                                    <span
+                                      className="table-brand__line"
+                                      data-testid="tournament-table-number"
+                                    >
+                                      {tournamentTableLabel(tableState.tableName)}
+                                    </span>
+                                  )}
                                   {(tableState.handNumber ?? 0) > 0 && (
                                     <span className="table-brand__hand">
                                       Hand #{tableState.handNumber}

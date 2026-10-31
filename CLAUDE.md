@@ -717,6 +717,11 @@ it never purchases chips. Duplicate offers, thawed deadlines and expired
 holds must not move the view. Turn-clock and action-queue switching remain
 forbidden.
 
+Owner update, October 30, 2026: explicitly watching a specific tournament
+player follows that player's table moves until Stop Following or elimination.
+Only that observer tab follows; a background follow never steals focus and
+no played seat is closed. Watching a table alone remains fixed on that table.
+
 ---
 
 ---

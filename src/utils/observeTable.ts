@@ -33,10 +33,12 @@
  * declines. It does not close a screen for you, and it does not fail silently.
  */
 
+import { writePlayerFollow, type FollowTournamentPlayer } from './followTournamentPlayer';
 import { masterBus } from '../core/MasterBus';
 import { warmTable } from '../services/tableWarmup';
 
 export interface ObserveTableRequest {
+  followPlayer?: FollowTournamentPlayer;
   tableId: string;
   /** Cosmetic tab label until the engine reports the real one. */
   tableName?: string;
@@ -54,6 +56,7 @@ export function requestObserveTable(request: ObserveTableRequest): boolean {
     tableId: request.tableId,
     tableName: request.tableName,
     stakes: request.stakes,
+    ...(request.followPlayer ? { followPlayer: request.followPlayer } : {}),
   });
   return true;
 }
@@ -72,6 +75,8 @@ export function openTableAsObserver(
   request: ObserveTableRequest
 ): boolean {
   if (!requestObserveTable(request)) return false;
-  navigate(`/table/${request.tableId}`);
+  const params = new URLSearchParams();
+  writePlayerFollow(params, request.followPlayer);
+  navigate(`/table/${request.tableId}${params.size ? `?${params}` : ''}`);
   return true;
 }

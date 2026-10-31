@@ -1,3 +1,4 @@
+import type { FollowTournamentPlayer } from '../utils/followTournamentPlayer';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 /**
@@ -1231,8 +1232,8 @@ export default function TournamentPage() {
     /* `tableName` labels the new screen's tab until the engine reports its
        own. RankingTab used to pass it to `openTableAsObserver` itself; it now
        opens through this handler (2026-10-04), so the name rides along here. */
-    (tableId: string, tableName?: string) => {
-      openTableAsObserver(navigate, { tableId, tableName });
+    (tableId: string, tableName?: string, followPlayer?: FollowTournamentPlayer) => {
+      openTableAsObserver(navigate, { tableId, tableName, followPlayer });
     },
     [navigate]
   );

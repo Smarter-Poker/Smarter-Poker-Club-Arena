@@ -379,7 +379,7 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v6'
+PENDING_SCHEMA = 'existing-release-pending-observation/v7'
 PENDING_RECOVERY_STATUSES = ('accepted', 'active', 'pending', 'busy', 'expired',
                              'use_hourly', 'unavailable', 'unknown')
 PENDING_RECOVERY_CATEGORIES = {
@@ -394,7 +394,8 @@ PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
                       'certificate_also_shut', 'rollback_readiness_completed',
                       'rollback_certificate_lost', 'weekly_owner_active',
                       'inflight_evidence_unavailable', 'mutation_lock_unavailable',
-                      'mutation_lock_deadline', 'hands_in_air'} | PENDING_RECOVERY_CATEGORIES | PENDING_ENTRY_CATEGORIES
+                      'mutation_lock_deadline', 'hands_in_air', 'expired_announced_runtime_refused',
+                      'announcement_only_recovery_retained', 'immutable_request_expired'} | PENDING_RECOVERY_CATEGORIES | PENDING_ENTRY_CATEGORIES
 # Compact, closed v3 certificate tuple: [remainingMs, unparkedTables,
 # handsInFlightTotal, reasonCounts]. reasonCounts follows this order, with
 # one final count of UNRECOGNIZED KEYS; private/future names never leave host.
@@ -603,6 +604,63 @@ def validate_pending_unit(value):
         raise ValueError('Pending unit identity refused')
 
 
+def validate_pending_child(value):
+    if (not isinstance(value, dict) or set(value) != {'status', 'processClass', 'argvSha256'}
+            or value['status'] not in {'matched', 'unproven'}
+            or (value['status'] == 'matched' and (value['processClass'] not in
+                {'pinned_transaction', 'pinned_announcement_recovery'}
+                or not isinstance(value['argvSha256'], str)
+                or not re.fullmatch(r'[0-9a-f]{64}', value['argvSha256'])))
+            or (value['status'] == 'unproven' and (value['processClass'] != 'unknown' or value['argvSha256'] is not None))):
+        raise ValueError('Pending child export refused')
+
+
+def pending_child(request, unit, control):
+    """Bounded procfs identity read; no signal, command-line or path export."""
+    unknown = {'status': 'unproven', 'processClass': 'unknown', 'argvSha256': None}
+    try:
+        deadline = time.monotonic() + 2
+        name = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
+        reply = inspector_command(['systemctl', 'show', name, '--no-pager',
+            '--property=MainPID,ControlGroup,InvocationID'], deadline)
+        values = unique_object([line.split('=', 1) for line in reply.decode('ascii').splitlines()])
+        if set(values) != {'MainPID', 'ControlGroup', 'InvocationID'} or values['InvocationID'] != unit['invocationId']:
+            return unknown
+        pid = values['MainPID']; group = values['ControlGroup']
+        if (not re.fullmatch(r'[1-9][0-9]{0,9}', pid) or int(pid) <= 1
+                or not group.startswith('/system.slice/') or not group.endswith('/'+name)):
+            return unknown
+        def read(selected, field, limit=8192):
+            return _kernel_read(KERNEL_PROC_ROOT / selected / field, limit, deadline)
+        def identity(selected):
+            text = read(selected, 'stat', 4096).decode('ascii')
+            tail = text[text.rfind(')')+2:].split()
+            return tail[1], tail[19]
+        def argv(selected):
+            raw = read(selected, 'cmdline')
+            return raw, raw.rstrip(b'\0').decode('utf8').split('\0')
+        def bash(args, wanted):
+            return len(args) == len(wanted)+1 and args[0] in {'bash', '/bin/bash', '/usr/bin/bash'} and args[1:] == wanted
+        parent_before = identity(pid)
+        _, parent_args = argv(pid)
+        if (not bash(parent_args, ['/usr/local/lib/club-arena/engine-release-unit-wrapper-v1.sh', 'start', request['runKey']])
+                or read(pid, 'cgroup').decode().strip() != '0::'+group):
+            return unknown
+        children = read(pid, 'task/'+pid+'/children').decode('ascii').split()
+        if len(children) != 1 or not re.fullmatch(r'[1-9][0-9]{0,9}', children[0]): return unknown
+        child = children[0]; child_before = identity(child); raw, args = argv(child)
+        if child_before[0] != pid or read(child, 'cgroup').decode().strip() != '0::'+group: return unknown
+        generation = '/usr/local/lib/club-arena/engine-control-generations/'+control
+        role = ('pinned_transaction' if bash(args, [generation+'/engine-release-transaction.sh', '--run-id', request['runKey']])
+                else 'pinned_announcement_recovery' if bash(args, [generation+'/engine-release-recover.sh', '--run-id', request['runKey'], '--mode', 'retryable']) else None)
+        if (not role or identity(pid) != parent_before or identity(child) != child_before
+                or argv(child)[0] != raw or argv(pid)[1] != parent_args
+                or read(pid, 'task/'+pid+'/children').decode('ascii').split() != children): return unknown
+        return {'status': 'matched', 'processClass': role, 'argvSha256': hashlib.sha256(raw).hexdigest()}
+    except (OSError, ValueError, IndexError, UnicodeError, subprocess.SubprocessError):
+        return unknown
+
+
 def pending_journal(request, unit):
     invocation = unit['invocationId']
     name = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
@@ -610,7 +668,7 @@ def pending_journal(request, unit):
         '--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID,_SYSTEMD_UNIT,__REALTIME_TIMESTAMP',
         # Below-budget "also shut" chatter must not evict the early causal
         # refusal from the existing twelve-row selection. Absence stays unknown.
-        '--grep=^(\\[engine-release-lightning-hold\\] (Lightning hold recorded: |Lightning hold released: |UNKNOWN: )|\\[engine-release-transaction\\] (WARN: the Lightning hold |legacy entry phase=|the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|newer release [0-9a-f]{40} \\(run [1-9][0-9]*(-[1-9][0-9]*)?\\) is in flight and owns any off-cycle window; |legacy inspector absence is not proved; |recovery announcement reservation could not be established; |off-cycle window wanted \\(|fixed recovery announcement [1-9][0-9]{12}: |prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
+        '--grep=^(\\[engine-release-recover\\] announcement-only owner retained; no runtime restoration or terminal certification$|\\[engine-release-transaction\\] FATAL: (this run announced inside an owner window that has since expired; its runtime entry is refused|immutable release not-after epoch expired before new release mutation)$|\\[engine-release-lightning-hold\\] (Lightning hold recorded: |Lightning hold released: |UNKNOWN: )|\\[engine-release-transaction\\] (WARN: the Lightning hold |legacy entry phase=|the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|newer release [0-9a-f]{40} \\(run [1-9][0-9]*(-[1-9][0-9]*)?\\) is in flight and owns any off-cycle window; |legacy inspector absence is not proved; |recovery announcement reservation could not be established; |off-cycle window wanted \\(|fixed recovery announcement [1-9][0-9]{12}: |prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
         '_SYSTEMD_INVOCATION_ID=' + invocation, '_SYSTEMD_UNIT=' + name])
     if reply.returncode:
         raise ValueError('Pending journal unavailable')
@@ -625,7 +683,9 @@ def pending_journal(request, unit):
         if (not isinstance(stamp, str) or not re.fullmatch(r'[0-9]{16}', stamp)
                 or not isinstance(message, str) or len(message) > 2048):
             raise ValueError('Pending journal shape refused')
-        category = pending_recovery_category(message) or pending_entry_category(message)
+        category = {'[engine-release-recover] announcement-only owner retained; no runtime restoration or terminal certification': 'announcement_only_recovery_retained',
+                    '[engine-release-transaction] FATAL: this run announced inside an owner window that has since expired; its runtime entry is refused': 'expired_announced_runtime_refused',
+                    '[engine-release-transaction] FATAL: immutable release not-after epoch expired before new release mutation': 'immutable_request_expired'}.get(message) or pending_recovery_category(message) or pending_entry_category(message)
         details = None
         # Literal producer prefixes in engine-release-transaction.sh. Unknown
         # messages remain unknown; their text never leaves the host.
@@ -736,7 +796,7 @@ def validate_kernel_owner_evidence(value, owner, *, allow_not_observed=False):
     return value
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None, inspector_owner=None, inspector_owner_evidence=None):
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None, inspector_owner=None, inspector_owner_evidence=None, child=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
     validate_pending_journal(signs, journal_failure)
@@ -749,10 +809,12 @@ def pending_observation(request, rows, intent, marker, deadline, unit, signs, jo
     inspector_owner_evidence = (inspector_owner_evidence if inspector_owner_evidence is not None
                                else {'stage': 'not_observed', 'code': 'not_read'})
     validate_kernel_owner_evidence(inspector_owner_evidence, inspector_owner, allow_not_observed=True)
+    child = child or {'status': 'unproven', 'processClass': 'unknown', 'argvSha256': None}
+    validate_pending_child(child)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
-        'unit': unit, 'journalSigns': signs,
+        'unit': unit, 'child': child, 'journalSigns': signs,
         'legacyIntent': legacy_intent,
         'inspectorTcp': inspector_tcp,
         'inspectorOwner': inspector_owner,
@@ -816,6 +878,7 @@ def pending_remote(request, root_fd):
         pending_stage('request_binding', lambda: pending_metadata(request, *before))
         unit = pending_stage('unit', lambda: pending_unit(request))
         legacy_intent, legacy_binding = pending_legacy_intent(request, directory, before[0][4])
+        child = pending_child(request, unit, before[0][4])
         journal_failure = None
         try:
             signs = pending_stage('journal', lambda: pending_journal(request, unit))
@@ -841,7 +904,7 @@ def pending_remote(request, root_fd):
             raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
         if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
             raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
-        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp, inspector_owner, inspector_owner_evidence)
+        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp, inspector_owner, inspector_owner_evidence, child)
     finally:
         os.close(directory)
 
@@ -1825,7 +1888,7 @@ def validate_reply(value, request):
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'inspectorOwner', 'inspectorOwnerEvidence', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'child', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'inspectorOwner', 'inspectorOwnerEvidence', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -1839,6 +1902,7 @@ def validate_reply(value, request):
                 raise ValueError('Pending exported deadline refused')
             timestamp(value[key] * 1000)
         validate_pending_unit(value['unit'])
+        validate_pending_child(value['child'])
         validate_pending_intent(value['legacyIntent'])
         validate_pending_tcp(value['inspectorTcp'])
         validate_pending_owner(value['inspectorOwner'], value['inspectorTcp'])

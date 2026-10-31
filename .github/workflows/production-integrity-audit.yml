@@ -82,13 +82,13 @@ jobs:
           persist-credentials: false
       - name: Qualify native exact-run admission and refusal boundaries
         run: python3 -B tests/operations/release-recovery-read.test.py
-      - name: Read only the matching reservation, sealed result and original bounded witness
+      - name: Read only matching release records and the selected bounded historical evidence
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
         run: python3 -B scripts/ci/read-scoped-release-recovery.py
-      - name: Retain only sanitized recovery cause, timestamps and original producer signs
+      - name: Retain only typed sanitized release observation fields
         uses: actions/upload-artifact@v4
         with:
           name: release-recovery-observation-${{ github.run_id }}

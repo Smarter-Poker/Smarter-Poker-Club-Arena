@@ -125,6 +125,10 @@ def validate_refusal(value, request):
 
 
 def selection(value):
+    if isinstance(value, dict) and value.get('mode') == 'native_scale_records':
+        if value != SCALE_REQUEST:
+            raise ValueError('Exact original scale operation required')
+        return dict(value)
     if isinstance(value, dict) and value.get('mode') == 'current_serving_inspector_role':
         if (set(value) != {'mode', 'releaseSha', 'instanceId'}
                 or value['releaseSha'] != EED
@@ -1306,7 +1310,7 @@ def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=6
         raise
 
 
-def _inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536):
+def _inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536, return_result=False):
     """Fixed native child reads, one overall budget, bounded pipes and stderr."""
     remaining = deadline - time.monotonic()
     if remaining <= 0:
@@ -1336,7 +1340,10 @@ def _inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=
                         chunks[key.data].extend(part)
                         if len(chunks[key.data]) > limit:
                             raise ValueError('Inspector read size')
-        if child.wait(timeout=max(.001, deadline-time.monotonic())):
+        code = child.wait(timeout=max(.001, deadline-time.monotonic()))
+        if return_result:
+            return subprocess.CompletedProcess(args, code, bytes(chunks[False]), bytes(chunks[True]))
+        if code:
             raise ValueError('Inspector native unavailable')
         return bytes(chunks[stderr])
     finally:
@@ -1948,8 +1955,301 @@ def validate_cancellation_records(value, request):
     return value
 
 
+# One historical pre-intake operation, not a caller-selected host command.
+SCALE_REQUEST = {'mode':'native_scale_records','runKey':'41226449485-1',
+                 'releaseSha':'53c59911137757a11ff66a2883c869d9b4794c8d'}
+SCALE_IMAGE = 'sha256:34cc966011d2aef198f6a98f5530c052678b978b445041774b50fc39026a4b64'
+SCALE_TREE = 'bb9e6152eb7b0acba5e98f53c7cac1d85f3d081e'
+SCALE_PROFILE = {'memoryBytes':38654705664,'swapBytes':0,'cpu':1,'pids':32,
+    'hostMarginBytes':8589934592,'queryMs':20000,'fixtureAndCleanupMs':40000,
+    'cleanupReserveMs':5000,'cardinality':35000000,'oldSpaceMiB':4000,
+    'semiSpaceMiB':1,'outputCapBytes':131072}
+SCALE_BINDING = {'schema':'legacy-native-scale-binding/v1','image':SCALE_IMAGE,
+    'fixtureSHA256':'7e6c162af539a920c031fc051bff6b54914dc3e478bd98fa5a9b63d09ea098f1',
+    'controllerSHA256':'06db00a873b0264f34d4a8561f18a072cdbced753afff931ba86def7f536efcd',
+    'profile':SCALE_PROFILE}
+SCALE_KEY = hashlib.sha256(json.dumps(SCALE_BINDING,sort_keys=True).encode()).hexdigest()
+SCALE_NAME = 'ca-native-scale-' + SCALE_KEY[:32]
+SCALE_LABEL = 'com.smarterpoker.qualification.native-census-scale'
+SCALE_SCHEMA = 'existing-native-scale-records/v1'
+SCALE_LIMITATION = 'Historical synthetic qualification only; no cleanup, retry, release or business authority.'
+SCALE_ERRORS = ('owned disposable container state unknown',
+    'disposable fixed scale fixture failed; no automatic retry',
+    'container creation acknowledgement unknown; cleanup remains unknown',
+    'disposable cleanup deadline exhausted','disposable cleanup not proved',
+    'disposable container ownership refused','fixture output exceeded bound',
+    'scale fixture identity or completeness refused',
+    'actual scale measurements, resource controls or reserve refused',
+    'full disposable fixture/cleanup exceeded 40 seconds',
+    'serving identity changed during qualification')
+
+
+def scale_error(value):
+    if not isinstance(value,str): return None
+    raw=value.encode()
+    return {'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),
+            'categories':[item for item in SCALE_ERRORS if item in value] or ['unclassified']}
+
+
+def scale_result(value):
+    if value is None: return None
+    if not isinstance(value,dict): raise ValueError('Scale result refused')
+    answer={}
+    for key in ('count','allocationMs','queryMs','fixtureMs','matched','cgroupPeak','maxRSSKiB'):
+        if key in value:
+            item=value[key]
+            if type(item) not in (int,float) or not 0 <= item <= 2**63: raise ValueError('Scale number refused')
+            answer[key]=item
+    for key in ('ok','prototypeRestored'):
+        if key in value:
+            if type(value[key]) is not bool: raise ValueError('Scale flag refused')
+            answer[key]=value[key]
+    for key,pattern in {'schema':r'legacy-native-scale-fixture/v1',
+        'qualification':r'synthetic-cardinality-and-memory-only','fixtureSHA256':r'[0-9a-f]{64}',
+        'binarySHA256':r'[0-9a-f]{64}','sourceSHA256':r'[0-9a-f]{64}',
+        'node':r'v[0-9.]{1,30}','v8':r'[0-9.a-z-]{1,40}',
+        'arch':r'(x64|arm64)','platform':r'linux'}.items():
+        if key in value:
+            if not isinstance(value[key],str) or not re.fullmatch(pattern,value[key]): raise ValueError('Scale identity refused')
+            answer[key]=value[key]
+    for key,fields in {'before':('used','available','heapLimit','process','rss','cgroupPeak'),
+                       'attempt':('predicateVisits','arrayAllocated','deadlineRefused'),
+                       'cgroup':('memoryMax','swapMax','cpuMax','pidsMax')}.items():
+        if key not in value: continue
+        if not isinstance(value[key],dict): raise ValueError('Scale nested result refused')
+        answer[key]={}
+        for field in fields:
+            if field not in value[key]: continue
+            item=value[key][field]
+            valid=(type(item) is bool if field in ('arrayAllocated','deadlineRefused') else
+                   isinstance(item,str) and re.fullmatch(r'[0-9]{1,20}( [0-9]{1,20})?',item)
+                   if key=='cgroup' else type(item) in (int,float) and 0<=item<=2**63)
+            if not valid: raise ValueError('Scale nested scalar refused')
+            answer[key][field]=item
+    return answer
+
+
+def scale_read_file(directory,name):
+    # Fixed names only; root caller + secure directories establish root custody.
+    fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=directory)
+    try:
+        before=os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid!=os.geteuid()
+                or before.st_mode & 0o022 or before.st_size>131072):
+            raise ValueError('Scale file custody refused')
+        raw=b''
+        while len(raw)<=131072:
+            part=os.read(fd,min(4096,131073-len(raw)))
+            if not part: break
+            raw+=part
+        after=os.fstat(fd)
+        identity=lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns,s.st_uid,s.st_mode)
+        if identity(before)!=identity(after) or len(raw)!=before.st_size or len(raw)>131072:
+            raise ValueError('Scale file changed')
+        return raw
+    finally: os.close(fd)
+
+
+def scale_snapshot(directory):
+    if directory is None:
+        return {suffix:('absent_at_read',None,None) for suffix in ('json','intent','output')}
+    result={}
+    for suffix in ('json','intent','output'):
+        try:
+            raw=scale_read_file(directory,SCALE_KEY+'.'+suffix)
+            value=json.loads(raw,object_pairs_hook=unique_object) if suffix!='output' else None
+            result[suffix]=('present_at_read',raw,value)
+        except FileNotFoundError: result[suffix]=('absent_at_read',None,None)
+        except (OSError,ValueError): result[suffix]=('unknown',None,None)
+    return result
+
+
+def scale_docker(deadline):
+    fields=['.Id','.Image','.State.Status','.State.Running','.State.ExitCode','.State.OOMKilled',
+        '.HostConfig.Memory','.HostConfig.MemorySwap','.HostConfig.NanoCpus','.HostConfig.PidsLimit',
+        '.HostConfig.ReadonlyRootfs','.HostConfig.NetworkMode',
+        '(index .Config.Labels "'+SCALE_LABEL+'")']
+    template=' '.join('{{json '+field+'}}' for field in fields)
+    try:
+        reply=_inspector_command(['docker','inspect','--type','container','--format',template,SCALE_NAME],
+                                 deadline,limit=4096,return_result=True)
+    except (OSError,ValueError,subprocess.TimeoutExpired):
+        return {'status':'unknown','code':'reader_unavailable'}
+    if reply.returncode:
+        stderr=reply.stderr.decode('utf-8',errors='replace').strip()
+        missing=not reply.stdout.strip() and bool(re.fullmatch(r'(?:Error(?: response from daemon)?: )?No such (?:object|container): '+SCALE_NAME,stderr))
+        code=('exact_container_missing' if missing else 'daemon_unavailable' if
+              re.search(r'Cannot connect to the Docker daemon|Is the docker daemon running',stderr) else
+              'permission_denied' if 'permission denied' in stderr.lower() else 'unclassified_nonzero')
+        return {'status':'absent_at_read' if missing and not reply.stdout.strip() else 'unknown',
+                'code':code,'exitCode':reply.returncode,'stderrBytes':len(reply.stderr),
+                'stderrSHA256':hashlib.sha256(reply.stderr).hexdigest()}
+    try:
+        raw=reply.stdout.decode();values=[];decoder=json.JSONDecoder()
+        while raw.strip():
+            value,end=decoder.raw_decode(raw.lstrip());values.append(value);raw=raw.lstrip()[end:]
+        if len(values)!=13 or values[1]!=SCALE_IMAGE or values[-1]!=SCALE_KEY: raise ValueError('binding')
+        if not re.fullmatch('[0-9a-f]{64}',values[0]) or values[2] not in {'created','running','paused','restarting','removing','exited','dead'}: raise ValueError('identity')
+        if any(type(values[i]) is not bool for i in (3,5,10)): raise ValueError('flags')
+        if any(type(values[i]) is not int or not 0<=values[i]<=2**63 for i in (4,6,7,8,9)): raise ValueError('resources')
+        if values[11] not in {'none','default','bridge','host'}: raise ValueError('network')
+        return {'status':'bound_container_at_read','code':'selected_metadata',
+                **dict(zip(('containerId','image','state','running','exitCode','oomKilled','memoryBytes',
+                            'memorySwapBytes','nanoCpus','pidsLimit','readOnlyRootfs','networkMode','bindingKey'),values))}
+    except (ValueError,TypeError,UnicodeError): return {'status':'unknown','code':'metadata_unbound'}
+
+
+def scale_serving_value(value):
+    fields={'container','image','revision','startedAt','instanceId'}
+    if not isinstance(value,dict) or not fields<=set(value): raise ValueError('Scale serving tuple refused')
+    result={k:value[k] for k in fields}
+    if (not isinstance(result['container'],str) or not DIGEST.fullmatch(result['container'])
+            or not isinstance(result['image'],str) or not re.fullmatch('sha256:[0-9a-f]{64}',result['image'])
+            or not isinstance(result['revision'],str) or not SHA.fullmatch(result['revision'])
+            or not isinstance(result['startedAt'],str) or not re.fullmatch(r'\d{4}-\d\d-\d\dT[\d:.]+Z',result['startedAt'])
+            or not isinstance(result['instanceId'],str) or not re.fullmatch(r'[1-9][0-9]*-[0-9a-f]{8}',result['instanceId'])):
+        raise ValueError('Scale serving tuple refused')
+    return result
+
+
+def scale_serving(deadline):
+    try:
+        identity=inspector_identity(deadline)
+        # Degraded 503 is a legitimate preactivation predecessor. Keep the
+        # existing Inspector helper's stricter contract unchanged.
+        raw=_inspector_command(['curl','--noproxy','*','--silent','--show-error',
+            '--max-time','2','--write-out','\n%{http_code}',
+            'http://127.0.0.1:8080/health'],deadline,limit=262144)
+        body,separator,status=raw.rpartition(b'\n')
+        if not separator or status not in (b'200',b'503'): raise ValueError('Scale health status refused')
+        payload=json.loads(body,object_pairs_hook=unique_object)
+        if (not isinstance(payload,dict) or payload.get('running') is not True
+                or payload.get('releaseSha')!=EED or payload.get('version')!=EED[:8]
+                or not isinstance(payload.get('instanceId'),str)
+                or not re.fullmatch(r'1-[0-9a-f]{8}',payload['instanceId'])):
+            raise ValueError('Scale predecessor identity refused')
+        health={'source':EED,'instance':payload['instanceId']}
+        revision=_inspector_command(['docker','image','inspect','--format',
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}',identity['image']],deadline,limit=256).decode().strip()
+        if revision!=health['source']: raise ValueError('Scale serving revision differs')
+        return scale_serving_value({'container':identity['container'],'image':identity['image'],
+            'revision':revision,'startedAt':identity['startedAt'],'instanceId':health['instance']})
+    except (OSError,ValueError,UnicodeError,subprocess.TimeoutExpired): return None
+
+
+def scale_records(request,directory):
+    selection(request)
+    deadline=time.monotonic()+8
+    serving_before=scale_serving(deadline)
+    before=scale_snapshot(directory)
+    answer={'schema':SCALE_SCHEMA,'readOnly':True,**request,'controlSha':request['releaseSha'],
+        'bindingKey':SCALE_KEY,'records':{},'bindingStatus':'unknown','receipt':None,
+        'output':None,'servingBefore':serving_before,'servingAfter':None,'container':scale_docker(deadline),'retryAllowed':False,'limitation':SCALE_LIMITATION}
+    for suffix,(status,raw,_) in before.items():
+        answer['records'][suffix]={'status':status,'sha256':hashlib.sha256(raw).hexdigest() if raw is not None else None}
+    try:
+        intent,receipt=before['intent'][2],before['json'][2]
+        if any(row[0]=='unknown' for row in before.values()): raise ValueError('Scale record unreadable')
+        if not isinstance(intent,dict) or intent.get('binding')!=SCALE_BINDING or intent.get('runId')!=request['runKey'] or intent.get('container')!=SCALE_NAME: raise ValueError('intent')
+        if receipt is not None:
+            candidate={'image':SCALE_IMAGE,'revision':request['releaseSha'],'serverTree':SCALE_TREE,'buildContract':'clean-server-archive-v1'}
+            if receipt.get('binding')!=SCALE_BINDING or receipt.get('runId')!=request['runKey'] or receipt.get('candidate')!=candidate or receipt.get('status') not in {'qualified','refused'}: raise ValueError('receipt')
+            safe={'servingBefore':scale_serving_value(receipt.get('servingBefore')),'servingAfter':scale_serving_value(receipt['servingAfter']) if receipt.get('servingAfter') is not None else None,'status':receipt['status'],'result':scale_result(receipt.get('result')),'error':scale_error(receipt.get('error'))}
+            for field in ('cleanupProved','executionAcknowledged','observedOwnedContainer'):
+                if type(receipt.get(field)) is not bool: raise ValueError('receipt flag')
+                safe[field]=receipt[field]
+            for field in ('elapsedMs','hostAvailableBytes'):
+                item=receipt.get(field)
+                if type(item) not in (int,float) or not 0<=item<=2**63: raise ValueError('receipt measurement')
+                safe[field]=item
+            answer['receipt']=safe
+        if before['output'][0]=='present_at_read':
+            raw=before['output'][1]
+            try: output=scale_result(json.loads(raw,object_pairs_hook=unique_object))
+            except (ValueError,TypeError,UnicodeError): output=None
+            answer['output']={'format':'synthetic_json' if output is not None else 'non_json_or_unqualified',
+                              'bytes':len(raw),'result':output}
+        answer['bindingStatus']='bound_original_records'
+    except (ValueError,TypeError,KeyError):
+        answer['receipt']=answer['output']=None
+    answer['servingAfter']=scale_serving(deadline)
+    after=scale_snapshot(directory)
+    container_after=scale_docker(deadline)
+    if serving_before is None or serving_before!=answer['servingAfter'] or before!=after or answer['container']!=container_after or time.monotonic()>=deadline:
+        answer['bindingStatus']='changed_or_deadline';answer['receipt']=answer['output']=None
+        answer['container']={'status':'unknown','code':'changed_or_deadline'}
+    return answer
+
+
+def scale_remote(request):
+    if os.geteuid()!=0: raise ValueError('Root read custody required')
+    fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:
+        for part in ('var','lib','club-arena','native-census-scale'):
+            try:
+                child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd)
+            except FileNotFoundError:
+                return scale_records(request,None)
+            os.close(fd);fd=child;info=os.fstat(fd)
+            if info.st_uid!=0 or info.st_mode&0o022: raise ValueError('Scale directory custody refused')
+        return scale_records(request,fd)
+    finally: os.close(fd)
+
+
+def validate_scale_reply(value,request):
+    # Reconstruct every public projection, rejecting unknown transport fields.
+    fields={'schema','readOnly','mode','runKey','releaseSha','controlSha','bindingKey','records',
+            'bindingStatus','receipt','output','container','servingBefore','servingAfter','retryAllowed','limitation'}
+    if not isinstance(value,dict) or set(value)!=fields or value['schema']!=SCALE_SCHEMA or value['readOnly'] is not True or value['retryAllowed'] is not False or any(value.get(k)!=v for k,v in request.items()) or value['controlSha']!=request['releaseSha'] or value['bindingKey']!=SCALE_KEY or value['limitation']!=SCALE_LIMITATION: raise ValueError('Scale export refused')
+    if value['bindingStatus'] not in {'unknown','bound_original_records','changed_or_deadline'}: raise ValueError('Scale binding export refused')
+    for suffix,row in value['records'].items():
+        if suffix not in {'json','intent','output'} or set(row)!={'status','sha256'} or row['status'] not in {'present_at_read','absent_at_read','unknown'} or (row['sha256'] is not None and not DIGEST.fullmatch(row['sha256'])): raise ValueError('Scale record export refused')
+    if set(value['records'])!={'json','intent','output'}: raise ValueError('Scale records export refused')
+    # No raw error, file output, environment or arbitrary future fields survive.
+    allowed={'receipt':{'servingBefore','servingAfter','status','result','error','cleanupProved','executionAcknowledged','observedOwnedContainer','elapsedMs','hostAvailableBytes'},'output':{'format','bytes','result'},'container':{'status','code','exitCode','stderrBytes','stderrSHA256','containerId','image','state','running','oomKilled','memoryBytes','memorySwapBytes','nanoCpus','pidsLimit','readOnlyRootfs','networkMode','bindingKey'}}
+    for key,keys in allowed.items():
+        row=value[key]
+        if row is not None and (not isinstance(row,dict) or not set(row)<=keys): raise ValueError('Scale public fields refused')
+        if key in {'receipt','output'} and row is not None and row.get('result')!=scale_result(row.get('result')): raise ValueError('Scale result export refused')
+    error=value['receipt'].get('error') if value['receipt'] else None
+    if error is not None and (set(error)!={'sha256','bytes','categories'} or not DIGEST.fullmatch(error['sha256']) or type(error['bytes']) is not int or not isinstance(error['categories'],list) or not set(error['categories'])<=set(SCALE_ERRORS)|{'unclassified'}): raise ValueError('Scale error export refused')
+    for record in value['records'].values():
+        if (record['status']=='present_at_read') != (record['sha256'] is not None): raise ValueError('Scale presence refused')
+    for key in ('servingBefore','servingAfter'):
+        if value[key] is not None and value[key]!=scale_serving_value(value[key]): raise ValueError('Scale serving export refused')
+    receipt=value['receipt']
+    if receipt is not None:
+        for key in ('servingBefore','servingAfter'):
+            if receipt.get(key) is not None and receipt[key]!=scale_serving_value(receipt[key]): raise ValueError('Scale retained serving refused')
+        if set(receipt)!=allowed['receipt'] or receipt['status'] not in {'qualified','refused'}: raise ValueError('Scale receipt export refused')
+        if any(type(receipt[k]) is not bool for k in ('cleanupProved','executionAcknowledged','observedOwnedContainer')): raise ValueError('Scale receipt flag refused')
+        if any(type(receipt[k]) not in (int,float) or not 0<=receipt[k]<=2**63 for k in ('elapsedMs','hostAvailableBytes')): raise ValueError('Scale receipt number refused')
+    output=value['output']
+    if output is not None and (set(output)!=allowed['output'] or output['format'] not in {'synthetic_json','non_json_or_unqualified'} or type(output['bytes']) is not int or not 0<=output['bytes']<=131072): raise ValueError('Scale output export refused')
+    container=value['container']
+    if not isinstance(container,dict): raise ValueError('Scale container export refused')
+    status=container.get('status');code=container.get('code')
+    basic={'status','code'};errors=basic|{'exitCode','stderrBytes','stderrSHA256'}
+    if status=='bound_container_at_read':
+        if set(container)!=allowed['container']-{'stderrBytes','stderrSHA256'} or code!='selected_metadata' or container['image']!=SCALE_IMAGE or container['bindingKey']!=SCALE_KEY or not DIGEST.fullmatch(container['containerId']): raise ValueError('Scale container identity export refused')
+        if container['state'] not in {'created','running','paused','restarting','removing','exited','dead'} or container['networkMode'] not in {'none','default','bridge','host'}: raise ValueError('Scale container state refused')
+        if any(type(container[k]) is not bool for k in ('running','oomKilled','readOnlyRootfs')): raise ValueError('Scale container flag refused')
+        if any(type(container[k]) is not int or not 0<=container[k]<=2**63 for k in ('exitCode','memoryBytes','memorySwapBytes','nanoCpus','pidsLimit')): raise ValueError('Scale container resource refused')
+    elif status in {'unknown','absent_at_read'}:
+        if code in {'reader_unavailable','metadata_unbound','changed_or_deadline'}:
+            if status!='unknown' or set(container)!=basic: raise ValueError('Scale unknown export refused')
+        elif code in {'exact_container_missing','daemon_unavailable','permission_denied','unclassified_nonzero'}:
+            if set(container)!=errors or (status=='absent_at_read')!=(code=='exact_container_missing') or type(container['exitCode']) is not int or container['exitCode']==0 or type(container['stderrBytes']) is not int or not 0<=container['stderrBytes']<=4096 or not DIGEST.fullmatch(container['stderrSHA256']): raise ValueError('Scale Docker error export refused')
+        else: raise ValueError('Scale Docker category refused')
+    else: raise ValueError('Scale container status refused')
+    if value['bindingStatus']!='bound_original_records' and (value['receipt'] is not None or value['output'] is not None): raise ValueError('Scale unbound result refused')
+    return value
+
+
 def remote(request):
     request = selection(request)
+    if request.get('mode') == 'native_scale_records':
+        return validate_scale_reply(scale_remote(request), request)
     if request.get('mode') == 'current_serving_inspector_role':
         return validate_serving_role(serving_role_remote(request), request)
     # All production paths are fixed. No environment/caller path override.
@@ -1983,6 +2283,8 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'native_scale_records':
+        return validate_scale_reply(value, request)
     if request.get('mode') == 'cancellation_records':
         return validate_cancellation_records(value, request)
     if request.get('mode') == 'main_inspector_retirement':
@@ -2075,7 +2377,7 @@ def main():
                 '-o', 'UserKnownHostsFile=' + str(directory / 'known_hosts'), '-o', 'ConnectTimeout=10',
                 'root@' + host, "python3 - --remote '" + encoded + "'"]
         reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=30)
-        if len(reply.stdout) > 4096:
+        if len(reply.stdout) > (8192 if request.get('mode') == 'native_scale_records' else 4096):
             raise ValueError('Scoped evidence transport unavailable')
         if reply.returncode:
             try:

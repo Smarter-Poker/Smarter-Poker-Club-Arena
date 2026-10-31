@@ -592,11 +592,13 @@ class HandHistoryServiceClass {
       // Each request respects PostgREST's row ceiling; page depth is not capped.
       for (let start = 0; start < required; start += chunkSize) {
         const end = Math.min(start + chunkSize, required) - 1;
-        let seeds = supabase
-          .from(gameMode ? 'ca_hand_player_stat' : 'ca_hand_player_idx')
-          .select('hand_id')
-          .eq('user_id', userId);
-        if (gameMode) seeds = seeds.eq('is_cash', gameMode === 'cash');
+        const seeds = gameMode
+          ? supabase
+              .from('ca_hand_player_stat')
+              .select('hand_id')
+              .eq('user_id', userId)
+              .eq('is_cash', gameMode === 'cash')
+          : supabase.from('ca_hand_player_idx').select('hand_id').eq('user_id', userId);
         const { data: indexed, error: indexError } = await seeds
           .order('created_at', { ascending: false })
           .order('hand_id', { ascending: true })

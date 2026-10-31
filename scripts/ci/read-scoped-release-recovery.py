@@ -1380,7 +1380,7 @@ def inspector_health(deadline, *, stage='health'):
 def inspector_intent(request, directory):
     value = read_json(directory, request['runKey'] + '.legacy-checkpoint-intent', private=True)
     fields = {'instance', 'container', 'startedAt', 'hostPid', 'source', 'runId', 'controlSha', 'at', 'retryAllowed'}
-    if (set(value) != fields or value['runId'] != request['runKey'] or value['source'] != EED
+    if (set(value) not in (fields, fields | {'nativeCensus'}, fields | {'nativeCensus', 'custody'}) or value['runId'] != request['runKey'] or value['source'] != EED
             or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
             or not isinstance(value['instance'], str) or not re.fullmatch('1-[0-9a-f]{8}', value['instance'])
             or not isinstance(value['container'], str) or not re.fullmatch('[0-9a-f]{64}', value['container'])
@@ -1389,6 +1389,22 @@ def inspector_intent(request, directory):
             or type(value['at']) not in (int, float) or not 946684800 <= value['at'] < 4102444800
             or value['retryAllowed'] is not False):
         raise ValueError('Inspector intent unknown')
+    if 'nativeCensus' in value:
+        native = value['nativeCensus']
+        native_fields = {'schema','path','manifestPath','binarySHA256','manifestSHA256','sourceSHA256','candidateSHA','candidateImageId','candidateSourceTree'}
+        root = '/app/.legacy-census-checkpoint-' + request['runKey'] + '/legacy-census.node'
+        if (not isinstance(native,dict) or set(native)!=native_fields
+                or native['schema']!='legacy-native-census-artifact/v1'
+                or native['path']!=root or native['manifestPath']!=root+'.json'
+                or native['candidateSHA']!=request['releaseSha']
+                or not isinstance(native['candidateImageId'],str) or not re.fullmatch('sha256:[0-9a-f]{64}',native['candidateImageId'])
+                or not isinstance(native['candidateSourceTree'],str) or not SHA.fullmatch(native['candidateSourceTree'])
+                or any(not isinstance(native[k],str) or not re.fullmatch('[0-9a-f]{64}',native[k]) for k in ('binarySHA256','manifestSHA256','sourceSHA256'))):
+            raise ValueError('Inspector native intent refused')
+    if 'custody' in value:
+        # The actual only custody producer is the separate pinned 8825 profile,
+        # never EED. This EED reader must not accept spoofed custody metadata.
+        raise ValueError('Inspector EED custody refused')
     return value
 
 
@@ -2244,7 +2260,6 @@ def validate_scale_reply(value,request):
     else: raise ValueError('Scale container status refused')
     if value['bindingStatus']!='bound_original_records' and (value['receipt'] is not None or value['output'] is not None): raise ValueError('Scale unbound result refused')
     return value
-
 
 def remote(request):
     request = selection(request)

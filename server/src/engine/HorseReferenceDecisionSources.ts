@@ -106,6 +106,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/HorsePersona.ts': 'the persona solver adherence the consults honour',
     'src/engine/IcmModel.ts': 'the ICM bubble factor the survival premium uses',
     'src/engine/HorseHandClasses.ts': 'the Omaha hand-class bar shifts',
+    'src/engine/HorseGtoOpeningRanges.ts':
+      "the V70 Hold'em raise-first-in seat orders, open bars and limp floors",
     'src/engine/pineappleDiscardChoice.ts': 'the Pineapple discard',
     'src/engine/HorseOpponentMemory.ts':
       'durable variant and context keys and validated snapshots used in opponent decisions',

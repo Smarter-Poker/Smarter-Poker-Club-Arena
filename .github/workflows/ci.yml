@@ -2434,6 +2434,14 @@ jobs:
           python3 -B scripts/ci/test-weekly-payout-financial-phase-postgres.py --pg-bin /usr/lib/postgresql/17/bin --scratch-root "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/financial.log
           python3 -B scripts/ci/test-weekly-current-typed-union-phase-postgres.py --controller-migration supabase/migrations/20261030014346_weekly_union_round_receipts_keep_their_original_zero_payer_d.sql --pg-bin /usr/lib/postgresql/17/bin --scratch-root "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/current-typed-union.log
           cp -R "$RUNNER_TEMP/weekly-current-typed-union-phase-output" artifacts/weekly-payout-owned-pause/current-typed-union-evidence
+      - name: Paid weekly books qualify statements before replaying cash checks
+        if: matrix.shard == 1
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/weekly-payout-owned-pause
+          python3 -B scripts/ci/test-weekly-postpaid-quality-postgres.py --repo . --candidate-source scripts/ci/fixtures/weekly-postpaid-quality/after-scope.json --before-source scripts/ci/fixtures/weekly-postpaid-quality/before-scope.json --prepare-source scripts/ci/fixtures/weekly-postpaid-quality/prepare.sql --catalog scripts/ci/fixtures/weekly-postpaid-quality/actual-owners.json --pg-bin /usr/lib/postgresql/17/bin --scratch "$RUNNER_TEMP" --output artifacts/weekly-payout-owned-pause/postpaid-quality.json
+          python3 -B scripts/ci/test-weekly-postpaid-discovery-postgres.py --repo . --before-scope scripts/ci/fixtures/weekly-postpaid-quality/before-scope.json --after-scope scripts/ci/fixtures/weekly-postpaid-quality/after-scope.json --before-eligible scripts/ci/fixtures/weekly-postpaid-quality/before-discovery.sql --after-eligible scripts/ci/fixtures/weekly-postpaid-quality/after-discovery.sql --pg-bin /usr/lib/postgresql/17/bin --scratch "$RUNNER_TEMP" --output artifacts/weekly-payout-owned-pause/postpaid-discovery.json
+          python3 -B scripts/ci/test-weekly-postpaid-migration-postgres.py --candidate supabase/migrations/20261031162838_qualify_paid_weekly_statement_evidence_before_replaying_cash.sql --owners scripts/ci/fixtures/weekly-postpaid-quality/actual-owners.json --discovery scripts/ci/fixtures/weekly-postpaid-quality/actual-discovery-owners.json --pg-bin /usr/lib/postgresql/17/bin --scratch "$RUNNER_TEMP" --output artifacts/weekly-payout-owned-pause/postpaid-migration.json
       - name: Preserve original weekly payout qualification evidence
         if: always() && matrix.shard == 1
         uses: actions/upload-artifact@v4

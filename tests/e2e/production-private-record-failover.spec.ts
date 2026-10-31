@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { PRIVATE_RECORD_CLIENT_TITLE } from '../../scripts/ci/private-record-client-proof.mjs';
 import { installPrivateRecordEngineInterruption } from './support/privateRecordEngineInterruption';
+import { ownPrivateRecordProfile, type PrivateRecordProfile } from './support/privateRecordProfile';
 import {
   hasLiveGatewayReady,
   type PrivateRecordObservation,
@@ -36,9 +37,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
   const gatewayOpen = new Set<number>();
   let socketId = 0;
   let observationsOverflow = false;
-  let originalProfile:
-    | { id: string; alias: string; avatar_url: string | null; arena_avatar_url: string | null }
-    | undefined;
+  let originalProfile: PrivateRecordProfile | undefined;
   page.on('websocket', (socket) => {
     const url = new URL(socket.url());
     const endpoint = `${url.protocol}//${url.host}${url.pathname}`;
@@ -176,25 +175,23 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       { api: API, key: KEY, email: process.env.SP_EMAIL }
     );
     expect(userId).toMatch(/^[0-9a-f-]{36}$/);
-    originalProfile = await page.evaluate(
+    const profileRows = await page.evaluate(
       async ({ api, key, id }) => {
         const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || '{}');
         if (session.user?.id !== id || !session.access_token) throw Error('Reserved actor changed');
         const response = await fetch(
-          `${api}/rest/v1/profiles?id=eq.${id}&select=id,alias,avatar_url,arena_avatar_url`,
+          `${api}/rest/v1/profiles?id=eq.${id}&select=id,player_number,avatar_url,arena_avatar_url`,
           {
             headers: { apikey: key, Authorization: `Bearer ${session.access_token}` },
             signal: AbortSignal.timeout(10_000),
           }
         );
         if (!response.ok) throw Error('Own profile snapshot unavailable');
-        const rows = await response.json();
-        if (rows.length !== 1 || rows[0].id !== id || !rows[0].alias)
-          throw Error('Own profile identity missing');
-        return rows[0];
+        return response.json();
       },
       { api: API, key: KEY, id: userId }
     );
+    originalProfile = ownPrivateRecordProfile(profileRows, userId);
     proof.genuineSession = true;
     const topic = `member-record:${CLUB}:${userId}`;
     await page.goto(`clubs/kings-club/members/${userId}`, { waitUntil: 'domcontentloaded' });
@@ -373,10 +370,14 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
     await fault.block();
     const rosterStart = frames.length;
     await page.goto('clubs/kings-club/members?view=all', { waitUntil: 'domcontentloaded' });
-    await page.getByRole('textbox', { name: 'Search Club Members' }).fill(originalProfile!.alias);
+    await page
+      .getByRole('textbox', { name: 'Search Club Members' })
+      .fill(originalProfile.player_number);
     const rosterAvatar = page
       .getByRole('listitem')
-      .filter({ has: page.locator('.member-alias').filter({ hasText: originalProfile!.alias }) })
+      .filter({
+        has: page.getByText(`PlayerID: ${originalProfile.player_number}`, { exact: true }),
+      })
       .locator('.member-avatar img');
     await expect(rosterAvatar).toHaveCount(1, { timeout: 45_000 });
     await expect

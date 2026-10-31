@@ -1,0 +1,3 @@
+# Private record proof uses the account's player number
+
+The expanded production failover proof stopped before exercising the transport because it required a nonempty raw profile alias. New certification accounts legitimately have no alias; the real roster supplies display-name fallbacks. Identify the reserved account by its verified profile UUID and player number, search that number, and match its exact visible PlayerID row. Preserve all transport, genuine update, readback, restoration and cleanup assertions. A focused regression accepts a null alias and rejects missing, duplicate or foreign identity and missing player numbers.

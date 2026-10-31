@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { ownPrivateRecordProfile } from '../e2e/support/privateRecordProfile';
 import {
   hasLiveGatewayReady,
   type PrivateRecordObservation,
@@ -148,6 +149,25 @@ function report(evidence = browserEvidence()) {
   };
 }
 describe('finite published record client proof admission and verdict', () => {
+  it('identifies an own roster profile without requiring an optional raw alias', () => {
+    const own = {
+      id: 'own',
+      player_number: '123456',
+      alias: null,
+      avatar_url: null,
+      arena_avatar_url: null,
+    };
+    expect(ownPrivateRecordProfile([own], 'own')).toEqual(own);
+    for (const rows of [
+      null,
+      [],
+      [own, own],
+      [{ ...own, id: 'foreign' }],
+      [{ ...own, player_number: null }],
+      [{ ...own, player_number: ' ' }],
+    ])
+      expect(() => ownPrivateRecordProfile(rows, 'own')).toThrow('Own profile identity missing');
+  });
   it('accepts retained readiness only on an open gateway with no later refusal', () => {
     const ready: PrivateRecordObservation = {
       endpoint: 'gateway',

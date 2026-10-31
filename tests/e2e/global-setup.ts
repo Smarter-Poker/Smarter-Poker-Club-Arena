@@ -33,6 +33,8 @@ import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import {
   declineDiamondInvitationIfShown,
+  DIAMOND_INVITATION,
+  layerCovering,
   diamondInvitation,
   registerDiamondInvitationDismissal,
 } from './support/cashLobbyOverlays';
@@ -128,12 +130,26 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
   if (!appeared) return false;
 
   // New zero-chip accounts also receive the Diamond invitation, and the two
-  // doors stack in whichever order their reads answered. When the invitation
-  // is on top its handler takes Not Now before this click; when the greeting
-  // is on top the handler yields and this click goes first. A failed decline
+  // doors stack in whichever order their reads answered. An invitation
+  // already on top is settled before this click; the handler protects against
+  // a later invitation and yields when the greeting is on top. A failed decline
   // is collected rather than thrown from the handler: a handler rejection in
   // global setup is an unhandled rejection that kills Node and hides the
   // error of the click that was actually running (run 36364137556).
+  // Settle a door already covering this control before starting its action
+  // budget. A late invitation still belongs to the handler below, but an
+  // existing decline must not consume the greeting click's whole deadline.
+  const cover = await layerCovering(dismiss);
+  if (cover?.dialog === DIAMOND_INVITATION.name) {
+    try {
+      await declineDiamondInvitationIfShown(page);
+    } catch (error) {
+      throw new Error(
+        `Club entry message dismissal failed; the Diamond Spins invitation could not be declined: ${(error as Error).message.split('\n')[0]}`,
+        { cause: error }
+      );
+    }
+  }
   const invitationFailures: unknown[] = [];
   const invitationHandler = await registerDiamondInvitationDismissal(page, {
     onFailure: (error) => invitationFailures.push(error),

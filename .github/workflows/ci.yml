@@ -3548,6 +3548,13 @@ jobs:
       - name: TypeScript Check (server)
         run: npx tsc --noEmit
 
+      # server/scripts/*.ts are operator CLIs outside tsconfig.json's rootDir,
+      # so until 2026-10-31 nothing compiled them (the Hold'em live measure CLI
+      # was checked by hand). tsconfig.scripts.json covers them all except the
+      # qualification vitest files, which carried a pre-existing baseline.
+      - name: TypeScript Check (server scripts)
+        run: npx tsc -p tsconfig.scripts.json --noEmit
+
       # BLOCKING. Named explicitly so it is obvious in the job log which
       # regressions are being defended, and so deleting them is a visible diff.
       # PHASE 2 (2026-09-02): the restart gate's pins ride the named regression

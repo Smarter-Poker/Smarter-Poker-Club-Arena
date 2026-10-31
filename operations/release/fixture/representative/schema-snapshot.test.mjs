@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES, connectionFailureCode, dumpFailureKind, safeDumpDiagnostic, remainingDumpBudget, verifyNativeSnapshotTransport } from '../schema-snapshot.mjs';
+import { captureContext, databaseConfiguration, captureSchema, dumpSnapshot, CAPTURE_FILES, connectionFailureCode, dumpFailureKind, safeDumpDiagnostic, remainingDumpBudget, verifyNativeSnapshotTransport, dumpProgressStage } from '../schema-snapshot.mjs';
 import { assertSchemaOnly, composeSchema, dumpObjects, schemaHash } from '../schema-compose.mjs';
 import { schemaCatalogue, schemaCataloguePayload } from '../../native/component-semantic-observations.mjs';
 import { APPLICATION_TRIGGER_WITNESSES } from '../schema-application-hooks.mjs';
@@ -317,7 +317,7 @@ test('pg_dump uses fixed no-data imported snapshot and no credential argv or inh
     return child;
   };
   await dumpSnapshot(config,'00000003-0000001B-1',{spawnProcess});
-  assert.equal(observed.command,'pg_dump');assert.ok(observed.args.includes('--schema-only'));
+  assert.equal(observed.command,'pg_dump');assert.ok(observed.args.includes('--schema-only'));assert.ok(observed.args.includes('--verbose'));
   assert.ok(observed.args.includes('--snapshot=00000003-0000001B-1'));
   assert.ok(observed.args.includes('--lock-wait-timeout=1000'));
   assert.ok(!JSON.stringify(observed.args).includes('synthetic-only'));
@@ -409,4 +409,28 @@ test('the original catalogue digest and private complete payload use the exact s
   assert.equal(payload.encoding,'postgres-jsonb-text-sha256/v1');
   const queries=calls.filter((sql)=>sql.includes('WITH user_schemas'));
   assert.equal(queries.length,2);assert.ok(queries[1].includes(`FROM (${queries[0]}) bounded_catalogue`));
+});
+
+ test('dump progress accepts only exact closed native phases and keeps private lines private',()=>{
+  const privateLine='pg_dump: reading user-defined tables private-secret';
+  assert.equal(dumpProgressStage(privateLine+'\n'),'UNKNOWN');
+  assert.equal(dumpProgressStage('pg_dump: last built-in OID is 16383\n'),'SETUP_COMPLETE');
+  for(const line of ['pg_dump: last built-in OID is 4294967296','pg_dump: last built-in OID is private-secret','pg_dump: last built-in OID is 1 trailing'])assert.equal(dumpProgressStage(line+'\n'),'UNKNOWN');
+  assert.equal(dumpProgressStage('pg_dump: last built-in OID is 16383\npg_dump: reading extensions\n'),'READING_EXTENSIONS');
+  assert.equal(dumpProgressStage('pg_dump: reading schemas\n'+privateLine+'\npg_dump: reading user-defined tables\npg_dump: error: private-query\n'),'READING_USER_DEFINED_TABLES');
+  assert.equal(dumpProgressStage(' pg_dump: reading schemas\npg_dump: reading indexes trailing\n'),'UNKNOWN');
+  assert.equal(safeDumpDiagnostic({last_stage:'private-secret'}).last_stage,'UNKNOWN');
+  assert.equal(safeDumpDiagnostic({last_stage:'READING_INDEXES'}).last_stage,'READING_INDEXES');
+  assert.ok(!JSON.stringify(safeDumpDiagnostic({last_stage:privateLine})).includes('private-secret'));
+});
+
+test('actual dump failure preserves only its last exact recognized progress stage',async()=>{
+  const spawnProcess=()=>{
+    const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>true;
+    queueMicrotask(()=>{child.stderr.write('pg_dump: reading user-defined ta');child.stderr.end('bles\npg_dump: private-query-secret\n');child.emit('close',1,null);});return child;
+  };
+  await assert.rejects(dumpSnapshot(databaseConfiguration(fixtureURL),'00000003-0000001B-1',{spawnProcess}),error=>{
+    assert.equal(error.dumpDiagnostic.last_stage,'READING_USER_DEFINED_TABLES');
+    assert.ok(!JSON.stringify(error).includes('private-query-secret'));return true;
+  });
 });

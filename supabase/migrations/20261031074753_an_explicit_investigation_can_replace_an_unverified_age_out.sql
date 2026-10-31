@@ -7,8 +7,6 @@ BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '8s';
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_incident_action', 'migration explicit investigated operator resolution');
-SELECT public.fn_ca_declare_guard_redefinition('fn_ca_resolution_needs_a_cause', 'migration explicit investigated operator resolution');
-SELECT public.fn_ca_declare_guard_redefinition('fn_ca_incident_resolution_reaches_the_alerts', 'migration explicit investigated operator resolution');
 DO $preimage$
 BEGIN
   IF md5(pg_get_functiondef('public.fn_ca_incident_action(uuid,text,text,uuid,text,text)'::regprocedure)) <> '3507dce688509aabeaff69a89e787ca0'

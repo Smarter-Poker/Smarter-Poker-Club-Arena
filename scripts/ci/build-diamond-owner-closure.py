@@ -85,6 +85,11 @@ GRANT SELECT ON public.ca_diamond_arena_owner_closure TO service_role;
   sig=r['nspname']+'.'+r['proname']+'('+','.join(a.strip().split()[-1] for a in r['args'].split(',')) +')' if r['args'] else r['nspname']+'.'+r['proname']+'()'
   predicate=lambda h:"EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure("+lit(sig)+") AND md5(pg_get_functiondef(p.oid))="+lit(h)+" AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text="+lit(r['acl'])+" AND p.proconfig=ARRAY["+','.join(lit(x) for x in r['proconfig'])+"])"
   sql+="DO $pin$ BEGIN IF NOT ("+predicate(r['hash'])+") THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_PREIMAGE_CHANGED: "+r['proname']+"'; END IF; END $pin$;\n"+r['after']+";\n"
+  # Preserve the pinned private ACL explicitly as well as checking it. This
+  # keeps the complete installation authority visible to static review.
+  sql+='REVOKE ALL ON FUNCTION '+sig+' FROM PUBLIC,anon,authenticated;\n'
+  if 'service_role=' in r['acl']:
+   sql+='GRANT EXECUTE ON FUNCTION '+sig+' TO service_role;\n'
   checks.append(predicate(r['post_hash']))
  proof=' AND '.join(checks)+" AND EXISTS(SELECT 1 FROM public.ca_diamond_arena_owner_closure WHERE club_id='"+CLUB+"' AND operation_id='"+OP+"' AND closed)"
  sql+="DO $post$ BEGIN IF NOT ("+proof+") THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_POSTIMAGE_CHANGED'; END IF; IF clock_timestamp()-transaction_timestamp()>=interval '8 seconds' THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_INSTALL_BUDGET'; END IF; END $post$;\nCOMMIT;\n"

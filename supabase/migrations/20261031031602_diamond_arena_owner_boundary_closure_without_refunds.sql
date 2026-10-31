@@ -35,6 +35,7 @@ BEGIN
   WHERE h.mode='park' AND (p_club=ANY(m.club_ids) OR p_union=ANY(m.club_ids)));
 END $function$
 ;
+REVOKE ALL ON FUNCTION public.fn_ca_launch_tournament_held(uuid,uuid) FROM PUBLIC,anon,authenticated;
 DO $pin$ BEGIN IF NOT (EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)') AND md5(pg_get_functiondef(p.oid))='687c04cf8d272256e48eac35135a95ba' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp'])) THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_PREIMAGE_CHANGED: fn_ca_lock_tournament_seat_acquisition'; END IF; END $pin$;
 CREATE OR REPLACE FUNCTION public.fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)
  RETURNS jsonb
@@ -125,6 +126,7 @@ BEGIN
 END;
 $function$
 ;
+REVOKE ALL ON FUNCTION public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated;
 DO $pin$ BEGIN IF NOT (EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_ca_operator_floor_entry_guard()') AND md5(pg_get_functiondef(p.oid))='a6b11771207759db94de57cdc72adfd2' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp'])) THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_PREIMAGE_CHANGED: fn_ca_operator_floor_entry_guard'; END IF; END $pin$;
 CREATE OR REPLACE FUNCTION public.fn_ca_operator_floor_entry_guard()
  RETURNS trigger
@@ -142,6 +144,8 @@ BEGIN
  RETURN NEW;
 END $function$
 ;
+REVOKE ALL ON FUNCTION public.fn_ca_operator_floor_entry_guard() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_operator_floor_entry_guard() TO service_role;
 DO $pin$ BEGIN IF NOT (EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_ca_operator_floor_state(uuid)') AND md5(pg_get_functiondef(p.oid))='af46361b46157eb951c485ea11696512' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp'])) THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_PREIMAGE_CHANGED: fn_ca_operator_floor_state'; END IF; END $pin$;
 CREATE OR REPLACE FUNCTION public.fn_ca_operator_floor_state(p_table_id uuid)
  RETURNS jsonb
@@ -170,6 +174,8 @@ AS $function$
  'close',(SELECT to_jsonb(c) FROM public.ca_operator_table_closes c WHERE c.table_id=p_table_id AND c.status='pending'));
 $function$
 ;
+REVOKE ALL ON FUNCTION public.fn_ca_operator_floor_state(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_operator_floor_state(uuid) TO service_role;
 DO $pin$ BEGIN IF NOT (EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)') AND md5(pg_get_functiondef(p.oid))='71f94455a73180259ac0543a25dd45ae' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=pg_catalog, public, smarter_private'])) THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_PREIMAGE_CHANGED: fn_f06_begin_hand'; END IF; END $pin$;
 CREATE OR REPLACE FUNCTION public.fn_f06_begin_hand(p_tournament_id uuid, p_lease_generation uuid, p_table_id uuid, p_lifecycle bigint, p_permit_id uuid, p_hand_number bigint, p_custody_id uuid)
  RETURNS jsonb
@@ -217,6 +223,8 @@ BEGIN
  RETURN to_jsonb(h)||jsonb_build_object('ok',true,'lifecycle',h.lifecycle::text,'hand_number',h.hand_number::text);
 END $function$
 ;
+REVOKE ALL ON FUNCTION public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid) TO service_role;
 DO $pin$ BEGIN IF NOT (EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_poker_diamond_reserve(uuid,text,uuid,text,numeric,uuid)') AND md5(pg_get_functiondef(p.oid))='99fb5f4f483710c49e1a2ee8824b0992' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp'])) THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_PREIMAGE_CHANGED: fn_poker_diamond_reserve'; END IF; END $pin$;
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_reserve(p_user_id uuid, p_purpose text, p_target_id uuid, p_entry_key text, p_amount numeric, p_request_id uuid)
  RETURNS jsonb
@@ -340,5 +348,7 @@ BEGIN
  RETURN v_receipt;
 END $function$
 ;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_reserve(uuid,text,uuid,text,numeric,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_reserve(uuid,text,uuid,text,numeric,uuid) TO service_role;
 DO $post$ BEGIN IF NOT (EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_ca_launch_tournament_held(uuid,uuid)') AND md5(pg_get_functiondef(p.oid))='637b724bedd9591e36e04c711cff21fd' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres}' AND p.proconfig=ARRAY['search_path=pg_catalog, public']) AND EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)') AND md5(pg_get_functiondef(p.oid))='2622a05f060e54b18204205fc08bc7e9' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp']) AND EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_ca_operator_floor_entry_guard()') AND md5(pg_get_functiondef(p.oid))='132eaeef60af771e0a2cf1b2fb3ccec5' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp']) AND EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_ca_operator_floor_state(uuid)') AND md5(pg_get_functiondef(p.oid))='c14df5ec0456971521c545859cf7bd48' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp']) AND EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)') AND md5(pg_get_functiondef(p.oid))='1469a8f499a4669d893863d129b1bb0d' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=pg_catalog, public, smarter_private']) AND EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_poker_diamond_reserve(uuid,text,uuid,text,numeric,uuid)') AND md5(pg_get_functiondef(p.oid))='ddc874678ad33fdd51d589e744e5b588' AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp']) AND EXISTS(SELECT 1 FROM public.ca_diamond_arena_owner_closure WHERE club_id='002c2d27-9584-4e52-835a-bb2be148fc81' AND operation_id='01a18fed-2211-7a62-9416-611dd6e4d96d' AND closed)) THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_POSTIMAGE_CHANGED'; END IF; IF clock_timestamp()-transaction_timestamp()>=interval '8 seconds' THEN RAISE EXCEPTION 'DIAMOND_CLOSURE_INSTALL_BUDGET'; END IF; END $post$;
 COMMIT;

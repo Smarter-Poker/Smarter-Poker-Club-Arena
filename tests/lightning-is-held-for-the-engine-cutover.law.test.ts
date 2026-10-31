@@ -63,6 +63,12 @@ describe('Lightning is held for the engine cutover', () => {
     expect(fn).toContain('[ -z "${DRILL_MODE:-}" ] || return 0');
     expect(fn).toContain('m.get("phase") == "counting_down"');
     expect(fn).toContain('m.get("durableConfirmed") is True');
+    // Only a break this release may use: the serving original still announces
+    // an hourly :55 break the countdown refuses; a hold on it would park
+    // Lightning for hours. Same three admissions as the countdown.
+    expect(fn).toContain('daily = (local.hour == 3 and local.minute >= 58) or (local.hour == 4 and local.minute < 5)');
+    expect(fn).toContain('emergency = m.get("reason") == "Deployment Recovery"');
+    expect(fn).toContain('raise SystemExit(0 if (daily or emergency or transition) else 1)');
     expect(fn).toContain('"$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"');
     // Three outcomes stay distinct: placed (0/1), could-not-run (126/127), UNKNOWN (retry).
     expect(fn).toMatch(/0\|1\) LIGHTNING_HOLD_PLACED=1/);
@@ -73,8 +79,17 @@ describe('Lightning is held for the engine cutover', () => {
     expect(fn).not.toContain('die ');
     // It runs on the legacy-checkpoint pass, before the entry clock starts.
     expect(transaction).toContain(
-      '  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then\n    hold_lightning_when_counting_down\n    ENTRY_STARTED_MS="$(date +%s%3N)"'
+      '  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then\n    release_lightning_hold_if_break_over\n    hold_lightning_when_counting_down\n    ENTRY_STARTED_MS="$(date +%s%3N)"'
     );
+    // A qualifying break that passed without a cutover gives Lightning back and
+    // lets the next one hold again (a new generation of request ids).
+    const over = transaction.slice(
+      transaction.indexOf('release_lightning_hold_if_break_over() {'),
+      transaction.indexOf('\n}', transaction.indexOf('release_lightning_hold_if_break_over() {'))
+    );
+    expect(over).toContain('m.get("active") is not True');
+    expect(over).toContain('release_lightning_hold 0\n  LIGHTNING_HOLD_PLACED=0');
+    expect(helper).toContain('generation = int(previous.get("generation", 1)) + 1');
   });
 
   it('releases the hold on every exit path after the thaw, and the fence is the second reader', () => {
@@ -92,7 +107,9 @@ describe('Lightning is held for the engine cutover', () => {
       transaction.indexOf('recover_on_exit() {'),
       transaction.indexOf('\ntrap recover_on_exit EXIT')
     );
-    expect(onExit).toContain('  release_lightning_hold\n  if [ "$LOCK_HELD" = 1 ]; then');
+    expect(onExit).toContain('  release_lightning_hold "$rc"\n  if [ "$LOCK_HELD" = 1 ]; then');
+    // A signalled exit has 330 s before SIGKILL: it waits at most two minutes.
+    expect(fn).toMatch(/case "\$exit_code" in 75\|130\)/);
     expect(transaction).toContain('LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');
     expect(recover).toContain('LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"');
     expect(recover).toMatch(/"\$LIGHTNING_HOLD" resume \\\n\s+--env-file "\$ENV_FILE" --run-id "\$RUN_ID" --hold-file "\$LIGHTNING_HOLD_FILE"/);
@@ -104,7 +121,7 @@ describe('Lightning is held for the engine cutover', () => {
   it('uses the Phase 13 operator door with the run key as operator and reason, and never a horse flag', () => {
     expect(helper).toContain('PROJECT_HOST = "kuklfnapbkmacvwxktbh.supabase.co"');
     expect(helper).toContain('/rest/v1/rpc/fn_lightning_operator_control');
-    expect(helper).toContain('"p_args": {"request_id": request_id(run_id, action, cluster_id)}');
+    expect(helper).toContain('"p_args": {"request_id": request_id(run_id, action, cluster_id, generation)}');
     expect(helper).toContain('"cluster_mode": "eq.lightning"');
     expect(helper).toContain('class RefuseRedirects');
     expect(helper).not.toMatch(/is_horse|horse_id/);

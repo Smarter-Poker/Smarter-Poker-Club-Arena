@@ -207,15 +207,15 @@
    Badges for the bounty family, freerolls, satellites and guarantees of 2.5K
    or more, plus a live clock: "Starts In" before the cards fly and "Late Reg
    Ends In" while late registration is open. Inks are the schema's own:
-   green for free, gold for a guarantee, red for a bounty, blue for a mystery
-   draw, silver for a satellite.
+   blue for free, green for bounties, yellow for satellites and silver for
+   guarantees. October 31 replaces the earlier tinted backgrounds.
    ═══════════════════════════════════════════════════════════════════════════ */
 .lt-signals {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  margin-top: 4px;
+  gap: 3px;
+  margin-top: 3px;
   min-width: 0;
 }
 
@@ -233,10 +233,8 @@
   padding: 2px 6px 2px 5px;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 3px;
-  background: linear-gradient(180deg, #161c25 0%, #07090d 100%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 10%),
-    0 1px 2px rgb(0 0 0 / 80%);
+  background: #000;
+  box-shadow: none;
   color: #e4e7ec;
   font-family: 'Roboto Condensed', Inter, sans-serif;
   font-size: 10px;
@@ -255,49 +253,26 @@
 }
 
 .lt-signal--freeroll {
-  border-color: rgb(53 217 90 / 65%);
-  background: linear-gradient(180deg, rgb(53 217 90 / 24%), rgb(53 217 90 / 6%)), #050607;
-  color: #c8ffd2;
-  box-shadow:
-    inset 0 1px 0 rgb(200 255 210 / 18%),
-    0 0 8px rgb(53 217 90 / 45%);
+  border-color: #45adff;
+  color: #45adff;
 }
 
+.lt-signal--gtd,
 .lt-signal--hot-gtd {
-  border-color: rgb(255 215 0 / 70%);
-  background: linear-gradient(180deg, rgb(255 215 0 / 22%), rgb(255 215 0 / 5%)), #050607;
-  color: #ffd700;
-  box-shadow:
-    inset 0 1px 0 rgb(255 235 120 / 22%),
-    0 0 8px rgb(255 215 0 / 40%);
-}
-
-.lt-signal--pko,
-.lt-signal--bounty {
-  border-color: rgb(240 40 73 / 65%);
-  background: linear-gradient(180deg, rgb(240 40 73 / 24%), rgb(240 40 73 / 6%)), #050607;
-  color: #ff5b6e;
-  box-shadow:
-    inset 0 1px 0 rgb(255 140 155 / 16%),
-    0 0 7px rgb(240 40 73 / 38%);
-}
-
-.lt-signal--mystery {
-  border-color: rgb(69 173 255 / 70%);
-  background: linear-gradient(180deg, rgb(69 173 255 / 26%), rgb(69 173 255 / 6%)), #050607;
-  color: #a8ddff;
-  box-shadow:
-    inset 0 1px 0 rgb(168 221 255 / 18%),
-    0 0 8px rgb(69 173 255 / 42%);
-}
-
-.lt-signal--satellite {
-  border-color: rgb(228 231 236 / 45%);
+  border-color: #e4e7ec;
   color: #e4e7ec;
 }
 
-.lt-signal--gtd {
-  color: #9aa5b3;
+.lt-signal--pko,
+.lt-signal--bounty,
+.lt-signal--mystery {
+  border-color: #35d95a;
+  color: #c8ffd2;
+}
+
+.lt-signal--satellite {
+  border-color: #ffd700;
+  color: #ffd700;
 }
 
 .lt-clock {
@@ -346,35 +321,6 @@
   }
 }
 
-@media (max-width: 900px) {
-  /* The rail on the row's left edge carries its best fact at a glance. */
-  .compact-lobby tbody tr.is-freeroll td:first-child {
-    box-shadow:
-      inset 3px 0 0 #35d95a,
-      inset 14px 0 18px -14px rgb(53 217 90 / 55%);
-  }
-  .compact-lobby tbody tr.is-hot-gtd td:first-child {
-    box-shadow:
-      inset 3px 0 0 #ffd700,
-      inset 14px 0 18px -14px rgb(255 215 0 / 50%);
-  }
-  .compact-lobby tbody tr.is-bounty td:first-child {
-    box-shadow:
-      inset 3px 0 0 #f02849,
-      inset 14px 0 18px -14px rgb(240 40 73 / 45%);
-  }
-  .compact-lobby tbody tr.is-freeroll td {
-    background: linear-gradient(180deg, rgb(53 217 90 / 9%), rgb(53 217 90 / 2%)), #080b11;
-  }
-  .compact-lobby tbody tr.is-hot-gtd td {
-    background: linear-gradient(180deg, rgb(255 215 0 / 8%), rgb(255 215 0 / 2%)), #080b11;
-  }
-  .compact-lobby tbody tr.compact-lobby__row--tourney.is-urgent .lt-status {
-    color: #ffd700;
-    text-shadow: 0 0 6px rgb(255 215 0 / 45%);
-  }
-}
-
 /* A qualifier must name its target in full; the generic metadata line clamp
    must not hide the end of the event name on a phone or desktop row. */
 .compact-lobby__destination {
@@ -403,16 +349,61 @@
   .compact-lobby td:first-child:has(> .lt-fav) .compact-lobby__open {
     padding-right: 44px;
   }
+  .compact-lobby tr[data-kind]:not([data-kind='cash']) td:first-child > .lt-fav {
+    top: 50%;
+    transform: translateY(-50%);
+  }
 }
 
-/* Top events remain identifiable in both schedule layouts, including phones. */
-.lobby-table .lt-row[data-kind='mtt'].is-featured .lt-name__line1,
-.compact-lobby tr[data-kind='mtt'].is-featured .compact-lobby__title,
-.lobby-table .lt-row[data-kind='mtt'].is-featured .lt-flag--featured {
+/* Event colour describes the format; every event stays on black glass. */
+.compact-lobby tr[data-kind]:not([data-kind='cash']) {
+  --tournament-row-accent: #45adff;
+}
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-standard,
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-rebuy {
+  --tournament-row-accent: #45adff;
+}
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-deepstack {
+  --tournament-row-accent: #e4e7ec;
+}
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-turbo {
+  --tournament-row-accent: #45adff;
+}
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-hyper {
+  --tournament-row-accent: #f02849;
+}
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-freezeout {
+  --tournament-row-accent: #f4f7fb;
+}
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-bounty {
+  --tournament-row-accent: #35d95a;
+}
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-freeroll {
+  --tournament-row-accent: #45adff;
+}
+.compact-lobby tr[data-kind]:not([data-kind='cash']).is-satellite {
+  --tournament-row-accent: #ffd700;
+}
+.compact-lobby tbody tr[data-kind]:not([data-kind='cash']) td {
+  background: #000;
+  border-top-color: rgb(228 231 236 / 16%);
+  border-bottom-color: rgb(228 231 236 / 16%);
+  box-shadow: none;
+  vertical-align: middle;
+}
+.compact-lobby tbody tr[data-kind]:not([data-kind='cash']) td:first-child {
+  box-shadow: inset 4px 0 0 var(--tournament-row-accent);
+}
+/* An inset outline reaches every edge without widening any table column. */
+.compact-lobby tbody tr[data-kind]:not([data-kind='cash']).is-featured {
+  outline: 2px solid var(--accent-red, #f02849);
+  outline-offset: -2px;
+}
+.compact-lobby tr[data-kind='mtt'].is-featured .compact-lobby__title {
   color: var(--accent-red, #f02849);
 }
-.compact-lobby tr[data-kind='mtt'].is-featured td:first-child {
-  box-shadow: inset 3px 0 0 var(--accent-red, #f02849);
+.compact-lobby tbody tr[data-kind]:not([data-kind='cash']).is-featured td:first-child {
+  box-shadow: inset 6px 0 0 var(--tournament-row-accent);
 }
 .compact-lobby tr[data-kind='mtt'] .compact-lobby__title {
   -webkit-line-clamp: 3;

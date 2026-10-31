@@ -128,6 +128,23 @@ describe('one publication transaction follows parallel preparation', () => {
       const body = { ...job };
       delete body.if;
       delete body.needs;
+      // These independent gateway jobs retain their original snapshots too.
+      if (
+        [
+          'build-record-gateway',
+          'publish-record-gateway',
+          'bootstrap-record-gateway',
+          'install-record-gateway-credentials',
+          'inspect-record-gateway-host',
+        ].includes(key)
+      ) {
+        expect(body['runs-on']).toBe('ubuntu-latest');
+        const label = key === 'build-record-gateway' ? 'ca-linux-8core' : 'ca-linux-4core';
+        body['runs-on'] =
+          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+          label +
+          "' || 'ubuntu-latest' }}";
+      }
       // Assert only the standard hosted client routes and hardware-bounded client worker cap, then
       // retain the complete original command/permission/secret snapshot.
       if (

@@ -464,10 +464,12 @@ export function seatPodPx(
 ): Size {
   /* DENSE RINGS ON A PHONE (Dan 2026-10-22) - mirrors the rule of the same
      name at the foot of SeatSlot.css: a 7-9 max villain pod on a portrait
-     phone is sized from the smaller of the felt's width and its height. */
+     phone is sized from the smaller of the felt's width and its height.
+     Include the production phone's desktop-reference viewport, matching the
+     existing portrait card-lane boundary and the CSS media query. */
   if (
     !isHero &&
-    viewportWidthPx <= 480 &&
+    viewportWidthPx <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX &&
     canvasWidthPx &&
     Number.isFinite(canvasWidthPx) &&
     (ring?.seats ?? 0) >= 7

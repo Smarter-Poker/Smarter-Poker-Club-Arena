@@ -23,12 +23,18 @@ const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   roster: vi.fn(),
   wallet: vi.fn(),
-  memberChannel: null as null | { onPayload: (value: unknown) => void },
+  memberChannel: null as null | {
+    onPayload: (value: unknown) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  },
   recordChannel: null as null | {
     onPayload: (value: unknown) => void;
     onSubscriptionStatus?: (status: string) => void;
   },
-  walletChannel: null as null | { onPayload: (value: unknown) => void },
+  walletChannel: null as null | {
+    onPayload: (value: unknown) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  },
 }));
 
 vi.mock('react-router-dom', () => ({
@@ -608,11 +614,18 @@ it.each(['record_changed', 'SUBSCRIBED'])(
 );
 
 it('applies an authoritative avatar removal without retaining the old image', async () => {
-  state.getMemberDetail.mockResolvedValue({
-    ...memberDetail,
-    identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
-  });
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   const view = render(<MemberManagementPage />);
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+  // Settle bootstrap and its effect-owned refresh handler before delivering
+  // the record event exposed during render by the subscription mock.
+  await act(async () =>
+    initial.resolve({
+      ...memberDetail,
+      identity: { ...memberDetail.identity, avatar_url: '/avatars/table/free_ninja@2x.webp' },
+    })
+  );
   await screen.findByText('River Shark');
   expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
     'src',
@@ -1101,4 +1114,92 @@ it('cannot restore a downline that settles after financial access is withdrawn',
   );
   expect(screen.queryByText('Cash Hands')).not.toBeInTheDocument();
   expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
+});
+
+it('coalesces all member lifecycle catchups and keeps the post-start invalidation and newer wallet', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
+  const range = state.getMemberDetail.mock.calls.at(-1)?.[2];
+  const nickname = screen.getByDisplayValue('The Closer');
+  fireEvent.change(nickname, { target: { value: 'Lifecycle Local Draft' } });
+  const first = deferred<typeof memberDetail>();
+  const latest = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise);
+  const before = state.getMemberDetail.mock.calls.length;
+  await act(async () => {
+    state.memberChannel?.onSubscriptionStatus?.('SUBSCRIBED');
+    state.walletChannel?.onSubscriptionStatus?.('SUBSCRIBED');
+    state.recordChannel?.onSubscriptionStatus?.('SUBSCRIBED');
+  });
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(before + 1);
+  await act(async () => first.resolve(memberDetail));
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(before + 2));
+  expect(state.getMemberDetail.mock.calls.at(-1)?.[2]).toEqual(range);
+  await act(async () =>
+    state.memberChannel?.onPayload({
+      eventType: 'UPDATE',
+      new: {
+        club_id: '22222222-2222-4222-8222-222222222222',
+        user_id: state.params.userId,
+        chip_balance: 777,
+      },
+    })
+  );
+  await act(async () =>
+    latest.resolve({
+      ...memberDetail,
+      wallets: { chip_balance: 600, player_wallet: 600, agent_wallet: 1234, promo_wallet: 25 },
+      stats: { ...memberDetail.stats, hands: 321 },
+      range: { ...range, is_overall: false },
+    })
+  );
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(before + 2);
+  expect(screen.getByText('777.00')).toBeInTheDocument();
+  expect(screen.getByText('1,234.00')).toBeInTheDocument();
+  expect(screen.getByText('321')).toBeInTheDocument();
+  expect(screen.getByDisplayValue('Lifecycle Local Draft')).toBe(nickname);
+});
+
+it('keeps real wallet broadcasts in the wallet-only read lane', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const downlineReads = state.getDownline.mock.calls.length;
+  const cardReads = state.rpc.mock.calls.length;
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    wallets: { ...memberDetail.wallets, agent_wallet: 1234 },
+    stats: { ...memberDetail.stats, hands: 999 },
+  });
+  await act(async () =>
+    state.walletChannel?.onPayload({
+      payload: {
+        club_id: '22222222-2222-4222-8222-222222222222',
+        user_id: state.params.userId,
+      },
+    })
+  );
+  expect(screen.getByText('1,234.00')).toBeInTheDocument();
+  expect(screen.queryByText('999')).not.toBeInTheDocument();
+  expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+  expect(state.rpc).toHaveBeenCalledTimes(cardReads);
+  expect(state.getMemberDetail.mock.calls.at(-1)?.[2]).toBeUndefined();
+});
+
+it('withdraws financial data when a lifecycle catchup denies access', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    wallets: null,
+    stats: null,
+    downline: null,
+    capabilities: { ...memberDetail.capabilities, can_view_financials: false },
+  });
+  await act(async () => state.walletChannel?.onSubscriptionStatus?.('SUBSCRIBED'));
+  expect(screen.queryByText('500.00')).not.toBeInTheDocument();
+  expect(screen.queryByText('200')).not.toBeInTheDocument();
+  expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
 });

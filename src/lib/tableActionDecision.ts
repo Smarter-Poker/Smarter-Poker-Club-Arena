@@ -1,5 +1,16 @@
 import type { ActionResult } from '../services/GameServerAPI';
 
+/** Presentation and submission share the same capability readiness gate.
+ * A withheld token is never replaced by a previous decision's token.
+ */
+export function tableDecisionIsReady(input: {
+  actionContext: string | undefined;
+  allowContextless: boolean;
+  clientStateStale?: boolean;
+}): boolean {
+  return !input.clientStateStale && (input.allowContextless || Boolean(input.actionContext));
+}
+
 /** An absent token means input is not ready, never that a context-free tap is safe.
  * Refresh once and return the choice to the player. Never rebind or replay an
  * old choice against a different decision, even when it was only a fold.
@@ -11,7 +22,7 @@ export async function submitTableDecision(input: {
   send: (context: string | undefined) => Promise<ActionResult>;
   refresh: () => Promise<boolean>;
 }): Promise<ActionResult & { outcomeUnconfirmed?: true }> {
-  if (input.clientStateStale || (!input.allowContextless && !input.actionContext)) {
+  if (!tableDecisionIsReady(input)) {
     await input.refresh();
     return {
       success: false,

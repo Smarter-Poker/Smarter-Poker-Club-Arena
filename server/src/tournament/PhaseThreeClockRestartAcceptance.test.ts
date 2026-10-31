@@ -281,6 +281,15 @@ function tournamentTransport() {
       in() {
         return query;
       },
+      order(column: string, options: { ascending: boolean }) {
+        expect(column).toBe('id');
+        expect(options).toEqual({ ascending: true });
+        return query;
+      },
+      limit(value: number) {
+        expect(value).toBeGreaterThan(1); // This fixture has one table.
+        return query;
+      },
       maybeSingle: async () => result(),
       then(resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) {
         return Promise.resolve().then(result).then(resolve, reject);

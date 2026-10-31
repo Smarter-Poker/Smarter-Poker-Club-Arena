@@ -115,12 +115,19 @@ function productionEvent(door: 'decides' | 'refuses' = 'decides') {
             error: null,
           };
         },
-        in: async () => {
-          calls.push(`read:${name}`);
-          return {
-            data: [{ id: TABLE, small_blind: 25, big_blind: 50, ante: 0, stakes: '25/50' }],
-            error: null,
+        in: () => {
+          const query = {
+            order: () => query,
+            limit: () => query,
+            then: (resolve: (value: unknown) => unknown) => {
+              calls.push(`read:${name}`);
+              return Promise.resolve({
+                data: [{ id: TABLE, small_blind: 25, big_blind: 50, ante: 0, stakes: '25/50' }],
+                error: null,
+              }).then(resolve);
+            },
           };
+          return query;
         },
       }),
     }),

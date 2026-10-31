@@ -350,6 +350,25 @@ describe('Rendered MultiTable authoritative seat rebuild', () => {
     expect(screen.getByTestId('tabs').textContent).toBe('A,B');
     expect(screen.queryByTestId('tab-' + lobby)).toBeNull();
   });
+  it('consumes an admission lobby at the cap without a false blocked-seat warning', async () => {
+    await seatA();
+    await act(async () => masterBus.emit('TABLE_SEATED', { tableId: 'C', userId: 'account-a' }));
+    await act(async () => masterBus.emit('TABLE_SEATED', { tableId: 'D', userId: 'account-a' }));
+    await act(async () => masterBus.emit('OPEN_LOBBY_TAB', {}));
+    const origin = screen.getByTestId('tabs').getAttribute('data-active')!;
+    const blocked = vi.fn();
+    state.listeners.set('TABLE_CAP_BLOCKED', new Set([blocked]));
+    await act(async () =>
+      masterBus.emit('TABLE_SEATED', {
+        tableId: 'B',
+        userId: 'account-a',
+        registrationLobbyTabId: origin,
+      })
+    );
+    expect(screen.getByTestId('tabs').textContent).toBe('A,C,D,B');
+    expect(screen.queryByTestId('tab-' + origin)).toBeNull();
+    expect(blocked).not.toHaveBeenCalled();
+  });
   it('hands the game session over before a verified tournament seat insertion replaces the felt', async () => {
     await seatA();
     state.metadataResults.push({

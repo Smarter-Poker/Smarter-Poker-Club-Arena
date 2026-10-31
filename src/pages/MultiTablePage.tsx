@@ -941,6 +941,7 @@ export default function MultiTablePage() {
   // Type-safe bus handler types (extended beyond base BusPayloadMap)
   interface SeatedPayload {
     tableId: string;
+    registrationLobbyTabId?: string;
     tableName?: string;
     seat?: number;
     userId?: string; // FIX: added so we can filter to own events only
@@ -1592,6 +1593,28 @@ export default function MultiTablePage() {
          even after this very event proved the hero had taken a seat there.
          Mark it and keep everything else as-is. */
       const existing = prev.find((t) => t.id === e.tableId);
+      const originIndex = e.registrationLobbyTabId
+        ? prev.findIndex((t) => t.id === e.registrationLobbyTabId && isLobbyTab(t))
+        : -1;
+      if (originIndex >= 0) {
+        const admitted: TableInstance = existing
+          ? { ...existing, seated: true }
+          : {
+              id: e.tableId,
+              name: formatGameTitle(e.tableName) || 'Your Tournament',
+              stakes: '',
+              isMyTurn: false,
+              pot: 0,
+              kind: 'table',
+              seated: true,
+            };
+        // Admission consumes its own page before applying the cap. An ordinary
+        // seat event still preserves every page exactly as before.
+        return prev.flatMap((t, index) =>
+          index === originIndex ? [admitted] : t.id === e.tableId ? [] : [t]
+        );
+      }
+
       if (existing) {
         return existing.seated
           ? prev

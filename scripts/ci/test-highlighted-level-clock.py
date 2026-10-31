@@ -51,6 +51,8 @@ try:
     check('all schedule definitions agree',run("SELECT string_agg(config->'blindStructure'->0->>'durationMinutes',',' ORDER BY id) FROM tournament_schedules")=='8,10,5')
     run("INSERT INTO tournaments(name,blind_structure) VALUES('Future Deep Stack','[{\"durationMinutes\":12,\"bigBlind\":50}]');")
     check('future creation is capped by real trigger',run("SELECT blind_structure::jsonb->0->>'durationMinutes' FROM tournaments WHERE id=5")=='8')
+    run("INSERT INTO tournaments(name,tournament_type,variant,blind_structure) VALUES('Custom SNG','SNG','sng','[{\"durationMinutes\":12,\"bigBlind\":50},{\"duration\":180,\"bigBlind\":100}]');")
+    check('short formats cap slow custom levels without slowing faster ones',run("SELECT blind_structure::jsonb->0->>'durationMinutes' FROM tournaments WHERE id=6")=='8' and run("SELECT blind_structure::jsonb->1->>'duration' FROM tournaments WHERE id=6")=='180')
     check('repeat and drift refused', 'HIGHLIGHTED_LEVEL_CLOCK_PREIMAGE_CHANGED' in call(PSQL,migration,False).stderr)
     print(json.dumps({'checks':checks,'production_mutations':False},indent=2))
 finally:

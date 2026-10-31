@@ -103,7 +103,7 @@ describe('every tournament level is a locked, defined clock', () => {
     expect(derived.late_reg_mins).toBe(48);
   });
 
-  it('never touches a Spin or a Sit & Go', () => {
+  it('preserves faster Spin and Sit & Go clocks', () => {
     for (const row of [
       {
         tournament_type: 'SPIN',
@@ -136,6 +136,15 @@ describe('every tournament level is a locked, defined clock', () => {
     expect(readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8')).toContain(
       'python3 -B scripts/ci/test-highlighted-level-clock.py'
     );
+  });
+
+  it('caps an oversized custom short format without slowing its faster levels', () => {
+    const row = withLockedLevelClock({
+      tournament_type: 'SNG',
+      variant: 'sng',
+      blind_structure: [{ durationMinutes: 12 }, { duration: 180 }],
+    });
+    expect(row.blind_structure).toEqual([{ durationMinutes: 8 }, { duration: 180 }]);
   });
 
   it('the database applies the same rule on every insert', () => {

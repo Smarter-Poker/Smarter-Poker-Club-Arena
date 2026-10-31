@@ -271,7 +271,8 @@ import {
   PRE_ACTION_GAP_BRIDGE_MS,
 } from '../lib/preActionPanelGate';
 import { seatTapTarget } from '../lib/heroSeatTap';
-import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSeatReconcile';
+import { MAX_SUPPORTED_SEATS } from '../lib/heroSeatReconcile';
+import { useEngineHeroSeatInvariant } from '../hooks/useEngineHeroSeatInvariant';
 import {
   HERO_ACTED_FENCE_MS,
   HERO_ACTED_FENCE_RELEASE_MARGIN_MS,
@@ -17679,70 +17680,17 @@ function LiveTablePage({
      `reportErrorOnce` semantics via a ref: the effect re-runs on every
      snapshot, and an alarm that fires sixty times a second is noise, not an
      alarm. One report per (table, seat) per session is enough to find it. */
-  const engineSeatMismatchReportedRef = useRef<string>('');
-  useEffect(() => {
-    if (lightningObserver || !USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest')
-      return;
-    // The last snapshot can predate the confirmed exit. It cannot reclaim it.
-    if (leftSeatPendingRef.current) return;
-    const enginePlayers =
-      (engineSnapshot as unknown as { players?: Array<{ seat?: number; user_id?: string }> })
-        .players ?? [];
-    const mine = enginePlayers.find((p) => p?.user_id === userId);
-    if (!mine || !mine.seat || mine.seat < 1) return; // engine does not seat us — nothing to assert
-
-    const renderedHero = tableState.players.findIndex((p) => p && p.id === userId) + 1;
-    if (renderedHero === mine.seat) return; // the two agree; the common case
-
-    const key = `${tableState.tableId}:${mine.seat}`;
-    if (engineSeatMismatchReportedRef.current !== key) {
-      engineSeatMismatchReportedRef.current = key;
-      reportError(
-        new Error(
-          `engine seats hero at ${mine.seat} but client renders ` +
-            `${renderedHero || 'no seat'} (maxPlayers=${tableState.maxPlayers}, ` +
-            `rows=${tableState.players.length})`
-        ),
-        'TablePage.EngineHeroSeatNotRendered'
-      );
-    }
-
-    /* Heal, on the server's word — through a PURE function that returns null
-       when there is nothing to do (src/lib/heroSeatReconcile.ts).
-
-       That indirection is not ceremony, it is the fix for this block's own
-       first draft. The heal grows the array with NULL rows and cannot place
-       the hero row, so an inline `if (players[seat-1]?.id === userId) return
-       prev` guard NEVER became true: every pass produced a fresh array
-       identity, this effect's dependencies changed, and it ran again — an
-       infinite render loop, armed on precisely the path that fires when a
-       player is stranded. Returning `prev` UNCHANGED is what stops the cycle,
-       and `reconcileHeroSeatFromEngine` guarantees that by construction rather
-       than by a guard somebody has to get right. It also bounds the growth, so
-       a corrupt `seat: 1e9` cannot hang the tab. Pinned by
-       tests/unit/heroSeatReconcile.test.ts. */
-    setTableState((prev) => {
-      const patch = reconcileHeroSeatFromEngine(
-        { players: prev.players, maxPlayers: prev.maxPlayers, heroSeat: prev.heroSeat },
-        mine.seat as number,
-        userId
-      );
-      if (!patch) return prev; // already agrees — no new identity, no loop
-      return {
-        ...prev,
-        ...(patch.players ? { players: patch.players as (SeatPlayer | null)[] } : {}),
-        ...(patch.maxPlayers !== undefined ? { maxPlayers: patch.maxPlayers } : {}),
-        ...(patch.heroSeat !== undefined ? { heroSeat: patch.heroSeat } : {}),
-      };
-    });
-  }, [
+  useEngineHeroSeatInvariant({
     engineSnapshot,
-    USE_ENGINE_WS,
+    appliedSnapshot: appliedExitSnapshot,
+    tableId,
     userId,
-    tableState.players,
-    tableState.tableId,
-    tableState.maxPlayers,
-  ]);
+    tableState,
+    setTableState,
+    lightningObserver,
+    USE_ENGINE_WS,
+    leftSeatPendingRef,
+  });
 
   // ═══════════════════════════════════════════════════════════════════════════
   //startNextHand removed — server manages the game loop

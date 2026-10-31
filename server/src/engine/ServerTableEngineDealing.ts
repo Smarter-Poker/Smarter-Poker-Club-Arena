@@ -88,6 +88,7 @@ import {
 } from '../services/supabase/lightningAnchor.js';
 import { reportLightningEngineInputDeviceLive } from '../lightning/LightningEngineInputDevice.js';
 import { nextHandGap } from './nextHandGapRecorder.js';
+import { PostHandStageTiming, type CompletionHoldStamp } from './PostHandStageTiming.js';
 import { jitteredBackoffMs } from '../services/horseEntryRefusalBackoff.js';
 import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
 
@@ -1715,6 +1716,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const now = Date.now();
     this.nextHandNotBeforeMs = now + restMs;
     this.lastCompletionAtMs = now;
+    // Observation only. A failed clock leaves the exact-hand anchor unknown.
+    try {
+      this.postHandCompletionStamp = {
+        handNumber: this.handCount,
+        atMs: now,
+        monotonicMs: performance.now(),
+      };
+    } catch {
+      this.postHandCompletionStamp = null;
+    }
     this.gapPhaseMs = {};
     this.gapPhaseName = this.loopPhase;
     this.gapPhaseSinceMs = now;
@@ -1811,6 +1822,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected override setLoopPhase(phase: string): void {
     super.setLoopPhase(phase);
     this.accrueGapPhase(Date.now());
+  }
+
+  // One bounded current/last hand, released with this engine; no fleet history.
+  protected postHandStageTiming: PostHandStageTiming | null = null;
+  private postHandCompletionStamp: CompletionHoldStamp | null = null;
+
+  public postHandTimingSnapshot() {
+    return this.postHandStageTiming?.snapshot(this.postHandCompletionStamp) ?? null;
   }
 
   private nextHandNotBeforeMs: number | null = null;

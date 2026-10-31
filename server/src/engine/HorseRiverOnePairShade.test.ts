@@ -11,7 +11,14 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as EvEngine from './HorseEvEngine.js';
-import { HorseLogic, v61RiverOnePairShade, V61_RIVER_SHADE_CAP, V63_RIVER_SHADE_CAP } from './HorseLogic.js';
+import {
+  HorseLogic,
+  v61RiverOnePairShade,
+  V61_RIVER_SHADE_CAP,
+  V61_RIVER_SHADE_SLOPE,
+  V63_RIVER_SHADE_CAP,
+  V63_RIVER_SHADE_SLOPE,
+} from './HorseLogic.js';
 import { HorseMind } from './HorseMind.js';
 import { seedFastRandom } from './HorseEval.js';
 import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
@@ -26,7 +33,7 @@ function cards(text: string): Card[] {
 }
 const fires = () => Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
 
-function river(variant: string, hole: string, board: string, bet: number, mode = 'cash') {
+function river(variant: string, hole: string, board: string, bet: number, mode = 'cash', base = 20) {
   const players: SeatPlayer[] = [
     {
       seat: 1,
@@ -67,7 +74,7 @@ function river(variant: string, hole: string, board: string, bet: number, mode =
     gs: {
       players,
       communityCards: cards(board),
-      pot: 20 + bet,
+      pot: base + bet,
       currentBet: bet,
       minRaise: Math.max(2, bet),
       stage: 'river',
@@ -104,9 +111,9 @@ describe('V61: a hold em one-pair river call is shaded against the price', () =>
     drainFires();
   });
 
-  it('second pair facing a pot-sized river bet is priced 12 points below the unshaded read', () => {
-    // toCall 20 into a pot of 40 after the bet: half the pot, the cap
-    const on = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 20), {});
+  it('second pair facing a pot-sized river bet is priced 12 points below the unshaded read with the V61 shape', () => {
+    // toCall 20 into a pot of 40 after the bet: r = 0.5, the V61 cap
+    const on = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 20), { v63LargeRiverBetShade: false });
     expect(fires()['v61_river_one_pair_shade']).toBe(1);
     seedFastRandom(0x5eed61);
     const off = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 20), {
@@ -172,7 +179,7 @@ describe('V61 yields to the V62 polar bettor model', () => {
 });
 
 describe('V61 shade shape', () => {
-  it('is zero under a fifth of the pot and twelve points from half a pot', () => {
+  it('is zero at a quarter-pot wager (r = 0.2) and twelve points from a pot-sized wager (r = 0.5)', () => {
     expect(v61RiverOnePairShade(10, 100, V61_RIVER_SHADE_CAP)).toBe(0);
     expect(v61RiverOnePairShade(20, 100, V61_RIVER_SHADE_CAP)).toBe(0);
     expect(v61RiverOnePairShade(35, 100, V61_RIVER_SHADE_CAP)).toBeCloseTo(0.06, 6);
@@ -182,7 +189,7 @@ describe('V61 shade shape', () => {
   });
 });
 
-describe('V63: the shade keeps climbing to twenty points from seven tenths of the pot', () => {
+describe('V63: the shade climbs twice as fast with the price and caps at twenty points', () => {
   beforeEach(() => {
     seedFastRandom(0x5eed63);
     HorseMind.reset();
@@ -190,51 +197,74 @@ describe('V63: the shade keeps climbing to twenty points from seven tenths of th
     drainFires();
   });
 
-  it('shape: identical to V61 up to half the pot, then on to the 20-point cap at 0.7', () => {
+  // The price r is toCall / (pot after the wager): a 0.4-pot wager is
+  // r = 0.286, 0.7-pot r = 0.41, pot-sized r = 0.5, a 2x overbet r = 0.67.
+  const v63 = (toCall: number, pot: number) =>
+    v61RiverOnePairShade(toCall, pot, V63_RIVER_SHADE_CAP, V63_RIVER_SHADE_SLOPE);
+  const v61 = (toCall: number, pot: number) =>
+    v61RiverOnePairShade(toCall, pot, V61_RIVER_SHADE_CAP, V61_RIVER_SHADE_SLOPE);
+
+  it('shape: zero at a quarter-pot wager, 7 points at 0.4 pot, 17 at 0.7 pot, 20 from a pot-sized wager', () => {
+    expect(V63_RIVER_SHADE_SLOPE).toBe(0.8);
     expect(V63_RIVER_SHADE_CAP).toBe(0.2);
-    expect(V61_RIVER_SHADE_CAP).toBe(0.12);
-    for (const [toCall, pot] of [[10, 100], [20, 100], [35, 100], [50, 100]] as const) {
-      expect(v61RiverOnePairShade(toCall, pot)).toBeCloseTo(v61RiverOnePairShade(toCall, pot, V61_RIVER_SHADE_CAP), 9);
-    }
-    const v63 = (toCall: number, pot: number) => v61RiverOnePairShade(toCall, pot, V63_RIVER_SHADE_CAP);
-    expect(v63(60, 100)).toBeCloseTo(0.16, 6);
-    expect(v63(70, 100)).toBeCloseTo(0.2, 6);
-    expect(v63(100, 100)).toBeCloseTo(0.2, 6);
-    expect(v63(500, 600)).toBeCloseTo(0.2, 6);
-    // the bare function keeps the V61 cap; the decide options select V63's
-    expect(v61RiverOnePairShade(100, 100)).toBeCloseTo(0.12, 6);
+    expect(v63(25, 125)).toBeCloseTo(0, 9);
+    expect(v63(40, 140)).toBeCloseTo(0.0686, 3);
+    expect(v63(70, 170)).toBeCloseTo(0.1694, 3);
+    expect(v63(100, 200)).toBeCloseTo(0.2, 6);
+    expect(v63(200, 300)).toBeCloseTo(0.2, 6);
+    // V61 for the same wagers: 3.4, 8.4 and 12 points
+    expect(v61(40, 140)).toBeCloseTo(0.0343, 3);
+    expect(v61(70, 170)).toBeCloseTo(0.0847, 3);
+    expect(v61(100, 200)).toBeCloseTo(0.12, 6);
+    // the bare function keeps the V61 shape; the decide options select V63's
+    expect(v61RiverOnePairShade(100, 200)).toBeCloseTo(0.12, 6);
+    expect(v61RiverOnePairShade(0, 100)).toBe(0);
   });
 
-  it('second pair facing a pot-sized river wager is priced 20 points below the unshaded read by default, 12 with V63 off', () => {
-    // bet 60 into 20: toCall 60, pot after the bet 80 -> 0.75 pot
-    const on = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 60), {});
+  it('third pair facing a 0.7-pot wager is priced 17 points below the unshaded read by default, 8 with V63 off', () => {
+    // bet 28 into 40: toCall 28, pot after the wager 68 -> r = 0.41. Third
+    // pair: second pair raises this wager in the fixture and never reaches
+    // the call verdict.
+    const spot = () => river('nlh', '7s6d', 'Qh9d3s7c2c', 28, 'cash', 40);
+    const on = verdictEquity(spot(), {});
     let f = fires();
     expect(f['v61_river_one_pair_shade']).toBe(1);
     expect(f['v63_large_river_bet_shade']).toBe(1);
     seedFastRandom(0x5eed63);
-    const v61only = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 60), { v63LargeRiverBetShade: false });
+    const v61only = verdictEquity(spot(), { v63LargeRiverBetShade: false });
     f = fires();
     expect(f['v61_river_one_pair_shade']).toBe(1);
     expect(f['v63_large_river_bet_shade']).toBeUndefined();
     seedFastRandom(0x5eed63);
-    const off = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 60), { v61RiverOnePairShade: false });
+    const off = verdictEquity(spot(), { v61RiverOnePairShade: false });
     f = fires();
     expect(f['v61_river_one_pair_shade']).toBeUndefined();
     expect(f['v63_large_river_bet_shade']).toBeUndefined();
-    expect(off - on).toBeCloseTo(0.2, 2);
-    expect(off - v61only).toBeCloseTo(0.12, 2);
+    expect(off - on).toBeCloseTo(v63(28, 68), 3);
+    expect(off - v61only).toBeCloseTo(v61(28, 68), 3);
+    expect(off - on).toBeGreaterThan(0.16);
   });
 
-  it('a half-pot wager is shaded exactly as V61 shaded it and does not count as a V63 receipt', () => {
+  it('a pot-sized wager is priced 20 points below the unshaded read, and a quarter-pot wager is not shaded at all', () => {
     const on = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 20), {});
-    expect(fires()['v63_large_river_bet_shade']).toBeUndefined();
+    expect(fires()['v63_large_river_bet_shade']).toBe(1);
     seedFastRandom(0x5eed63);
-    const v61only = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 20), { v63LargeRiverBetShade: false });
-    expect(on).toBeCloseTo(v61only, 9);
+    const off = verdictEquity(river('nlh', '9s8d', 'Qh9d3s7c2c', 20), { v61RiverOnePairShade: false });
+    expect(off - on).toBeCloseTo(0.2, 2);
+    // bet 20 into 80: r = 0.2, the start of the slope; the verdict is reached
+    // and nothing is shaded
+    seedFastRandom(0x5eed63);
+    const quarter = verdictEquity(river('nlh', '7s6d', 'Qh9d3s7c2c', 20, 'cash', 80), {});
+    const f = fires();
+    expect(f['v61_river_one_pair_shade']).toBeUndefined();
+    expect(f['v63_large_river_bet_shade']).toBeUndefined();
+    seedFastRandom(0x5eed63);
+    const quarterOff = verdictEquity(river('nlh', '7s6d', 'Qh9d3s7c2c', 20, 'cash', 80), { v61RiverOnePairShade: false });
+    expect(quarter).toBeCloseTo(quarterOff, 9);
   });
 
   it('V63 lives inside the V61 gates: a set facing a pot-sized wager is not shaded', () => {
-    const s = river('nlh', '3h3d', 'Qh9d3s7c2c', 60);
+    const s = river('nlh', '3h3d', 'Qh9d3s7c2c', 20);
     HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, { telemetry: true, mind: false } as never);
     const f = fires();
     expect(f['v61_river_one_pair_shade']).toBeUndefined();

@@ -44,6 +44,8 @@ REQUIRED_FILES=(
   engine-release-transaction.sh
   engine-release-activation-floor.py
   prewarm-engine-image.sh
+  legacy-census-scale-preflight.py
+  legacy-census-scale-fixture.mjs
   main-inspector-retirement.py
   main-inspector-retirement-entry.mjs
   main-inspector-socket-qualification.mjs
@@ -330,7 +332,7 @@ else
   done
   for script in engine-release-seal.py engine-release-database-proof.py \
     engine-release-inflight-hands.py engine-release-lightning-hold.py \
-    engine-release-activation-floor.py main-inspector-retirement.py; do
+    engine-release-activation-floor.py main-inspector-retirement.py legacy-census-scale-preflight.py; do
     python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
       "$GENERATION_STAGE/$script"
   done

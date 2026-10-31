@@ -53,3 +53,38 @@ The default33historical cases stay unchanged. The native composition uses a
 network-disabled, read-only candidate container with separate task-owned
 scratch and mandatory verified cleanup. Mac2case composition passed locally;
 actual Linux image composition remains required hosted evidence.
+
+### Provider-only representative scale before activation
+
+The eight small native cases and two real EED guard cases do not establish
+35-million-object or 3.913-GB heap capacity. The existing immutable-image
+prewarm route now requires one bounded candidate-only scale qualification when
+the authoritative serving container/health/seal identity is one of the five
+legacy profiles. Unknown, drifted or competing ownership refuses rather than
+skipping. Degraded HTTP503 identity remains readable. No application, Inspector,
+production configuration or network is loaded by the disposable fixture.
+
+The fixed fixture retains 35M shallow objects, requires actual used heap at
+least3,913,011,648bytes and additional heap at most322,107,592bytes, preserves
+the original32MiB reserve and actual8x process-memory admission, and checks
+complete native visits plus exact synthetic detached-owner membership. Its
+20-second bound measures the native query component, not the whole production
+legacy guard. Full disposable startup/allocation/query/exit/cleanup must finish
+within40seconds, including5seconds reserved for cleanup. GC remains internally
+nonpreemptible; a deadline failure refuses qualification.
+
+Before this one attempt the host must have36GiB plus8GiB explicit live-host
+margin available. The private container has36GiB/no swap, one CPU,32PIDs,
+read-only root, no network, no inherited environment, no healthcheck, no restart
+and bounded output/tmpfs. Actual cgroup controls are checked before allocation.
+A durable image/fixture/controller-bound positive receipt is reused by the
+receiver and later transaction, avoiding a second allocation. One-shot intent,
+nonblocking resource lock and exact labelled-container cleanup preserve unknown
+outcomes; an interrupted/refused attempt is never automatically repeated.
+
+This scale gate executes only in the existing protected provider staging route
+before any notice/intake/runtime operation. Local controller tests are boundary
+proof, not native-scale proof. Ordinary exact-head Linux build/eight cases/EED
+two-case evidence remains required before protected merge. Full scale remains
+explicitly pending until the exact immutable candidate passes provider staging;
+that pending preactivation proof does not prevent eligible protected merge.

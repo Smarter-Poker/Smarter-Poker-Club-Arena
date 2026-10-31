@@ -34,6 +34,7 @@ COPY tsconfig.json tsconfig.runtime.json tsconfig.emit.json ./
 COPY src/ ./src/
 COPY --from=public-hist215-native /native-build/native/build/public_hist215_wtl.node ./native/build/public_hist215_wtl.node
 COPY --from=public-hist215-native /native-build/native/legacy-census/ ./native/legacy-census/
+COPY scripts/legacy-census-scale-fixture.mjs ./native/legacy-census/scale-fixture.mjs
 # Committed admission evidence for the Horse Brain protected release selections
 # (qualification, strength and completion records). The image is built from the
 # server tree alone, so these are the only copies the running engine can read;

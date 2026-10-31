@@ -12,7 +12,11 @@ on:
       - server/scripts/build-engine-image.sh
       - server/scripts/engine-image-archive.py
       - server/scripts/native/**
+      - server/scripts/legacy-census-scale-*
+      - server/scripts/prewarm-engine-image.sh
+      - server/scripts/install-engine-supervisor.sh
       - server/scripts/legacy-engine-checkpoint.mjs
+      - tests/operations/legacy-census-scale-preflight.test.py
       - tests/operations/legacy-census-native.mjs
       - tests/operations/legacy-census-source.test.mjs
       - server/scripts/qualification/retained-original-checkpoint/**
@@ -49,6 +53,8 @@ jobs:
           python3 tests/operations/engine-image-archive.test.py
           python3 tests/operations/engine-build-resource-proof.test.py
           node --test tests/operations/legacy-census-source.test.mjs
+          python3 tests/operations/legacy-census-scale-preflight.test.py
+          node --check server/scripts/legacy-census-scale-fixture.mjs
       - name: Produce the reference runtime with the full TypeScript check
         working-directory: server
         run: |

@@ -220,15 +220,10 @@ describe('mttPhaseText — the live phrase on line 2', () => {
     const e = entry({ startTime: iso(30 * 1000) });
     expect(mttPhaseText(e, NOW)).toBe('Starts In 0:30');
   });
-  /* RE-PINNED 2026-08-24. Dan: "keep the clock running at all times, don't
-     switch back and forth from a clock to a phrase." An overdue start used to
-     drop the clock entirely, so a card that had been counting down flipped to
-     "Starting Soon" at the exact moment the number mattered most. Zero is a
-     legitimate reading of a clock; a missing clock is not. A start time we
-     cannot parse at all is still the one case with nothing to count. */
-  it('an overdue start holds the clock at zero rather than dropping it', () => {
+  // Owner update2026-10-31: a held start must never sit on a frozen zero.
+  it('an overdue start awaits the authoritative start rather than freezing at zero', () => {
     const e = entry({ startTime: iso(-30 * 1000) });
-    expect(mttPhaseText(e, NOW)).toBe('Starts In 0:00');
+    expect(mttPhaseText(e, NOW)).toBe('Start Pending');
   });
   it('only an unparseable start time gives up the clock', () => {
     const e = entry({ startTime: null });
@@ -239,19 +234,19 @@ describe('mttPhaseText — the live phrase on line 2', () => {
       { status: 'late_reg' },
       { status: 'RUNNING', started_at: iso(-5 * 60000), late_reg_mins: 10 }
     );
-    expect(mttPhaseText(e, NOW)).toBe('Late Reg 5:00 Left');
+    expect(mttPhaseText(e, NOW)).toBe('Late Reg Ends In 5:00');
   });
-  it('an expired window holds at zero, an unknowable one says Open', () => {
+  it('expired or unconfigured late registration is closed', () => {
     const closing = entry(
       { status: 'late_reg' },
       { status: 'RUNNING', started_at: iso(-11 * 60000), late_reg_mins: 10 }
     );
-    expect(mttPhaseText(closing, NOW)).toBe('Late Reg 0:00 Left');
+    expect(mttPhaseText(closing, NOW)).toBe('Late Reg Closed');
     const open = entry(
       { status: 'late_reg' },
       { status: 'RUNNING', late_reg_mins: 0, late_reg_levels: 0 }
     );
-    expect(mttPhaseText(open, NOW)).toBe('Late Reg Open');
+    expect(mttPhaseText(open, NOW)).toBe('Late Reg Closed');
   });
   it('a running tournament displays late registration rather than a level countdown', () => {
     const e = entry(

@@ -75,7 +75,7 @@ describe('tournament card information', () => {
     expect(card({ guaranteed_prize: 0 }).title).toBe('Nightly 10K (NLH)');
     expect(card({ name: 'Nightly 10K Guaranteed' }).title).toBe('Nightly 10K Guaranteed (NLH)');
   });
-  it('ticks the actual start countdown through zero without the Starting Soon phrase or rule clutter', () => {
+  it('ticks the start countdown and awaits an authoritative start without rule clutter', () => {
     vi.useFakeTimers();
     vi.setSystemTime(now);
     const data = card();
@@ -85,7 +85,7 @@ describe('tournament card information', () => {
     expect(screen.getByText('Starts In 0:10')).toBeTruthy();
     expect(screen.queryByText(/Starting Soon|REBUY|Featured|More Rules/)).toBeNull();
     act(() => vi.advanceTimersByTime(11000));
-    expect(screen.getByText('Starts In 0:00')).toBeTruthy();
+    expect(screen.getByText('Start Pending')).toBeTruthy();
   });
   it('ticks late registration using its real minute deadline and stops when finalized', () => {
     vi.useFakeTimers();
@@ -96,9 +96,9 @@ describe('tournament card information', () => {
       late_reg_mins: 1,
     });
     const view = render(<MttPremiumCard data={data} actions={{ primaryLabel: 'Register' }} />);
-    expect(screen.getByText('Late Reg 0:10 Left')).toBeTruthy();
+    expect(screen.getByText('Late Reg Ends In 0:10')).toBeTruthy();
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.getByText('Late Reg 0:09 Left')).toBeTruthy();
+    expect(screen.getByText('Late Reg Ends In 0:09')).toBeTruthy();
     view.rerender(
       <MttPremiumCard
         data={card({ status: 'RUNNING', prize_pool_finalized: true })}

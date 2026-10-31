@@ -404,3 +404,22 @@
     padding-right: 44px;
   }
 }
+
+/* Top events remain identifiable in both schedule layouts, including phones. */
+.lobby-table .lt-row[data-kind='mtt'].is-featured .lt-name__line1,
+.compact-lobby tr[data-kind='mtt'].is-featured .compact-lobby__title,
+.lobby-table .lt-row[data-kind='mtt'].is-featured .lt-flag--featured {
+  color: var(--accent-red, #f02849);
+}
+.compact-lobby tr[data-kind='mtt'].is-featured td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent-red, #f02849);
+}
+.compact-lobby tr[data-kind='mtt'] .compact-lobby__title {
+  -webkit-line-clamp: 3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.compact-lobby tr[data-kind='mtt'] .lt-clock {
+  font-size: 12px;
+  line-height: 1.4;
+}

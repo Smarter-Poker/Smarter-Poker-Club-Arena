@@ -482,10 +482,10 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     games: chipsFor([...TOURNAMENT_VARIANT_KEYS, 'pineapple'], MTT_CHIP_LABELS),
     range: BUYIN_RANGE,
     statuses: [
-      { key: 'running', label: 'Running' },
-      { key: 'open_reg', label: 'Open Registration' },
       { key: 'late_reg', label: 'Late Reg' },
       { key: 'starting_soon', label: 'Starting Soon' },
+      { key: 'open_reg', label: 'Open Registration' },
+      { key: 'running', label: 'Running' },
     ],
     seats: { min: 2, max: 9 },
     seatsLabel: 'Table Size',
@@ -558,7 +558,7 @@ export interface GameFilterValue {
 
 export function emptyFilterValue(spec: GameFilterSpec): GameFilterValue {
   return {
-    games: [],
+    games: spec === FILTER_SPECS.MTT ? (spec.games ?? []).map((game) => game.key) : [],
     format: [],
     styles: [],
     stylesVersion: 1,
@@ -569,7 +569,7 @@ export function emptyFilterValue(spec: GameFilterSpec): GameFilterValue {
     seatMin: spec.seats?.min ?? 3,
     seatMax: spec.seats?.max ?? 3,
     mustHave: [],
-    hide: [],
+    hide: spec === FILTER_SPECS.MTT ? ['satellite'] : [],
   };
 }
 
@@ -731,7 +731,7 @@ export function rowPassesFilter(
   r: FilterableRow
 ): boolean {
   // ── Games chips ─────────────────────────────────────────────────────────
-  if (v.games.length > 0) {
+  if (v.games.length > 0 && !spec.games?.every((game) => v.games.includes(game.key))) {
     const key = variantKey(r.variant);
     /**
      * An unrecognised variant passes — only an EMPTY key qualifies, because

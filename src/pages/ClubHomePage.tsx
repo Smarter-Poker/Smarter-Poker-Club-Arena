@@ -143,6 +143,8 @@ import {
   matchesVariant,
 } from '../utils/tournamentFilters';
 import { isWithinLobbyWindow, lobbyQueryHorizonIso } from '../utils/tournamentScheduleWindow';
+import { isCurrentMttScheduleEvent } from '../utils/tournamentScheduleVisibility';
+import { useSharedSecondTick } from '../components/lobby/useSharedSecondTick';
 import {
   loadViewPrefs,
   saveViewPrefs,
@@ -997,7 +999,7 @@ function ClubHomePageContent({
   const linkedGameTypeRef = useRef<GameType | undefined>(undefined);
   const onInitialGameTypeConsumedRef = useRef(onInitialGameTypeConsumed);
   onInitialGameTypeConsumedRef.current = onInitialGameTypeConsumed;
-  const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
+  const [sortKey, setSortKey] = useState<SortKey>('recommended');
   const [allStatusFilter, setAllStatusFilter] = usePlayerPreference<AllStatusFilter>(
     'ClubHomePage:allStatusFilter',
     'ALL',
@@ -3791,13 +3793,15 @@ function ClubHomePageContent({
 
   // Zero matches is a valid saved preference. Only the player's explicit
   // Show All Games action above may clear it.
+  const scheduleNow = useSharedSecondTick(showsTournaments);
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
 
     const variant: TournVariant = TOURN_VARIANT_FOR[gameType] ?? 'ALL';
     const advType = gameType === 'ALL' ? null : (gameType as FilterGameType);
     const advSpec = advType && advType !== 'ALL' ? FILTER_SPECS[advType] : undefined;
-    const advValue = advType ? advFilters[advType] : undefined;
+    const advValue =
+      advType && advSpec ? (advFilters[advType] ?? emptyFilterValue(advSpec)) : undefined;
 
     const stillEnterable = (t: TournamentData) => {
       const status = String(t.status).toUpperCase();
@@ -3836,10 +3840,15 @@ function ClubHomePageContent({
       ].includes(status);
     };
 
-    const windowNow = Date.now();
+    const windowNow = scheduleNow;
 
     const rows = tournaments.filter((t) => {
       if (!isListable(t)) return false;
+      if (
+        classifyTournament(t as unknown as LobbyTournamentRow) === 'mtt' &&
+        !isCurrentMttScheduleEvent(t, windowNow)
+      )
+        return false;
       /* 48 HOURS OF CARD, 6 DAYS FOR THE BIG ONES (Dan 2026-08-26). See
          src/utils/tournamentScheduleWindow.ts for the rule and why the server
          spawner had to move first. Anything already under way passes for free
@@ -3862,7 +3871,7 @@ function ClubHomePageContent({
         const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
         if (
           !rowPassesFilter(advSpec, advValue, {
-            variant: t.game_type,
+            variant: t.variant || t.game_type,
             price: total,
             seats: getTournamentEntryCapacity(t) ?? 0,
             // The "Table Size" slider filters on seats at a TABLE, not on the
@@ -3923,7 +3932,16 @@ function ClubHomePageContent({
             cmpNameTourn(a, b)
         );
     }
-  }, [tournaments, gameType, showsTournaments, sortKey, advFilters, allStatusFilter, linkedGameId]);
+  }, [
+    tournaments,
+    gameType,
+    showsTournaments,
+    sortKey,
+    advFilters,
+    allStatusFilter,
+    linkedGameId,
+    scheduleNow,
+  ]);
 
   /**
    * Tables this player already holds an active place in the queue for.

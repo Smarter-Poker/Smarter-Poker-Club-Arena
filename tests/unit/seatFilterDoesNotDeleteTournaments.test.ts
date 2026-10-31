@@ -59,8 +59,8 @@ const bigMtt = {
 describe('a default seat range is not a filter', () => {
   const value = emptyFilterValue(mttSpec);
 
-  it('agrees with isFilterActive that nothing is set', () => {
-    expect(isFilterActive(mttSpec, value)).toBe(false);
+  it('does not classify the default seat range as an additional filter', () => {
+    expect(isFilterActive(mttSpec, { ...value, games: [], hide: [] })).toBe(false);
   });
 
   it('keeps every MTT, which is what "nothing is set" has to mean', () => {

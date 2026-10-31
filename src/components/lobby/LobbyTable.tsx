@@ -26,6 +26,7 @@ import {
   lateRegEndMs,
   levelSpeedLabel,
   mttPhaseText,
+  tournamentStatus,
   mttTitleLine,
   seatFirstJoinable,
   seatsTakenLabel,
@@ -243,22 +244,19 @@ export function tournamentClockLine(
   entry: LobbyEntry,
   now: number
 ): { tone: 'start' | 'soon' | 'late'; text: string } | null {
-  if (entry.kind !== 'mtt') return null;
-  if (entry.status === 'registering' || entry.status === 'starting_soon') {
-    const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
-    if (!Number.isFinite(startMs)) return null;
-    const left = Math.max(0, startMs - now);
-    return {
-      tone: entry.status === 'starting_soon' ? 'soon' : 'start',
-      text: `Starts In ${formatClock(left)}`,
-    };
-  }
-  if (entry.status === 'late_reg' || entry.status === 'running') {
-    const end = lateRegEndMs(entry.raw as LobbyTournamentRow);
-    if (end == null || end <= now) return null;
-    return { tone: 'late', text: `Late Reg Ends In ${formatClock(end - now)}` };
-  }
-  return null;
+  if (entry.kind !== 'mtt' || entry.status === 'completed' || entry.status === 'closed')
+    return null;
+  const text = mttPhaseText(entry, now);
+  if (!text || text === 'Late Reg Closed' || text === 'Late Reg Open' || text === 'Starting Soon')
+    return null;
+  return {
+    tone: text.startsWith('Late Reg')
+      ? 'late'
+      : entry.status === 'starting_soon'
+        ? 'soon'
+        : 'start',
+    text,
+  };
 }
 
 function SignalIcon({ kind }: { kind: TournamentSignal }) {
@@ -340,6 +338,7 @@ function compactRowClass(entry: LobbyEntry): string | undefined {
   const signals = tournamentSignals(entry);
   if (signals.length === 0 && entry.kind === 'cash') return undefined;
   const cls: string[] = [];
+  if (entry.kind === 'mtt' && entry.featured) cls.push('is-featured');
   if (entry.kind !== 'cash') cls.push('compact-lobby__row--tourney');
   if (signals.includes('freeroll')) cls.push('is-freeroll');
   else if (signals.includes('hot-gtd')) cls.push('is-hot-gtd');
@@ -579,12 +578,15 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
       {entry.featured && (
         <span
           className="lt-flag lt-flag--featured"
-          /* The pin decorates the default order only: once the player picks a
-             heading or a Sort By, the game takes its place in that order
-             (2026-10-23 / 2026-10-24), so the tooltip says exactly that. */
-          title="Featured By The Host. Pinned To The Top Unless You Choose A Sort"
+          /* MTT top events remain locked above the chosen schedule order.
+             Cash featured pins continue to decorate the default order only. */
+          title={
+            entry.kind === 'mtt'
+              ? 'Top Event. Pinned To The Top Of The Schedule'
+              : 'Featured By The Host. Pinned To The Top Unless You Choose A Sort'
+          }
         >
-          FEATURED
+          {entry.kind === 'mtt' ? 'Top Event' : 'FEATURED'}
         </span>
       )}
       {entry.vipOnly && (
@@ -786,7 +788,7 @@ const STATUS_RANK: Record<LobbyStatusKey, number> = {
   open: 0,
   starting_soon: 1,
   registering: 2,
-  late_reg: 3,
+  late_reg: 0,
   running: 4,
   waitlist: 5,
   full: 6,
@@ -1729,12 +1731,24 @@ export default function LobbyTable({
   orderLabel,
 }: LobbyTableProps) {
   const selectedStyles = savedStyles?.map(cashTemplateKey);
+  const boardNow = useSharedSecondTick(boardEntries.some((e) => e.kind === 'mtt'));
+  const liveEntries = useMemo(
+    () =>
+      boardEntries.map((e) => {
+        if (e.kind !== 'mtt' || e.status === 'closed' || e.status === 'completed') return e;
+        const status = tournamentStatus(e.raw as LobbyTournamentRow, boardNow);
+        return status.key === e.status && status.label === e.statusLabel
+          ? e
+          : { ...e, status: status.key, statusLabel: status.label };
+      }),
+    [boardEntries, boardNow]
+  );
   /* Dan 2026-10-19: a featured NIGHTLY event floats only on its own day; the
      weekly flagship (Sunday 200) keeps its pin all week. Rows that lose the pin
      lose the FEATURED chip too, since the chip says "Pinned To The Top Of The
      Board". Unchanged rows keep their identity. See src/lib/featuredOnItsDay.ts. */
   const entries = useMemo(() => {
-    const keep = featuredNow(boardEntries, (e) => ({
+    const keep = featuredNow(liveEntries, (e) => ({
       pinned: e.kind !== 'cash' && e.featured,
       started: e.status === 'running' || e.status === 'late_reg',
       startTime: e.startTime,
@@ -1742,13 +1756,13 @@ export default function LobbyTable({
       name: e.name,
     }));
     let changed = false;
-    const out = boardEntries.map((e) => {
+    const out = liveEntries.map((e) => {
       if (e.kind === 'cash' || !e.featured || keep.has(e)) return e;
       changed = true;
       return { ...e, featured: false };
     });
-    return changed ? out : boardEntries;
-  }, [boardEntries]);
+    return changed ? out : liveEntries;
+  }, [liveEntries]);
   /* Two heading menus, one open at a time: 'variant' under Variant, 'stakes'
      under Stakes.
 
@@ -1940,6 +1954,7 @@ export default function LobbyTable({
           r.status !== 'closed' &&
           r.status !== 'completed';
         if (!seatFirstJoinable(r)) gone.push(r);
+        else if (r.featured && r.kind === 'mtt') pinned.push(r);
         else if (r.featured && enterable && !orderObeyed) pinned.push(r);
         else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
         else open.push(r);
@@ -2028,6 +2043,15 @@ export default function LobbyTable({
       return String(va).localeCompare(String(vb)) * dir;
     };
     if (!grouped) {
+      if (!sv && category === 'MTT') {
+        const rank = (e: LobbyEntry) =>
+          (
+            ({ late_reg: 0, starting_soon: 1, registering: 2, running: 3 }) as Partial<
+              Record<LobbyStatusKey, number>
+            >
+          )[e.status] ?? 4;
+        return sink([...entries].sort((a, b) => rank(a) - rank(b) || a.startValue - b.startValue));
+      }
       if (!sv) return sink(entries);
       return sink([...entries].sort(compare));
     }
@@ -2322,6 +2346,7 @@ export default function LobbyTable({
                         entry.variantLabel
                       )}
                     </span>
+                    {entry.kind === 'mtt' && entry.featured && <LobbyFlagChips entry={entry} />}
                     {entry.kind !== 'cash' && <SatelliteRowDestination entry={entry} />}
                     {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
                     <PlayerStateChip entry={entry} ctx={rowCtx} />

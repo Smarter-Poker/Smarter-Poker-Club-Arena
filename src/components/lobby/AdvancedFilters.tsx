@@ -740,6 +740,18 @@ export default function AdvancedFilters({
                     <h3>Games</h3>
                   </summary>
                   {chipRow(spec.games, 'games', value.games)}
+                  {activeType === 'MTT' && (
+                    <div className="afx-chips">
+                      <button
+                        type="button"
+                        className={`afx-chip ${!value.hide.includes('satellite') ? 'is-on' : ''}`}
+                        aria-pressed={!value.hide.includes('satellite')}
+                        onClick={() => toggle('hide', 'satellite')}
+                      >
+                        Include Satellites
+                      </button>
+                    </div>
+                  )}
                 </details>
               )}
 

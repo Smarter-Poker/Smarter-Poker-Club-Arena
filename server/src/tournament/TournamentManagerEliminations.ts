@@ -1989,12 +1989,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           do {
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
-            // A slow move/read still owns this stage on the next admission.
+            // A slow move/read retains its physical operation, not exclusive use of the sweep cursor.
             if (
               progress?.kind === 'park-continuation' ||
               (this.eliminationWorkBudgetExpired() && progress?.kind !== 'planning-complete')
             ) {
               this.declareConsolidationOutstanding(true);
+              // The pending physical operation remains owned by the balancer.
+              // It must not also own every future sweep: new busts can reserve
+              // the very chairs that its next move needs. Finish this cycle
+              // before returning to the same exact park/move on the next one.
+              if (!completedStage(6)) this.requestEliminationSweep();
               return;
             }
             // Only a fully receipted retirement permits another fresh plan
@@ -2254,8 +2259,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // immediate and delayed bust wakes can then coalesce into that same
       // queued continuation, which skips the already completed bust stage.
       // Retain the known obligation until a fresh bust read proves it empty.
-      if (this.unresolvedBustsInSweepCycle && !sweepStopped()) {
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      if (!sweepStopped()) {
+        // An immediate cursor continuation can consume the balance owner's
+        // delayed wake. Keep its exact pending work owed after the full cycle,
+        // just as unresolved busts remain owed until an authoritative read.
+        if (this.consolidationDeclared)
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        else if (this.unresolvedBustsInSweepCycle)
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
       }
       completedWholeSweep = true;
     } catch (err) {

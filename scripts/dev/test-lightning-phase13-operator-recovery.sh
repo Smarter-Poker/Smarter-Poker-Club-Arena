@@ -8,6 +8,8 @@ pgbin=${PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}
 # the unchanged original operator/worker chain. Existing accounting shard 3
 # invokes this owner for every relevant migration and server change.
 python3 "$root/scripts/ci/test-lightning-live-index-maintenance.py"
+# Exact current operator body: uncertain hold outcome and foreign-hold CAS regression.
+python3 -B "$root/scripts/dev/test-lightning-release-hold-outcome.py"
 port=${LIGHTNING_P13_PORT:-55564}
 log=$(mktemp "${TMPDIR:-/tmp}/lp13-recovery.XXXXXX")
 fixture=''

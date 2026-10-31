@@ -447,13 +447,13 @@ fi
 hold_lightning_when_counting_down() {
   local response http_code body rc
   if [ "$LIGHTNING_HOLD_PLACED" = 1 ]; then
-    # A placed hold is not re-asked - unless it is a partly released one, whose
-    # resumed Clusters are dealing again and must be re-held (new generation).
+    # Continue only an incomplete pausing journal using its exact original IDs.
+    # Cleanup is irreversible; a partial or unknown resume cannot re-pause.
     [ -e "$LIGHTNING_HOLD_FILE" ] && python3 -c '
 import json, sys
 try: d = json.load(open(sys.argv[1]))
 except Exception: raise SystemExit(1)
-raise SystemExit(0 if d.get("resume_refused") else 1)
+raise SystemExit(0 if d.get("phase") == "pausing" else 1)
 ' "$LIGHTNING_HOLD_FILE" 2>/dev/null || return 0
   fi
   [ -z "${DRILL_MODE:-}" ] || return 0

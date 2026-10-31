@@ -2150,6 +2150,15 @@ export interface HorseDecideOpts {
   /** V68 league-only scale on the (b) air shade (1 shipped; 0.5 is the
    *  half-strength fallback). Production never sets it. */
   v68AirShadeScaleOverride?: number;
+  /** V69 (2026-10-31): three hold'em single-board TURN call gaps left by
+   *  V65/V68. (1) One-pair calls lose the implied-odds bonus under V68's
+   *  no-room-to-be-paid rule. (2) V65's draw exemption counts only a draw a
+   *  hole card is part of, so a board-only four-flush or four-rank window no
+   *  longer withholds the shade. (3) The V32 defend layer's draw
+   *  pass-through on the turn falls through to the normal line when there is
+   *  no room to be paid. Default on; explicit false keeps today's behaviour
+   *  for all three. */
+  v69TurnCallGaps?: boolean;
   /** V62 (2026-10-30) Hold'em river bettor polarity: a river wager's sampled
    *  hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum
    *  by bet size (HorseEval V62_BLUFF_SHARE / V62_VALUE_MIX), placed exactly
@@ -3839,6 +3848,60 @@ export function holdemDrawPresent(hole: Card[], board: Card[]): boolean {
       (lo) => ranks.filter((r) => r >= lo && r <= lo + 4).length >= 4
     )
   );
+}
+
+/**
+ * V69 (2026-10-31): holdemDrawPresent's shapes (four to a suit, four distinct
+ * ranks inside one five-rank window), counted only when a hole card is part
+ * of the draw: at least one hole card of the four-suit, or a hole rank that
+ * adds a rank the board does not already hold inside the window. A
+ * four-flush or four-rank window made by the board alone is everyone's draw,
+ * not hero's. Used by the V65 gate only; holdemDrawPresent's other callers
+ * keep their read.
+ */
+export function holdemHoleDrawPresent(hole: Card[], board: Card[]): boolean {
+  for (const suit of new Set([...hole, ...board].map((c) => c.suit))) {
+    const inHand = hole.filter((c) => c.suit === suit).length;
+    const onBoard = board.filter((c) => c.suit === suit).length;
+    if (inHand >= 1 && inHand + onBoard >= 4) return true;
+  }
+  const rankSet = (cards: Card[]) => {
+    const r = new Set(cards.map((c) => RANK_VALUES[c.rank] ?? 0));
+    if (r.has(14)) r.add(1);
+    return r;
+  };
+  const all = rankSet([...hole, ...board]);
+  const onBoard = rankSet(board);
+  for (let lo = 1; lo <= 10; lo++) {
+    let n = 0;
+    let fromHole = false;
+    for (let r = lo; r <= lo + 4; r++) {
+      if (!all.has(r)) continue;
+      n++;
+      if (!onBoard.has(r)) fromHole = true;
+    }
+    if (n >= 4 && fromHole) return true;
+  }
+  return false;
+}
+
+/**
+ * V68 / V69: the effective stack behind after hero calls - hero's stack
+ * after the call, capped by the deepest opponent's chips behind the current
+ * bet. The `behindAfterCall` argument of v68NoRoomToBePaid.
+ */
+export function v68BehindAfterCall(
+  stack: number,
+  toCall: number,
+  currentBet: number,
+  opponents: ReadonlyArray<{ stack: number; bet: number }>
+): number {
+  let oppBehind = 0;
+  for (const o of opponents) {
+    const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+    oppBehind = Math.max(oppBehind, os - currentBet);
+  }
+  return Math.min(stack - toCall, oppBehind);
 }
 
 /**
@@ -8360,6 +8423,7 @@ export class HorseLogic {
     /** V34: the solver said CALL with a drawing hand; the semi-bluff raise
      *  gates below get first refusal, and the call is guaranteed after them. */
     let solverCall32 = false;
+    const v69Gaps = (opts.v69TurnCallGaps ?? true) !== false;
     // ═══ V32 FACING A BET — the solver's own betting range (2026-08-30) ═══
     // Phase 2 of 7. V29/V30/V31 answer only with the LEAD; this is the other
     // half. The bettor's open-node cell gives P(bet at this size | holding)
@@ -8492,8 +8556,24 @@ export class HorseLogic {
           // return here: a raise with those is the aggression layers' job
           // and they are consulted at pass_strong.
           if (drawy32 && !isRiver) {
-            solverCall32 = true;
-            if (telemetryOn(opts)) noteFire('v34_defend_draw_passthrough');
+            // V69 (3): on the turn, a draw call the stacks behind cannot pay
+            // off (V68's no-room-to-be-paid rule) is not guaranteed here; it
+            // falls through to the normal line, which prices it without the
+            // implied-odds allowance.
+            if (
+              v69Gaps &&
+              street === 'turn' &&
+              v68NoRoomToBePaid(
+                toCall / Math.max(pot - toCall, 1e-9),
+                v68BehindAfterCall(stack, toCall, currentBet, opponents),
+                pot + toCall
+              )
+            ) {
+              if (tele15) noteFire('v69_turn_call_gaps');
+            } else {
+              solverCall32 = true;
+              if (telemetryOn(opts)) noteFire('v34_defend_draw_passthrough');
+            }
           } else {
             return { action: 'call', amount: toCall, thinkTime: 0 };
           }
@@ -10186,7 +10266,8 @@ export class HorseLogic {
           shade61c = v61RiverOnePairShade(toCall, pot, riverOnePairShadeShape(opts));
         }
         if (shade61c > 0 && tele15) noteFire('v61_river_one_pair_shade');
-        if (shade61c > v61RiverOnePairShade(toCall, pot) && tele15) noteFire('v63_large_river_bet_shade');
+        if (shade61c > v61RiverOnePairShade(toCall, pot) && tele15)
+          noteFire('v63_large_river_bet_shade');
       }
       const required =
         potOdds +
@@ -10852,14 +10933,19 @@ export class HorseLogic {
       (cat <= 2 || (cat === 3 && pairedBoard)) &&
       toCall > 0 &&
       pot > 0 &&
-      !holdemDrawPresent(player.cards, board)
+      // V69 (2): only a draw a hole card is part of exempts the hand; a
+      // board-only four-flush or four-rank window is everyone's draw.
+      !(v69Gaps ? holdemHoleDrawPresent : holdemDrawPresent)(player.cards, board)
     ) {
       shade65 = v65TurnOnePairShade(
         toCall,
         pot,
         opts.v65TurnShadeCapOverride ?? V65_TURN_SHADE_CAP
       );
-      if (shade65 > 0 && tele15) noteFire('v65_turn_one_pair_shade');
+      if (shade65 > 0 && tele15) {
+        noteFire('v65_turn_one_pair_shade');
+        if (v69Gaps && holdemDrawPresent(player.cards, board)) noteFire('v69_turn_call_gaps');
+      }
     }
     // ═══ V68 NO-PAIR TURN CALLS (2026-10-31) ═══ Hold'em, one board: a
     // high-card hand (cat 1; cat 0 is "unknown") calling a turn wager it did
@@ -10892,15 +10978,12 @@ export class HorseLogic {
       pot > 0
     ) {
       if (impliedBonus > 0) {
-        let oppBehind68 = 0;
-        for (const o of opponents) {
-          const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
-          oppBehind68 = Math.max(oppBehind68, os - currentBet);
-        }
-        const behind68 = Math.min(stack - toCall, oppBehind68);
+        const behind68 = v68BehindAfterCall(stack, toCall, currentBet, opponents);
         if (v68NoRoomToBePaid(potFrac, behind68, pot + toCall)) impliedBonus68 = 0;
       }
       if (
+        // V69 (2) lets V65 shade a board-only shape itself; never stack.
+        !(shade65 > 0) &&
         exploit.callDownMod <= 1 &&
         holdemDrawPresent(player.cards, board) &&
         !holdemRealDraw(player.cards, board)
@@ -10911,6 +10994,34 @@ export class HorseLogic {
       }
       if (tele15 && (shade68 > 0 || impliedBonus68 !== impliedBonus))
         noteFire('v68_turn_air_draw_calls');
+    }
+    // ═══ V69 (1) ONE-PAIR TURN IMPLIED ODDS (2026-10-31) ═══ V68 (a)'s
+    // no-room-to-be-paid rule, applied to one pair (cat 2) under the same
+    // gates: the 0.04 implied-odds allowance assumes a river bet gets paid,
+    // and against a 0.7-pot-plus turn wager with under 1.5x the pot behind
+    // there is no such bet to win.
+    if (
+      v69Gaps &&
+      useIQ &&
+      street === 'turn' &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !multiBoard36 &&
+      !gs.bombPot &&
+      !raisedAfterAggr &&
+      cat === 2 &&
+      toCall > 0 &&
+      pot > 0 &&
+      impliedBonus68 > 0 &&
+      v68NoRoomToBePaid(
+        potFrac,
+        v68BehindAfterCall(stack, toCall, currentBet, opponents),
+        pot + toCall
+      )
+    ) {
+      impliedBonus68 = 0;
+      if (tele15) noteFire('v69_turn_call_gaps');
     }
     const solverless38 = vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit;
     // V66: the bet-raised one-pair class is priced by the realized-equity
@@ -10962,10 +11073,11 @@ export class HorseLogic {
           pot > 0
         ) {
           {
-          shade61 = v61RiverOnePairShade(toCall, pot, riverOnePairShadeShape(opts));
-        }
+            shade61 = v61RiverOnePairShade(toCall, pot, riverOnePairShadeShape(opts));
+          }
           if (shade61 > 0 && tele15) noteFire('v61_river_one_pair_shade');
-          if (shade61 > v61RiverOnePairShade(toCall, pot) && tele15) noteFire('v63_large_river_bet_shade');
+          if (shade61 > v61RiverOnePairShade(toCall, pot) && tele15)
+            noteFire('v63_large_river_bet_shade');
         }
         // V67: over hero's own raised river bet the raise shade replaces it.
         if (v67Class) shade61 = shade67;

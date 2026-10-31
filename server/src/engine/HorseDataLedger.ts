@@ -797,6 +797,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V68-league'
   ),
   flag(
+    'v69TurnCallGaps',
+    '2026-10-31 Hold em single-board TURN call gaps left by V65/V68: one-pair calls lose the implied-odds bonus facing 0.7 pot or more with under 1.5x the pot behind after the call, the V65 draw exemption counts only a draw a hole card is part of, and the opt-in V32 draw pass-through falls through to the normal line when there is no room to be paid; explicit off arm retained',
+    'V69'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
@@ -2258,6 +2263,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V68)',
     'Hold em high-card turn call of a wager hero did not initiate, implied odds withheld or air shaded against the price',
     'V68',
+    'decide',
+    0.001
+  ),
+  receipt(
+    'v69_turn_call_gaps',
+    'HorseLogic (V69)',
+    'Hold em turn call re-priced: one-pair implied odds withheld, board-only draw no longer exempting the V65 shade, or V32 draw pass-through withheld with no room to be paid',
+    'V69',
     'decide',
     0.001
   ),

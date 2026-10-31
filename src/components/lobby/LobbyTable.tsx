@@ -244,9 +244,11 @@ export function tournamentClockLine(
   entry: LobbyEntry,
   now: number
 ): { tone: 'start' | 'soon' | 'late'; text: string } | null {
-  if (entry.kind !== 'mtt') return null;
+  if (entry.kind !== 'mtt' || entry.status === 'completed' || entry.status === 'closed')
+    return null;
   const text = mttPhaseText(entry, now);
-  if (!text || text === 'Late Reg Closed' || text === 'Late Reg Open') return null;
+  if (!text || text === 'Late Reg Closed' || text === 'Late Reg Open' || text === 'Starting Soon')
+    return null;
   return {
     tone: text.startsWith('Late Reg')
       ? 'late'

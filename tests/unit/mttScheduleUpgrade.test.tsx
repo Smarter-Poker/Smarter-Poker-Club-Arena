@@ -100,6 +100,11 @@ describe('MTT schedule upgrade', () => {
     expect(tournamentClockLine(stale, now)?.text).toBe('Late Reg Ends In 75:30');
     expect(tournamentClockLine(stale, now + 80 * 60000)).toBeNull();
   });
+  it('shows no live countdown for terminal events or missing start clocks', () => {
+    expect(tournamentClockLine(event('completed', { status: 'COMPLETED' }), now)).toBeNull();
+    expect(tournamentClockLine(event('cancelled', { status: 'CANCELLED' }), now)).toBeNull();
+    expect(tournamentClockLine(event('undated', { start_time: '' }), now)).toBeNull();
+  });
   it('does not invent a start for an overdue held event', () => {
     expect(
       tournamentClockLine(event('held', { start_time: new Date(now - 1).toISOString() }), now)?.text

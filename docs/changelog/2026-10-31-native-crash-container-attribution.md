@@ -1,0 +1,7 @@
+# Match retained native-crash metadata to the engine container
+
+The existing bounded restart reader can observe a host Node native fault without knowing whether it belongs to the engine. Its explicit restart read now retains the fixed container's full Docker ID privately and reads only systemd-coredump timestamp, signal, process name and cgroup metadata in the same completed fifteen-minute interval. An exact full-ID match to either standard Docker cgroup form emits `current_container_cgroup_match`. Different containers and absent or malformed identity remain distinct from a match. This does not identify the native code defect or prove which engine generation ran in that container.
+
+No core dump, stack, command line, executable path, raw journal message, cgroup path, container ID or pointer is exported. No configuration, runtime or game state changes. Five fixed four-second reads fit the existing twenty-second restart evidence allowance; transport limits and explicit opt-in remain unchanged. Absent or expired metadata remains unknown, not evidence that no crash occurred.
+
+The 55-case native reader fixture passes, including integrated command bounds and sanitization, exact identity, wrong container, shortened ID, malformed/missing fields and out-of-window refusal. Live attribution still requires the existing protected read route to observe retained host metadata; local fixtures do not prove those records exist.

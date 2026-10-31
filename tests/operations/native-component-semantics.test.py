@@ -193,14 +193,20 @@ class NativeArtifactBoundary(unittest.TestCase):
                 else:
                     output.write_bytes(b'engine image is not executed by this boundary test')
 
+            def provider(route):
+                if route == '/repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena':
+                    return {'id': 1132369872, 'full_name': 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena'}
+                self.assertEqual(route, '/repos/' + MODULE.REPO + '/actions/runs/123/jobs?filter=latest&per_page=100')
+                return {'total_count': 1, 'jobs': [
+                    {'id': 456, 'name': 'qualify', 'status': 'in_progress'}]}
+
             environment = {'GITHUB_REPOSITORY': MODULE.REPO, 'GITHUB_RUN_ATTEMPT': '1',
                            'GITHUB_RUN_ID': '123', 'GITHUB_SHA': request['control_sha'],
                            'GH_TOKEN': 'provider-value-must-never-enter-candidate-command'}
             output = root / 'evidence'
             for scenario in ('product', 'financial'):
                 with patch.dict(os.environ, environment), patch.object(MODULE, 'command', side_effect=command), \
-                        patch.object(MODULE, 'provider', return_value={'total_count': 1, 'jobs': [
-                            {'id': 456, 'name': 'qualify', 'status': 'in_progress'}]}), \
+                        patch.object(MODULE, 'provider', side_effect=provider), \
                         patch.object(MODULE, 'download_artifact', side_effect=download), \
                         patch.object(MODULE, 'unpack_engine'):
                     selected_output = output if scenario == 'product' else root / 'financial-evidence'
@@ -268,8 +274,7 @@ class NativeArtifactBoundary(unittest.TestCase):
 
             financial_output = root / 'financial-complete-boundary'
             with patch.dict(os.environ, environment), patch.object(MODULE, 'command', side_effect=financial_command), \
-                    patch.object(MODULE, 'provider', return_value={'total_count': 1, 'jobs': [
-                        {'id': 456, 'name': 'qualify', 'status': 'in_progress'}]}), \
+                    patch.object(MODULE, 'provider', side_effect=provider), \
                     patch.object(MODULE, 'download_artifact', side_effect=download), patch.object(MODULE, 'unpack_engine'):
                 MODULE.qualify(request, operation, root / 'controls', financial_output, scenario='financial')
             scoped = json.loads((financial_output / 'financial-route-observations.json').read_text())
@@ -291,8 +296,7 @@ class NativeArtifactBoundary(unittest.TestCase):
                         'exclusions': ['application-role-acl-baseline']}}))
             calls.clear()
             with patch.dict(os.environ, environment), patch.object(MODULE, 'command', side_effect=command), \
-                    patch.object(MODULE, 'provider', return_value={'total_count': 1, 'jobs': [
-                        {'id': 456, 'name': 'qualify', 'status': 'in_progress'}]}), \
+                    patch.object(MODULE, 'provider', side_effect=provider), \
                     patch.object(MODULE, 'download_artifact', side_effect=download), \
                     patch.object(MODULE, 'unpack_engine') as unpack:
                 with self.assertRaisesRegex(RuntimeError, 'CURRENT_DATABASE_CONTRACT_REQUIRED'):

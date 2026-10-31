@@ -75,6 +75,35 @@ are not proof the connected application scenario ran. This addition has not
 yet established a qualified runtime/engine/web/schema tuple or a connected UI
 pass.
 
+### Optional isolated three-run player UI observation
+
+The same admitted controller accepts `--rit-player-ui`. It starts the existing
+financial fixture with its two canonical cash actors, disables autonomous actor
+input, and invokes `rit-player-ui-suite.mjs` through the same read-only controls
+mount and locked Chromium runtime. Actual authenticated browser controls drive
+all-in and three-run consent; the existing mobile witness verifies all three
+boards, winning-card timing, chip landings, settled-choice clearing and cold reload.
+Both client origins, full engine SHA, unchanged instance and monotonic uptime
+remain bound before and after. The outer driver owns verified complete cleanup.
+
+With a genuinely admitted immutable runtime and full-schema artifact tuple:
+
+```sh
+python3 operations/release/native/qualify-components.py "$CONTROL_CHECKOUT" "$OWNED_OUTPUT" --rit-player-ui
+```
+
+The result is `rit-player-ui-observations.json`, with exactly four required cases
+and `product_certificate:false`. This mode is NOT_EXECUTED: source regressions
+and native service smoke do not establish a connected application pass or native
+admission. No active player game or production financial action is permitted.
+
+Browser storage preserves the single `https://smarter.poker` origin and the
+legacy public Supabase namespace, while supplying the same synthetic session at
+the application's actual `smarter-poker-auth` key. Played RIT sessions derive
+only the namespace key name from the fixture descriptor, never its owner's
+stored value, and use stripped ordinary actor JWTs with validated subject,
+authenticated role, finite real expiry and an empty refresh token.
+
 The Dockerfile pins Linux amd64 platform manifests, verified through the official
 Docker Registry API on 2026-09-11. Other architectures deliberately fail closed.
 

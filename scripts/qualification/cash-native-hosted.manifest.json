@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 260243,
-      "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
+      "bytes": 261967,
+      "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5678,5 +5678,21 @@
     },
     "execution_performed": false,
     "qualificationStateChanged": false
+  },
+  "postpaidStatementQualification20261031": {
+    "reason": "Add the three focused postpaid scheduler/discovery/migration native suites in the existing required server shard; every pre-existing cash qualification command, assertion, deadline and artifact path is preserved.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 260243,
+          "sha256": "b10021de40a403474bc4e3788e982b96321e5847163211f72fdda64e21dcd0f2"
+        },
+        "current": {
+          "bytes": 261967,
+          "sha256": "1d8fe6e03bcdd98fd2fa98c4054030909c91fbbec7a31cef21d8a3d91fe8861c"
+        }
+      }
+    },
+    "qualification": "CI source identity only. Existing financial/native/live results are not recertified; fixed inputs and all other source pins are unchanged."
   }
 }

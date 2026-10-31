@@ -47,6 +47,9 @@ echo "$action $(basename "$hold")" >> "$CALLS"
 mode="$(cat "$HELPER_MODE")"
 case "$action" in
   pause)
+    if [ -n "${TEST_CLOCK_FILE:-}" ]; then
+      command python3 -c 'from pathlib import Path;import sys;p=Path(sys.argv[1]);p.write_text(str(int(p.read_text())+11*1400))' "$TEST_CLOCK_FILE"
+    fi
     [ "$mode" != pause-unknown ] || exit 3
     [ -e "$hold" ] || printf '{"schema":"engine-release-lightning-hold/v1","run_id":"7-1","held":["c1"]}\n' > "$hold"
     exit 0 ;;
@@ -92,9 +95,16 @@ REQUEST_ROOT="{self.root}/requests"; RUN_ID=7-1; ENV_FILE=/dev/null
 LIGHTNING_HOLD="{self.root}/hold.sh"; export CALLS="{self.calls}" HELPER_MODE="{self.mode}"
 DRILL_MODE=''; DAILY_TRANSITION=0; ACTIVATION_FLOOR_END_EPOCH=0; ACTIVATION_FLOOR_OWNER_WINDOW=''
 BREAK_END_EPOCH=0; LEGACY_ENTRY_BREAK_END_EPOCH=0
+floor_reservation_stamp() {{ [ "${{RESERVATION_REFUSED:-0}}" = 0 ] || return 1; echo "${{RESERVATION_STAMP:-0}}"; }}
+weekly_read() {{
+  [ "${{WEEKLY_REFUSED:-0}}" = 0 ] || return 1
+  if [ -n "${{HEALTH_AFTER_WEEKLY_FILE:-}}" ]; then cp "$HEALTH_AFTER_WEEKLY_FILE" "{self.health}"; fi
+  return 0
+}}
+INFLIGHT_HANDS=weekly_read
 curl() {{ cat "{self.health}"; printf '\\n200'; }}
 sleep() {{ echo "sleep $1" >> "{self.calls}"; }}
-timeout() {{ shift 3; "$@"; }}
+timeout() {{ shift 3; [ -e "$1" ] || return 127; [ -x "$1" ] || return 126; "$@"; }}
 python3() {{ FAKE_NOW="{chicago}" command python3 -c 'import datetime as _d, sys, os
 class _N(_d.datetime):
     @classmethod
@@ -102,8 +112,12 @@ class _N(_d.datetime):
         base=_d.datetime.fromisoformat(os.environ["FAKE_NOW"].replace("Z","+00:00"))
         return base.astimezone(tz) if tz else base.replace(tzinfo=None)
 _d.datetime=_N
-import runpy
+import runpy, time
+from pathlib import Path
+instant=_d.datetime.fromisoformat(os.environ["FAKE_NOW"].replace("Z","+00:00")).timestamp()
+time.time=lambda: int(Path(os.environ["TEST_CLOCK_FILE"]).read_text())/1000 if os.environ.get("TEST_CLOCK_FILE") else instant
 code=sys.argv[1]
+sys.argv=["-c"]+sys.argv[2:]
 exec(compile(code, "<hold>", "exec"), {{"__name__": "__main__"}})' "$2" "${{@:3}}"; }}
 '''
         script = prefix + STATE + FUNCTIONS + body
@@ -137,6 +151,90 @@ exec(compile(code, "<hold>", "exec"), {{"__name__": "__main__"}})' "$2" "${{@:3}
         r = self.run_bash('ACTIVATION_FLOOR_OWNER_WINDOW=w1; ACTIVATION_FLOOR_END_EPOCH=9999999999; hold_lightning_when_counting_down; echo "placed=$LIGHTNING_HOLD_PLACED"', chicago='2026-10-31T08:58:30Z')
         self.assertIn('placed=0', r.stdout)
         self.assertEqual(self.calls_made(), [])
+
+    def last_hand_health(self, stamp=1793429586934):
+        return {'running': True, 'weeklyPayout': None, 'maintenance': {
+            'active': True, 'phase': 'last_hand', 'durableConfirmed': True,
+            'reason': 'Deployment Recovery', 'breakEndsAt': None,
+            'presentation': {'active': True, 'phase': 'last_hand', 'reason': 'Deployment Recovery',
+                'break_id': stamp, 'break_ends_at': stamp+420000, 'scheduled_ends_at': stamp+420000}}}
+
+    def test_slow_eleven_cluster_hold_uses_the_owned_lead_not_the_fifteen_second_entry(self):
+        stamp=1793429586934
+        clock=self.root/'clock'; clock.write_text(str(stamp+5000))
+        self.health.write_text(json.dumps(self.last_hand_health(stamp)))
+        body='ACTIVATION_FLOOR_OWNER_WINDOW=w1; ACTIVATION_FLOOR_END_EPOCH=1793434200; hold_lightning_when_counting_down'
+        env={'RESERVATION_STAMP': str(stamp), 'TEST_CLOCK_FILE': str(clock)}
+        r=self.run_bash(body, env_extra=env)
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(self.calls_made(),['pause 7-1.lightning-hold.json'])
+        self.assertEqual(int(clock.read_text()),stamp+5000+11*1400)
+        self.assertLess(int(clock.read_text()),stamp+120000)
+        # At countdown the existing journal prevents those same slow calls from
+        # consuming the only 15s before the unchanged 285s admission reserve.
+        clock.write_text(str(stamp+120000))
+        self.set_health(active=True, reason='Deployment Recovery')
+        r=self.run_bash(body, env_extra=env)
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(self.calls_made(),['pause 7-1.lightning-hold.json'])
+        self.assertEqual(stamp+420000-int(clock.read_text()),300000)
+        self.assertLess(300000-11*1400,285000)
+
+    def test_incomplete_early_pause_keeps_original_journal_and_cleans_up_after_thaw(self):
+        stamp=1793429586934
+        self.health.write_text(json.dumps(self.last_hand_health(stamp)))
+        journal=self.root/'requests/7-1.lightning-hold.json'
+        journal.write_text(json.dumps({'schema':'engine-release-lightning-hold/v2','run_id':'7-1','phase':'pausing','held':['c1'],'unknown':['c2']}))
+        self.mode.write_text('pause-unknown')
+        body='ACTIVATION_FLOOR_OWNER_WINDOW=w1; ACTIVATION_FLOOR_END_EPOCH=1793434200; hold_lightning_when_counting_down; echo "placed=$LIGHTNING_HOLD_PLACED"'
+        r=self.run_bash(body,chicago='2026-10-31T06:53:11Z',env_extra={'RESERVATION_STAMP':str(stamp)})
+        self.assertEqual(r.returncode,0,r.stderr);self.assertIn('placed=1',r.stdout)
+        self.assertEqual(json.loads(journal.read_text())['unknown'],['c2'])
+        self.mode.write_text('ok');self.set_health(active=False)
+        r=self.run_bash('release_lightning_hold_if_break_over; echo "placed=$LIGHTNING_HOLD_PLACED"')
+        self.assertEqual(r.returncode,0,r.stderr);self.assertIn('placed=0',r.stdout)
+        self.assertEqual(self.calls_made(),['pause 7-1.lightning-hold.json','resume 7-1.lightning-hold.json'])
+        self.assertFalse(journal.exists());self.assertTrue(journal.with_name(journal.name+'.released').exists())
+
+    def test_slow_ownership_read_cannot_reuse_a_superseded_announcement(self):
+        stamp=1793429586934
+        good=self.last_hand_health(stamp)
+        changed=[self.last_hand_health(stamp+1), {'running':True,'maintenance':{'active':False,'phase':'idle'}}]
+        countdown=json.loads(json.dumps(good));countdown['maintenance']['phase']='counting_down';changed.append(countdown)
+        after=self.root/'health-after-weekly.json'
+        for fresh in changed:
+            with self.subTest(fresh=fresh):
+                self.health.write_text(json.dumps(good));after.write_text(json.dumps(fresh));self.calls.write_text('')
+                r=self.run_bash('ACTIVATION_FLOOR_OWNER_WINDOW=w1; ACTIVATION_FLOOR_END_EPOCH=1793434200; hold_lightning_when_counting_down',
+                    chicago='2026-10-31T06:53:11Z',env_extra={'RESERVATION_STAMP':str(stamp),'HEALTH_AFTER_WEEKLY_FILE':str(after)})
+                self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(self.calls_made(),[])
+
+    def test_early_hold_refuses_every_unbound_or_unusable_announcement(self):
+        stamp=1793429586934
+        good=self.last_hand_health(stamp)
+        cases=[]
+        for path,value in [('running',False),('weeklyPayout',{}),('maintenance.active',False),
+            ('maintenance.durableConfirmed',False),('maintenance.reason','Scheduled Engine Maintenance'),
+            ('maintenance.presentation.break_id',stamp+1),('maintenance.presentation.break_ends_at',stamp+420001),
+            ('maintenance.presentation.scheduled_ends_at',stamp+420001),('maintenance.presentation',None)]:
+            h=json.loads(json.dumps(good));parts=path.split('.');parent=h
+            for part in parts[:-1]:parent=parent[part]
+            parent[parts[-1]]=value;cases.append((h,{},''))
+        missing=json.loads(json.dumps(good));del missing['weeklyPayout'];cases.append((missing,{},''))
+        cases += [(good,{'RESERVATION_REFUSED':'1'},''),(good,{'WEEKLY_REFUSED':'1'},''),
+                  (good,{},'ACTIVATION_FLOOR_OWNER_WINDOW="";'),
+                  (good,{},'ACTIVATION_FLOOR_END_EPOCH=1793429700;')]
+        for health,extra,override in cases:
+            with self.subTest(extra=extra,override=override,health=health):
+                self.health.write_text(json.dumps(health));self.calls.write_text('')
+                r=self.run_bash('ACTIVATION_FLOOR_OWNER_WINDOW=w1; ACTIVATION_FLOOR_END_EPOCH=1793434200; '+override+'hold_lightning_when_counting_down',
+                    chicago='2026-10-31T06:53:11Z',env_extra={'RESERVATION_STAMP':str(stamp),**extra})
+                self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(self.calls_made(),[])
+        self.health.write_text(json.dumps(good))
+        for instant in ['2026-10-31T06:53:06Z','2026-10-31T06:55:07Z','2026-10-31T07:00:07Z']:
+            r=self.run_bash('ACTIVATION_FLOOR_OWNER_WINDOW=w1; ACTIVATION_FLOOR_END_EPOCH=1793434200; hold_lightning_when_counting_down',
+                chicago=instant,env_extra={'RESERVATION_STAMP':str(stamp)})
+            self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(self.calls_made(),[])
 
     def test_a_passed_break_gives_lightning_back_and_clears_the_flag(self):
         self.set_health(active=True)

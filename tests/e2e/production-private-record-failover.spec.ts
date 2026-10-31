@@ -449,6 +449,8 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
       endpoint: 'gateway' | 'paid',
       roster: boolean
     ) => {
+      const deliveryStartedAt = Date.now();
+      let readbackObservedAt: number | undefined;
       const frameFrom = frames.length;
       const paidFrom = paid.length;
       const responseRead = page.waitForResponse(
@@ -471,7 +473,9 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
             const row = roster
               ? assertPrivateRecordFixtureRoster(body, userId, playerNumber)
               : body?.identity;
-            return row?.user_id === userId && String(row.avatar_url).includes(image);
+            const matches = row?.user_id === userId && String(row.avatar_url).includes(image);
+            if (matches) readbackObservedAt = Date.now();
+            return matches;
           } catch {
             return false;
           }
@@ -523,6 +527,7 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
           { timeout: 30_000 }
         )
         .toBe(true);
+      const eventObservedAt = Date.now();
       await responseRead;
       const visible = roster ? rosterAvatar : avatar;
       await expect.poll(() => visible.getAttribute('src'), { timeout: 45_000 }).toContain(image);
@@ -537,6 +542,14 @@ test(PRIVATE_RECORD_CLIENT_TITLE, async ({ page, context }, testInfo) => {
           { timeout: 30_000 }
         )
         .toBe(true);
+      const timings = (proof.deliveryTimings ??= []) as Record<string, unknown>[];
+      timings.push({
+        consumer: roster ? 'roster' : 'member',
+        endpoint,
+        eventObservedMs: eventObservedAt - deliveryStartedAt,
+        readbackObservedMs: readbackObservedAt! - deliveryStartedAt,
+        visibleObservedMs: Date.now() - deliveryStartedAt,
+      });
     };
     await changeAndRead(rosterTopic, selected[0], 'gateway', true);
     expect(paidForTopic(rosterTopic)).toBe(0);

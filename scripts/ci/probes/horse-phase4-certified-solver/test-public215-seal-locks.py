@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix='seal-once-draft-', dir=base) as folder,
 
 
         import hashlib
-        old=(HERE/'public215-seal-before.sql').read_text();new=re.search(r'CREATE OR REPLACE FUNCTION public.fn_gto_v31_seal_build\(.*?AS \$function\$.*?\$function\$', (ROOT/'supabase/migrations/20261031215525_v31_model_validation_serializes_the_same_forest_once.sql').read_text(),re.S).group()+'\n'
+        old=re.search(r'CREATE OR REPLACE FUNCTION public.fn_gto_v31_seal_build\(.*?AS \$function\$.*?\$function\$',(HERE/'public215-seal-before.sql').read_text(),re.S).group()+'\n';new=re.search(r'CREATE OR REPLACE FUNCTION public.fn_gto_v31_seal_build\(.*?AS \$function\$.*?\$function\$', (ROOT/'supabase/migrations/20261031215525_v31_model_validation_serializes_the_same_forest_once.sql').read_text(),re.S).group()+'\n'
         anchor="  IF NOT FOUND THEN RAISE EXCEPTION 'dataset is not building'; END IF;"
         lock="\n  IF v_dataset.policy_representation='public_hist215_v1' THEN\n    PERFORM c.cell_id FROM public.gto_v31_runtime_cells c\n      WHERE c.dataset_id=p_dataset_id ORDER BY c.cell_key_checksum FOR SHARE;\n  END IF;"
         needle="OR CASE WHEN v_dataset.policy_representation='public_hist215_v1' THEN false\n                 ELSE NOT public.fn_gto_v31_cell_payload_valid(to_jsonb(c)) END)"

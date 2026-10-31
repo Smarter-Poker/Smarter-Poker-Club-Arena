@@ -27,7 +27,10 @@ async function request(
     },
   };
   await handleTournamentOriginalRecoveryPrepare(req as any, res as any, {
-    gameServer: { prepareTournamentOriginalRecovery: invoke },
+    gameServer: {
+      prepareTournamentOriginalRecovery: invoke,
+      readTournamentOriginalRecoveryPreparation: invoke,
+    },
   });
   return { ...result, invoke };
 }
@@ -56,6 +59,14 @@ it('prepares only the exact operation event and nonce once', async () => {
   expect(r.invoke).toHaveBeenCalledTimes(1);
   expect(r.invoke).toHaveBeenCalledWith(body.operationId, body.tournamentId, body.nonce);
 });
+it.each(['prepare', 'read'])(
+  'refuses a UUID array before %s can reach the owner',
+  async (action) => {
+    const r = await request('isolated-service-key', { ...body, action, nonce: [body.nonce] });
+    expect(r.status).toBe(400);
+    expect(r.invoke).not.toHaveBeenCalled();
+  }
+);
 it('retains unknown acknowledgement without automatic retry', async () => {
   const invoke = vi.fn(() => {
     throw Error('unknown');

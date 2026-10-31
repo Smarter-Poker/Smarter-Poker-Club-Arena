@@ -299,7 +299,7 @@ test.describe('the mobile lobby chrome on production', () => {
 
   test('compact rows open details and filters stay at their original position', async ({
     page,
-  }) => {
+  }, testInfo) => {
     await openLobby(page);
     await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
@@ -351,6 +351,59 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toBeVisible();
     await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toHaveCount(0);
+
+    const cashDoor = page.getByRole('button', { name: 'Cash Games', exact: true });
+    const tournamentDoor = page.getByRole('button', { name: 'Tournaments', exact: true });
+    await tournamentDoor.click();
+    await expect(tournamentDoor).toHaveAttribute('aria-expanded', 'true');
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'false');
+    const gameTypes = page.getByRole('tablist', { name: 'Game Type', exact: true });
+    await expect(gameTypes.getByRole('tab')).toHaveText([
+      "MTT'S",
+      'SPINS',
+      "SIT N GO'S",
+      'SATELLITES',
+    ]);
+    await gameTypes.getByRole('tab', { name: "MTT'S", exact: true }).click();
+    await expect(gameTypes.getByRole('tab', { name: "MTT'S", exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await page.evaluate(() => document.fonts.ready);
+    const labels = page.locator('#lobby-game-section-controls .lobby-filter-label__text');
+    expect(await labels.count()).toBeGreaterThanOrEqual(4);
+    for (const label of await labels.all()) {
+      const fits = await label.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const ink = range.getBoundingClientRect();
+        const face = el.parentElement!.getBoundingClientRect();
+        return (
+          ink.left >= face.left - 1 &&
+          ink.right <= face.right + 1 &&
+          ink.top >= face.top - 1 &&
+          ink.bottom <= face.bottom + 1
+        );
+      });
+      expect(fits, `${await label.textContent()} must fit its painted face`).toBe(true);
+    }
+    await testInfo.attach('live-tournament-filters.png', {
+      body: await page.locator('.lobby-controls').screenshot(),
+      contentType: 'image/png',
+    });
+    await tournamentDoor.click();
+    await expect(gameTypes).toHaveCount(0);
+    await cashDoor.click();
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'true');
+    await expect(gameTypes.getByRole('tab')).toHaveText(['ALL', 'NLH', 'PLO', 'LIMIT']);
+    await testInfo.attach('live-cash-filters.png', {
+      body: await page.locator('.lobby-controls').screenshot(),
+      contentType: 'image/png',
+    });
+    await cashDoor.click();
+    await expect(cashDoor).toHaveAttribute('aria-expanded', 'false');
+    await expect(tournamentDoor).toHaveAttribute('aria-expanded', 'false');
+    await expect(gameTypes).toHaveCount(0);
   });
 
   test('tournament Details stays inside the spectator table lobby tab', async ({

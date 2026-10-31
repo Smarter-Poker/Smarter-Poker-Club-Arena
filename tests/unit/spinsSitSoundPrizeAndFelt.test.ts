@@ -284,12 +284,12 @@ describe('a six-handed table is shorter than a nine-handed one', () => {
     expect(clearance).toBeGreaterThanOrEqual(2);
   });
 
-  it('the top row is capped per CANVAS, because the same cap measures both ways', () => {
+  it('the top row shares the full slot at every canvas size', () => {
     /* 76px on the full canvas clears by 3.9px; the SAME 76px on the short
        canvas (shorter, and its top seat sits at y 5 not y 6) measures -8.1px,
        eight pixels inside the banner. So the cap is two rules, not one
        literal. */
-    expect(SEAT_CSS).toContain('--seat-avatar-base: min(var(--seat-avatar-full), 76px)');
+    expect(SEAT_CSS).not.toContain('--seat-avatar-base: min(var(--seat-avatar-full), 76px)');
     /* MOVED 2026-09-05 with the selector it guards (CLAUDE.md 5.8). This asked
        for five literal `.table-page[data-seats='N'] ...` selectors, which is
        what shipped - and which is 0-4-0, so it out-specified BOTH the
@@ -321,8 +321,9 @@ describe('a six-handed table is shorter than a nine-handed one', () => {
     expect(SEAT_CSS).not.toContain('min(var(--seat-avatar-full), 56px)');
   });
 
-  it('the bust scale the 7-9 clearance was measured at has not moved', () => {
-    expect(SEAT_CSS).toContain('--sp-bust-scale: 1.05');
+  it('the top row uses the same bust scale as the side seats', () => {
+    expect(SEAT_CSS).not.toContain('--sp-bust-scale: 1.05');
+    expect(SEAT_CSS).toContain('--sp-bust-scale: 1.45');
   });
 });
 

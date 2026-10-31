@@ -83,8 +83,10 @@ input, and invokes `rit-player-ui-suite.mjs` through the same read-only controls
 mount and locked Chromium runtime. Actual authenticated browser controls drive
 all-in and three-run consent; the existing mobile witness verifies all three
 boards, winning-card timing, chip landings, settled-choice clearing and cold reload.
-Both client origins, full engine SHA, unchanged instance and monotonic uptime
-remain bound before and after. The outer driver owns verified complete cleanup.
+Before the RIT witness is armed, one ordinary hand proves browser Raise, Call,
+full-stack All-in and explicit Fold against the exact same saved hand's bounded
+public action tuples. Both client origins, full engine SHA, unchanged instance
+and monotonic uptime remain bound before and after. The outer driver owns verified complete cleanup.
 
 With a genuinely admitted immutable runtime and full-schema artifact tuple:
 
@@ -92,7 +94,7 @@ With a genuinely admitted immutable runtime and full-schema artifact tuple:
 python3 operations/release/native/qualify-components.py "$CONTROL_CHECKOUT" "$OWNED_OUTPUT" --rit-player-ui
 ```
 
-The result is `rit-player-ui-observations.json`, with exactly four required cases
+The result is `rit-player-ui-observations.json`, with exactly five required cases
 and `product_certificate:false`. This mode is NOT_EXECUTED: source regressions
 and native service smoke do not establish a connected application pass or native
 admission. No active player game or production financial action is permitted.
@@ -561,12 +563,12 @@ accepted. Raw files are removed on every outcome; only sanitized fixed receipts
 are uploaded, including failures and verified cleanup.
 
 The foreground native job reuses one source-bound fixture image lifetime. It
-runs the ten tournament UI cases and four three-run UI cases in two separate
+runs the ten tournament UI cases and five cash action/three-run UI cases in two separate
 fresh fixtures with one exact immutable published client archive and one engine
 built from its actual protected source context. This is isolated observation,
 not release admission, publication, serving-engine adoption or a product
 certificate. Existing release-controller admission remains unchanged. This mode
-is **NOT_EXECUTED** until its actual terminal native receipt establishes all14
+is **NOT_EXECUTED** until its actual terminal native receipt establishes all15
 cases and complete cleanup. No active production player game may be used.
 
 ### Exact original-to-restored public column ordinal adapter
@@ -582,4 +584,4 @@ the expected catalogue. Both scenes bind the independently expected restored
 digest; the original digest remains separately retained. Only fixed mapping
 counts/digests are public; changed column rows and original literal payloads
 remain private and are removed with the owned fixture inputs. This mapping is
-source preparation, not a full-schema or connected fourteen-case pass.
+source preparation, not a full-schema or connected fifteen-case pass.

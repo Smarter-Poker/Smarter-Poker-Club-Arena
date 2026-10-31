@@ -327,9 +327,16 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
       shortPhone,
       'the measured short-phone hero clearance must remain narrowly scoped'
     ).toBeTruthy();
+    // Equal compact pods on short phones return six unused pixels to the
+    // felt; six-max retains its existing extra four pixels for ticker clearance.
+    const compactRing = strip(TABLE_CSS).match(
+      /@media\s*\(min-width:\s*341px\)\s*and\s*\(max-width:\s*480px\)\s*and\s*\(max-height:\s*720px\)\s*and\s*\(orientation:\s*portrait\)\s*\{\s*\.table-page\s+\.table-container\s*\{\s*--sp-hero-clear:\s*54px;\s*\}\s*\.table-page\[data-seats='6'\]\s+\.table-container\s*\{\s*--sp-hero-clear:\s*58px;\s*\}\s*\}/
+    );
+    expect(compactRing, 'the compact shared-pod reserve stays scoped to short phones').toBeTruthy();
     const declared = [
       ...strip(TABLE_CSS)
         .replace(shortPhone![0], '')
+        .replace(compactRing![0], '')
         .matchAll(/--sp-hero-clear:\s*(\d+)px/g),
     ].map((m) => Number(m[1]));
     // All other reserves stay derived. Parse actual CSS, not historical

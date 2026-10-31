@@ -35,7 +35,7 @@ vi.mock('../../src/utils/errorReporter', () => ({ reportError: m.report }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     from: () => {
-      const b: any = { select: () => b, eq: () => b, maybeSingle: m.seat };
+      const b: any = { select: () => b, eq: () => b, abortSignal: () => b, maybeSingle: m.seat };
       return b;
     },
   },
@@ -158,4 +158,23 @@ describe('a committed registration keeps its result through presentation failure
     expect(m.seat).not.toHaveBeenCalled();
     expect(hook.result.current.isRegistering).toBe(false);
   });
+});
+
+it('a hung seat lookup ends as unknown without repeating a committed registration', async () => {
+  m.register.mockResolvedValue({ id: 'entry', table_id: null });
+  m.seat.mockReturnValue(new Promise(() => {}));
+  const hook = renderHook(() => useTournamentRegistration());
+  let settled = false;
+  await act(async () => {
+    void hook.result.current.register(tournament).then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(44000);
+  });
+  expect(settled).toBe(true);
+  expect(m.register).toHaveBeenCalledTimes(1);
+  expect(m.warning).toHaveBeenCalledWith('You Are Registered. We Could Not Confirm Your Seat Yet.');
+  expect(m.navigate).toHaveBeenCalledWith('/tournaments/event');
+  expect(m.error).not.toHaveBeenCalled();
+  expect(hook.result.current.isRegistering).toBe(false);
 });

@@ -13,7 +13,7 @@
  *    as green.
  * 2. `Accounting transactions (PostgreSQL 17)` was 29.5 minutes of serial
  *    suites (job 108270970154), the critical path of every server-touching
- *    pull request. It is four shards now; every suite step belongs to exactly
+ *    pull request. It is seven shards now; every suite step belongs to exactly
  *    one shard and the required aggregate still needs all of them.
  * 3. The Diamond playfield suite on software WebGL gets one retry, and a
  *    retried pass is named as FLAKY in the job, never folded into "passed".
@@ -124,7 +124,7 @@ describe('a duplicate run for the same commit is not a verdict', () => {
   });
 });
 
-describe('the PostgreSQL accounting qualification runs as four shards of one job', () => {
+describe('the PostgreSQL accounting qualification runs as seven shards of one job', () => {
   const job = ci.jobs.accounting_postgres;
   const steps: Step[] = job.steps;
   const SETUP = new Set([
@@ -136,9 +136,9 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
   const shardsOf = (step: Step) =>
     [...String(step.if ?? '').matchAll(/matrix\.shard == (\d)/g)].map((m) => Number(m[1]));
 
-  it('is a four-way matrix that lets every shard finish', () => {
-    expect(job.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4] } });
-    expect(job.name).toBe('Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4');
+  it('is a seven-way matrix that lets every shard finish', () => {
+    expect(job.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4, 5, 6, 7] } });
+    expect(job.name).toBe('Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/7');
     expect(job['timeout-minutes']).toBe(50);
   });
 
@@ -157,7 +157,7 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
       expect(shards, `${step.name} must name exactly one shard`).toHaveLength(1);
       perShard.set(shards[0], (perShard.get(shards[0]) ?? 0) + 1);
     }
-    expect([...perShard.keys()].sort()).toEqual([1, 2, 3, 4]);
+    expect([...perShard.keys()].sort()).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
   it('balances the complete unchanged Lightning family onto shard 3', () => {

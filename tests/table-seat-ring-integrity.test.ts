@@ -41,6 +41,7 @@ import {
   buttonRadiusWidthPct,
   dealerButtonPosition,
   seatPodPx,
+  fitSeatToViewport,
 } from '../src/components/table/tableGeometry';
 
 /**
@@ -52,7 +53,7 @@ import {
  * every breakpoint - see TablePage.css.
  */
 const TABLES = {
-  'phone 375px': { w: 347, h: 574 },
+  'phone 375px': { w: 307.5, h: 540 },
   'tablet portrait': { w: 600, h: 992 },
   desktop: { w: 720, h: 1190 },
 } as const;
@@ -99,7 +100,7 @@ const SIZES = [2, 3, 4, 5, 6, 7, 8, 9] as const;
 const seatBoxWPx = (feltW: number) =>
   Math.max(
     Math.min(112, Math.max(66, feltW * 0.235)),
-    Math.min(124, Math.max(50, feltW * 0.158)) * 1.143
+    (Math.min(124, Math.max(50, feltW * 0.158)) * 1.3333 * 8) / 7
   );
 
 const SEAT_CSS = readFileSync(resolve(__dirname, '../src/components/table/SeatSlot.css'), 'utf8');
@@ -138,7 +139,7 @@ describe('the seat box this file measures against is the one the stylesheet draw
       width![1].replace(/\s+/g, ' '),
       'seatBoxWPx() above models the readable floor and --seat-avatar-full * 1.143; if this ' +
         'changed, update that function and re-read the failures'
-    ).toBe('max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143))');
+    ).toBe('max(var(--seat-plate-min-width), calc(var(--seat-avatar-size) * 8 / 7))');
     expect(seatRule![1]).toMatch(
       /--seat-plate-min-width:\s*clamp\(66px, calc\(var\(--table-w, 360px\) \* 0\.235\), 112px\)/
     );
@@ -285,13 +286,21 @@ describe('the seat BOXES stand clear of the cards, not just the markers', () => 
       const centreY = FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height;
       const pod = seatPodPx(
         label.startsWith('phone') ? 375 : label.startsWith('tablet') ? 768 : 1440,
-        false
+        false,
+        table.w,
+        { canvasHeightPx: table.h }
       );
       const seatHalfX = (Math.max(pod.w, table.w * 0.158 * 1.143) / 2 / table.w) * 100;
       const seatHalfY = (pod.h / 2 / table.h) * 100;
 
       for (const n of SIZES) {
-        for (const seat of SEAT_LAYOUTS[n]) {
+        for (const raw of SEAT_LAYOUTS[n]) {
+          const viewport = label.startsWith('phone')
+            ? 375
+            : label.startsWith('tablet')
+              ? 768
+              : 1440;
+          const seat = fitSeatToViewport(raw, table, viewport, pod, undefined, n);
           const overlapsX = Math.abs(seat.x - centreX) < rowW / 2 + seatHalfX;
           const overlapsY = Math.abs(seat.y - centreY) < halfH + seatHalfY;
           expect(
